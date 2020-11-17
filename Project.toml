@@ -1,0 +1,7 @@
+name = "UnitTestDesign"
+uuid = "239896fa-e45a-40e8-9993-3c434b0bc450"
+authors = ["Andrew Dolgert <adolgert@uw.edu>"]
+version = "0.1.0"
+
+[compat]
+julia = "1.5"
