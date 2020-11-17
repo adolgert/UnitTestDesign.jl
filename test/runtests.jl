@@ -1,6 +1,7 @@
 using UnitTestDesign
+using SafeTestSets
 using Test
 
-@testset "UnitTestDesign.jl" begin
-    # Write your tests here.
+@safetestset "UnitTestDesign.jl" begin
+    include("test_greedy_tuples.jl")
 end
