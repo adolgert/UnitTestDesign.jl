@@ -85,9 +85,10 @@ chain = sample(two_parameter(data), HMC(0.1, 5), 1000)
     for i in 1:N
         y[1, i] ~ Categorical(theta)
         if y[1, i] == 1
-            ulu[1:3] .= [1, 0, 0]
+            y[2, i] = 1
+        else
+            y[2, i] ~ Categorical(ulu)
         end
-        y[2, i] ~ Categorical(ulu)
     end
 end
 
