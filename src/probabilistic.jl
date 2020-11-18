@@ -61,7 +61,7 @@ describe(chain)
 
 ### Then move to two parameters to see if training data is in the right format.
 
-@model function two_parameter(y)
+@model function two_parameter(y, ::Type{T} = Int64) where {T <: Integer}
     N = size(y, 2)
     theta ~ Dirichlet(2, 1)
     ulu ~ Dirichlet(3, 1)
@@ -71,21 +71,24 @@ describe(chain)
     end
 end
 N = 1000
-data = zeros(Int, 2, N)
+data = tzeros(Int, 2, N)
 data[1, :] = rand(Categorical([0.2, 0.8]), N)
 data[2, :] = rand(Categorical([0.4, 0.2, 0.4]), N)
 chain = sample(two_parameter(data), HMC(0.1, 5), 1000)
 
 ### We want to restrict parameters to allowed values.
 
-@model function cross_depends(y)
+@model function cross_depends(y = missing, ::Type{T} = Int64) where {T <: Integer}
+    if y === missing
+        y = tzeros(Int64, 2, 2)
+    end
     N = size(y, 2)
     theta ~ Dirichlet(2, 1)
     ulu ~ Dirichlet(3, 1)
     for i in 1:N
         y[1, i] ~ Categorical(theta)
         if y[1, i] == 1
-            y[2, i] = 1
+            y[2, i] ~ Categorical(1)
         else
             y[2, i] ~ Categorical(ulu)
         end
@@ -93,7 +96,7 @@ chain = sample(two_parameter(data), HMC(0.1, 5), 1000)
 end
 
 N = 1000
-data = zeros(Int, 2, N)
+data = tzeros(Int64, 2, N)
 data[1, :] = rand(Categorical([0.2, 0.8]), N)
 data[2, :] = rand(Categorical([0.4, 0.2, 0.4]), N)
 for i in 1:N
@@ -101,6 +104,9 @@ for i in 1:N
         data[2, i] = 1
     end
 end
-# chain = sample(cross_depends(data), HMC(0.1, 5), 1000)
-chain = sample(cross_depends(data), PG(10), 1000)
+chain = sample(cross_depends(data), HMC(0.1, 5), 1000)
 chain = sample(cross_depends(data), NUTS(0.65), 1000)
+chain = sample(cross_depends(data), PG(10), 1000)
+chainp = sample(cross_depends(), Prior(), 1000)
+using DataFrames
+df = DataFrame(chainp)
