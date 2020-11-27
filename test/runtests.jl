@@ -1,5 +1,5 @@
 using UnitTestDesign
-using SafeTestSets
+using SafeTestsets
 using Test
 
 @safetestset "UnitTestDesign.jl" begin
