@@ -32,6 +32,11 @@ end
 
 """
 all_combinations_matrix(arity, n_way)
+
+Create matrix coverage that includes all n-way combinations
+of parameters which can take `arity` values, where `arity`
+is a vector of integers to represent the number of possible
+values for each parameter, in order.
 """
 function all_combinations_matrix(arity, n_way)
     allc = all_combinations(arity, n_way)
@@ -42,11 +47,17 @@ function all_combinations_matrix(arity, n_way)
 end
 
 
+"""
+How many tuples have not been covered yet.
+"""
 function remaining_uncovered(mc::MatrixCoverage)
     mc.remain
 end
 
 
+"""
+The number of parameters for this design.
+"""
 function parameter_cnt(mc::MatrixCoverage)
     length(mc.arity)
 end
@@ -74,8 +85,10 @@ end
 """
     coverage_by_parameter(allc::MatrixCoverage)
 
-Given a coverage array and a the number of rows to search,
-find how many times a nonzero appears in each column.
+Given a coverage matrix, return how many times each parameter
+participates in an uncovered tuple. The return value is a vector
+of integers, where each value is the number of times that parameter
+appears in any uncovered tuple.
 """
 function coverage_by_parameter(mc::MatrixCoverage)
     vec(sum(mc.allc[1:mc.remain, :] .!= 0, dims = 1))
@@ -87,7 +100,8 @@ end
 
 Given a particular parameter, look at that column of the coverage matrix
 and return a histogram of how many times each value appears in
-that column.
+that column. We want to know which parameter has the most tuples
+to cover so that we can address it first.
 """
 function coverage_by_value(mc, param_idx)
     hist = zeros(Int, mc.arity[param_idx] + 1)
@@ -110,11 +124,12 @@ end
 """
     most_matches_existing(mc::MatrixCoverage, existing, param_idx)
 
-There is a coverage array, and there is a list of existing choices for the
-values of parameters. This asks, given another parameter, how many matches
-would each of its values produce, were it chosen. The return value is a
-vector where the first entry is the number of matches for value = 1, the second
-entry is number of matches for value = 2, and so on.
+The `existing` vector is a partial test case. Each nonzero entry in this
+test case is considered as decided. This function then determines, for
+the next parameter, chosen by param_idx, which value of param_idx, between
+1 and its arity, would cover the most tuples. It returns a histogram of
+how many uncovered tuples could be covered, given the existing choices
+and a particular value of this parameter.
 """
 function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
     @assert existing[param_idx] == 0
@@ -234,6 +249,16 @@ function match_score(mc::MatrixCoverage, entry)
 end
 
 
+"""
+    remove_combinations!(mc::MatrixCoverage, disallow)
+
+Remove all tuples that are disallowed by the `disallow` function.
+Input to the function is a vector of parameter indexes.
+The output to the function is whether they are disallowed,
+as a boolean. This reduces the size of total tuples in the
+coverage matrix. It doesn't move them to covered tuples. It
+deletes them.
+"""
 function remove_combinations!(mc::MatrixCoverage, disallow)
     allow_cnt = 0
     allowed = zeros(Int, size(mc.allc, 1))
