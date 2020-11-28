@@ -29,7 +29,13 @@ mutable struct MatrixCoverage
     arity
 end
 
-eltype(mc::MatrixCoverage) = eltype(mc.allc)
+"""
+The element type of the MatrixCoverage class is determined
+by the element type of the arity because an element large
+enough to hold the arity is what defines the minimum possible
+element type.
+"""
+eltype(mc::MatrixCoverage) = eltype(mc.arity)
 
 
 """
@@ -46,6 +52,37 @@ function all_combinations_matrix(arity, n_way)
     @assert sum(sum(allc, dims = 2) == 0) == 0
     remain = size(allc, 1)
     MatrixCoverage(allc, remain, arity)
+end
+
+
+"""
+    one_parameter_combinations(arity, n_way)
+
+Generates all combinations that are nonzero for the last parameter.
+This is for in-parameter-order generation, where we need
+only those tuples that end with this column being nonzero.
+
+The construction method is to leave out the given parameter
+and construct all `n_way` - 1 tuples. Then copy and paste that
+once for each possible value of the given parameter.
+"""
+function one_parameter_combinations(arity, n_way)
+    param_cnt = length(arity)
+    if n_way > 1
+        partial = all_combinations_matrix(arity[1:(param_cnt-1)], n_way - 1)
+        one_set = size(partial, 1)
+        comb = zeros(typeof(arity), one_set * arity[param_cnt], param_cnt)
+        for vidx in 1:(arity[param_cnt])
+            row_begin = (vidx - 1) * one_set + 1
+            row_end = vidx * one_set
+            comb[row_begin:row_end, size(partial, 2)] .= partial
+            comb[row_begin:row_end, param_cnt] .= vidx
+        end
+    else  # n_way == 1
+        comb = zeros(typeof(arity), arity[param_cnt], param_cnt)
+        comb[:, param_cnt] .= 1:(arity[param_cnt])
+    end
+    MatrixCoverage(comb, size(comb, 1), arity)
 end
 
 
@@ -162,6 +199,37 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
         end
     end
     hist
+end
+
+
+"""
+Given an entry in the test set that has missing values, which are
+zeros, find any matches that could be created by setting those
+missing values. Return a new version of the entry.
+"""
+function matches_from_missing(mc::MatrixCoverage, entry)
+    param_cnt = parameter_cnt(mc)
+    for row_idx in 1:size(mc, 1)
+        tuple_cnt = 0
+        match_cnt = 0
+        for col in 1:param_cnt
+            tuple_val = mc.allc[row_idx, col_idx]
+            if tuple_val != 0
+                tuple_cnt += 1
+                if entry[col_idx] == tuple_val || entry[col_idx] == 0
+                    match_cnt += 1
+                end
+            end
+        end
+        if tuple_cnt == match_cnt
+            for col = 1:param_cnt
+                if mc.allc[row_idx, col_idx] > 0
+                    entry[col_idx] = mc.allc[row_idx, col_idx]
+                end
+            end
+        end
+    end
+    entry
 end
 
 

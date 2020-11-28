@@ -1,5 +1,26 @@
+"""
+    ipog(arity, n_way)
 
-function ipog(arity, n_way, M, rng)
+The `arity` is an integer array of the number of possible values each
+parameter can take. The `n_way` is whether each parameter must appear
+once in the test suite, or whether each pair of parameters must appear
+together, or whether each triple must appear together. The wayness
+can be set as high as the length of the arity.
+
+This uses the in-parameter-order-general algorithm. It will always return
+the same set of values. It takes less time and memory than most other
+approaches.
+
+This function represents a test set as a two-dimensional array of
+the same integer type as the input arity. Each value of the array
+is either an integer number, from 1 to the arity of that parameter,
+or it is 0 for what the paper calls a don't-care value.
+
+Lei, Yu, Raghu Kacker, D. Richard Kuhn, Vadim Okun, and James Lawrence.
+2008. “IPOG/IPOG-D: Efficient Test Generation for Multi-Way Combinatorial
+Testing.” Software Testing, Verification & Reliability 18 (3): 125–48.
+"""
+function ipog(arity, n_way)
     nonincreasing = sortperm(arity, rev = true)
     original_arity = arity
     arity = arity[nonincreasing]
@@ -14,27 +35,28 @@ function ipog(arity, n_way, M, rng)
         wider = zeros(Int, size(test_set, 1), param_idx)
         wider[:, 1:(param_idx - 1)] .= test_set
 
-        allc = one_parameter_combinations(arity[1:param_idx], param_idx)
+        allc = one_parameter_combinations(arity[1:param_idx], n_way)
         for set_row_idx in 1:size(wider, 2)
             # This needs to account for previous entries that aren't set.
             match_hist = most_matches_existing(
                     allc, wider[set_row_idx, :], param_idx
                     )
             if (any(match_hist > 0))
+                # The argmax tie-breaks in a consistent manner.
                 wider[set_row_idx, param_idx] = argmax(match_hist)
                 add_coverage!(allc, wider[set_row_idx, :])
             end  # else don't set this entry by leaving it zero.
         end
 
         for missing_row_idx in 1:size(wider, 2)
-            no_param = wider[missing_row_idx, param_idx] == 0
-            any_missing = any(wider[missing_row_idx, 1:(param_idx - 1)]) == 0
-            if no_param && any_missing
+            nonzero = sum(wider[missing_row_idx, 1:(param_idx - 1)] .> 0)
+            if nonzero < param_idx
                 # The found_values has what format?
-                found_values = matches_to_missing(allc, wider[missing_row_idx, :], param_idx)
-                if any(found_values > 0)
-                    wider[missing_row_idx, :] = argmax(found_values)
-                    add_coverage!(allc, wider[missing_row_idx, :])
+                found_entry = fill_consistent_matches(allc, wider[missing_row_idx, :])
+                remain_zero = sum(found_entry[missing_row_idx, 1:(param_idx - 1)] .> 0)
+                if remain_zero < nonzero
+                    wider[missing_row_idx, :] .= found_entry
+                    add_coverage!(allc, found_entry)
                 end  # else nothing found for this row.
             end
         end

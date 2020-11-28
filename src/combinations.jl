@@ -48,7 +48,7 @@ function all_combinations(arity, n_way)
     indices = collect(combinations(1:v_cnt, n_way))
     combinations_cnt = total_combinations(arity, n_way)
 
-    coverage = zeros(Int, combinations_cnt, v_cnt)
+    coverage = zeros(typeof(arity), combinations_cnt, v_cnt)
     idx = 1
     for indices_idx in 1:size(indices, 1)
         offset = indices[indices_idx]
