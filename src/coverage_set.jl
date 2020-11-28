@@ -29,6 +29,8 @@ mutable struct MatrixCoverage
     arity
 end
 
+eltype(mc::MatrixCoverage) = eltype(mc.allc)
+
 
 """
 all_combinations_matrix(arity, n_way)
@@ -161,6 +163,49 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
     end
     hist
 end
+
+
+"""
+    first_match_for_parameter(mc::MatrixCoverage, param_idx)
+
+Find the first uncovered tuple for a particular parameter value.
+"""
+function first_match_for_parameter(mc::MatrixCoverage, param_idx)
+    for row_idx in 1:mc.remain
+        if mc.allc[row_idx, param_idx] != 0
+            return mc.allc[row_idx, param_idx]
+        end  # else keep looking
+    end
+    return zeros(eltype(mc), length(mc.arity))
+end
+
+
+"""
+    fill_consistent_matches(mc::MatrixCoverage, entry)
+
+Given an entry that's partially decided, fill in every covering tuple
+that matches the existing values, in any order.
+"""
+function fill_consistent_matches(mc::MatrixCoverage, entry)
+    param_cnt = parameter_cnt(mc)
+    for row_idx in 1:mc.remain
+        for col_idx in 1:param_cnt
+            found = true
+            if entry[col_idx] != 0 && mc.allc[row_idx, col_idx] != entry[col_idx]
+                found = false
+            end
+        end
+        if found
+            for copy_idx in 1:param_cnt
+                if mc.allc[row_idx, col_idx] != 0
+                    entry[col_idx] = mc.allc[row_idx, col_idx]
+                end
+            end
+        end
+    end
+    entry
+end
+
 
 function coverage_by_tuple(trials, n_way)
     accumulated = tuples_in_trials(trials, n_way)

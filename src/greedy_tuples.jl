@@ -66,7 +66,9 @@ function n_way_coverage(arity, n_way, M, rng)
             candidate_params = coverage_by_value(allc, params[1])
             entry[params[1]] = argmin_rand(rng, -candidate_params)
             for p_idx in 2:param_cnt
-                candidate_values = most_matches_existing(allc, entry, params[p_idx])
+                candidate_values = most_matches_existing(
+                        allc, entry, params[p_idx]
+                        )
                 entry[params[p_idx]] = argmin_rand(rng, -candidate_values)
             end
             score = match_score(allc, entry)
