@@ -67,7 +67,7 @@ and construct all `n_way` - 1 tuples. Then copy and paste that
 once for each possible value of the given parameter.
 """
 function one_parameter_combinations_matrix(arity, n_way)
-    comb = one_parameter_combinations(rity, n_way)
+    comb = one_parameter_combinations(arity, n_way)
     MatrixCoverage(comb, size(comb, 1), arity)
 end
 
@@ -227,7 +227,7 @@ Find the first uncovered tuple for a particular parameter value.
 function first_match_for_parameter(mc::MatrixCoverage, param_idx)
     for row_idx in 1:mc.remain
         if mc.allc[row_idx, param_idx] != 0
-            return mc.allc[row_idx, param_idx]
+            return mc.allc[row_idx, :]
         end  # else keep looking
     end
     return zeros(eltype(mc), length(mc.arity))
@@ -243,16 +243,17 @@ that matches the existing values, in any order.
 function fill_consistent_matches(mc::MatrixCoverage, entry)
     param_cnt = parameter_cnt(mc)
     for row_idx in 1:mc.remain
+        found = true
         for col_idx in 1:param_cnt
-            found = true
-            if entry[col_idx] != 0 && mc.allc[row_idx, col_idx] != entry[col_idx]
+            v = mc.allc[row_idx, col_idx]
+            if entry[col_idx] != 0 && v != 0 && v != entry[col_idx]
                 found = false
             end
         end
         if found
             for copy_idx in 1:param_cnt
-                if mc.allc[row_idx, col_idx] != 0
-                    entry[col_idx] = mc.allc[row_idx, col_idx]
+                if mc.allc[row_idx, copy_idx] != 0
+                    entry[copy_idx] = mc.allc[row_idx, copy_idx]
                 end
             end
         end
@@ -397,7 +398,7 @@ function multi_way_coverage(arity, wayness, base_wayness)
         # The parameter set is a list of parameter indices.
         for param_set in wayness[order]
             high_combos = all_combinations(arity[param_set], order)
-            widened = zeros(Int, size(high_combos, 1), param_cnt)
+            widened = zeros(eltype(arity), size(high_combos, 1), param_cnt)
             widened[:, param_set] = high_combos
             push!(order_combos, widened)
         end

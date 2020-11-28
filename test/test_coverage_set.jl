@@ -15,6 +15,10 @@ for cbp_case in cbp_cases
 end
 
 
+mc = UnitTestDesign.one_parameter_combinations_matrix([2, 2, 3], 2)
+@test mc.remain == 4 * 3
+
+
 ### coverage_by_value
 
 # (coverage matrix, remaining uncovered, arity,
@@ -56,6 +60,55 @@ for mmm_case in mmm_cases
     @test res == mmm_case[3]
 end
 
+
+### first_match_for_parameter(mc, param_idx)
+arity = [3, 2, 2, 2]
+mat = [0 1 2 0; 2 2 1 0]
+mc = UnitTestDesign.MatrixCoverage(mat, size(mat, 1), arity)
+first = UnitTestDesign.first_match_for_parameter(mc, 3)
+@test first == [0, 1, 2, 0]
+blank = UnitTestDesign.first_match_for_parameter(mc, 1)
+@test blank == [2, 2, 1, 0]
+lack = UnitTestDesign.first_match_for_parameter(mc, 4)
+@test lack == [0, 0, 0, 0]
+
+
+### fill_consistent_matches
+arity = [2, 4, 4]
+mat = [
+    0 0 0;
+    1 0 0;
+    0 2 0;
+    0 0 3;
+    0 0 4
+]
+mc = UnitTestDesign.MatrixCoverage(mat, size(mat, 1), arity)
+res1 = UnitTestDesign.fill_consistent_matches(mc, [0, 2, 0])
+@test res1 == [1, 2, 3]
+
+arity = [2, 4, 4]
+mat2 = [
+    0 0 0;
+    1 2 0;
+    0 2 0;
+    1 0 4;
+    0 0 3
+]
+mc2 = UnitTestDesign.MatrixCoverage(mat2, size(mat2, 1), arity)
+res2 = UnitTestDesign.fill_consistent_matches(mc2, [0, 2, 0])
+@test res2 == [1, 2, 4]
+
+arity = [2, 4, 4]
+mat3 = [
+    0 0 0;
+    1 2 0;
+    0 2 0;
+    0 0 3;
+    1 0 4
+]
+mc3 = UnitTestDesign.MatrixCoverage(mat3, size(mat3, 1), arity)
+res3 = UnitTestDesign.fill_consistent_matches(mc3, [0, 2, 0])
+@test res3 == [1, 2, 3]
 
 ### add_coverage!(allc, row_cnt, entry)
 # This checks that the rows of the matrix are reordered
