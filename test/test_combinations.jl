@@ -65,3 +65,12 @@ for ac_trial_idx in 1:5
         @test found
     end
 end
+
+
+### one_parameter_combinations(arity, n_way)
+
+minimal = UnitTestDesign.one_parameter_combinations([2, 3], 1)
+@test minimal == [0 1; 0 2; 0 3]
+
+paired = UnitTestDesign.one_parameter_combinations([2, 3], 2)
+@test paired == [1 1; 2 1; 1 2; 2 2; 1 3; 2 3]

@@ -1,6 +1,7 @@
 # These functions represent combinations that are covered and uncovered.
 # It is a data structure to facilitate greedy approaches to combination coverage.
 using Combinatorics: combinations
+import Base: eltype
 
 ###############################################################
 # MatrixCoverage
@@ -54,7 +55,6 @@ function all_combinations_matrix(arity, n_way)
     MatrixCoverage(allc, remain, arity)
 end
 
-
 """
     one_parameter_combinations(arity, n_way)
 
@@ -66,22 +66,8 @@ The construction method is to leave out the given parameter
 and construct all `n_way` - 1 tuples. Then copy and paste that
 once for each possible value of the given parameter.
 """
-function one_parameter_combinations(arity, n_way)
-    param_cnt = length(arity)
-    if n_way > 1
-        partial = all_combinations_matrix(arity[1:(param_cnt-1)], n_way - 1)
-        one_set = size(partial, 1)
-        comb = zeros(typeof(arity), one_set * arity[param_cnt], param_cnt)
-        for vidx in 1:(arity[param_cnt])
-            row_begin = (vidx - 1) * one_set + 1
-            row_end = vidx * one_set
-            comb[row_begin:row_end, size(partial, 2)] .= partial
-            comb[row_begin:row_end, param_cnt] .= vidx
-        end
-    else  # n_way == 1
-        comb = zeros(typeof(arity), arity[param_cnt], param_cnt)
-        comb[:, param_cnt] .= 1:(arity[param_cnt])
-    end
+function one_parameter_combinations_matrix(arity, n_way)
+    comb = one_parameter_combinations(rity, n_way)
     MatrixCoverage(comb, size(comb, 1), arity)
 end
 

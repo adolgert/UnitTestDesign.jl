@@ -48,7 +48,7 @@ function all_combinations(arity, n_way)
     indices = collect(combinations(1:v_cnt, n_way))
     combinations_cnt = total_combinations(arity, n_way)
 
-    coverage = zeros(typeof(arity), combinations_cnt, v_cnt)
+    coverage = zeros(eltype(arity), combinations_cnt, v_cnt)
     idx = 1
     for indices_idx in 1:size(indices, 1)
         offset = indices[indices_idx]
@@ -62,6 +62,37 @@ function all_combinations(arity, n_way)
         end
     end
     coverage
+end
+
+
+"""
+    one_parameter_combinations(arity, n_way)
+
+Generates all combinations that are nonzero for the last parameter.
+This is for in-parameter-order generation, where we need
+only those tuples that end with this column being nonzero.
+
+The construction method is to leave out the given parameter
+and construct all `n_way` - 1 tuples. Then copy and paste that
+once for each possible value of the given parameter.
+"""
+function one_parameter_combinations(arity, n_way)
+    param_cnt = length(arity)
+    if n_way > 1
+        partial = all_combinations(arity[1:(param_cnt-1)], n_way - 1)
+        one_set = size(partial, 1)
+        comb = zeros(eltype(arity), one_set * arity[param_cnt], param_cnt)
+        for vidx in 1:(arity[param_cnt])
+            row_begin = (vidx - 1) * one_set + 1
+            row_end = vidx * one_set
+            comb[row_begin:row_end, 1:size(partial, 2)] .= partial
+            comb[row_begin:row_end, param_cnt] .= vidx
+        end
+    else  # n_way == 1
+        comb = zeros(eltype(arity), arity[param_cnt], param_cnt)
+        comb[:, param_cnt] .= 1:(arity[param_cnt])
+    end
+    comb
 end
 
 

@@ -15,7 +15,6 @@ for cbp_case in cbp_cases
 end
 
 
-
 ### coverage_by_value
 
 # (coverage matrix, remaining uncovered, arity,
