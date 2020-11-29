@@ -46,19 +46,19 @@ for ac_trial_idx in 1:5
     arity = rand(rng, 2:4, param_cnt)
     coverage = UnitTestDesign.all_combinations(arity, n_way)
     # It has the right column dimnsion.
-    @test size(coverage, 2) == length(arity)
+    @test size(coverage, 1) == length(arity)
     # Every combination is nonzero.
-    @test sum(sum(coverage, dims = 2) == 0) == 0
+    @test sum(sum(coverage, dims = 1) == 0) == 0
     # The total number of combinations agrees with expectations.
-    @test UnitTestDesign.total_combinations(arity, n_way) == size(coverage, 1)
+    @test UnitTestDesign.total_combinations(arity, n_way) == size(coverage, 2)
     # Generate some random combinations and check that they are in there.
     for comb_idx in 1:100
         comb = [rand(rng, 1:arity[cj]) for cj in 1:param_cnt]
         comb[randperm(rng, param_cnt)[1:(param_cnt - n_way)]] .= 0
         @test sum(comb .!= 0) == n_way
         found = false
-        for sidx in 1:size(coverage, 1)
-            if coverage[sidx, :] == comb
+        for sidx in 1:size(coverage, 2)
+            if coverage[:, sidx] == comb
                 found = true
             end
         end
@@ -70,21 +70,21 @@ end
 ### one_parameter_combinations(arity, n_way)
 
 minimal = UnitTestDesign.one_parameter_combinations([2, 3], 1)
-@test minimal == [0 1; 0 2; 0 3]
+@test minimal == [0 1; 0 2; 0 3]'
 
 paired = UnitTestDesign.one_parameter_combinations([2, 3], 2)
-@test paired == [1 1; 2 1; 1 2; 2 2; 1 3; 2 3]
+@test paired == [1 1; 2 1; 1 2; 2 2; 1 3; 2 3]'
 
 singled = UnitTestDesign.one_parameter_combinations([2, 2, 3], 2)
 @test singled == [
     1 0 1; 2 0 1; 0 1 1; 0 2 1;
     1 0 2; 2 0 2; 0 1 2; 0 2 2;
     1 0 3; 2 0 3; 0 1 3; 0 2 3
-    ]
+    ]'
 
 again = UnitTestDesign.one_parameter_combinations([2, 2, 3], 3)
 @test again == [
     1 1 1; 1 2 1; 2 1 1; 2 2 1;
     1 1 2; 1 2 2; 2 1 2; 2 2 2;
     1 1 3; 1 2 3; 2 1 3; 2 2 3
-    ]
+    ]'

@@ -45,19 +45,20 @@ and `n_way` is the order of the combinations, most commonly 2-way.
 """
 function all_combinations(arity, n_way)
     v_cnt = length(arity)
+    # This returns a list of lists, so it has length, not size.
     indices = collect(combinations(1:v_cnt, n_way))
     combinations_cnt = total_combinations(arity, n_way)
 
-    coverage = zeros(eltype(arity), combinations_cnt, v_cnt)
+    coverage = zeros(eltype(arity), v_cnt, combinations_cnt)
     idx = 1
-    for indices_idx in 1:size(indices, 1)
+    for indices_idx in 1:length(indices)
         offset = indices[indices_idx]
         sub_arity = arity[offset]
         sub_cnt = prod(sub_arity)
         values = copy(sub_arity)
         for sub_idx in 1:sub_cnt
             next_multiplicative!(values, sub_arity)
-            coverage[idx, offset] = values
+            coverage[offset, idx] = values
             idx += 1
         end
     end
@@ -80,17 +81,17 @@ function one_parameter_combinations(arity, n_way)
     param_cnt = length(arity)
     if n_way > 1
         partial = all_combinations(arity[1:(param_cnt-1)], n_way - 1)
-        one_set = size(partial, 1)
-        comb = zeros(eltype(arity), one_set * arity[param_cnt], param_cnt)
+        one_set = size(partial, 2)
+        comb = zeros(eltype(arity), param_cnt, one_set * arity[param_cnt])
         for vidx in 1:(arity[param_cnt])
-            row_begin = (vidx - 1) * one_set + 1
-            row_end = vidx * one_set
-            comb[row_begin:row_end, 1:size(partial, 2)] .= partial
-            comb[row_begin:row_end, param_cnt] .= vidx
+            col_begin = (vidx - 1) * one_set + 1
+            col_end = vidx * one_set
+            comb[1:size(partial, 1), col_begin:col_end] .= partial
+            comb[param_cnt, col_begin:col_end] .= vidx
         end
     else  # n_way == 1
-        comb = zeros(eltype(arity), arity[param_cnt], param_cnt)
-        comb[:, param_cnt] .= 1:(arity[param_cnt])
+        comb = zeros(eltype(arity), param_cnt, arity[param_cnt])
+        comb[param_cnt, :] .= 1:(arity[param_cnt])
     end
     comb
 end
@@ -102,12 +103,12 @@ combination_number(n, m) = prod(n:-1:(n-m+1)) ÷ factorial(m)
 function pairs_in_entry(entry, n_way)
     n = length(entry)
     ans = zeros(Int, combination_number(n, n_way), n)
-    row_idx = 1
+    col_set_idx = 1
     for param_idx in combinations(1:length(entry), n_way)
-        for col_idx in 1:n_way
-            ans[row_idx, param_idx[col_idx]] = entry[param_idx[col_idx]]
+        for row_idx in 1:n_way
+            ans[param_idx[row_idx], col_set_idx] = entry[param_idx[row_idx]]
         end
-        row_idx += 1
+        col_set_idx += 1
     end
     ans
 end
