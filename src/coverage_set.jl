@@ -367,7 +367,7 @@ deletes them.
 """
 function remove_combinations!(mc::MatrixCoverage, disallow)
     allow_cnt = 0
-    allowed = zeros(Int, size(mc.allc, 1))
+    allowed = zeros(Int, size(mc.allc, 2))
     for i in 1:size(mc.allc, 2)
         if !disallow(mc.allc[:, i])
             allow_cnt += 1
