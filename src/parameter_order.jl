@@ -32,28 +32,26 @@ function ipog(arity, n_way)
     test_set = all_combinations(arity[1:n_way], n_way)
 
     for param_idx in (n_way + 1):param_cnt
-        wider = zeros(Int, size(test_set, 1), param_idx)
+        wider = zeros(eltype(arity), size(test_set, 1), param_idx)
         wider[:, 1:(param_idx - 1)] .= test_set
 
-        allc = one_parameter_combinations(arity[1:param_idx], n_way)
-        for set_row_idx in 1:size(wider, 2)
+        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+        for set_row_idx in 1:size(wider, 1)
             # This needs to account for previous entries that aren't set.
-            match_hist = most_matches_existing(
-                    allc, wider[set_row_idx, :], param_idx
-                    )
-            if (any(match_hist > 0))
+            match_hist = matches_from_missing(allc, wider[set_row_idx, :], param_idx)
+            if (any(match_hist .> 0))
                 # The argmax tie-breaks in a consistent manner.
                 wider[set_row_idx, param_idx] = argmax(match_hist)
                 add_coverage!(allc, wider[set_row_idx, :])
             end  # else don't set this entry by leaving it zero.
         end
 
-        for missing_row_idx in 1:size(wider, 2)
+        for missing_row_idx in 1:size(wider, 1)
             nonzero = sum(wider[missing_row_idx, 1:(param_idx - 1)] .> 0)
-            if nonzero < param_idx
+            if nonzero < param_idx - 1
                 # The found_values has what format?
                 found_entry = fill_consistent_matches(allc, wider[missing_row_idx, :])
-                remain_zero = sum(found_entry[missing_row_idx, 1:(param_idx - 1)] .> 0)
+                remain_zero = sum(found_entry .> 0)
                 if remain_zero < nonzero
                     wider[missing_row_idx, :] .= found_entry
                     add_coverage!(allc, found_entry)
@@ -64,16 +62,36 @@ function ipog(arity, n_way)
         add_entries = Array{Array{eltype(allc),1},1}()
         while remaining_uncovered(allc) > 0
             # add a new row. Fill with necessary tuples.
-            entry = first_match_for_parameter(mc, param_idx)
-            filled = fill_consistent_matches(mc, entry)
-            add_coverage!(mc, filled)
+            entry = first_match_for_parameter(allc, param_idx)
+            filled = fill_consistent_matches(allc, entry)
+            add_coverage!(allc, filled)
             push!(add_entries, filled)
         end
 
-        test_set = zeros(Int, size(wider, 1) + length(add_entries), param_idx)
+        test_set = zeros(eltype(arity), size(wider, 1) + length(add_entries), param_idx)
         test_set[1:size(wider, 1), :] .= wider
         for long_idx in 1:length(add_entries)
-            test_set[1:size(wider, 1) + long_idx] .= add_entries[long_idx]
+            test_set[size(wider, 1) + long_idx, :] .= add_entries[long_idx]
+        end
+    end
+    
+    # We could have zero values at the end, so fill them in with the
+    # least-used values.
+    hist = zeros(Int, param_cnt, maximum(arity))
+    for hist_row in 1:size(test_set, 1)
+        for hist_col in 1:size(test_set, 2)
+            if test_set[hist_row, hist_col] > 0
+                hist[hist_col, test_set[hist_row, hist_col]] += 1
+            end
+        end
+    end
+    for fill_row in 1:size(test_set, 1)
+        for fill_col in 1:size(test_set, 2)
+            if test_set[fill_row, fill_col] == 0
+                fill_val = argmin(hist[fill_col, 1:arity[fill_col]])
+                test_set[fill_row, fill_col] = fill_val
+                hist[fill_col, fill_val] += 1
+            end
         end
     end
     # reorder test columns with `original_order`.

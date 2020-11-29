@@ -4,6 +4,7 @@ export n_way_coverage
 export n_way_coverage_init
 export n_way_coverage_filter
 export n_way_coverage_multi
+export ipog
 
 include("combinations.jl")
 include("coverage_set.jl")

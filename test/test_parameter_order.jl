@@ -7,3 +7,6 @@ dd = [5, 1, 3, 4, 2]
 dd == ff
 cc[dd] == aa
 cc[ff] == aa
+using UnitTestDesign
+ipog([2, 3, 2], 2)
+ipog([2, 3, 2, 4, 7, 2], 2)

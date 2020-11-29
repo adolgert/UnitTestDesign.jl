@@ -24,11 +24,12 @@ This representation should be slow for lookup of tuples and
 take lots of memory, but it is a clear representation with which
 to understand the interface to the data structure.
 """
-mutable struct MatrixCoverage
-    allc
-    remain
-    arity
+mutable struct MatrixCoverage{T <: Integer}
+    allc::Array{T, 2}
+    remain::Integer
+    arity::Array{T, 1}
 end
+
 
 """
 The element type of the MatrixCoverage class is determined
@@ -155,6 +156,10 @@ the next parameter, chosen by param_idx, which value of param_idx, between
 1 and its arity, would cover the most tuples. It returns a histogram of
 how many uncovered tuples could be covered, given the existing choices
 and a particular value of this parameter.
+
+A value of the `param_idx` parameter matches with a tuple if its
+existing choices match at least some part of the tuple and don't
+disagree with any part of the tuple.
 """
 function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
     @assert existing[param_idx] == 0
@@ -193,29 +198,27 @@ Given an entry in the test set that has missing values, which are
 zeros, find any matches that could be created by setting those
 missing values. Return a new version of the entry.
 """
-function matches_from_missing(mc::MatrixCoverage, entry)
+function matches_from_missing(mc::MatrixCoverage, entry, param_idx)
     param_cnt = parameter_cnt(mc)
-    for row_idx in 1:size(mc, 1)
-        tuple_cnt = 0
-        match_cnt = 0
-        for col in 1:param_cnt
-            tuple_val = mc.allc[row_idx, col_idx]
-            if tuple_val != 0
-                tuple_cnt += 1
-                if entry[col_idx] == tuple_val || entry[col_idx] == 0
-                    match_cnt += 1
+    hist = zeros(eltype(mc), mc.arity[param_idx])
+    for row_idx in 1:mc.remain
+        if mc.allc[row_idx, param_idx] != 0
+            found = true
+            for col_idx in 1:param_cnt
+                if (
+                    entry[col_idx] !=0 &&
+                    mc.allc[row_idx, col_idx] != 0 &&
+                    entry[col_idx] != mc.allc[row_idx, col_idx]
+                )
+                    found = false
                 end
             end
-        end
-        if tuple_cnt == match_cnt
-            for col = 1:param_cnt
-                if mc.allc[row_idx, col_idx] > 0
-                    entry[col_idx] = mc.allc[row_idx, col_idx]
-                end
+            if found
+                hist[mc.allc[row_idx, param_idx]] += 1
             end
-        end
+        end  # No matches unless the particular column is nonzero.
     end
-    entry
+    hist
 end
 
 
@@ -289,9 +292,12 @@ function add_coverage!(mc::MatrixCoverage, entry)
         for match_idx in 1:param_cnt
             if mc.allc[row_idx, match_idx] != 0
                 n_way += 1
-            end
-            if mc.allc[row_idx, match_idx] == entry[match_idx]
-                match_cnt += 1
+                if (
+                    entry[match_idx] != 0 &&
+                    mc.allc[row_idx, match_idx] == entry[match_idx]
+                )
+                    match_cnt += 1
+                end
             end
         end
         if match_cnt == n_way

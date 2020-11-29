@@ -60,6 +60,18 @@ for mmm_case in mmm_cases
     @test res == mmm_case[3]
 end
 
+wider = [
+    1 1 0; 1 2 0; 2 1 0;
+    2 2 0; 3 1 0; 3 2 0
+]
+arity4 = [3, 2, 2]
+allc4 = [
+    1 0 1; 2 0 1; 3 0 1; 0 1 1; 0 2 1;
+    1 0 2; 2 0 2; 3 0 2; 0 1 2; 0 2 2
+]
+mc4 = UnitTestDesign.MatrixCoverage(allc4, size(allc4, 1), arity4)
+mm4 = UnitTestDesign.matches_from_missing(mc4, wider[1, :], 3)
+@test mm4 == [2, 2]
 
 ### first_match_for_parameter(mc, param_idx)
 arity = [3, 2, 2, 2]
@@ -116,7 +128,9 @@ res3 = UnitTestDesign.fill_consistent_matches(mc3, [0, 2, 0])
 # reordering due to swapping. Very much an implementation test.
 ac_cases = [
     [[1 1 0; 1 2 0; 1 0 1; 1 0 2], 4, 2, [1, 1, 1], 2, [1 0 2; 1 2 0; 1 1 0; 1 0 1]],
-    [[1 1 0; 1 2 0; 1 0 1; 1 0 2], 3, 2, [1, 1, 1], 1, [1 2 0; 1 1 0; 1 0 1; 1 0 2]]
+    [[1 1 0; 1 2 0; 1 0 1; 1 0 2], 3, 2, [1, 1, 1], 1, [1 2 0; 1 1 0; 1 0 1; 1 0 2]],
+    [[1 0 2; 0 2 2; 0 1 2], 1, 2, [1, 0, 2], 0, [1 0 2; 0 2 2; 0 1 2]],
+    [[1 0 2; 0 2 2; 0 1 2], 1, 2, [1, 0, 1], 1, [1 0 2; 0 2 2; 0 1 2]]
 ]
 for ac_case in ac_cases
     mc = UnitTestDesign.MatrixCoverage(ac_case[1], ac_case[2], [2, 3, 2])
