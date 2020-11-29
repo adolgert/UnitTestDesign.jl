@@ -15,8 +15,8 @@ for cbp_case in cbp_cases
 end
 
 
-mc = UnitTestDesign.one_parameter_combinations_matrix([2, 2, 3], 2)
-@test mc.remain == 4 * 3
+mc_opcm = UnitTestDesign.one_parameter_combinations_matrix([2, 2, 3], 2)
+@test mc_opcm.remain == 4 * 3
 
 
 ### coverage_by_value
@@ -76,12 +76,12 @@ mm4 = UnitTestDesign.matches_from_missing(mc4, wider[1, :], 3)
 ### first_match_for_parameter(mc, param_idx)
 arity = [3, 2, 2, 2]
 mat = [0 1 2 0; 2 2 1 0]
-mc = UnitTestDesign.MatrixCoverage(mat, size(mat, 1), arity)
-first = UnitTestDesign.first_match_for_parameter(mc, 3)
+mcfm = UnitTestDesign.MatrixCoverage(mat, size(mat, 1), arity)
+first = UnitTestDesign.first_match_for_parameter(mcfm, 3)
 @test first == [0, 1, 2, 0]
-blank = UnitTestDesign.first_match_for_parameter(mc, 1)
+blank = UnitTestDesign.first_match_for_parameter(mcfm, 1)
 @test blank == [2, 2, 1, 0]
-lack = UnitTestDesign.first_match_for_parameter(mc, 4)
+lack = UnitTestDesign.first_match_for_parameter(mcfm, 4)
 @test lack == [0, 0, 0, 0]
 
 
@@ -133,10 +133,10 @@ ac_cases = [
     [[1 0 2; 0 2 2; 0 1 2], 1, 2, [1, 0, 1], 1, [1 0 2; 0 2 2; 0 1 2]]
 ]
 for ac_case in ac_cases
-    mc = UnitTestDesign.MatrixCoverage(ac_case[1], ac_case[2], [2, 3, 2])
-    UnitTestDesign.add_coverage!(mc, ac_case[4])
-    @test mc.remain == ac_case[5]
-    @test mc.allc == ac_case[6]
+    mcac = UnitTestDesign.MatrixCoverage(ac_case[1], ac_case[2], [2, 3, 2])
+    UnitTestDesign.add_coverage!(mcac, ac_case[4])
+    @test mcac.remain == ac_case[5]
+    @test mcac.allc == ac_case[6]
 end
 
 
@@ -149,8 +149,8 @@ ms_cases = [
     [[1 1 0; 1 2 0; 0 2 1; 0 1 3], 3, 2, [1,1,3], 1]
 ]
 for ms_case in ms_cases
-    mc = UnitTestDesign.MatrixCoverage(ms_case[1], ms_case[2], [4, 4, 4])
-    cnt = UnitTestDesign.match_score(mc, ms_case[4])
+    mc_ms = UnitTestDesign.MatrixCoverage(ms_case[1], ms_case[2], [4, 4, 4])
+    cnt = UnitTestDesign.match_score(mc_ms, ms_case[4])
     @test cnt == ms_case[5]
 end
 
@@ -163,9 +163,9 @@ rc_cases = [
     [[1 1 1; 1 1 2; 1 2 1; 1 2 2], (x -> x[2] < x[3]), [1 1 1; 1 2 1; 1 2 2]]
 ]
 for rc_case in rc_cases
-    mc = UnitTestDesign.MatrixCoverage(rc_case[1], 4, [2, 3, 2])
-    UnitTestDesign.remove_combinations!(mc, rc_case[2])
-    @test mc.allc == rc_case[3]
+    mc_rc = UnitTestDesign.MatrixCoverage(rc_case[1], 4, [2, 3, 2])
+    UnitTestDesign.remove_combinations!(mc_rc, rc_case[2])
+    @test mc_rc.allc == rc_case[3]
 end
 
 

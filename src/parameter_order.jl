@@ -35,7 +35,10 @@ function ipog(arity, n_way)
         wider = zeros(eltype(arity), size(test_set, 1), param_idx)
         wider[:, 1:(param_idx - 1)] .= test_set
 
+        # Seed test cases by adding them once params are covered and not double-covering.
+        # Make mixed strength here, once all params at a strength are covered.
         allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+        # Exclude unwanted by stripping them from the allc combinations.
         for set_row_idx in 1:size(wider, 1)
             # This needs to account for previous entries that aren't set.
             match_hist = matches_from_missing(allc, wider[set_row_idx, :], param_idx)
@@ -74,7 +77,7 @@ function ipog(arity, n_way)
             test_set[size(wider, 1) + long_idx, :] .= add_entries[long_idx]
         end
     end
-    
+
     # We could have zero values at the end, so fill them in with the
     # least-used values.
     hist = zeros(Int, param_cnt, maximum(arity))
