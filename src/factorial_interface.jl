@@ -1,15 +1,24 @@
-## full_factorial
 ## all_values
 ## all_pairs
 ## all_triples
 ## all_n_tuples
-## all_values_excursion
-## all_pairs_excursion
-## all_n_tuples_excursion
+## values_excursion
+## pairs_excursion
+## n_tuples_excursion
+## full_factorial
+## driven_factorial
 
 
 """
 In-parameter-order General (IPOG).
+
+This algorithm generates test cases quickly. It will generate
+tuples of any order. It always generates the same set of test
+cases for the same set of input values.
+
+Lei, Yu, Raghu Kacker, D. Richard Kuhn, Vadim Okun, and James Lawrence.
+2008. “IPOG/IPOG-D: Efficient Test Generation for Multi-Way Combinatorial
+Testing.” Software Testing, Verification & Reliability 18 (3): 125–48.
 """
 struct IPOG
 end
@@ -17,12 +26,22 @@ end
 
 """
 Greedy Non-deterministic (GND).
+
+This algorithm searches for test cases. It will generate tuples
+of any order. It generates a different set every time it is invoked.
+
+The `rng::Random.AbstractRNG` option is a random number
+generator. Set this if you want to generate the same test cases
+twice in a row. The `M::Int` option is the number of times it should
+create a candidate test case, each time it creates a candidate. The
+default is 50. Raising this number could improve test cases
+and slow generation.
 """
 struct GND
     rng::Random.AbstractRNG
     M::Int
 
-    function GND(;rng=nothing, M = 50)
+    function GND(; rng = nothing, M = 50)
         if rng === nothing
             new(Random.MersenneTwister(), M)
         else
@@ -84,6 +103,31 @@ function generate_tuples(engine::GND, n_way, parameters; Counter = Int, kwargs..
 end
 
 
+"""
+    all_tuples(parameters...; n_way, engine, disallow, seeds, wayness, Counter)
+
+Given a tuple of parameters, generate all test cases that cover all `n_way` combinations
+of those parameters.
+
+# Arguments
+
+- `engine=IPOG()`: The `engine` is `IPOG()` or `GND()`.
+- `disallow=nothing`: The disallow function is a function of the parameters that
+  returns `true` when that combination should be forbidden.
+- `seeds=[]`: is a list of test cases that must be included among those
+generated.
+- `wayness` is a dictionary that specifies subsets of parameters for
+  which to increase the `n_way` combinations. For instance, if the combinations are
+  two-way, and you want the third-sixth parameters to be three-way covered, use,
+  `wayness = Dict(3 => [[3, 4, 5, 6]])`.
+- `Counter=Int`The Counter is an integer type to use for
+the computation. It must be large enough to hold the integer number of the parameters.
+
+# Examples
+```
+all_tuples([1, 2, 3], ["a", "b", "c"], [true, false]; n_way = 2)
+```
+"""
 function all_tuples(
     parameters...;
     n_way = 2, engine = IPOG(), disallow = nothing, seeds = [], wayness = Dict{Int,Array{Array{Int,1},1}}(), Counter = Int
@@ -93,16 +137,41 @@ function all_tuples(
 end
 
 
+"""
+    all_values(parameters...; kwargs...)
+
+Ensure that the test cases include every value of every parameter
+at least once.
+
+See also: [`all_tuples`](@ref)
+"""
 function all_values(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 1, kwargs...)
 end
 
 
+"""
+    all_pairs(parameters...; kwargs...)
+
+Ensure that the returned test cases include every pair of
+parameters at least once.
+
+# Examples
+```
+all_pairs([1, 2, 3], ["a", "b", "c"], [true, false])
+```
+"""
 function all_pairs(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 2, kwargs...)
 end
 
 
+"""
+    all_triples(parameters...; kwargs...)
+
+Ensure that the returned test cases include every combination
+of three parameters at least once.
+"""
 function all_triples(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 3, kwargs...)
 end
