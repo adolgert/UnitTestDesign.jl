@@ -13,9 +13,15 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Features" => "features.md",
+        "Usage" => "man/usage.md",
+        "Reference" => "reference.md",
+        "Contributing" => "contributing.md"
     ],
 )
 
 deploydocs(;
+    devbranch = "main",
     repo="github.com/adolgert/UnitTestDesign.jl",
+    deploy_config=Documenter.GitHubActions()
 )
