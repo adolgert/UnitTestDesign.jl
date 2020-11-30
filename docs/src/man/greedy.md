@@ -8,5 +8,3 @@ or even every possible value of each parameter.
 The method constructs a list of every tuple that must be tested. Then
 it uses weighted random number generation to construct a complete
 set of parameters that includes as many of those tuples as possible.
-This is kind of like AETG, but the AETG algorithm isn't clear
-from papers, so I went with something.
