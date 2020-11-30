@@ -17,5 +17,7 @@ makedocs(;
 )
 
 deploydocs(;
+    devbranch = "main",
     repo="github.com/adolgert/UnitTestDesign.jl",
+    deploy_config=Documenter.GitHubActions()
 )
