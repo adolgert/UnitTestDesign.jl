@@ -3,7 +3,7 @@
 using Combinatorics: combinations
 
 """
-total_combinations(arity, n_way)
+    total_combinations(arity, n_way)
 
 Given an array of the number of values for each parameter and the
 level of coverage, return the number of n-tuples required for complete
@@ -16,7 +16,7 @@ end
 
 
 """
-next_multiplicative!(values, arity)
+    next_multiplicative!(values, arity)
 
 Given a set of values for parameters, this returns the next possible
 value. When it reaches the end, it cycles back to the start. The first
@@ -37,7 +37,7 @@ end
 
 
 """
-all_combinations(arity, n_way)
+    all_combinations(arity, n_way)
 
 This represents possible coverage as a matrix, one column per parameter,
 zero if not used. `arity` is a list of the number of values for each parameter,
