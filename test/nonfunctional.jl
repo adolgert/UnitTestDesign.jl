@@ -10,7 +10,7 @@ using DataFrames
 import Random: MersenneTwister
 import StatsBase: trim, trimvar, winsor, mean
 
-function ipog_extra(arity, n_way, M, rng)
+function ipog_extra(arity, n_way, M = nothing, rng = nothing)
     size(UnitTestDesign.ipog(arity, n_way), 2)
 end
 
@@ -58,6 +58,35 @@ end
 # fut is the function-under-test.
 # M is a parameter for the greedy algorithm.
 cases = DataFrame[]
+
+# These tests come from comparison with
+# Calvagna, A., and A. Gargantini. 2009. “IPO-S: Incremental Generation of
+# Combinatorial Interaction Test Data Based on Symmetries of Covering Arrays.”
+# In 2009 International Conference on Software Testing, Verification, and
+# Validation Workshops, 10–18.
+N = 10
+calvagna_table_3 = DataFrame(
+    n = [10i for i in 1:N],
+    r = fill(4, N),
+    wayness = fill(2, N),
+    cases = [31, 34, 41, 42, 48, 48, 51, 51, 51, 53]
+)
+N = 6
+calvagna_table4 = DataFrame(
+    n = fill(10, N),
+    r = [5i for i in 1:N],
+    wayness = fill(2, N),
+    cases = [47, 169, 361, 618, 956, 1355]
+)
+N = 5
+calvagna_table4 = DataFrame(
+    n = fill(3, N),
+    r = [3, 4, 5, 6, 7],
+    wayness = fill(2, N)
+    cases = [9, 9, 9, 9, 10, 9]
+)
+
+
 N = 10
 push!(cases, DataFrame(
     n = [10i for i in 1:N],
@@ -102,6 +131,67 @@ push!(cases, DataFrame(
     fut = fill(:greedy, N),
     M = fill(10, N)
 ))
+push!(cases, DataFrame(
+    n = [10i for i in 1:N],
+    r = fill(4, N),
+    wayness = fill(2, N),
+    k = fill(Int8, N),  # Using Int8 for reduced memory consumption.
+    duration = zeros(N),
+    duration_max = zeros(N),
+    mbytes = zeros(Float64, N),
+    mbytes_max = zeros(Float64, N),
+    cases = zeros(Int, N),
+    cases_max = zeros(Int, N),
+    fut = fill(:greedy, N),
+    M = fill(10, N)
+))
+# Add tests from Lei, Yu, Raghu Kacker, D. Richard Kuhn, Vadim Okun,
+# and James Lawrence. 2008. “IPOG/IPOG-D: Efficient Test Generation
+# for Multi-Way Combinatorial Testing.” Software Testing, Verification
+# & Reliability 18 (3): 125–48.
+N = 4
+lei_table_1 = DataFrame(
+    n = fill(15, N),
+    r = fill(4, N),
+    wayness = [3, 4, 5, 6],
+    cases = [181, 924, 4519, 20384],
+    time = [0.56, 16.57, 230, 2152]
+)
+N = 10
+lei_table_2 = DataFrame(
+    n = 11:20,
+    r = fill(4, N),
+    wayness = fill(5, N),
+    cases = [3287, 3703, 4001, 4260, 4519, 4787, 5018, 5245, 5471, 5685],
+    time = [23.3, 44, 80, 139, 230, 368, 565, 839, 1206, 1739]
+)
+N = 6
+lei_table_3 = DataFrame(
+    n = fill(15, N),
+    r = 2:7,
+    wayness = fill(5, N),
+    cases = [134, 1123, 4531, 15095, 37748, 81814],
+    time = [4.08, 48, 234, 997, 3273, 9040]
+)
+
+
+# Test 1: 15 4-value parameters
+N = 2
+push!(cases, DataFrame(
+    n = fill(15, N),
+    r = fill(4, N),
+    wayness = 2:(2 + N - 1),
+    k = fill(Int, N),
+    duration = zeros(N),
+    duration_max = zeros(N),
+    mbytes = zeros(Float64, N),
+    mbytes_max = zeros(Float64, N),
+    cases = zeros(Int, N),
+    cases_max = zeros(Int, N),
+    fut = fill(:ipog, N),
+    M = fill(0, N)
+))
+
 
 df = vcat(cases...)
 rng = MersenneTwister(947234)
