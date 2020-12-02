@@ -1,4 +1,97 @@
 """
+    choose_last_parameter!(taller, arity, n_way)
+
+Given a test set where the first k-1 parameters are chosen and the last parameter
+has not been chosen, this fills in the last parameters for each test case.
+"""
+function choose_last_parameter!(taller, arity, n_way)
+    param_idx  = size(taller, 1)
+    # Seed test cases by adding them once params are covered and not double-covering.
+    # Make mixed strength here, once all params at a strength are covered.
+    allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+    # Exclude unwanted by stripping them from the allc combinations.
+    for set_col_idx in 1:size(taller, 2)
+        # This needs to account for previous entries that aren't set.
+        match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx)
+        if (any(match_hist .> 0))
+            # The argmax tie-breaks in a consistent manner.
+            taller[param_idx, set_col_idx] = argmax(match_hist)
+            add_coverage!(allc, taller[:, set_col_idx])
+        end  # else don't set this entry by leaving it zero.
+    end
+    allc
+end
+
+
+"""
+The given test cases have missing values, which are zeros.
+This fills in missing values anywhere they cover tuples.
+"""
+function fill_missing_test_set_values!(taller, allc)
+    param_idx  = size(taller, 1)
+    for missing_col_idx in 1:size(taller, 2)
+        nonzero = sum(taller[1:(param_idx - 1), missing_col_idx] .> 0)
+        if nonzero < param_idx - 1
+            # The found_values has what format?
+            found_entry = fill_consistent_matches(allc, taller[:, missing_col_idx])
+            remain_zero = sum(found_entry .> 0)
+            if remain_zero < nonzero
+                taller[:, missing_col_idx] .= found_entry
+                add_coverage!(allc, found_entry)
+            end  # else nothing found for this row.
+        end
+    end
+end
+
+
+"""
+If not all tuples are covered by a test set, this creates new test cases
+to cover all remaining tuples.
+"""
+function cover_remaining_by_creating_cases(allc)
+    param_idx = parameter_cnt(allc)
+    add_entries = Array{Array{eltype(allc),1},1}()
+    while remaining_uncovered(allc) > 0
+        # add a new row. Fill with necessary tuples.
+        entry = first_match_for_parameter(allc, param_idx)
+        filled = fill_consistent_matches(allc, entry)
+        add_coverage!(allc, filled)
+        push!(add_entries, filled)
+    end
+    add_entries
+end
+
+
+"""
+As a finishing step on a set of test cases, this fills in missing values
+which aren't needed to cover the tuples but can increase coverage
+of higher tuples.
+"""
+function fill_remaining_missing_values!(test_set, arity)
+    param_cnt = size(test_set, 1)
+    # We could have zero values at the end, so fill them in with the
+    # least-used values.
+    hist = zeros(Int, param_cnt, maximum(arity))
+    for hist_entry in 1:size(test_set, 2)
+        for hist_param in 1:size(test_set, 1)
+            if test_set[hist_param, hist_entry] > 0
+                hist[hist_param, test_set[hist_param, hist_entry]] += 1
+            end
+        end
+    end
+    for fill_col in 1:size(test_set, 2)
+        for fill_param in 1:size(test_set, 1)
+            if test_set[fill_param, fill_col] == 0
+                fill_val = argmin(hist[fill_param, 1:arity[fill_param]])
+                test_set[fill_param, fill_col] = fill_val
+                hist[fill_param, fill_val] += 1
+            end
+        end
+    end
+end
+
+
+"""
     ipog(arity, n_way)
 
 The `arity` is an integer array of the number of possible values each
@@ -35,41 +128,11 @@ function ipog(arity, n_way)
         taller = zeros(eltype(arity), param_idx, size(test_set, 2))
         taller[1:(param_idx - 1), :] .= test_set
 
-        # Seed test cases by adding them once params are covered and not double-covering.
-        # Make mixed strength here, once all params at a strength are covered.
-        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
-        # Exclude unwanted by stripping them from the allc combinations.
-        for set_col_idx in 1:size(taller, 2)
-            # This needs to account for previous entries that aren't set.
-            match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx)
-            if (any(match_hist .> 0))
-                # The argmax tie-breaks in a consistent manner.
-                taller[param_idx, set_col_idx] = argmax(match_hist)
-                add_coverage!(allc, taller[:, set_col_idx])
-            end  # else don't set this entry by leaving it zero.
-        end
+        allc = choose_last_parameter!(taller, arity, n_way)
 
-        for missing_col_idx in 1:size(taller, 2)
-            nonzero = sum(taller[1:(param_idx - 1), missing_col_idx] .> 0)
-            if nonzero < param_idx - 1
-                # The found_values has what format?
-                found_entry = fill_consistent_matches(allc, taller[:, missing_col_idx])
-                remain_zero = sum(found_entry .> 0)
-                if remain_zero < nonzero
-                    taller[:, missing_col_idx] .= found_entry
-                    add_coverage!(allc, found_entry)
-                end  # else nothing found for this row.
-            end
-        end
+        fill_missing_test_set_values!(taller, allc)
 
-        add_entries = Array{Array{eltype(allc),1},1}()
-        while remaining_uncovered(allc) > 0
-            # add a new row. Fill with necessary tuples.
-            entry = first_match_for_parameter(allc, param_idx)
-            filled = fill_consistent_matches(allc, entry)
-            add_coverage!(allc, filled)
-            push!(add_entries, filled)
-        end
+        add_entries = cover_remaining_by_creating_cases(allc)
 
         test_set = zeros(eltype(arity), param_idx, size(taller, 2) + length(add_entries))
         test_set[:, 1:size(taller, 2)] .= taller
@@ -78,25 +141,8 @@ function ipog(arity, n_way)
         end
     end
 
-    # We could have zero values at the end, so fill them in with the
-    # least-used values.
-    hist = zeros(Int, param_cnt, maximum(arity))
-    for hist_entry in 1:size(test_set, 2)
-        for hist_param in 1:size(test_set, 1)
-            if test_set[hist_param, hist_entry] > 0
-                hist[hist_param, test_set[hist_param, hist_entry]] += 1
-            end
-        end
-    end
-    for fill_col in 1:size(test_set, 2)
-        for fill_param in 1:size(test_set, 1)
-            if test_set[fill_param, fill_col] == 0
-                fill_val = argmin(hist[fill_param, 1:arity[fill_param]])
-                test_set[fill_param, fill_col] = fill_val
-                hist[fill_param, fill_val] += 1
-            end
-        end
-    end
+    fill_remaining_missing_values!(test_set, arity)
+
     # reorder test columns with `original_order`.
     test_set[original_order, :]
 end
