@@ -60,6 +60,27 @@ for mmm_case in mmm_cases
     @test res == mmm_case[3]
 end
 
+# Let's understand this most_matches_existing function by assuming,
+# at this point, that it obeys the condition that the given parameter
+# index must be nonzero. Let's always put that last. And let's just make
+# one row to cover or not cover. Test for yes or no.
+mm2_arity = [2, 2, 2, 2]
+# test is a) a tuple to cover, b) an existing array. The param_idx is the last entry,
+# so that's always zero for the "existing" array.
+mm2_cases = [
+    [[1; 1; 0; 1], [1, 1, 0, 0], 1],
+    [[1; 1; 0; 1], [1, 0, 0, 0], 1],
+    [[1; 1; 0; 1], [0, 0, 0, 0], 1],
+    [[1; 1; 0; 1], [1, 0, 2, 0], 0],  # This could be a 1. This is subtle. Must match all existing.
+    [[1; 1; 0; 1], [1, 1, 2, 0], 0]   # again, compatible but not exact.
+]
+for mm2_case in mm2_cases
+    mc = UnitTestDesign.MatrixCoverage(reshape(mm2_case[1], length(mm2_arity), 1), 1, mm2_arity)
+    res = UnitTestDesign.most_matches_existing(mc, mm2_case[2], length(mm2_arity))
+    @test res == [mm2_case[3], 0]
+end
+
+
 wider = [
     1 1 0; 1 2 0; 2 1 0;
     2 2 0; 3 1 0; 3 2 0

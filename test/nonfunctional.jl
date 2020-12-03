@@ -27,7 +27,7 @@ function single_test!(test_case, rng)
     arity = zeros(test_case.k, test_case.n)
     fill!(arity, test_case.r)
     callee = fut_map[test_case.fut]
-    @timed callee(arity, wayness, test_case.M, rng)
+    @timed callee(arity, test_case.wayness, test_case.M, rng)
 end
 
 
@@ -79,12 +79,12 @@ calvagna_table4 = DataFrame(
     cases = [47, 169, 361, 618, 956, 1355]
 )
 N = 5
-calvagna_table4 = DataFrame(
-    n = fill(3, N),
-    r = [3, 4, 5, 6, 7],
-    wayness = fill(2, N)
-    cases = [9, 9, 9, 9, 10, 9]
-)
+# calvagna_table4 = DataFrame(
+#     n = fill(3, N),
+#     r = [3, 4, 5, 6, 7],
+#     wayness = fill(2, N),
+#     cases = [9, 9, 9, 9, 10, 9]
+# )
 
 
 N = 10
@@ -195,7 +195,7 @@ push!(cases, DataFrame(
 
 df = vcat(cases...)
 rng = MersenneTwister(947234)
-test_against_cases!(df, 30, rng)
+test_against_cases!(df, 10, rng)
 df
 
 CSV.write("nonfunctional_cases_$(today()).csv", df)

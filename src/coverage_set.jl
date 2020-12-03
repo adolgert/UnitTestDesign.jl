@@ -56,6 +56,7 @@ function all_combinations_matrix(arity, n_way)
     MatrixCoverage(allc, remain, arity)
 end
 
+
 """
     one_parameter_combinations(arity, n_way)
 
@@ -157,6 +158,11 @@ the next parameter, chosen by param_idx, which value of param_idx, between
 how many uncovered tuples could be covered, given the existing choices
 and a particular value of this parameter.
 
+This returns all tuples that the existing case could _exactly_ cover
+if it didn't have missing values. That means the existing vector
+either has the same number of entries as the tuple or it has
+fewer entries than the tuple.
+
 A value of the `param_idx` parameter matches with a tuple if its
 existing choices match at least some part of the tuple and don't
 disagree with any part of the tuple.
@@ -193,6 +199,35 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
 end
 
 
+function case_compatible_with_tuple(case, tuple)
+    found = true
+    for param_idx in 1:length(tuple)
+        if (
+            case[param_idx] !=0 &&
+            tuple[param_idx] != 0 &&
+            case[param_idx] != tuple[param_idx]
+        )
+            found = false
+        end
+    end
+    found
+end
+
+
+function case_covers_tuple(case, tuple)
+    found = true
+    for param_idx in 1:length(tuple)
+        if (
+            tuple[param_idx] != 0 &&
+            case[param_idx] != tuple[param_idx]
+        )
+            found = false
+        end
+    end
+    found
+end
+
+
 """
 Given an entry in the test set that has missing values, which are
 zeros, find any matches that could be created by setting those
@@ -203,17 +238,8 @@ function matches_from_missing(mc::MatrixCoverage, entry, missing_param)
     hist = zeros(eltype(mc), mc.arity[missing_param])
     for tuple_idx in 1:mc.remain
         if mc.allc[missing_param, tuple_idx] != 0
-            found = true
-            for param_idx in 1:param_cnt
-                if (
-                    entry[param_idx] !=0 &&
-                    mc.allc[param_idx, tuple_idx] != 0 &&
-                    entry[param_idx] != mc.allc[param_idx, tuple_idx]
-                )
-                    found = false
-                end
-            end
-            if found
+            # case_covers_tuple - variation.
+            if case_compatible_with_tuple(entry, mc.allc[:, tuple_idx])
                 hist[mc.allc[missing_param, tuple_idx]] += 1
             end
         end  # No matches unless the particular column is nonzero.
@@ -246,14 +272,7 @@ that matches the existing values, in any order.
 function fill_consistent_matches(mc::MatrixCoverage, entry)
     param_cnt = parameter_cnt(mc)
     for col_idx in 1:mc.remain
-        found = true
-        for param_idx in 1:param_cnt
-            v = mc.allc[param_idx, col_idx]
-            if entry[param_idx] != 0 && v != 0 && v != entry[param_idx]
-                found = false
-            end
-        end
-        if found
+        if case_compatible_with_tuple(entry, mc.allc[:, col_idx])
             for copy_idx in 1:param_cnt
                 if mc.allc[copy_idx, col_idx] != 0
                     entry[copy_idx] = mc.allc[copy_idx, col_idx]
@@ -287,20 +306,7 @@ function add_coverage!(mc::MatrixCoverage, entry)
     cover_cnt = 0
     # Find matches before reordering them to the end.
     for col_idx in 1:mc.remain
-        match_cnt = 0
-        n_way = 0
-        for match_idx in 1:param_cnt
-            if mc.allc[match_idx, col_idx] != 0
-                n_way += 1
-                if (
-                    entry[match_idx] != 0 &&
-                    mc.allc[match_idx, col_idx] == entry[match_idx]
-                )
-                    match_cnt += 1
-                end
-            end
-        end
-        if match_cnt == n_way
+        if case_covers_tuple(entry, mc.allc[:, col_idx])
             cover_cnt += 1
             covers[cover_cnt] = col_idx
         end
