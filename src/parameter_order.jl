@@ -146,3 +146,44 @@ function ipog(arity, n_way)
     # reorder test columns with `original_order`.
     test_set[original_order, :]
 end
+
+
+function ipog_instrumented(arity, n_way)
+    nonincreasing = sortperm(arity, rev = true)
+    original_arity = arity
+    arity = arity[nonincreasing]
+    original_order = sortperm(nonincreasing)
+
+    param_cnt = length(arity)
+    widen = zeros(Int, param_cnt)
+    fillz = zeros(Int, param_cnt)
+    cover = zeros(Int, param_cnt)
+    # Setup by taking first n_way parameters.
+    # This is a 2D array.
+    test_set = all_combinations(arity[1:n_way], n_way)
+
+    for param_idx in (n_way + 1):param_cnt
+        taller = zeros(eltype(arity), param_idx, size(test_set, 2))
+        taller[1:(param_idx - 1), :] .= test_set
+
+        allc = choose_last_parameter!(taller, arity, n_way)
+        widen[param_idx] = size(allc.allc, 2) - allc.remain
+
+        fill_missing_test_set_values!(taller, allc)
+        fillz[param_idx] = size(allc.allc, 2) - allc.remain - widen[param_idx]
+
+        add_entries = cover_remaining_by_creating_cases(allc)
+        cover[param_idx] = length(add_entries)
+
+        test_set = zeros(eltype(arity), param_idx, size(taller, 2) + length(add_entries))
+        test_set[:, 1:size(taller, 2)] .= taller
+        for long_idx in 1:length(add_entries)
+            test_set[:, size(taller, 2) + long_idx] .= add_entries[long_idx]
+        end
+    end
+
+    # remove the part to fill missing values at the end.
+
+    # reorder test columns with `original_order`.
+    (test_set[original_order, :], widen, fillz, cover)
+end
