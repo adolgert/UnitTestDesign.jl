@@ -4,7 +4,7 @@
 Given a test set where the first k-1 parameters are chosen and the last parameter
 has not been chosen, this fills in the last parameters for each test case.
 """
-function choose_last_parameter!(taller, arity, n_way, matcher = case_compatible_with_tuple)
+function choose_last_parameter!(taller, arity, n_way, matcher = case_partial_cover)
     param_idx  = size(taller, 1)
     # Seed test cases by adding them once params are covered and not double-covering.
     # Make mixed strength here, once all params at a strength are covered.
@@ -77,17 +77,20 @@ end
 
 
 """
-Don't loop over tests. Loop over remaining tuples. For each tuple,
-loop over tests where that tuple could go.
+Loop over remaining tuples instead of looping over each test.
+For each tuple, loop over tests where that tuple could go. If that fails,
+add the tuple at the end as its own test.
 """
 function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_tuple)
     add_tests = Array{eltype(allc), 1}[]
     for find_cover_idx in allc.remain:-1:1
-        tuple = allc.allc[:, allc.remain]
+        tuple = allc.allc[:, find_cover_idx]
         unmatched = true
-        for test_idx in 1:size(test_set, 1)
-            if matcher(test_set[:, test_idx], tuple)
-                test_set[:, test_idx] = put_tuple_in_case(tuple, test_set[:, test_idx])
+        for test_idx in 1:size(test_set, 2)
+            test_case = test_set[:, test_idx]
+            matches = matcher(test_case, tuple)
+            if matches
+                test_set[:, test_idx] = put_tuple_in_case(tuple, test_case)
                 unmatched = false
                 break
             end
@@ -179,15 +182,7 @@ function ipog(arity, n_way)
 
         allc = choose_last_parameter!(taller, arity, n_way)
 
-        fill_missing_test_set_values!(taller, allc)
-
-        add_entries = cover_remaining_by_creating_cases(allc)
-
-        test_set = zeros(eltype(arity), param_idx, size(taller, 2) + length(add_entries))
-        test_set[:, 1:size(taller, 2)] .= taller
-        for long_idx in 1:length(add_entries)
-            test_set[:, size(taller, 2) + long_idx] .= add_entries[long_idx]
-        end
+        test_set = insert_tuple_into_tests(taller, allc)
     end
 
     fill_remaining_missing_values!(test_set, arity)
@@ -229,6 +224,37 @@ function ipog_instrumented(arity, n_way, strategy)
         for long_idx in 1:length(add_entries)
             test_set[:, size(taller, 2) + long_idx] .= add_entries[long_idx]
         end
+    end
+
+    # remove the part to fill missing values at the end.
+
+    # reorder test columns with `original_order`.
+    (test_set[original_order, :], widen, fillz, cover)
+end
+
+
+function ipog_bytuple_instrumented(arity, n_way, strategy)
+    nonincreasing = sortperm(arity, rev = true)
+    original_arity = arity
+    arity = arity[nonincreasing]
+    original_order = sortperm(nonincreasing)
+
+    param_cnt = length(arity)
+    widen = zeros(Int, param_cnt)
+    fillz = zeros(Int, param_cnt)
+    cover = zeros(Int, param_cnt)
+    # Setup by taking first n_way parameters.
+    # This is a 2D array.
+    test_set = all_combinations(arity[1:n_way], n_way)
+
+    for param_idx in (n_way + 1):param_cnt
+        taller = zeros(eltype(arity), param_idx, size(test_set, 2))
+        taller[1:(param_idx - 1), :] .= test_set
+
+        allc = choose_last_parameter!(taller, arity, n_way, strategy[:lastparam])
+        widen[param_idx] = size(allc.allc, 2) - allc.remain
+
+        test_set = insert_tuple_into_tests(taller, allc, strategy[:expand])
     end
 
     # remove the part to fill missing values at the end.

@@ -147,7 +147,7 @@ allc = UnitTestDesign.MatrixCoverage(
     3,
     [2, 3, 3]
 )
-insert_tuple_into_tests(test_set, allc)
+UnitTestDesign.insert_tuple_into_tests(test_set, allc)
 
 
 wider = [

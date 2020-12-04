@@ -183,11 +183,10 @@ match_options = [
     UnitTestDesign.case_partial_cover,
     UnitTestDesign.case_covers_tuple
 ]
-opt_cnt = length(match_options)^length(match_options)
+opt_cnt = length(match_options)^3
 opt_res = zeros(Int, 4, opt_cnt)
 for opt_choice in 1:opt_cnt
     strat_idx = digits(opt_choice - 1, base = 3, pad = 3) .+ 1
-    strat_idx = [1, 1, 2]
     if strat_idx[1] != 3
         strategy = Dict((a, match_options[b]) for (a, b) in
             zip([:lastparam, :missingvals, :expand], strat_idx))
@@ -197,3 +196,29 @@ for opt_choice in 1:opt_cnt
     end
 end
 opt_res
+
+
+match_options = [
+    UnitTestDesign.case_compatible_with_tuple,
+    UnitTestDesign.case_partial_cover,
+    UnitTestDesign.case_covers_tuple
+]
+strat_cnt = 2
+opt_cnt = length(match_options)^strat_cnt
+opt_res = zeros(Int, 1 + strat_cnt, opt_cnt)
+for opt_choice in 1:opt_cnt
+    strat_idx = digits(opt_choice - 1, base = 3, pad = strat_cnt) .+ 1
+    if strat_idx[1] != 3
+        strategy = Dict((a, match_options[b]) for (a, b) in
+            zip([:lastparam, :expand], strat_idx))
+
+        ret = UnitTestDesign.ipog_bytuple_instrumented(fill(4, 20), 2, strategy)
+        opt_res[:, opt_choice] = vcat(size(ret[1], 2), strat_idx)
+    end
+end
+opt_res
+
+strat_idx = [2, 1]
+strategy = Dict((a, match_options[b]) for (a, b) in
+    zip([:lastparam, :expand], strat_idx))
+ret = UnitTestDesign.ipog_bytuple_instrumented(fill(4, 30), 2, strategy)
