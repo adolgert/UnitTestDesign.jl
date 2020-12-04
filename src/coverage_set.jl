@@ -198,33 +198,61 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
     hist
 end
 
+"""
+The logic of tuple comparison is oddly complicated.
+We're going to write this out the first round in order to know
+what our tools are.
 
+If you take a case and a tuple to cover, then there are
+five states for any pair of values:
+               case tuple
+    ignores    0    0
+    skips      a    0
+    misses     0    b
+    matches    a == b
+    mismatch   a != b
+
+It's always one of those five. In this language,
+
+covers = all(matches | irrelevant)
+"""
+
+ignores(a, b) = a == 0 && b == 0
+skips(a, b) = a != 0 && b == 0
+misses(a, b) = a == 0 && b != 0
+matches(a, b) = a != 0 && b != 0 && a == b
+mismatch(a, b) = a != 0 && b != 0 && a != b
+
+"""
+Example matches.
+      crossed      incomplete cover
+case  [0 1 0 2]    [1 0 0 3]  [1 1 0 2]
+tuple [1 0 3 0]    [1 1 0 3]  [1 0 0 2]
+"""
 function case_compatible_with_tuple(case, tuple)
-    found = true
-    for param_idx in 1:length(tuple)
-        if (
-            case[param_idx] !=0 &&
-            tuple[param_idx] != 0 &&
-            case[param_idx] != tuple[param_idx]
-        )
-            found = false
-        end
-    end
-    found
+    !any(mismatch(a, b) for (a, b) in zip(case, tuple))
 end
 
 
+"""
+Example matches.
+      incomplete cover
+case  [1 0 0 3]  [1 1 0 2]
+tuple [1 1 0 3]  [1 0 0 2]
+"""
+function case_partial_cover(case, tuple)
+    (sum(matches(a, b) for (a, b) in zip(case, tuple)) > 0 &&
+     !any(mismatch(a, b) for (a, b) in zip(case, tuple)))
+end
+
+
+"""
+Example matches.
+case  [1 1 0 2]
+tuple [1 0 0 2]
+"""
 function case_covers_tuple(case, tuple)
-    found = true
-    for param_idx in 1:length(tuple)
-        if (
-            tuple[param_idx] != 0 &&
-            case[param_idx] != tuple[param_idx]
-        )
-            found = false
-        end
-    end
-    found
+    all(matches(a, b) || skips(a, b) || ignores(a, b) for (a, b) in zip(case, tuple))
 end
 
 
@@ -233,13 +261,13 @@ Given an entry in the test set that has missing values, which are
 zeros, find any matches that could be created by setting those
 missing values. Return a new version of the entry.
 """
-function matches_from_missing(mc::MatrixCoverage, entry, missing_param)
+function matches_from_missing(mc::MatrixCoverage, entry, missing_param, matcher = case_compatible_with_tuple)
     param_cnt = parameter_cnt(mc)
     hist = zeros(eltype(mc), mc.arity[missing_param])
     for tuple_idx in 1:mc.remain
         if mc.allc[missing_param, tuple_idx] != 0
             # case_covers_tuple - variation.
-            if case_compatible_with_tuple(entry, mc.allc[:, tuple_idx])
+            if matcher(entry, mc.allc[:, tuple_idx])
                 hist[mc.allc[missing_param, tuple_idx]] += 1
             end
         end  # No matches unless the particular column is nonzero.
@@ -269,10 +297,10 @@ end
 Given an entry that's partially decided, fill in every covering tuple
 that matches the existing values, in any order.
 """
-function fill_consistent_matches(mc::MatrixCoverage, entry)
+function fill_consistent_matches(mc::MatrixCoverage, entry, matcher = case_compatible_with_tuple)
     param_cnt = parameter_cnt(mc)
     for col_idx in 1:mc.remain
-        if case_compatible_with_tuple(entry, mc.allc[:, col_idx])
+        if matcher(entry, mc.allc[:, col_idx])
             for copy_idx in 1:param_cnt
                 if mc.allc[copy_idx, col_idx] != 0
                     entry[copy_idx] = mc.allc[copy_idx, col_idx]
@@ -334,7 +362,7 @@ If we were to add this entry to the trials, how many uncovered
 n-tuples would it now cover? `allc` is the matrix of n-tuples.
 `row_cnt` is the first set of rows, representing uncovered tuples.
 `n_way` is the length of each tuple. Entry is a set of putative
-paramter values. Returns an integer number of newly-covered tuples.
+parameter values. Returns an integer number of newly-covered tuples.
 
 This is a place to look into alternative algorithms. We could weight
 the match score by increasing the score for greater wayness.

@@ -2,6 +2,55 @@ using Test
 using Random
 using UnitTestDesign
 
+# ensure these little functions are mutually exclusive.
+micro_set = [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1],
+    [1, 2]
+]
+function micro_test(micro_func)
+    [micro_func(a, b) for (a, b) in micro_set]
+end
+@test micro_test(UnitTestDesign.ignores) == [1, 0, 0, 0, 0]
+@test micro_test(UnitTestDesign.skips) == [0, 1, 0, 0, 0]
+@test micro_test(UnitTestDesign.misses) == [0, 0, 1, 0, 0]
+@test micro_test(UnitTestDesign.matches) == [0, 0, 0, 1, 0]
+@test micro_test(UnitTestDesign.mismatch) == [0, 0, 0, 0, 1]
+
+
+### Core comparisons.
+# They will all use the same test suite but will give different answers.
+compare_suite = [
+    # [case, tuple]
+    [[1, 0, 0, 0], [2, 0, 0, 0]],  # mismatch
+    [[3, 0, 4, 0], [3, 0, 4, 0]],  # exact match
+    [[1, 1, 0, 2], [1, 0, 0, 2]],  # cover, partial case
+    [[1, 0, 0, 3], [1, 1, 0, 3]],  # incomplete / partial cover
+    [[0, 1, 0, 2], [1, 0, 3, 0]],  # crossed
+    [[1, 3, 1, 2], [0, 3, 0, 2]]   # cover, complete case
+]
+function cs_test(compare_func)
+    cs_res = zeros(Bool, length(compare_suite))
+    code = 0
+    for cs_idx in 1:length(compare_suite)
+        case = compare_suite[cs_idx][1]
+        tuple = compare_suite[cs_idx][2]
+        cs_res[cs_idx] = compare_func(case, tuple)
+        code <<= 1
+        code |= cs_res[cs_idx]
+    end
+    (cs_res, code)
+end
+# match everything
+@test cs_test(UnitTestDesign.case_compatible_with_tuple)[2] == 31
+cpc_res = cs_test(UnitTestDesign.case_partial_cover)
+@test cpc_res[2] == 29
+cpt_res = cs_test(UnitTestDesign.case_covers_tuple)
+@test cpt_res[2] == 25
+
+
 ### coverage_by_parameter
 cbp_cases = [
     [[0 0 0; 0 0 0; 0 1 0]', 3, [0, 1, 0]],
@@ -81,6 +130,26 @@ for mm2_case in mm2_cases
 end
 
 
+## insert_tuple_into_tests
+test_set = [
+    1 1 1;
+    1 0 3;
+    1 3 2;
+    1 2 2
+]
+allc = UnitTestDesign.MatrixCoverage(
+    [
+        1 2 0
+        1 0 1
+        0 0 3
+        0 0 0
+    ],
+    3,
+    [2, 3, 3]
+)
+insert_tuple_into_tests(test_set, allc)
+
+
 wider = [
     1 1 0; 1 2 0; 2 1 0;
     2 2 0; 3 1 0; 3 2 0
@@ -93,6 +162,9 @@ allc4 = [
 mc4 = UnitTestDesign.MatrixCoverage(collect(allc4), size(allc4, 2), arity4)
 mm4 = UnitTestDesign.matches_from_missing(mc4, wider[1, :], 3)
 @test mm4 == [2, 2]
+
+
+
 
 ### first_match_for_parameter(mc, param_idx)
 arity = [3, 2, 2, 2]

@@ -4,7 +4,7 @@
 Given a test set where the first k-1 parameters are chosen and the last parameter
 has not been chosen, this fills in the last parameters for each test case.
 """
-function choose_last_parameter!(taller, arity, n_way)
+function choose_last_parameter!(taller, arity, n_way, matcher = case_compatible_with_tuple)
     param_idx  = size(taller, 1)
     # Seed test cases by adding them once params are covered and not double-covering.
     # Make mixed strength here, once all params at a strength are covered.
@@ -12,7 +12,7 @@ function choose_last_parameter!(taller, arity, n_way)
     # Exclude unwanted by stripping them from the allc combinations.
     for set_col_idx in 1:size(taller, 2)
         # This needs to account for previous entries that aren't set.
-        match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx)
+        match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx, matcher)
         if (any(match_hist .> 0))
             # The argmax tie-breaks in a consistent manner.
             taller[param_idx, set_col_idx] = argmax(match_hist)
@@ -27,13 +27,13 @@ end
 The given test cases have missing values, which are zeros.
 This fills in missing values anywhere they cover tuples.
 """
-function fill_missing_test_set_values!(taller, allc)
+function fill_missing_test_set_values!(taller, allc, matcher = case_compatible_with_tuple)
     param_idx  = size(taller, 1)
     for missing_col_idx in 1:size(taller, 2)
         nonzero = sum(taller[1:(param_idx - 1), missing_col_idx] .> 0)
         if nonzero < param_idx - 1
             # The found_values has what format?
-            found_entry = fill_consistent_matches(allc, taller[:, missing_col_idx])
+            found_entry = fill_consistent_matches(allc, taller[:, missing_col_idx], matcher)
             remain_zero = sum(found_entry .> 0)
             if remain_zero < nonzero
                 taller[:, missing_col_idx] .= found_entry
@@ -48,17 +48,66 @@ end
 If not all tuples are covered by a test set, this creates new test cases
 to cover all remaining tuples.
 """
-function cover_remaining_by_creating_cases(allc)
+function cover_remaining_by_creating_cases(allc, matcher = case_compatible_with_tuple)
     param_idx = parameter_cnt(allc)
     add_entries = Array{Array{eltype(allc),1},1}()
     while remaining_uncovered(allc) > 0
         # add a new row. Fill with necessary tuples.
         entry = first_match_for_parameter(allc, param_idx)
-        filled = fill_consistent_matches(allc, entry)
+        filled = fill_consistent_matches(allc, entry, matcher)
         add_coverage!(allc, filled)
         push!(add_entries, filled)
     end
     add_entries
+end
+
+
+function put_tuple_in_case(tuple, case)
+    for i in 1:length(tuple)
+        if tuple[i] != 0
+            if case[i] == 0
+                case[i] = tuple[i]
+            elseif case[i] != tuple[i]
+                error("tuple doesn't match case $(tuple), $(case)")
+            end  # else the values match.
+        end
+    end
+    case
+end
+
+
+"""
+Don't loop over tests. Loop over remaining tuples. For each tuple,
+loop over tests where that tuple could go.
+"""
+function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_tuple)
+    add_tests = Array{eltype(allc), 1}[]
+    for find_cover_idx in allc.remain:-1:1
+        tuple = allc.allc[:, allc.remain]
+        unmatched = true
+        for test_idx in 1:size(test_set, 1)
+            if matcher(test_set[:, test_idx], tuple)
+                test_set[:, test_idx] = put_tuple_in_case(tuple, test_set[:, test_idx])
+                unmatched = false
+                break
+            end
+        end
+        if unmatched
+            for tc_idx in 1:length(add_tests)
+                test_case = add_tests[tc_idx]
+                if matcher(test_case, tuple)
+                    add_tests[tc_idx] = put_tuple_in_case(tuple, test_case)
+                    unmatched = false
+                    break
+                end
+            end
+        end
+        if unmatched
+            push!(add_tests, tuple)
+        end
+    end
+    allc.remain = 0
+    hcat(test_set, add_tests...)
 end
 
 
@@ -148,7 +197,7 @@ function ipog(arity, n_way)
 end
 
 
-function ipog_instrumented(arity, n_way)
+function ipog_instrumented(arity, n_way, strategy)
     nonincreasing = sortperm(arity, rev = true)
     original_arity = arity
     arity = arity[nonincreasing]
@@ -166,13 +215,13 @@ function ipog_instrumented(arity, n_way)
         taller = zeros(eltype(arity), param_idx, size(test_set, 2))
         taller[1:(param_idx - 1), :] .= test_set
 
-        allc = choose_last_parameter!(taller, arity, n_way)
+        allc = choose_last_parameter!(taller, arity, n_way, strategy[:lastparam])
         widen[param_idx] = size(allc.allc, 2) - allc.remain
 
-        fill_missing_test_set_values!(taller, allc)
+        fill_missing_test_set_values!(taller, allc, strategy[:missingvals])
         fillz[param_idx] = size(allc.allc, 2) - allc.remain - widen[param_idx]
 
-        add_entries = cover_remaining_by_creating_cases(allc)
+        add_entries = cover_remaining_by_creating_cases(allc, strategy[:expand])
         cover[param_idx] = length(add_entries)
 
         test_set = zeros(eltype(arity), param_idx, size(taller, 2) + length(add_entries))

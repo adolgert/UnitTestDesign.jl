@@ -93,12 +93,6 @@ push!(cases, DataFrame(
     r = fill(4, N),
     wayness = fill(2, N),
     k = fill(Int, N),
-    duration = zeros(N),
-    duration_max = zeros(N),
-    mbytes = zeros(Float64, N),
-    mbytes_max = zeros(Float64, N),
-    cases = zeros(Int, N),
-    cases_max = zeros(Int, N),
     fut = fill(:ipog, N),
     M = fill(0, N)
 ))
@@ -108,12 +102,6 @@ push!(cases, DataFrame(
     r = fill(4, N),
     wayness = fill(2, N),
     k = fill(Int, N),
-    duration = zeros(N),
-    duration_max = zeros(N),
-    mbytes = zeros(Float64, N),
-    mbytes_max = zeros(Float64, N),
-    cases = zeros(Int, N),
-    cases_max = zeros(Int, N),
     fut = fill(:greedy, N),
     M = fill(50, N)
 ))
@@ -122,12 +110,6 @@ push!(cases, DataFrame(
     r = fill(4, N),
     wayness = fill(2, N),
     k = fill(Int, N),
-    duration = zeros(N),
-    duration_max = zeros(N),
-    mbytes = zeros(Float64, N),
-    mbytes_max = zeros(Float64, N),
-    cases = zeros(Int, N),
-    cases_max = zeros(Int, N),
     fut = fill(:greedy, N),
     M = fill(10, N)
 ))
@@ -136,12 +118,6 @@ push!(cases, DataFrame(
     r = fill(4, N),
     wayness = fill(2, N),
     k = fill(Int8, N),  # Using Int8 for reduced memory consumption.
-    duration = zeros(N),
-    duration_max = zeros(N),
-    mbytes = zeros(Float64, N),
-    mbytes_max = zeros(Float64, N),
-    cases = zeros(Int, N),
-    cases_max = zeros(Int, N),
     fut = fill(:greedy, N),
     M = fill(10, N)
 ))
@@ -182,20 +158,42 @@ push!(cases, DataFrame(
     r = fill(4, N),
     wayness = 2:(2 + N - 1),
     k = fill(Int, N),
-    duration = zeros(N),
-    duration_max = zeros(N),
-    mbytes = zeros(Float64, N),
-    mbytes_max = zeros(Float64, N),
-    cases = zeros(Int, N),
-    cases_max = zeros(Int, N),
     fut = fill(:ipog, N),
     M = fill(0, N)
 ))
 
 
 df = vcat(cases...)
+# Add a place in the dataframe to store results.
+df[:, :duration] = zeros(N),
+df[:, :duration_max] = zeros(N),
+df[:, :mbytes] = zeros(Float64, N),
+df[:, :mbytes_max] = zeros(Float64, N),
+df[:, :cases] = zeros(Int, N),
+df[:, :cases_max] = zeros(Int, N),
+
 rng = MersenneTwister(947234)
 test_against_cases!(df, 10, rng)
 df
 
 CSV.write("nonfunctional_cases_$(today()).csv", df)
+
+match_options = [
+    UnitTestDesign.case_compatible_with_tuple,
+    UnitTestDesign.case_partial_cover,
+    UnitTestDesign.case_covers_tuple
+]
+opt_cnt = length(match_options)^length(match_options)
+opt_res = zeros(Int, 4, opt_cnt)
+for opt_choice in 1:opt_cnt
+    strat_idx = digits(opt_choice - 1, base = 3, pad = 3) .+ 1
+    strat_idx = [1, 1, 2]
+    if strat_idx[1] != 3
+        strategy = Dict((a, match_options[b]) for (a, b) in
+            zip([:lastparam, :missingvals, :expand], strat_idx))
+
+        ret = UnitTestDesign.ipog_instrumented(fill(4, 20), 2, strategy)
+        opt_res[:, opt_choice] = vcat(size(ret[1], 2), strat_idx)
+    end
+end
+opt_res
