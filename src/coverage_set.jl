@@ -1,6 +1,58 @@
 #####################################################
 # Set-based coverage.
+#
+# This is an example of another data structure to
+# support generation of test cases. It's a set of sets
+# of the remaining covers.
 #####################################################
+
+mutable struct SetCoverage{T <: Integer}
+    cover::Dict{Tuple{Vararg{T}},Set{Tuple{Vararg{T}}}}
+    arity::Array{T, 1}
+end
+
+
+function SetCoverage(arity::Array{T}, n_way::Integer) where {T <: Integer}
+    param_cnt = length(arity)
+    param_combo = [Tuple(x) for x in combinations(1:param_cnt, n_way)]
+    # The dictionary with keys = parameter indices and dictionary
+    # value is set of tuples of parameter values.
+    cover = Dict(x => Set{NTuple{n_way,T}}() for x in param_combo)
+    SetCoverage{T}(cover, arity)
+end
+
+
+eltype(sc::SetCoverage{T}) where T = T
+remaining(sc::SetCoverage) = sum([length(aset) for aset in values(sc.cover)])
+
+
+function build_all_combinations!(sc::SetCoverage, n_way)
+    allc = all_combinations(sc.arity, n_way)
+    param_cnt = size(allc, 1)
+    for cover_idx in 1:size(allc, 2)
+        acover = allc[:, cover_idx]
+        nonzero = acover .!= 0
+        indices = tuple((1:param_cnt)[nonzero]...)
+        values = tuple(acover[nonzero]...)
+        if indices ∉ keys(sc.cover)
+            sc.cover[indices] = Set{NTuple{n_way, Int}}()
+        end
+        push!(sc.cover[indices], values)
+    end
+end
+
+
+function add_coverage!(sc::SetCoverage, entry::Array)
+    add_cnt = 0  # Record the number removed for visibility.
+    for indices in keys(sc.cover)
+        value = tuple([entry[x] for x in indices]...)
+        if value ∈ sc.cover[indices]
+            pop!(sc.cover[indices], value)
+            add_cnt += 1
+        end
+    end
+    add_cnt
+end
 
 
 """
@@ -20,12 +72,15 @@ function tuples_in_trials(trials, n_way)
     for trial_idx in 1:length(trials)
         entry = trials[trial_idx]
         for params in param_combo
-            push!(seen[params], Tuple(entry[[x for x in params]]))
+            values = entry[[x for x in params]]
+            # values can be missing, in which case this isn't a tuple.
+            if !any(values .== 0)
+                push!(seen[params], Tuple(values))
+            end
         end
     end
     seen
 end
-
 
 
 function coverage_by_tuple(trials, n_way)

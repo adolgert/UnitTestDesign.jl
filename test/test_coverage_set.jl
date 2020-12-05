@@ -1,4 +1,5 @@
-
+using Test
+using UnitTestDesign
 #### Set-based
 
 ### tuples_in_trials
@@ -14,38 +15,13 @@ for tt_case in tt_cases
 end
 
 
+sc = UnitTestDesign.SetCoverage([2,3,2], 2)
+@test UnitTestDesign.remaining(sc) == 0
+@test eltype(sc) == Int64
+UnitTestDesign.build_all_combinations!(sc, 2)
+@test UnitTestDesign.remaining(sc) == 16
+@test UnitTestDesign.add_coverage!(sc, [1, 1, 1]) == 3
+@test UnitTestDesign.remaining(sc) == 13
+@test UnitTestDesign.add_coverage!(sc, [1, 2, 1]) == 2
+@test UnitTestDesign.remaining(sc) == 11
 
-### n_way_coverage
-rng = Random.MersenneTwister(9234724)
-arity = [2,3,2,3]
-n_way = 2
-
-M = 50
-cover = n_way_coverage(arity, n_way, M, rng)
-tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
-@test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
-
-n_way = 3
-cover = n_way_coverage(arity, n_way, M, rng)
-tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
-@test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
-
-cover = n_way_coverage_init(arity, n_way, [], M, rng)
-tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
-@test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
-
-rng = Random.MersenneTwister(9234724)
-arity = [2,3,2,3]
-n_way = 3
-
-M = 50
-seed = [
-    1 1 1 1;
-    1 3 1 1;
-    2 2 2 2;
-    2 1 2 1
-]
-cover = n_way_coverage_init(arity, n_way, seed, M, rng)
-tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
-# It is possible for this to fail randomly.
-@test tuple_cnt < UnitTestDesign.total_combinations(arity, n_way)
