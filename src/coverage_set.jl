@@ -56,6 +56,7 @@ function all_combinations_matrix(arity, n_way)
     MatrixCoverage(allc, remain, arity)
 end
 
+
 """
     one_parameter_combinations(arity, n_way)
 
@@ -157,6 +158,11 @@ the next parameter, chosen by param_idx, which value of param_idx, between
 how many uncovered tuples could be covered, given the existing choices
 and a particular value of this parameter.
 
+This returns all tuples that the existing case could _exactly_ cover
+if it didn't have missing values. That means the existing vector
+either has the same number of entries as the tuple or it has
+fewer entries than the tuple.
+
 A value of the `param_idx` parameter matches with a tuple if its
 existing choices match at least some part of the tuple and don't
 disagree with any part of the tuple.
@@ -192,28 +198,76 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
     hist
 end
 
+"""
+The logic of tuple comparison is oddly complicated.
+We're going to write this out the first round in order to know
+what our tools are.
+
+If you take a case and a tuple to cover, then there are
+five states for any pair of values:
+               case tuple
+    ignores    0    0
+    skips      a    0
+    misses     0    b
+    matches    a == b
+    mismatch   a != b
+
+It's always one of those five. In this language,
+
+covers = all(matches | irrelevant)
+"""
+
+ignores(a, b) = a == 0 && b == 0
+skips(a, b) = a != 0 && b == 0
+misses(a, b) = a == 0 && b != 0
+matches(a, b) = a != 0 && b != 0 && a == b
+mismatch(a, b) = a != 0 && b != 0 && a != b
+
+"""
+Example matches.
+      crossed      incomplete cover
+case  [0 1 0 2]    [1 0 0 3]  [1 1 0 2]
+tuple [1 0 3 0]    [1 1 0 3]  [1 0 0 2]
+"""
+function case_compatible_with_tuple(case, tuple)
+    !any(mismatch(a, b) for (a, b) in zip(case, tuple))
+end
+
+
+"""
+Example matches.
+      incomplete cover
+case  [1 0 0 3]  [1 1 0 2]
+tuple [1 1 0 3]  [1 0 0 2]
+"""
+function case_partial_cover(case, tuple)
+    (sum(matches(a, b) for (a, b) in zip(case, tuple)) > 0 &&
+     !any(mismatch(a, b) for (a, b) in zip(case, tuple)))
+end
+
+
+"""
+Example matches.
+case  [1 1 0 2]
+tuple [1 0 0 2]
+"""
+function case_covers_tuple(case, tuple)
+    all(matches(a, b) || skips(a, b) || ignores(a, b) for (a, b) in zip(case, tuple))
+end
+
 
 """
 Given an entry in the test set that has missing values, which are
 zeros, find any matches that could be created by setting those
 missing values. Return a new version of the entry.
 """
-function matches_from_missing(mc::MatrixCoverage, entry, missing_param)
+function matches_from_missing(mc::MatrixCoverage, entry, missing_param, matcher = case_compatible_with_tuple)
     param_cnt = parameter_cnt(mc)
     hist = zeros(eltype(mc), mc.arity[missing_param])
     for tuple_idx in 1:mc.remain
         if mc.allc[missing_param, tuple_idx] != 0
-            found = true
-            for param_idx in 1:param_cnt
-                if (
-                    entry[param_idx] !=0 &&
-                    mc.allc[param_idx, tuple_idx] != 0 &&
-                    entry[param_idx] != mc.allc[param_idx, tuple_idx]
-                )
-                    found = false
-                end
-            end
-            if found
+            # case_covers_tuple - variation.
+            if matcher(entry, mc.allc[:, tuple_idx])
                 hist[mc.allc[missing_param, tuple_idx]] += 1
             end
         end  # No matches unless the particular column is nonzero.
@@ -243,17 +297,10 @@ end
 Given an entry that's partially decided, fill in every covering tuple
 that matches the existing values, in any order.
 """
-function fill_consistent_matches(mc::MatrixCoverage, entry)
+function fill_consistent_matches(mc::MatrixCoverage, entry, matcher = case_compatible_with_tuple)
     param_cnt = parameter_cnt(mc)
     for col_idx in 1:mc.remain
-        found = true
-        for param_idx in 1:param_cnt
-            v = mc.allc[param_idx, col_idx]
-            if entry[param_idx] != 0 && v != 0 && v != entry[param_idx]
-                found = false
-            end
-        end
-        if found
+        if matcher(entry, mc.allc[:, col_idx])
             for copy_idx in 1:param_cnt
                 if mc.allc[copy_idx, col_idx] != 0
                     entry[copy_idx] = mc.allc[copy_idx, col_idx]
@@ -287,20 +334,7 @@ function add_coverage!(mc::MatrixCoverage, entry)
     cover_cnt = 0
     # Find matches before reordering them to the end.
     for col_idx in 1:mc.remain
-        match_cnt = 0
-        n_way = 0
-        for match_idx in 1:param_cnt
-            if mc.allc[match_idx, col_idx] != 0
-                n_way += 1
-                if (
-                    entry[match_idx] != 0 &&
-                    mc.allc[match_idx, col_idx] == entry[match_idx]
-                )
-                    match_cnt += 1
-                end
-            end
-        end
-        if match_cnt == n_way
+        if case_covers_tuple(entry, mc.allc[:, col_idx])
             cover_cnt += 1
             covers[cover_cnt] = col_idx
         end
@@ -328,7 +362,7 @@ If we were to add this entry to the trials, how many uncovered
 n-tuples would it now cover? `allc` is the matrix of n-tuples.
 `row_cnt` is the first set of rows, representing uncovered tuples.
 `n_way` is the length of each tuple. Entry is a set of putative
-paramter values. Returns an integer number of newly-covered tuples.
+parameter values. Returns an integer number of newly-covered tuples.
 
 This is a place to look into alternative algorithms. We could weight
 the match score by increasing the score for greater wayness.
