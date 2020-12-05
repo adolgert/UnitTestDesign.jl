@@ -4,22 +4,18 @@
 Given a test set where the first k-1 parameters are chosen and the last parameter
 has not been chosen, this fills in the last parameters for each test case.
 """
-function choose_last_parameter!(taller, arity, n_way, matcher = case_partial_cover)
+function choose_last_parameter!(taller, allc, matcher = case_partial_cover)
     param_idx  = size(taller, 1)
-    # Seed test cases by adding them once params are covered and not double-covering.
-    # Make mixed strength here, once all params at a strength are covered.
-    allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
-    # Exclude unwanted by stripping them from the allc combinations.
     for set_col_idx in 1:size(taller, 2)
-        # This needs to account for previous entries that aren't set.
-        match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx, matcher)
-        if (any(match_hist .> 0))
-            # The argmax tie-breaks in a consistent manner.
-            taller[param_idx, set_col_idx] = argmax(match_hist)
-            add_coverage!(allc, taller[:, set_col_idx])
-        end  # else don't set this entry by leaving it zero.
+        if any(taller[:, set_col_idx] .== 0)
+            match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx, matcher)
+            if (any(match_hist .> 0))
+                # The argmax tie-breaks in a consistent manner.
+                taller[param_idx, set_col_idx] = argmax(match_hist)
+                add_coverage!(allc, taller[:, set_col_idx])
+            end  # else don't set this entry by leaving it zero.
+        end
     end
-    allc
 end
 
 
@@ -180,7 +176,66 @@ function ipog(arity, n_way)
         taller = zeros(eltype(arity), param_idx, size(test_set, 2))
         taller[1:(param_idx - 1), :] .= test_set
 
-        allc = choose_last_parameter!(taller, arity, n_way)
+        # Seed test cases by adding them once params are covered and not double-covering.
+        # Make mixed strength here, once all params at a strength are covered.
+        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+
+        choose_last_parameter!(taller, allc)
+
+        test_set = insert_tuple_into_tests(taller, allc)
+    end
+
+    fill_remaining_missing_values!(test_set, arity)
+
+    # reorder test columns with `original_order`.
+    test_set[original_order, :]
+end
+
+
+function keep_allowed(test_set, disallow)
+    allow_cnt = 0
+    allowed = zeros(Int, size(test_set, 2))
+    for idx in 1:size(test_set, 2)
+        if !disallow(test_set[:, idx])
+            allow_cnt += 1
+            allowed[allow_cnt] = idx
+        end  # else not allowed so not put into the list.
+    end
+    test_set[:, allowed[1:allow_cnt]]
+end
+
+
+function ipog_multi(arity, n_way, disallow, seed)
+    nonincreasing = sortperm(arity, rev = true)
+    original_arity = arity
+    arity = arity[nonincreasing]
+    original_order = sortperm(nonincreasing)
+
+    param_cnt = length(arity)
+    if seed !== missing
+        seed = seed[nonincreasing, :]
+        seed_tests = seed[1:n_way, :]
+    else
+        seed = zeros(Int, n_way, 0)
+        seed_tests = zeros(Int, n_way, 0)
+    end
+    # Setup by taking first n_way parameters.
+    # This is a 2D array.
+    combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), disallow)
+    test_set = unique(hcat(seed_tests, combo_tests), dims = 2)
+
+    for param_idx in (n_way + 1):param_cnt
+        taller = zeros(eltype(arity), param_idx, size(test_set, 2))
+        taller[1:(param_idx - 1), :] .= test_set
+        # Seed test cases by adding them once params are covered and not double-covering.
+        # Make mixed strength here, once all params at a strength are covered.
+        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+        remove_combinations!(allc, disallow)
+
+        if size(seed, 2) > 0
+            taller[param_idx, 1:size(seed, 2)] = seed[param_idx, :]
+        end
+        choose_last_parameter!(taller, allc)
 
         test_set = insert_tuple_into_tests(taller, allc)
     end
@@ -210,7 +265,10 @@ function ipog_bytuple_instrumented(arity, n_way, strategy)
         taller = zeros(eltype(arity), param_idx, size(test_set, 2))
         taller[1:(param_idx - 1), :] .= test_set
 
-        allc = choose_last_parameter!(taller, arity, n_way, strategy[:lastparam])
+        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+
+        choose_last_parameter!(taller, allc, strategy[:lastparam])
+
         widen[param_idx] = size(allc.allc, 2) - allc.remain
 
         test_set = insert_tuple_into_tests(taller, allc, strategy[:expand])
