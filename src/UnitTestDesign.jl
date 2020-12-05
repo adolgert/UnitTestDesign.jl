@@ -17,6 +17,7 @@ export all_pairs
 export all_triples
 
 include("combinations.jl")
+include("coverage_matrix.jl")
 include("coverage_set.jl")
 include("greedy_tuples.jl")
 include("parameter_order.jl")
