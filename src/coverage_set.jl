@@ -66,7 +66,7 @@ end
 
 function test_coverage(test_cases, arity, n_way)
     sc = SetCoverage(arity, n_way)
-    build_all_combinations!(sc, 2)
+    build_all_combinations!(sc, n_way)
     start = remaining(sc)
     add_coverage!(sc, test_cases)
     finish = remaining(sc)

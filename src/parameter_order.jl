@@ -133,6 +133,48 @@ function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_
 end
 
 
+function putative_allowed(buffer, base, replace, disallow)
+    buffer .= base
+    buffer[replace .!= 0] .= replace[replace .!= 0]
+    !disallow(buffer)
+end
+
+
+function insert_tuple_into_tests_filter(test_set, allc, disallow)
+    add_tests = Array{eltype(allc), 1}[]
+    putative = similar(test_set[:, 1])
+    for find_cover_idx in allc.remain:-1:1
+        tuple = allc.allc[:, find_cover_idx]
+        unmatched = true
+        for test_idx in 1:size(test_set, 2)
+            test_case = test_set[:, test_idx]
+            matches = case_compatible_with_tuple(test_case, tuple)
+            if matches && putative_allowed(putative, test_case, tuple, disallow)
+                test_set[:, test_idx] = put_tuple_in_case(tuple, test_case)
+                unmatched = false
+                break
+            end
+        end
+        if unmatched
+            for tc_idx in 1:length(add_tests)
+                test_case = add_tests[tc_idx]
+                if case_compatible_with_tuple(test_case, tuple) &&
+                        putative_allowed(putative, test_case, tuple, disallow)
+                    add_tests[tc_idx] = put_tuple_in_case(tuple, test_case)
+                    unmatched = false
+                    break
+                end
+            end
+        end
+        if unmatched
+            push!(add_tests, tuple)
+        end
+    end
+    allc.remain = 0
+    hcat(test_set, add_tests...)
+end
+
+
 """
 As a finishing step on a set of test cases, this fills in missing values
 which aren't needed to cover the tuples but can increase coverage
@@ -303,7 +345,7 @@ function ipog_multi(arity, n_way, disallow, seed)
         end
         choose_last_parameter_filter!(taller, allc, forbid)
 
-        test_set = insert_tuple_into_tests(taller, allc)
+        test_set = insert_tuple_into_tests_filter(taller, allc, forbid)
     end
 
     fill_remaining_missing_values_filter!(test_set, arity, forbid)
