@@ -25,3 +25,13 @@ UnitTestDesign.build_all_combinations!(sc, 2)
 @test UnitTestDesign.add_coverage!(sc, [1, 2, 1]) == 2
 @test UnitTestDesign.remaining(sc) == 11
 
+UnitTestDesign.build_all_combinations!(sc, 2)
+multiple = [2 2; 2 3; 1 2]
+@test UnitTestDesign.add_coverage!(sc, multiple) == 6
+@test UnitTestDesign.remaining(sc) == 10
+
+# Add two types of coverage
+sc = UnitTestDesign.SetCoverage([2,3,2], 2)
+UnitTestDesign.build_all_combinations!(sc, 2)
+UnitTestDesign.build_all_combinations!(sc, 3)
+@test UnitTestDesign.remaining(sc) == 28

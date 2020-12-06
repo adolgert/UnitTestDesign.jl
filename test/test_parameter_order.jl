@@ -8,6 +8,7 @@ ip2324 = ipog([2, 3, 2, 4, 7, 2], 2)
 #res = ipog([2, 3, 2, 4, 4, 4, 4, 4, 4, 4, 4, 7, 2, 4, 5, 4, 4], 3)
 im232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, missing)
 @test size(im232) == (3, 6)
+@test UnitTestDesign.test_coverage(im232, [2, 3, 2], 2) == (start = 16, finish = 0)
 
 seed232 = [2 1; 3 3; 1 2]
 is232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, seed232)

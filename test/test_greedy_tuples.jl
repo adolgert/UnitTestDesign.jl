@@ -22,6 +22,10 @@ for ar_case in ar_cases
 end
 
 
+n_way = 2
+M = 50
+rng = MersenneTwister(97072343)
+arity = [5, 4, 3, 2, 2]
 cover = n_way_coverage_filter(arity, n_way, x -> x[3] == 1 && x[4] != 1, [], M, rng)
 n_way_coverage([4,4,4,4,4,4,4,4,4], 2, M, rng)
 

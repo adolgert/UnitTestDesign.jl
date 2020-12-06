@@ -42,7 +42,7 @@ function build_all_combinations!(sc::SetCoverage, n_way)
 end
 
 
-function add_coverage!(sc::SetCoverage, entry::Array)
+function add_coverage!(sc::SetCoverage, entry::Array{T, 1}) where T
     add_cnt = 0  # Record the number removed for visibility.
     for indices in keys(sc.cover)
         value = tuple([entry[x] for x in indices]...)
@@ -52,6 +52,25 @@ function add_coverage!(sc::SetCoverage, entry::Array)
         end
     end
     add_cnt
+end
+
+
+function add_coverage!(sc::SetCoverage, entries::Array{T, 2}) where T
+    add_cnt = 0  # Record the number removed for visibility.
+    for entry_idx in 1:size(entries, 2)
+        add_cnt += add_coverage!(sc, entries[:, entry_idx])
+    end
+    add_cnt
+end
+
+
+function test_coverage(test_cases, arity, n_way)
+    sc = SetCoverage(arity, n_way)
+    build_all_combinations!(sc, 2)
+    start = remaining(sc)
+    add_coverage!(sc, test_cases)
+    finish = remaining(sc)
+    (start = start, finish = finish)
 end
 
 
