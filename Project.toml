@@ -13,6 +13,7 @@ SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
+CSV = "0.8"
 Combinatorics = "1.0"
 DataFrames = "0.22"
 Revise = "3.1"
