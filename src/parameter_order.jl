@@ -342,6 +342,9 @@ function ipog_multi(arity, n_way, disallow, seed)
 
         if size(seed, 2) > 0
             taller[param_idx, 1:size(seed, 2)] = seed[param_idx, :]
+            for seed_cover_idx in 1:size(seed, 2)
+                add_coverage!(allc, taller[:, seed_cover_idx])
+            end
         end
         choose_last_parameter_filter!(taller, allc, forbid)
 
