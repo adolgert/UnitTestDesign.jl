@@ -19,6 +19,29 @@ function choose_last_parameter!(taller, allc, matcher = case_partial_cover)
 end
 
 
+function choose_last_parameter_filter!(taller, allc, disallow)
+    param_idx  = size(taller, 1)
+    putative = similar(taller[:, 1])
+    for set_col_idx in 1:size(taller, 2)
+        if any(taller[:, set_col_idx] .== 0)
+            match_hist = matches_from_missing(
+                allc, taller[:, set_col_idx], param_idx, case_partial_cover)
+            for max_idx in (midx for midx in sortperm(match_hist, rev = true)
+                    if match_hist[midx] > 0)
+                # The argmax tie-breaks in a consistent manner.
+                putative .= taller[:, set_col_idx]
+                putative[param_idx] = max_idx
+                if !disallow(putative)
+                    taller[param_idx, set_col_idx] = max_idx
+                    add_coverage!(allc, taller[:, set_col_idx])
+                    break
+                end
+            end  # else don't set this entry by leaving it zero.
+        end
+    end
+end
+
+
 """
 The given test cases have missing values, which are zeros.
 This fills in missing values anywhere they cover tuples.
@@ -139,6 +162,37 @@ function fill_remaining_missing_values!(test_set, arity)
 end
 
 
+function fill_remaining_missing_values_filter!(test_set, arity, disallow)
+    param_cnt = size(test_set, 1)
+    # We could have zero values at the end, so fill them in with the
+    # least-used values.
+    hist = zeros(Int, param_cnt, maximum(arity))
+    for hist_entry in 1:size(test_set, 2)
+        for hist_param in 1:size(test_set, 1)
+            if test_set[hist_param, hist_entry] > 0
+                hist[hist_param, test_set[hist_param, hist_entry]] += 1
+            end
+        end
+    end
+    putative = similar(test_set[:, 1])
+    for fill_col in 1:size(test_set, 2)
+        for fill_param in 1:size(test_set, 1)
+            if test_set[fill_param, fill_col] == 0
+                putative .= test_set[:, fill_col]
+                for fill_val in sortperm(hist[fill_param, 1:arity[fill_param]])
+                    putative[fill_param] = fill_val
+                    if !disallow(putative)
+                        test_set[fill_param, fill_col] = fill_val
+                        hist[fill_param, fill_val] += 1
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+
+
 """
     ipog(arity, n_way)
 
@@ -205,11 +259,23 @@ function keep_allowed(test_set, disallow)
 end
 
 
+function reorder_disallow(disallow, original_order)
+    let oo = original_order, dis = disallow
+        choices -> begin
+            v = zeros(eltype(oo), size(oo)...)
+            v[1:length(choices)] .= choices
+            dis(v[oo])
+        end
+    end
+end
+
+
 function ipog_multi(arity, n_way, disallow, seed)
     nonincreasing = sortperm(arity, rev = true)
     original_arity = arity
     arity = arity[nonincreasing]
     original_order = sortperm(nonincreasing)
+    forbid = reorder_disallow(disallow, original_order)
 
     param_cnt = length(arity)
     if seed !== missing
@@ -221,7 +287,7 @@ function ipog_multi(arity, n_way, disallow, seed)
     end
     # Setup by taking first n_way parameters.
     # This is a 2D array.
-    combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), disallow)
+    combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), forbid)
     test_set = unique(hcat(seed_tests, combo_tests), dims = 2)
 
     for param_idx in (n_way + 1):param_cnt
@@ -230,17 +296,17 @@ function ipog_multi(arity, n_way, disallow, seed)
         # Seed test cases by adding them once params are covered and not double-covering.
         # Make mixed strength here, once all params at a strength are covered.
         allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
-        remove_combinations!(allc, disallow)
+        remove_combinations!(allc, forbid)
 
         if size(seed, 2) > 0
             taller[param_idx, 1:size(seed, 2)] = seed[param_idx, :]
         end
-        choose_last_parameter!(taller, allc)
+        choose_last_parameter_filter!(taller, allc, forbid)
 
         test_set = insert_tuple_into_tests(taller, allc)
     end
 
-    fill_remaining_missing_values!(test_set, arity)
+    fill_remaining_missing_values_filter!(test_set, arity, forbid)
 
     # reorder test columns with `original_order`.
     test_set[original_order, :]

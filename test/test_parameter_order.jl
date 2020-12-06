@@ -17,9 +17,21 @@ is232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, seed232)
 # the test cases come first.
 @test is232[:, 1:2] == seed232
 
-not32 = (x -> (x[2] == 3 && x[3] == 2))
+
+
+not32 = (x -> (length(x) >= 3 && x[2] == 3 && x[3] == 2))
+@test !not32([1, 1])
 @test !not32([1,2,3])
 @test not32([1,3,2])  # this is disallowed
+@test not32([2,3,2])  # this is disallowed
+forbid32 = UnitTestDesign.reorder_disallow(not32, [2, 1, 3])
+@test !forbid32([1, 1])
+@test !forbid32([1,2,3])
+@test !forbid32([1,3,2])  # this is allowed
+@test !forbid32([2,3,2])  # this is allowed
+@test forbid32([3, 1, 2])
+@test forbid32([3, 1, 2])
+
 ex232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, not32, missing)
 # There are no tuples that are [x, 3, 2].
 @test !any(sum(ex232 .== [0, 3, 2], dims = 1) .== 2)
