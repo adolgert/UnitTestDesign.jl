@@ -22,6 +22,7 @@ include("coverage_set.jl")
 include("greedy_tuples.jl")
 include("parameter_order.jl")
 include("full_factorial.jl")
+include("excursions.jl")
 include("factorial_interface.jl")
 
 end
