@@ -358,6 +358,79 @@ function ipog_multi(arity, n_way, disallow, seed)
 end
 
 
+function ipog_inner(arity, n_way, forbid, seed)
+    param_cnt = length(arity)
+    if seed !== missing
+        seed = seed[nonincreasing, :]
+        seed_tests = seed[1:n_way, :]
+    else
+        seed = zeros(Int, n_way, 0)
+        seed_tests = zeros(Int, n_way, 0)
+    end
+    # Setup by taking first n_way parameters.
+    # This is a 2D array.
+    combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), forbid)
+    test_set = unique(hcat(seed_tests, combo_tests), dims = 2)
+
+    for param_idx in (n_way + 1):param_cnt
+        taller = zeros(eltype(arity), param_idx, size(test_set, 2))
+        taller[1:(param_idx - 1), :] .= test_set
+        # Seed test cases by adding them once params are covered and not double-covering.
+        # Make mixed strength here, once all params at a strength are covered.
+        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+        remove_combinations!(allc, forbid)
+
+        if size(seed, 2) > 0
+            taller[param_idx, 1:size(seed, 2)] = seed[param_idx, :]
+            for seed_cover_idx in 1:size(seed, 2)
+                add_coverage!(allc, taller[:, seed_cover_idx])
+            end
+        end
+        choose_last_parameter_filter!(taller, allc, forbid)
+
+        test_set = insert_tuple_into_tests_filter(taller, allc, forbid)
+    end
+end
+
+
+struct WayWork
+    indices
+    arity
+    n_way
+    combo_cnt
+end
+
+
+function ipog_multi_way(arity, n_way, levels, disallow, seed)
+    param_cnt = length(arity)
+    levels[n_way] = [[1:param_cnt]]
+    waynesses = sort(keys(levels), rev = true)
+    work = WayWork[]
+    for wayness in waynesses
+        for indices_idx = 1:length(levels[wayness])
+            indices = levels[wayness][indices_idx]
+            an_arity = arity[indices]
+            combo_cnt = total_combinations(an_arity, wayness)
+            push!(work, WayWork(indices, an_arity, wayness, combo_cnt))
+        end
+    end
+    # I guess this will work better if we put the stiffer wayness first.
+    sort!(work; by = (x -> (-x.n_way, x.combo_cnt)))
+
+    if seed === missing
+        test_cases = zeros(Int, param_cnt, 0)
+    else
+        test_cases = seed
+    end
+    for round in work
+        forbid = reorder_disallow(disallow, original_order)
+        rotated_cases = test_cases[indices, :]
+        tests_rotated = ipog_inner(round.arity, round.n_way, forbid, rotated_cases)
+        test_cases[original_order, ]
+    end
+end
+
+
 function ipog_bytuple_instrumented(arity, n_way, strategy)
     nonincreasing = sortperm(arity, rev = true)
     original_arity = arity
