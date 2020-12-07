@@ -4,6 +4,11 @@
 A [Julia](http://julialang.org) package to generate test cases for unit tests.
 This provides **all-pairs** and higher-order algorithms.
 
+* All-pairs, all-triples, and higher-order coverage of test cases.
+* Combinatorial excursions from a base test case.
+* Convenient ways to avoid uninteresting parameter combinations,
+  add necessary test cases, and increase coverage for subsets of parameters.
+
 ## Install
 
 ```
