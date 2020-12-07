@@ -68,6 +68,8 @@ while time() - start_time < test_time
     println("$(arity) $(k)")
     r2 = UnitTestDesign.ipog_multi(arity, k, not32, missing)
     println("$(size(r2))")
+    out_arity = vec(maximum(r2, dims = 2))
+    @test out_arity == arity
     all_combos = UnitTestDesign.all_combinations(arity, k)
     combo_cnt = size(all_combos, 2)
     compare = zeros(Int, n)
@@ -79,3 +81,24 @@ while time() - start_time < test_time
     @test cover2.finish == sum(exclude)
     @test !any(sum(r2 .== compare, dims = 1) .== 2)
 end
+
+
+imw_arity = [2, 3, 2, 3]
+imw_k = 2
+imw_ind = [1, 3, 4]
+imw1 = UnitTestDesign.ipog_multi_way(imw_arity, imw_k, Dict(3 => [imw_ind]), x -> false, missing)
+imw_cover1 = UnitTestDesign.test_coverage(imw1, imw_arity, imw_k)
+@test imw_cover1.finish == 0
+imw_cover2 = UnitTestDesign.test_coverage(imw1[imw_ind, :], imw_arity[imw_ind], 3)
+@test imw_cover2.finish == 0
+oind1 = [1, 2, 3]
+imw_cover3 = UnitTestDesign.test_coverage(imw1[oind1, :], imw_arity[oind1], 3)
+oind2 = [2, 3, 4]
+imw_cover4 = UnitTestDesign.test_coverage(imw1[oind2, :], imw_arity[oind2], 3)
+@test imw_cover3.finish + imw_cover4.finish > 0
+
+# What if we do the whole set at 3-way? It's the same number of tests,
+# so we didn't gain anything in this case by using multi-wayness.
+im11 = UnitTestDesign.ipog_multi(imw_arity, 3, x -> false, missing)
+im11_cover = UnitTestDesign.test_coverage(im11, imw_arity, 3)
+@test im11_cover.finish == 0
