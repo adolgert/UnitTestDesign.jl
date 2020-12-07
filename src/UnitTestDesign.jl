@@ -21,6 +21,7 @@ include("coverage_matrix.jl")
 include("coverage_set.jl")
 include("greedy_tuples.jl")
 include("parameter_order.jl")
+include("full_factorial.jl")
 include("factorial_interface.jl")
 
 end
