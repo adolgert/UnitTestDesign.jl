@@ -38,12 +38,10 @@ function driven_factorial(arity, indices, disallow)
     println(drives)
     keep = zeros(Int, size(test_set, 2))
     keep_idx = 0
-    X = 23958
     for col_idx in 1:size(test_set, 2)
         if !disallow(test_set[:, col_idx])
             for param_idx in remaining_indices
-                X = (8121 * X + 28411) % 134456
-                param_val = X % arity[param_idx] + 1
+                param_val = sum(drives .* test_set[:, col_idx]) % arity[param_idx] + 1
                 for param_check in 1:arity[param_idx]
                     test_set[param_idx, col_idx] = param_val
                     if !disallow(test_set[:, col_idx])
