@@ -1,5 +1,3 @@
-using Primes: nextprime
-
 
 function full_factorial(arity, disallow)
     param_cnt = length(arity)
