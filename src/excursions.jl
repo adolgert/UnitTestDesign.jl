@@ -37,7 +37,6 @@ function build_excursion_multi(arity, n_way, levels, disallow, seed = missing)
             # combos = Set(collect(tuple(x...) for x in combinations(indices, level)))
             for subset_idx in 1:level
                 combos = Set(collect(combinations(indices, subset_idx)))
-                println(combos)
                 union!(excursion_set, combos)
             end
         end
