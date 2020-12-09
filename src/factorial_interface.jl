@@ -66,6 +66,9 @@ struct GND
 end
 
 
+"""
+This class requests tests that are excursions from a base case.
+"""
 struct Excursion
 end
 
@@ -123,7 +126,7 @@ end
 
 function generate_tuples(engine::GND, n_way, parameters; Counter = Int, kwargs...)
     arity = Counter[length(p) for p in parameters]
-    if :disallow in keys(kwargs)
+    if :disallow in keys(kwargs) && isa(kwargs[:disallow], Function)
         disallow = wrap_disallow(kwargs[:disallow], parameters)
     else
         disallow = x -> false
@@ -177,7 +180,7 @@ of those parameters.
 
 # Arguments
 
-- `engine=IPOG()`: The `engine` is `IPOG()` or `GND()`.
+- `engine=IPOG()`: The `engine` is `IPOG()`, `GND()` or `Excursion()`.
 - `disallow=nothing`: The disallow function is a function of the parameters that
   returns `true` when that combination should be forbidden.
 - `seeds=[]`: is a list of test cases that must be included among those
@@ -190,8 +193,10 @@ generated.
 the computation. It must be large enough to hold the integer number of the parameters.
 
 # Examples
-```
+```julia
 all_tuples([1, 2, 3], ["a", "b", "c"], [true, false]; n_way = 2)
+parameters = fill(collect(1:3), 10)
+all_tuples(parameters...; n_way = 4, engine = Excursion())
 ```
 """
 function all_tuples(
@@ -223,9 +228,11 @@ Ensure that the returned test cases include every pair of
 parameters at least once.
 
 # Examples
-```
+```julia
 all_pairs([1, 2, 3], ["a", "b", "c"], [true, false])
 ```
+
+See also: [`all_tuples`](@ref)
 """
 function all_pairs(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 2, kwargs...)
@@ -237,27 +244,82 @@ end
 
 Ensure that the returned test cases include every combination
 of three parameters at least once.
+
+See also: [`all_tuples`](@ref)
 """
 function all_triples(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 3, kwargs...)
 end
 
 
+"""
+    values_excursion(parameters...; kwargs...)
+
+This starts with the first choice for each of the parameters.
+It creates test cases by varying each parameter, one at a time,
+through its possible values.
+
+# Examples
+```julia
+values_excursion([:a, :b, :c], [1, 2, 3])
+```
+
+See also: [`all_tuples`](@ref)
+"""
 function values_excursion(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 1, engine = Excursion(), kwargs...)
 end
 
 
+"""
+    pairs_excursion(parameters...; kwargs...)
+
+This starts with the first choice for each of the parameters.
+It creates test cases by varying each parameter, one at a time,
+through its possible values. Then it walks pairs of parameters
+away from the base case.
+
+# Examples
+```julia
+pairs_excursion([:a, :b], [1, 2], [1, 2], ["a", "b"])
+```
+
+See also: [`all_tuples`](@ref)
+"""
 function pairs_excursion(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 2, engine = Excursion(), kwargs...)
 end
 
 
+"""
+    pairs_excursion(parameters...; kwargs...)
+
+This starts with the first choice for each of the parameters.
+It creates test cases by varying each parameter, one at a time,
+through its possible values. Then it walks pairs of parameters
+away from the base case, and finally triples.
+
+See also: [`all_tuples`](@ref)
+"""
 function triples_excursion(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 3, engine = Excursion(), kwargs...)
 end
 
 
+"""
+    full_factorial(parameters...)
+    full_factorial(parameters...; disallow = filter_function)
+
+Generates a test case for every combination of the parameters.
+
+# Examples
+```julia
+full_factorial([0.1, 0.2, 0.3], ["low", "high"], [false, true])
+```
+
+If you specify a filter function, it will remove combinations
+that are disallowed.
+"""
 function full_factorial(parameters...; disallow = nothing)
     arity = [length(p) for p in parameters]
     param_cnt = length(arity)
