@@ -1,7 +1,7 @@
 using Combinatorics: combinations
 
 
-function build_excursion(arity, n_way, disallow, seed = missing)
+function build_excursion(arity, n_way, disallow, seed = nothing)
     test_list = []
     for way_idx in 1:n_way
         push!(test_list, all_combinations(arity .- 1, way_idx))
@@ -9,7 +9,7 @@ function build_excursion(arity, n_way, disallow, seed = missing)
     test_cases = hcat(test_list...)
     test_cases .+= 1
 
-    if seed !== missing
+    if seed !== nothing
         seeded = unique(hcat(seed, test_cases), dims = 2)
     else
         seeded = test_cases
@@ -27,7 +27,7 @@ function build_excursion(arity, n_way, disallow, seed = missing)
 end
 
 
-function build_excursion_multi(arity, n_way, levels, disallow, seed = missing)
+function build_excursion_multi(arity, n_way, levels, disallow, seed = nothing)
     param_cnt = length(arity)
     levels[n_way] = [collect(1:length(arity))]
     # excursion_set = Set{Tuple{Vararg{Int64, N} where N}}()
@@ -58,7 +58,7 @@ function build_excursion_multi(arity, n_way, levels, disallow, seed = missing)
     end
     @assert test_idx == test_cnt
 
-    if seed !== missing
+    if seed !== nothing
         seeded = unique(hcat(seed, test_cases), dims = 2)
     else
         seeded = test_cases

@@ -3,18 +3,18 @@ Generates test cases, which are sets of arguments to use for testing functions.
 """
 module UnitTestDesign
 
-export n_way_coverage
-export n_way_coverage_init
-export n_way_coverage_filter
-export n_way_coverage_multi
-export ipog
 export IPOG
 export GND
+export Excursion
 export generate_tuples
 export all_tuples
 export all_values
 export all_pairs
 export all_triples
+export values_excursion
+export pairs_excursion
+export triples_excursion
+export full_factorial
 
 include("combinations.jl")
 include("coverage_matrix.jl")
