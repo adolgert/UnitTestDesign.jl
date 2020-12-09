@@ -39,7 +39,7 @@ end
 """
     all_combinations(arity, n_way)
 
-This represents possible coverage as a matrix, one column per parameter,
+This represents possible coverage as a matrix, one row per parameter,
 zero if not used. `arity` is a list of the number of values for each parameter,
 and `n_way` is the order of the combinations, most commonly 2-way.
 """

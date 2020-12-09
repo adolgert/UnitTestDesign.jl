@@ -320,7 +320,7 @@ function ipog_multi(arity, n_way, disallow, seed)
     forbid = reorder_disallow(disallow, original_order)
 
     param_cnt = length(arity)
-    if seed !== missing
+    if seed !== nothing
         seed = seed[nonincreasing, :]
         seed_tests = seed[1:n_way, :]
     else
@@ -415,7 +415,7 @@ function ipog_multi_way(arity, n_way, levels, disallow, seed)
     # I guess this will work better if we put the stiffer wayness first.
     sort!(work; by = (x -> (x.n_way, x.combo_cnt)), rev = true)
 
-    if seed === missing
+    if seed === nothing
         test_cases = zeros(Int, param_cnt, 0)
     else
         test_cases = seed
