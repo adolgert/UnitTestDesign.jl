@@ -26,9 +26,10 @@ n_way = 2
 M = 50
 rng = MersenneTwister(97072343)
 arity = [5, 4, 3, 2, 2]
-cover = n_way_coverage_filter(arity, n_way, x -> x[3] == 1 && x[4] != 1, [], M, rng)
-n_way_coverage([4,4,4,4,4,4,4,4,4], 2, M, rng)
-
+cover = UnitTestDesign.n_way_coverage_filter(arity, n_way, x -> x[3] == 1 && x[4] != 1, [], M, rng)
+nn = UnitTestDesign.n_way_coverage([4,4,4,4,4,4,4,4,4], 2, M, rng)
+@test length(nn) > 20
+@test length(nn) < 100
 
 ### n_way_coverage_multi
 rng = MersenneTwister(789607)
@@ -39,7 +40,7 @@ high_indices = [1,3,4,5]
 mwc = UnitTestDesign.multi_way_coverage(arity, Dict(3 => [high_indices]), n_way)
 @test maximum(sum(mwc .!= 0, dims = 1)) == 3
 mc = UnitTestDesign.MatrixCoverage(mwc, size(mwc, 1), arity)
-cov = n_way_coverage_multi(mc, x->false, [], M, rng)
+cov = UnitTestDesign.n_way_coverage_multi(mc, x->false, [], M, rng)
 cov_mat = vcat([cv' for cv in cov]...)
 cov_high = cov_mat[:, high_indices]
 singles = unique(sort(cov_mat[:, high_indices], dims = 1), dims = 1)
@@ -58,16 +59,16 @@ arity = [2,3,2,3]
 n_way = 2
 
 M = 50
-cover = n_way_coverage(arity, n_way, M, rng)
+cover = UnitTestDesign.n_way_coverage(arity, n_way, M, rng)
 tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
 @test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
 
 n_way = 3
-cover = n_way_coverage(arity, n_way, M, rng)
+cover = UnitTestDesign.n_way_coverage(arity, n_way, M, rng)
 tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
 @test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
 
-cover = n_way_coverage_init(arity, n_way, [], M, rng)
+cover = UnitTestDesign.n_way_coverage_init(arity, n_way, [], M, rng)
 tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
 @test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
 
@@ -82,7 +83,7 @@ seed = [
     2 2 2 2;
     2 1 2 1
 ]
-cover = n_way_coverage_init(arity, n_way, seed, M, rng)
+cover = UnitTestDesign.n_way_coverage_init(arity, n_way, seed, M, rng)
 tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
 # It is possible for this to fail randomly.
 @test tuple_cnt < UnitTestDesign.total_combinations(arity, n_way)

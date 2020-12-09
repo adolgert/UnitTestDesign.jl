@@ -66,6 +66,10 @@ struct GND
 end
 
 
+struct Excursion
+end
+
+
 function wrap_disallow(disallow, parameters)
     if disallow !== nothing
         inner_filter = let filter = disallow, params = parameters
@@ -96,7 +100,23 @@ function generate_tuples(engine::IPOG, n_way, parameters; Counter = Int, kwargs.
     # can use different internal representations.
     arity = Counter[length(p) for p in parameters]
     param_cnt = length(arity)
-    result = ipog(arity, n_way)
+    if :disallow in keys(kwargs) && isa(kwargs[:disallow], Function)
+        disallow = wrap_disallow(kwargs[:disallow], parameters)
+    else
+        disallow = x -> false
+    end
+    if :seeds in keys(kwargs) && length(kwargs[:seeds]) > 0
+        seeds = seeds_to_integers(kwargs[:seeds], parameters, Counter)
+    else
+        seeds = zeros(Counter, param_cnt, 0)
+    end
+    if :wayness in keys(kwargs) && length(kwargs[:wayness]) > 0
+        result = ipog_multi_way(arity, n_way, levels, kwargs[:wayness], disallow, seeds)
+    elseif :disallow in keys(kwargs) || :seed in keys(kwargs)
+        result = ipog_multi(arity, n_way, disallow, seeds)
+    else
+        result = ipog(arity, n_way)
+    end
     [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in 1:size(result, 2)]
 end
 
@@ -113,8 +133,39 @@ function generate_tuples(engine::GND, n_way, parameters; Counter = Int, kwargs..
     else
         seeds = []
     end
-    result = n_way_coverage_filter(arity, n_way, disallow, seeds, engine.M, engine.rng)
+    if :wayness in keys(kwargs) && length(kwargs[:wayness]) > 0
+        mwc = multi_way_coverage(arity, kwargs[:wayness], n_way)
+        mc = UnitTestDesign.MatrixCoverage(mwc, size(mwc, 1), arity)
+        result = n_way_coverage_multi(mc, disallow, seeds, engine.M, engine.rng)
+    else
+        result = n_way_coverage_filter(arity, n_way, disallow, seeds, engine.M, engine.rng)
+    end
     [[p[c] for (p, c) in zip(parameters, answer)] for answer in result]
+end
+
+
+function generate_tuples(engine::Excursion, n_way, parameters; Counter = Int, kwargs...)
+    # We convert from parameters to integers here so that different generators
+    # can use different internal representations.
+    arity = Counter[length(p) for p in parameters]
+    param_cnt = length(arity)
+    if :disallow in keys(kwargs) && isa(kwargs[:disallow], Function)
+        disallow = wrap_disallow(kwargs[:disallow], parameters)
+    else
+        disallow = x -> false
+    end
+    if :seeds in keys(kwargs) && length(kwargs[:seeds]) > 0
+        seeds = seeds_to_integers(kwargs[:seeds], parameters, Counter)
+    else
+        seeds = zeros(Counter, param_cnt, 0)
+    end
+    if :wayness in keys(kwargs) && length(kwargs[:wayness]) > 0
+        levels = kwargs[:wayness]
+        result = build_excursion_multi(arity, n_way, levels, disallow, seeds_to_integers)
+    else
+        result = build_excursion(arity, n_way, disallow, seeds)
+    end
+    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in 1:size(result, 2)]
 end
 
 
@@ -189,4 +240,32 @@ of three parameters at least once.
 """
 function all_triples(parameters...; kwargs...)
     all_tuples(parameters...; n_way = 3, kwargs...)
+end
+
+
+function values_excursion(parameters...; kwargs...)
+    all_tuples(parameters...; n_way = 1, engine = Excursion(), kwargs...)
+end
+
+
+function pairs_excursion(parameters...; kwargs...)
+    all_tuples(parameters...; n_way = 2, engine = Excursion(), kwargs...)
+end
+
+
+function triples_excursion(parameters...; kwargs...)
+    all_tuples(parameters...; n_way = 3, engine = Excursion(), kwargs...)
+end
+
+
+function full_factorial(parameters...; disallow = nothing)
+    arity = [length(p) for p in parameters]
+    param_cnt = length(arity)
+    if disallow !== nothing
+        disallow = wrap_disallow(disallow, parameters)
+    else
+        disallow = x -> false
+    end
+    result = full_factorial(arity, disallow)
+    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in 1:size(result, 2)]
 end
