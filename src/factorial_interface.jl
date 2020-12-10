@@ -98,25 +98,25 @@ function seeds_to_integers(seed, parameters, Counter = Int)
 end
 
 
-function generate_tuples(engine::IPOG, n_way, parameters; Counter = Int, kwargs...)
+function generate_tuples(engine::IPOG, n_way, parameters, disallow, seeds, wayness, Counter)
     # We convert from parameters to integers here so that different generators
     # can use different internal representations.
     arity = Counter[length(p) for p in parameters]
     param_cnt = length(arity)
-    if :disallow in keys(kwargs) && isa(kwargs[:disallow], Function)
-        disallow = wrap_disallow(kwargs[:disallow], parameters)
+    if disallow !== nothing
+        disallow_integer = wrap_disallow(disallow, parameters)
     else
-        disallow = x -> false
+        disallow_integer = x -> false
     end
-    if :seeds in keys(kwargs) && length(kwargs[:seeds]) > 0
-        seeds = seeds_to_integers(kwargs[:seeds], parameters, Counter)
+    if seeds !== nothing && length(seeds) > 0
+        seeds_int = seeds_to_integers(seeds, parameters, Counter)
     else
-        seeds = zeros(Counter, param_cnt, 0)
+        seeds_int = zeros(Counter, param_cnt, 0)
     end
-    if :wayness in keys(kwargs) && length(kwargs[:wayness]) > 0
-        result = ipog_multi_way(arity, n_way, levels, kwargs[:wayness], disallow, seeds)
-    elseif :disallow in keys(kwargs) || :seed in keys(kwargs)
-        result = ipog_multi(arity, n_way, disallow, seeds)
+    if wayness !== nothing
+        result = ipog_multi_way(arity, n_way, levels, wayness, disallow_integer, seeds_int)
+    elseif disallow !== nothing || seeds !== nothing
+        result = ipog_multi(arity, n_way, disallow_integer, seeds_int)
     else
         result = ipog(arity, n_way)
     end
@@ -124,49 +124,48 @@ function generate_tuples(engine::IPOG, n_way, parameters; Counter = Int, kwargs.
 end
 
 
-function generate_tuples(engine::GND, n_way, parameters; Counter = Int, kwargs...)
+function generate_tuples(engine::GND, n_way, parameters, disallow, seeds, wayness, Counter)
     arity = Counter[length(p) for p in parameters]
-    if :disallow in keys(kwargs) && isa(kwargs[:disallow], Function)
-        disallow = wrap_disallow(kwargs[:disallow], parameters)
+    if disallow !== nothing
+        disallow_integer = wrap_disallow(disallow, parameters)
     else
-        disallow = x -> false
+        disallow_integer = x -> false
     end
-    if :seeds in keys(kwargs)
-        seeds = seeds_to_integers(kwargs[:seeds], parameters, Counter)
+    if seeds !== nothing && length(seeds) > 0
+        seeds_int = seeds_to_integers(kwargs[:seeds], parameters, Counter)
     else
-        seeds = []
+        seeds_int = []
     end
-    if :wayness in keys(kwargs) && length(kwargs[:wayness]) > 0
-        mwc = multi_way_coverage(arity, kwargs[:wayness], n_way)
+    if wayness !== nothing
+        mwc = multi_way_coverage(arity, wayness, n_way)
         mc = UnitTestDesign.MatrixCoverage(mwc, size(mwc, 1), arity)
-        result = n_way_coverage_multi(mc, disallow, seeds, engine.M, engine.rng)
+        result = n_way_coverage_multi(mc, disallow_integer, seeds_int, engine.M, engine.rng)
     else
-        result = n_way_coverage_filter(arity, n_way, disallow, seeds, engine.M, engine.rng)
+        result = n_way_coverage_filter(arity, n_way, disallow_integer, seeds_int, engine.M, engine.rng)
     end
     [[p[c] for (p, c) in zip(parameters, answer)] for answer in result]
 end
 
 
-function generate_tuples(engine::Excursion, n_way, parameters; Counter = Int, kwargs...)
+function generate_tuples(engine::Excursion, n_way, parameters, disallow, seeds, wayness, Counter)
     # We convert from parameters to integers here so that different generators
     # can use different internal representations.
     arity = Counter[length(p) for p in parameters]
     param_cnt = length(arity)
-    if :disallow in keys(kwargs) && isa(kwargs[:disallow], Function)
-        disallow = wrap_disallow(kwargs[:disallow], parameters)
+    if disallow !== nothing
+        disallow_integer = wrap_disallow(disallow, parameters)
     else
-        disallow = x -> false
+        disallow_integer = x -> false
     end
-    if :seeds in keys(kwargs) && length(kwargs[:seeds]) > 0
-        seeds = seeds_to_integers(kwargs[:seeds], parameters, Counter)
+    if seeds !== nothing && length(seeds) > 0
+        seeds_int = seeds_to_integers(seeds, parameters, Counter)
     else
-        seeds = zeros(Counter, param_cnt, 0)
+        seeds_int = zeros(Counter, param_cnt, 0)
     end
-    if :wayness in keys(kwargs) && length(kwargs[:wayness]) > 0
-        levels = kwargs[:wayness]
-        result = build_excursion_multi(arity, n_way, levels, disallow, seeds_to_integers)
+    if wayness !== nothing
+        result = build_excursion_multi(arity, n_way, wayness, disallow_integer, seeds_int)
     else
-        result = build_excursion(arity, n_way, disallow, seeds)
+        result = build_excursion(arity, n_way, disallow_integer, seeds_int)
     end
     [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in 1:size(result, 2)]
 end
@@ -201,10 +200,41 @@ all_tuples(parameters...; n_way = 4, engine = Excursion())
 """
 function all_tuples(
     parameters...;
-    n_way = 2, engine = IPOG(), disallow = nothing, seeds = [], wayness = Dict{Int,Array{Array{Int,1},1}}(), Counter = Int
+    n_way::Integer = 2, engine = IPOG(), disallow = nothing, seeds = nothing, wayness = nothing, Counter = Int
     )
-
-    generate_tuples(engine, n_way, parameters; disallow = disallow, seeds = seeds, wayness = wayness, Counter = Counter)
+    if length(parameters) < 2
+        throw(DomainError(
+            parameters,
+            "Arguments should be lists of parameter values for more than one parameter"))
+    end
+    for param in parameters
+        if length(param) < 2
+            throw(DomainError(param, "Each argument should be a list of parameter values"))
+        end
+    end
+    if disallow !== nothing && !isa(disallow, Function)
+        throw(DomainError(disallow, "The disallow argument should be a function that
+        returns true or false to exclude or include a test case."))
+    end
+    if seeds !== nothing && length(seeds) > 0
+        if !all(length(s) .== length(parameters) for s in seeds)
+            throw(DomainError(seeds, "The seeded test cases should have the same number
+            of parameter values as the passed parameter values."))
+        end
+    end
+    if wayness !== nothing
+        keys_are_ints = all(isa(k, Int) for k in keys(wayness))
+        if !keys_are_ints
+            throw(DomainError(wayness, "The wayness argument is a dictionary with integer keys."))
+        end
+        values_are_lists = all(isa(v, AbstractArray) for v in values(wayness))
+        lists_of_lists = all(isa(first(v), AbstractArray) for v in values(wayness))
+        if !values_are_lists || !lists_of_lists
+            throw(DomainError(wayness, "The wayness argument is a dictionary with values
+            that are lists of lists of parameters."))
+        end
+    end
+    generate_tuples(engine, n_way, parameters, disallow, seeds, wayness, Counter)
 end
 
 

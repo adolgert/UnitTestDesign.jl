@@ -74,14 +74,16 @@ end
 
 @safetestset IPOG_gen_tuples_test = "IPOG generate tuples" begin
     using UnitTestDesign
-    trials1 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]))
+    trials1 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
+        nothing, nothing, nothing, Int)
     @test length(trials1) == 6
     @test trials1[1][3] in ["a", "b", "c"]
 end
 
 @safetestset GND_gen_tuples_test = "GND generate tupels" begin
     using UnitTestDesign
-    gndt1 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]))
+    gndt1 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
+    nothing, nothing, nothing, Int)
     @test length(gndt1) > 3
     @test gndt1[1][2] in [true, false]
     @test gndt1[1][3] in ["a", "b", "c"]

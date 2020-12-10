@@ -170,8 +170,8 @@ mm4 = UnitTestDesign.matches_from_missing(mc4, wider[1, :], 3)
 arity = [3, 2, 2, 2]
 mat = [0 1 2 0; 2 2 1 0]'
 mcfm = UnitTestDesign.MatrixCoverage(collect(mat), size(mat, 2), arity)
-first = UnitTestDesign.first_match_for_parameter(mcfm, 3)
-@test first == [0, 1, 2, 0]
+fm1 = UnitTestDesign.first_match_for_parameter(mcfm, 3)
+@test fm1 == [0, 1, 2, 0]
 blank = UnitTestDesign.first_match_for_parameter(mcfm, 1)
 @test blank == [2, 2, 1, 0]
 lack = UnitTestDesign.first_match_for_parameter(mcfm, 4)
