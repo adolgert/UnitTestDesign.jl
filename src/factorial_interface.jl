@@ -140,9 +140,9 @@ function generate_tuples(engine::GND, n_way, parameters, disallow, seeds, waynes
         disallow_integer = x -> false
     end
     if seeds !== nothing && length(seeds) > 0
-        seeds_int = seeds_to_integers(kwargs[:seeds], parameters, Counter)
+        seeds_int = seeds_to_integers(seeds, parameters, Counter)
     else
-        seeds_int = []
+        seeds_int = zeros(Int, length(arity), 0)
     end
     if wayness !== nothing
         mwc = multi_way_coverage(arity, wayness, n_way)
