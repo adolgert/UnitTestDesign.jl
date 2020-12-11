@@ -1,4 +1,4 @@
-# Usage in context
+# Testing Methods
 
 ## Partition testing
 
