@@ -204,6 +204,34 @@ end
     pe1 = pairs_excursion(pe1_arity...)
     @test length(pe1) == 213
     @test length(pe1[1]) == length(pe1_arity)
+
+    disallow = (x, y, z) -> y == false && z in ["b", "c"]
+    trials2 = pairs_excursion([1, 2], [true, false], ["a", "b", "c"]; disallow = disallow)
+    for trial2 in trials2
+        @test !(!trial2[2] && trial2[3] in ["b", "c"])
+    end
+
+    seeds = [[1, 2, 3, 4, 1, 2, 3, 4], fill(4, 8)]
+    trials4 = pairs_excursion(fill(1:4, 8)...; seeds = seeds)
+    @test seeds[1] in trials4
+    @test seeds[2] in trials4
+    double_walk = UnitTestDesign.total_combinations(fill(3, 8), 2)
+    single_walk = UnitTestDesign.total_combinations(fill(3, 8), 1)
+    seed_cnt = length(seeds)
+    @test length(trials4) == double_walk + single_walk + seed_cnt 
+
+    params5 = fill(1:2, 20)
+    wayness5 = Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
+    trials5 = pairs_excursion(params5...; wayness = wayness5)
+    trails5_arr = hcat(trials5...)
+    arity5 = [length(x) for x in params5]
+    @test UnitTestDesign.test_coverage(trails5_arr, arity5, 2).finish == 0
+    @test UnitTestDesign.test_coverage(trails5_arr[1:5, :], arity5[1:5], 3).finish == 0
+    @test UnitTestDesign.test_coverage(trails5_arr[4:6, :], arity5[4:6], 3).finish == 0
+    @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0
+
+    trials6 = pairs_excursion([1, 2], [true, false], ["a", "b", "c"]; Counter = Int8)
+    @test length(trials6) == 9
 end
 
 
