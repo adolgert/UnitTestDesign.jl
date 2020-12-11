@@ -244,4 +244,11 @@ end
 @safetestset full_factorial_test = "full factorial" begin
     using UnitTestDesign
     ff1 = full_factorial([1:2, 1:2, 1:3, 1:2]...)
+    @test length(ff1) == 24
+
+    disallow = (a, b, c) -> b == 7 && c == false
+    ff2 = full_factorial([1, 2, 3], [7, 8], [true, false]; disallow = disallow)
+    for ffs in ff2
+        @test !(ffs[2] == 7 && !ffs[3])
+    end
 end

@@ -17,8 +17,9 @@ makedocs(;
         "Home" => "index.md",
         "Manual" => [
             "Guide" => "man/guide.md",
-            "Engines" => "man/engines.md",
-            "Usage" => "man/usage.md"
+            "Examples" => "man/examples.md",
+            "Usage" => "man/usage.md",
+            "Engines" => "man/engines.md"
             ],
         "Reference" => "reference.md",
         "Contributing" => "contributing.md"
