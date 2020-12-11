@@ -102,3 +102,12 @@ imw_cover4 = UnitTestDesign.test_coverage(imw1[oind2, :], imw_arity[oind2], 3)
 im11 = UnitTestDesign.ipog_multi(imw_arity, 3, x -> false, nothing)
 im11_cover = UnitTestDesign.test_coverage(im11, imw_arity, 3)
 @test im11_cover.finish == 0
+
+
+@test UnitTestDesign.add_tests_to_seeds([0 0; 0 0], [0 0; 0 0]) == [0 0; 0 0]
+@test UnitTestDesign.add_tests_to_seeds([0 0; 0 0], [1 0; 0 0]) == [1 0; 0 0]
+@test UnitTestDesign.add_tests_to_seeds([0 0; 0 0], [1 0; 0 2]) == [1 0; 2 0]
+@test UnitTestDesign.add_tests_to_seeds([0 0; 0 0], [1 0; 3 2]) == [1 0; 3 2]
+@test UnitTestDesign.add_tests_to_seeds([0 0; 4 0], [1 0; 3 2]) == [0 1 0; 4 3 2]
+@test UnitTestDesign.add_tests_to_seeds([0 0; 4 0], [1 7; 3 2]) == [0 1 7; 4 3 2]
+@test UnitTestDesign.add_tests_to_seeds([0 0; 0 0], [1 7; 3 2]) == [1 7; 3 2]

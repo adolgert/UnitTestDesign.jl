@@ -40,7 +40,7 @@ high_indices = [1,3,4,5]
 mwc = UnitTestDesign.multi_way_coverage(arity, Dict(3 => [high_indices]), n_way)
 @test maximum(sum(mwc .!= 0, dims = 1)) == 3
 mc = UnitTestDesign.MatrixCoverage(mwc, size(mwc, 1), arity)
-cov = UnitTestDesign.n_way_coverage_multi(mc, x->false, [], M, rng)
+cov = UnitTestDesign.n_way_coverage_multi(mc, x->false, zeros(length(arity), 0), M, rng)
 cov_mat = vcat([cv' for cv in cov]...)
 cov_high = cov_mat[:, high_indices]
 singles = unique(sort(cov_mat[:, high_indices], dims = 1), dims = 1)
@@ -68,7 +68,7 @@ cover = UnitTestDesign.n_way_coverage(arity, n_way, M, rng)
 tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
 @test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
 
-cover = UnitTestDesign.n_way_coverage_init(arity, n_way, [], M, rng)
+cover = UnitTestDesign.n_way_coverage_init(arity, n_way, zeros(length(arity), 0), M, rng)
 tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
 @test tuple_cnt == UnitTestDesign.total_combinations(arity, n_way)
 
@@ -86,4 +86,6 @@ seed = [
 cover = UnitTestDesign.n_way_coverage_init(arity, n_way, seed, M, rng)
 tuple_cnt = UnitTestDesign.coverage_by_tuple(cover, n_way)
 # It is possible for this to fail randomly.
-@test tuple_cnt < UnitTestDesign.total_combinations(arity, n_way)
+for sti in 1:size(seed, 2)
+    @test seed[:, sti] in cover
+end

@@ -81,9 +81,7 @@ function n_way_coverage(arity, n_way, M, rng)
             chosen_trial = trials[chosen_idx, :]
             remain = add_coverage!(allc, chosen_trial)
             push!(coverage, chosen_trial)
-        else
-            println("error because nothing was covered")
-        end
+        end  # nothing was covered, but this can happen
         loop_idx += 1
     end
     coverage
@@ -101,10 +99,9 @@ function n_way_coverage_init(arity, n_way, seed, M, rng)
     # Array of arrays.
     coverage = Array{Array{Int64,1},1}()
 
-    # Don't save the seeds to the coverage array because the user knows
-    # what they are.
-    for seed_idx in 1:size(seed, 1)
-        remain = add_coverage!(allc, seed[seed_idx, :])
+    for seed_idx in 1:size(seed, 2)
+        push!(coverage, seed[:, seed_idx])
+        remain = add_coverage!(allc, seed[:, seed_idx])
     end
 
     trials = zeros(Int, M, param_cnt)
@@ -156,7 +153,21 @@ function indices_to_arguments(arguments, indices)
     Tuple(arguments[i[1]][i[2]] for i in zip(1:length(indices), indices))
 end
 
+"""
+    n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
 
+Greedy coverage generator that includes a filter for tuples
+to exclude from consideration.
+
+# Arguments
+
+- `arity`: An array of the number of values for each parameter, in order.
+- `n_way`: Integer coverage level > 0.
+- `disallow`: A function that returns `true` for values to avoid.
+- `seed`: A 2d array of initial values with parameters along the column.
+- `M`: The number of tries to get a good test case.
+- `rng`: A random number generator.
+"""
 function n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
     param_cnt = length(arity)
     allc = all_combinations_matrix(arity, n_way)
@@ -170,17 +181,16 @@ function n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
     # Array of arrays.
     coverage = Array{Array{Int64,1},1}()
 
-    # Don't save the seeds to the coverage array because the user knows
-    # what they are.
-    for seed_idx in 1:size(seed, 1)
-        remain = add_coverage!(allc, seed[seed_idx, :])
+    for seed_idx in 1:size(seed, 2)
+        push!(coverage, seed[:, seed_idx])
+        remain = add_coverage!(allc, seed[:, seed_idx])
     end
 
     trials = zeros(Int, M, param_cnt)
     trial_scores = zeros(Int, M)
     params = zeros(Int, param_cnt)
     entry = zeros(Int, param_cnt)
-    
+
     loop_idx = 1
     while remaining_uncovered(allc) > 0
         params[:] = 1:param_cnt
@@ -226,10 +236,9 @@ function n_way_coverage_multi(allc, disallow, seed, M, rng)
     # Array of arrays.
     coverage = Array{Array{Int64,1},1}()
 
-    # Don't save the seeds to the coverage array because the user knows
-    # what they are.
-    for seed_idx in 1:size(seed, 1)
-        add_coverage!(allc, seed[seed_idx, :])
+    for seed_idx in 1:size(seed, 2)
+        push!(coverage, seed[:, seed_idx])
+        add_coverage!(allc, seed[:, seed_idx])
     end
 
     trials = zeros(Int, M, param_cnt)
