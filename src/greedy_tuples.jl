@@ -81,9 +81,7 @@ function n_way_coverage(arity, n_way, M, rng)
             chosen_trial = trials[chosen_idx, :]
             remain = add_coverage!(allc, chosen_trial)
             push!(coverage, chosen_trial)
-        else
-            println("error because nothing was covered")
-        end
+        end  # nothing was covered, but this can happen
         loop_idx += 1
     end
     coverage

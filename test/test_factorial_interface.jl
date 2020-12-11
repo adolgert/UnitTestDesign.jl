@@ -78,9 +78,40 @@ end
         nothing, nothing, nothing, Int)
     @test length(trials1) == 6
     @test trials1[1][3] in ["a", "b", "c"]
+
+    disallow = (x, y, z) -> y == false && z in ["b", "c"]
+    trials2 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
+        disallow, nothing, nothing, Int)
+    for trial2 in trials2
+        @test !(!trial2[2] && trial2[3] in ["b", "c"])
+    end
+
+    disallow = (x...) -> x[1] == 2 && x[3] in ["a", "b"]
+    trials3 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
+        disallow, nothing, nothing, Int)
+    for trial3 in trials3
+        @test !(trial3[1] == 2 && trial3[3] in ["a", "b"])
+    end
+
+    seeds = [[1, 2, 3, 4, 1, 2, 3, 4], fill(4, 8)]
+    trials4 = generate_tuples(IPOG(), 2, fill(1:4, 8), nothing, seeds, nothing, Int)
+    @test trials4[1] == seeds[1]
+    @test trials4[2] == seeds[2]
+    cover4 = UnitTestDesign.test_coverage(hcat(trials4...), fill(4, 8), 2)
+    @test cover4.finish == 0
+
+    params5 = fill(1:2, 20)
+    wayness5 = Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
+    trials5 = generate_tuples(IPOG(), 2, params5, nothing, nothing, wayness5, Int)
+    trails5_arr = hcat(trials5...)
+    arity5 = [length(x) for x in params5]
+    @test UnitTestDesign.test_coverage(trails5_arr, arity5, 2).finish == 0
+    @test UnitTestDesign.test_coverage(trails5_arr[1:5, :], arity5[1:5], 3).finish == 0
+    @test UnitTestDesign.test_coverage(trails5_arr[4:6, :], arity5[4:6], 3).finish == 0
+    @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0    
 end
 
-@safetestset GND_gen_tuples_test = "GND generate tupels" begin
+@safetestset GND_gen_tuples_test = "GND generate tuples" begin
     using UnitTestDesign
     gndt1 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
     nothing, nothing, nothing, Int)

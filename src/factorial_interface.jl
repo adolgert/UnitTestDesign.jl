@@ -73,10 +73,18 @@ struct Excursion
 end
 
 
+"""
+The user specifies forbidden test cases in terms of parameter values,
+but inner code thinks of parameter values as integers, so this function
+wraps the user's function in order to do the translation.
+"""
 function wrap_disallow(disallow, parameters)
     if disallow !== nothing
         inner_filter = let filter = disallow, params = parameters
-            choices -> filter((p[c] for (p, c) in zip(params, choices))...)
+            choices -> begin
+                as_values = ((c != 0 ? p[c] : nothing) for (p, c) in zip(params, choices))
+                filter(as_values...)
+            end
         end
     else
         inner_filter = nothing
@@ -114,7 +122,7 @@ function generate_tuples(engine::IPOG, n_way, parameters, disallow, seeds, wayne
         seeds_int = zeros(Counter, param_cnt, 0)
     end
     if wayness !== nothing
-        result = ipog_multi_way(arity, n_way, levels, wayness, disallow_integer, seeds_int)
+        result = ipog_multi_way(arity, n_way, wayness, disallow_integer, seeds_int)
     elseif disallow !== nothing || seeds !== nothing
         result = ipog_multi(arity, n_way, disallow_integer, seeds_int)
     else

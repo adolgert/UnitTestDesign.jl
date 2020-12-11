@@ -330,7 +330,7 @@ function ipog_multi(arity, n_way, disallow, seed)
     # Setup by taking first n_way parameters.
     # This is a 2D array.
     combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), forbid)
-    test_set = unique(hcat(seed_tests, combo_tests), dims = 2)
+    test_set = add_tests_to_seeds(seed[1:n_way, :], combo_tests)
 
     for param_idx in (n_way + 1):param_cnt
         taller = zeros(eltype(arity), param_idx, size(test_set, 2))
@@ -358,12 +358,48 @@ function ipog_multi(arity, n_way, disallow, seed)
 end
 
 
+"""
+The seeds may not be unique, so we can't combine tests and seeds
+with the unique function. The problem is that seeds may not be
+unique for the few parameters in the combination test.
+"""
+function add_tests_to_seeds(seeds, tests)
+    append_cnt = 0
+    to_append = zeros(Int, size(tests, 2))
+    for tidx in 1:size(tests, 2)
+        found = false
+        test = tests[:, tidx]
+        for sidx in 1:size(seeds, 2)
+            if case_compatible_with_tuple(test, seeds[:, sidx])
+                for pidx in 1:length(test)
+                    if test[pidx] != 0
+                        seeds[pidx, sidx] = test[pidx]
+                    end
+                end
+                found = true
+                break
+            end
+        end
+        if !found
+            append_cnt += 1
+            to_append[append_cnt] = tidx
+        end
+    end
+    if append_cnt > 0
+        extracted = tests[:, to_append[1:append_cnt]]
+        hcat(seeds, extracted)
+    else
+        seeds
+    end
+end
+
+
 function ipog_inner(arity, n_way, forbid, seed)
     param_cnt = length(arity)
     # Setup by taking first n_way parameters.
     # This is a 2D array.
     combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), forbid)
-    test_set = unique(hcat(seed[1:n_way, :], combo_tests), dims = 2)
+    test_set = add_tests_to_seeds(seed[1:n_way, :], combo_tests)
 
     for param_idx in (n_way + 1):param_cnt
         taller = zeros(eltype(arity), param_idx, size(test_set, 2))
