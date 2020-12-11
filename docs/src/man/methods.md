@@ -1,34 +1,4 @@
-# Usage in context
-
-## Test generation
-
-We use test case generation tools, like this library, when tests take
-too long to run. It can be worthwhile to generate smaller test suites
-by running slower test case generators (such as [`GND`](@ref)). The development
-process is:
-
-1. Generate test cases.
-2. Save test cases to a file, a testing artifact, or copied to the unit test
-   as data.
-3. Load the test cases for unit testing.
-
-## Test data generation
-
-We use combinatoric testing because it finds all code paths. Code
-paths are lines of code chosen by the same if-then decision.
-Some code has few code paths but many branches. For instance,
-`data_frame = all_data_frame[data_frame[:, :time] > 10]` has two
-branches, one for times less than ten and one for times greater than ten.
-
-This library will create test data as easily as it creates test cases.
-
-```julia
-using DataFrames
-names = ["time", "event", "who", "location"]
-at = all_triples([0.1, 5.1, 10.9], [:infect, :recover], [10, 11, 12], ["forest", "home"])
-DataFrame(Dict(names[i] => [row[i] for row in at] for i in 1:length(names))...)
-```
-
+# Testing Methods
 
 ## Partition testing
 

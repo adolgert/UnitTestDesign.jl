@@ -183,7 +183,7 @@ end
 @safetestset IPOG_gen_triples_test = "IPOG generate tuples" begin
     using UnitTestDesign
     at1 = all_triples([1, 2], ["a", "b", "c"], [4, 7], [true, false])
-    @test length(at1) > 8
+    @test length(at1) > 9
     @test at1[1][3] in [4, 7]
     @test length(at1[1]) == 4
 end
@@ -194,7 +194,7 @@ end
     ve1_params = [1:3, 1:2, 1:4, 1:2, 1:2]
     ve1 = values_excursion(ve1_params...)
     ve1_arity = maximum.(ve1_params)
-    @test length(ve1) == sum(ve1_arity .- 1)
+    @test length(ve1) == sum(ve1_arity .- 1) + 1
 end
 
 
@@ -202,7 +202,7 @@ end
     using UnitTestDesign
     pe1_arity = [1:4, 1:4, 1:4, 1:4, 1:3, 1:3, 1:3, 1:4]
     pe1 = pairs_excursion(pe1_arity...)
-    @test length(pe1) == 213
+    @test length(pe1) == 214
     @test length(pe1[1]) == length(pe1_arity)
 
     disallow = (x, y, z) -> y == false && z in ["b", "c"]
@@ -215,10 +215,11 @@ end
     trials4 = pairs_excursion(fill(1:4, 8)...; seeds = seeds)
     @test seeds[1] in trials4
     @test seeds[2] in trials4
+    origin = 1
     double_walk = UnitTestDesign.total_combinations(fill(3, 8), 2)
     single_walk = UnitTestDesign.total_combinations(fill(3, 8), 1)
     seed_cnt = length(seeds)
-    @test length(trials4) == double_walk + single_walk + seed_cnt 
+    @test length(trials4) == origin + double_walk + single_walk + seed_cnt 
 
     params5 = fill(1:2, 20)
     wayness5 = Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
@@ -231,7 +232,7 @@ end
     @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0
 
     trials6 = pairs_excursion([1, 2], [true, false], ["a", "b", "c"]; Counter = Int8)
-    @test length(trials6) == 9
+    @test length(trials6) == 10
 end
 
 
@@ -244,4 +245,11 @@ end
 @safetestset full_factorial_test = "full factorial" begin
     using UnitTestDesign
     ff1 = full_factorial([1:2, 1:2, 1:3, 1:2]...)
+    @test length(ff1) == 24
+
+    disallow = (a, b, c) -> b == 7 && c == false
+    ff2 = full_factorial([1, 2, 3], [7, 8], [true, false]; disallow = disallow)
+    for ffs in ff2
+        @test !(ffs[2] == 7 && !ffs[3])
+    end
 end

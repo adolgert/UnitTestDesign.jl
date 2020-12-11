@@ -12,9 +12,9 @@ and my email is listed.
 
 ## Branch process
 
-- The `main` branch is for development.
-- Releases go to `release`.
+The trunk is called `main`. I use PRs from branches or other repos to main.
+If this project needs more than that, let's discuss it.
 
 ## Conduct
 
-Let's follow the contributor covenant.
+Let's follow the [Contributor Covenant Code of Conduct](@ref).

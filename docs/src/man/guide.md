@@ -22,7 +22,7 @@
     - [`full_factorial`](@ref): Generates all combinations of parameters, filtering
       those that aren't permitted.
 
-## Same interface for all of test generators
+## Same interface for all test generators
 
 ### Increase coverage for subsets of parameters
 
@@ -34,7 +34,8 @@ to request that the subset of parameters have greater coverage.
 For instance, this requrests that the first, third, and fourth parameters
 have 3-way coverage, meaning full-factorial, while the second parameter has
 only 2-way coverage. This is more meaningful when there are lots of parameters.
-```julia
+```@example
+using UnitTestDesign  # hide
 test_set = all_pairs(
     [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
     wayness = Dict(3 => [[1, 3, 4]])
@@ -48,6 +49,7 @@ together, should be covered at the given level. This means that, were you to hav
 parameters, you could request that parameters `[3:6]` and parameters `[25:30]` be
 covered with triples.
 ```julia
+array_of_forty_parameters = fill(1:4, 40)
 test_set = all_pairs(
     array_of_forty_parameters...;
     wayness = Dict(3 => [[3:6], [25:30]])
@@ -61,11 +63,12 @@ Keep the test engine from making tests that aren't allowed for
 your function. Pass it a filter function, one that returns `true`
 whenever a parameter combinations is forbidden.
 
-```julia
+```@example
+using UnitTestDesign  # hide
 disallow(n, level, value, kind) = level == "high" && kind == :optim
 test_set = all_pairs(
     [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
-    filter = disallow
+    disallow = disallow
     )
 ```
 
@@ -76,7 +79,8 @@ If there are particular tests that must be run, these already include
 some of the tuples that should be covered. You can pass the must-run
 test cases, and they will be included among the test cases.
 
-```julia
+```@example
+using UnitTestDesign  # hide
 must_test = [[1, "mid", 3.7, :relax], [1, "mid", 4.9, :relax]]
 test_cases = all_pairs(
     [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
