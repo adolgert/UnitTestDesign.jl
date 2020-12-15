@@ -15,7 +15,7 @@ This package generates parameter values for unit tests, chooses software configu
 ## Installation
 
 ```
-pkg> add https://github.com/adolgert/UnitTestDesign.jl
+pkg> add UnitTestDesign
 ```
 
 ## Example
