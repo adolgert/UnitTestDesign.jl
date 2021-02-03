@@ -72,6 +72,20 @@ test_set = all_pairs(
     )
 ```
 
+There are *two problems* with excluding values.
+
+1. The `disallow` function needs to handle possible `nothing` arguments.
+   The generator will call this function on partially-constructed argument lists,
+   and it will pass `nothing` for those arguments that have not yet been chosen.
+
+2. The generator *may fail to find a solution* if there is a disallow list.
+   Both the IPOG and GND generators can get stuck when there are rules that
+   forbid combinations. It depends on the combinations and some luck. When it
+   does fail, you will see the code try to access a vector at location 0.
+
+There are papers that solve these problems by pairing tuple generation with
+logic solvers. That sounds great. It isn't implemented here.
+
 
 ## Seed test cases
 
