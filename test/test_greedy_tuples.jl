@@ -13,7 +13,7 @@ ar_cases = [
 ar_rng = MersenneTwister(342234)
 for ar_case in ar_cases
     values = Set{Int}()
-    for i in 1:10
+    for i in 1:100
         idx = UnitTestDesign.argmin_rand(ar_rng, ar_case[1])
         push!(values, idx)
     end
