@@ -44,6 +44,7 @@ max_arity = CI ? 5 : 7
 start_time = time()
 while time() - start_time < test_time
     n = rand(rng, 3:max_n)
+    local arity
     arity = rand(rng, 2:max_arity, n)
     k = rand(rng, 2:minimum([4, n]))
     println("$(arity) $(k)")
@@ -62,6 +63,7 @@ start_time = time()
 not32 = (x -> (length(x) >= 3 && x[2] == 3 && x[3] == 2))
 while time() - start_time < test_time
     n = rand(rng, 3:max_n)
+    local arity
     arity = rand(rng, 2:max_arity, n)
     arity[2] = maximum([3, arity[2]]) # make sure it's >=3.
     k = rand(rng, 2:minimum([4, n]))
