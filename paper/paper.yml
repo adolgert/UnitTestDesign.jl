@@ -1,0 +1,14 @@
+title: "UnitTestDesign.jl: Combinatorial design for unit tests"
+keywords:
+  - Julia
+  - unit testing
+  - combinatorial design
+authors:
+  - name: Andrew Dolgert
+    orcid: 0000-0002-6477-7981
+    affiliation: 1
+affiliations:
+  - name: University of Washington
+    index: 1
+date: 3 July 2021
+bibliography: ref.bib
