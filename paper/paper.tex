@@ -1,0 +1,138 @@
+\documentclass{juliacon}
+
+%\usepackage{xspace}
+\setcounter{page}{1}
+
+%\newcommand{\utd}{\texttt{UnitTestDesign}\xspace}
+\newcommand{\utd}{UnitTestDesign}
+\begin{document}
+
+\input{header}
+
+\maketitle
+
+\begin{abstract}
+The \utd package generates all-pairs test cases for unit tests. It implements a greedy algorithm that minimizes the number of test cases that give $n$-way combinatorial coverage. This library is meant to be convenient to use within Julia's unit testing framework, so you can specify forbidden combinations of arguments, to match the behavior of the function under test.
+\end{abstract}
+
+
+\section{Introduction}
+
+We test code in order to address risk of failure, and we judge risk of failure by the likelihood code will fail, how difficult it is to mitigate a failure, and how important it is to have a correct result. However, whether the result of a calculation matters less than what's in the environment.
+
+Our first unit tests for code often derive from mimicking how a user might write client code. These happy-path tests are narrative. We may augment them with our best guesses for corner cases of a function under test. There are times we want more of a guarantee that a function doesn't have faults. This may be that we recognize the function is complex, or that it's central to a sensitive calculation. We may test a part of a code base well because we want reduce the logical complexity that comes from doubt {cite}.
+
+There is a world of testing tools to help find faults in risky code. Some measure the quality of existing tests. Others select tests to run depending on test coverage or recent code modifications. Let's focus on the first antidote to the biases inherent in narrative testing, those that generate test cases. These are tools that create argument values that you pass into a function under test. Then the author of the test is responsible for checking the validity of the output from the function.
+
+There are a few common strategies for automated test case generation. A randomized approach chooses argument values from the space of allowed arguments, usually with some bias towards choosing possible corner cases. Some tools introduce more structure to choosing random arguments. The \texttt{QuickCheck} and \texttt{Hypothesis} packages use customized generators to create streams of test cases. Concolic testing records the execution of the function under test in order to generate subsequent test cases that are likely to increase line coverage. There are also more mathematical approachses, such as Sobol sequences and orthogonal arrays, which have particular diagnostic uses.
+
+
+\section{Statement of Need}
+
+Why we need n-way combinatorial testing. Why we need it in Julia.
+
+Most of the techniques for test case generation focus more on making a smart set of tests then they focus on making few tests that are of high quality. Combinatorial testing generates fewer tests that are designed to give good branch coverage.
+
+There are two cases where this is crucial. The first is that you have to test a slow function, such as a large, Monte Carlo inference. If the function under test runs for hours or days, then selective testing can respect resource limitations.
+
+The other case is when there is a large test space. We've been talking about a function under test, but this is a stand-in for any test we can parametrize. Let's say we've written an application, that we've unit tested its important supporting functions, and we want to write user-level tests that look for problems from interactions among command-line arguments and choices in parameter files. This can be equivalent to testing a function with twenty or more arguments. Twenty arguments, with four possible values each, would lead to over $10^12$ ways to call this function, so how can we feel our tests begin to cover the problem?
+
+The combinatorial testing in \utd takes the time to optimize the choice of test cases so that they can test the code well. The theory of the game is that each if--then in the code will branch depending on combinations of argument values, so combinatorial testing ensures all combinations of $n$ arguments are tried in at least one test case. Here, $n=2$ for two-way testing, also known as all-pairs testing, but studies have shown that wayness up to $n=6$ can be useful.
+
+In practice, that means that you, the author of the unit test, has to choose a few possible values for each function argument. These values will be samples from equivalence classes for that argument and may include corner cases. Then the \utd library generates a set of test cases. In the unit testing framework, the code loops over the test cases, checking whether the results are acceptable.
+
+While combinatorial testing is a useful tool in some circumstances, there are other tools that generate combinatorial tests. X makes them with a domain-specific language. This company's tool does it.
+
+These companies keep disappearing. The quality of tools is supect (by the authors sometimes). It comes down to an author using the tools available within a framework.
+
+That means the tool has to be usable, too. What happens if we create an all-pairs set of unit tests, but some of them don't work for your function because the combination of arguments doesn't make sense? You have to throw out those tests, but you've lost the very guarantee that this testing method made.
+So it has to have a) forbid combinations of argument values, b) n-way testing c) multi-way testing d) start with certain cases.
+
+
+\section{Solution}
+
+So what we do here: Help anybody do a good job on this algorithm, thanks to some work we did.
+Clarify the greedy algorithm. Show the algorithm with its complexity.
+Out of scope: advanced data structures, other optimization methods.
+
+An argument is. A value is.
+
+The class of greedy algorithms:
+The end result will be a list of test cases that have A columns, where A is the number of arguments.
+\begin{enumerate}
+   \item Generate a list of all combinations of argument values. For instance, one entry would be that the first value of the second argument must appear with the fourth value of the third argument.
+   \item For an n-way coverage algorithm, initialize the first n columns of the test cases with a full factorial set of values.
+   \item For each argument from n+1 to A.
+   \begin{enumerate}
+      \item Grow the test cases wider by finding all cases that match the next empty argument.
+      \item Grow the test cases taller by adding a row for all cases that couldn't be matched.
+   \end{enumerate}
+   \item Fill in any missing values in test cases.
+\end{enumerate}
+
+\begin{lstlisting}[language=Julia]
+function ipog(arity, n_way)
+    nonincreasing = sortperm(arity, rev = true)
+    arity = arity[nonincreasing]
+
+    param_cnt = length(arity)
+    # 2D array of argument values.
+    test_set = all_combinations(
+            arity[1:n_way], n_way)
+
+    for param_idx in (n_way + 1):param_cnt
+        taller = zeros(eltype(arity), param_idx,
+                size(test_set, 2))
+        taller[1:(param_idx - 1), :] .= test_set
+        allc = one_parameter_combinations_matrix(
+                arity[1:param_idx], n_way)
+        choose_last_parameter!(taller, allc)
+        test_set = insert_tuple_into_tests(
+                taller, allc)
+    end
+
+    fill_remaining_missing_values!(test_set, arity)
+    test_set[sortperm(nonincreasing), :]
+end
+\end{lstlisting}
+
+If we pick one entry from the proposal and one entry from the test cases, there are five ways they can compare.
+\begin{center}
+\begin{tabular}{rll}
+name & test cases & tuples \\ \hline
+ignores & * & * \\
+skips & $a$ & * \\
+misses & * & $b$ \\
+matches & $a$ & $b=a$ \\
+mismatches & $a$ & $b\ne a$
+\end{tabular}
+\end{center}
+Only the last comparison is clearly a mismatch.
+
+Let's take two strings of argument values. Each pair of arguments will compare with one of the five ways. If any mismatch, there is a mismatch of the two strings. That leaves several different ways we can call a string matching. We can think of the string as scoring either zero or more than zero ignores, zero or more than zero skips, and so-on. That means there are $2^4-1 = 15$ ways for two strings to match, because nonzero strings will match at least one of the four ways. Which of the 15 ways do we count as a match?
+
+\begin{enumerate}
+   \item No mismatches.
+   \item Some matches and no mismatches.
+   \item Only matches, skips, or ignores. No misses or mismatches.
+\end{enumerate}
+
+1 and 2 are equivalent when the tuples all have a value in the current column being filled.
+For filling the last tests, using no-mismatches works well.
+
+\section{Comparison of Approaches}
+to random
+to generative
+
+From a user perspective, it's about how easy it is to use one method or another. For instance, QuickCheck does more than generate tests. It reduces the cycle of debugging by finding the simplest test that fails.
+
+to concolic
+
+
+\section{Conclusion}
+Residual logical complexity.
+
+Unit test is a second telling of a function. A parable.
+
+\input{bib.tex}
+\end{document}
