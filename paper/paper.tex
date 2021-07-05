@@ -12,9 +12,7 @@
 \maketitle
 
 \begin{abstract}
-
-The \utd package generates all-pairs test cases for unit tests. It implements a greedy algorithm that minimizes the number of test cases that give $n$-way combinatorial coverage. This library is meant to be convenient to use within Julia's unit testing framework, so you can specify forbidden combinations of arguments, to match the behavior of the function under test.
-
+Combinatorial interaction testing is an automated way to generate test cases for unit tests. It's designed to be the best guess at the fewest unit tests that will give the best coverage. This article discusses when to use this technique and how to apply it with the \utd package in the Julia testing ecosystem. This article offers a general approach to using automated test generation for different software testing applications.
 \end{abstract}
 
 \section{Introduction}
@@ -50,7 +48,7 @@ Here, the \verb|all_pairs| function uses the sample argument values to create a 
 There are a few common strategies for automated test case generation. A randomized approach chooses argument values from the space of allowed arguments, usually with some bias towards choosing possible corner cases~\cite{Lampropoulos2020-sd,Arcuri2012-az}. Some tools introduce more structure to choosing random arguments. The \texttt{QuickCheck} and \texttt{Hypothesis} packages use customized generators to create streams of test cases~\cite{loscher2018automating}. Concolic testing records the execution of the function under test in order to generate subsequent test cases that are likely to increase line coverage~\cite{King1976-jt,Wang2018-xh,vira2019}. There are also more mathematical approaches, such as Sobol sequences and orthogonal arrays~\cite{He2013-th}, which have particular diagnostic uses.
 
 
-\section{Statement of Need}
+\section{Statement of Need}\label{sec:statement-of-need}
 
 Most of the techniques for test case generation focus more on making a smart set of tests than they focus on making few tests that are of high quality. Combinatorial testing generates fewer tests that are designed to give good branch coverage~\cite{Nie2011-yl,Grindal2005-su,Kuhn2010-ak}.
 
@@ -61,8 +59,7 @@ There are two cases where this is crucial. The first is that you have to test a 
 The other case is when there is a large test space. We've been talking about a function under test, but this is a stand-in for any test we can parametrize. Let's say we've written an application, that we've unit tested its important supporting functions, and we want to write user-level tests that look for problems from interactions among command-line arguments and choices in parameter files. This can be equivalent to testing a function with twenty or more arguments. Twenty arguments, with four possible values each, would lead to over $10^{12}$ ways to call this function, so how can we feel our tests begin to cover the problem?
 
 \vskip 6pt
-The combinatorial testing in \utd takes the time to optimize the choice of test cases so that they can test the code well. The theory of the game is that each if--then in the code will branch depending on combinations of argument values, so combinatorial testing ensures all combinations of $n$ arguments are tried in at least one test case. Here, $n=2$ for two-way testing, also known as all-pairs testing, but studies have shown that wayness up to $n=6$ can be useful.
-
+The combinatorial testing in \utd takes the time to optimize the choice of test cases so that they can test the code well. The theory of the game is that each if--then in the code will branch depending on combinations of argument values, so combinatorial testing ensures all combinations of $n$ arguments are tried in at least one test case. Here, $n=2$ for two-way testing, also known as all-pairs testing~\cite{pairwise-website}, but studies have shown that wayness up to $n=6$ can be useful~\cite{Petke2015-ex}.
 
 \vskip 6pt
 While combinatorial testing is a useful tool in some circumstances, there are other tools that generate combinatorial tests. X makes them with a domain-specific language. This company's tool does it.
@@ -75,7 +72,7 @@ That means the tool has to be usable, too. What happens if we create an all-pair
 So it has to have a) forbid combinations of argument values, b) n-way testing c) multi-way testing d) start with certain cases~\cite{Czerwonka2006-hm}.
 
 
-\section{How to Use Combinatorial Testing}
+\section{How to Use Combinatorial Testing}\label{sec:how-to-use}
 
 \subsection{Outline of the method}
 
@@ -83,7 +80,7 @@ While you may already know how to use test case generation from the snippet in t
 \begin{enumerate}
    \item Identify the system under test. It may be a function, but it could correspond to an \textsc{api} or an application.
    \item Decide how a single test case, consisting of argument values, should correspond to a unit test.
-   \item Evaluate the risk associated with different arguments.
+   \item Address the risk associated with different arguments.
    \item Pick a test generation strategy.
    \item Choose a method for checking the results of each test.
 \end{enumerate}
@@ -111,100 +108,107 @@ The argument values in test cases could also represent, for instance, the number
 \vskip 6pt
 There are cases where a function has one argument that is a flag and, when it's chosen, other argument values don't make sense to choose. We want to forbid these from the possible input choices. For instance, if \verb|arg1| can be \verb|true| or \verb|false|, and \verb|arg2| can be \verb|default|, \verb|high|, or \verb|low|, but we want to exclude the combination of \verb|false| and \verb|high| or \verb|low|, then the possible outcomes are \verb|true|-\verb|default|, \verb|true|-\verb|high|, \verb|true|-\verb|low|, \verb|false|-\verb|default|. We can either teach the test generator to forbid two combinations, or we can modify the input values, so that \verb|arg12| represents the four possible cases for \verb|arg1| and \verb|arg2| together.
 
+\vskip 6pt
 Forbidden tuples~\cite{Petke2015-ex} for combinatorial testing is a method. Among others~\cite{Grindal2006-vy}.
-
-
-\subsection{Evaluate risk}
-
-The combinatorial testing approach gives you a lever with which to address perceived risk in code. This can range from pairwise testing, which is two-way coverage, to six-way coverage, beyond which studies show little benefit~\cite{Petke2015-ex}. corresponds to if--then.
-
-depends on resources.
-
-vary with sets of arguments.
-Mixed-level covering arrays don't have well-understood bounds~\cite{Cohen2003-pg}.
-
-Can after-the-fact measure differences in fault-finding.
-
-
-\subsection{Pick a test generation strategy}
-
-full factorial
-excursion
-n-way coverage
- - by greedy
- - by greedy, non-deterministic
-
-
-\subsection{Evaluate results}
-
-tend to use traits.
-
-\vskip 6pt
-Do the results represent exact values? For mathematical code, we often don't have exact values. You may check the results with
-\begin{itemize}
-   \item A different version of the same function, some kind of parallel implementation. Could be a more naive algorithm or one that uses a different mathematical representation of the same calculation.
-   \item A trait of the result, given the inputs. For instance, it may be that a second execution of the function under test, with the same arguments, modified to have \verb|f(2*a, b/2)=f(a, b)| should give the same result. This is a symmetry test~\cite{Segura2016-qh}.
-\end{itemize}
-
-\section{Optimization of Test Cases with Practical Constraints}
-Also \textsc{aetg}~\cite{Cohen1997-lb}.
-
-\vskip 6pt
-So what we do here: Help anybody do a good job on this algorithm, thanks to some work we did.
-Clarify the greedy algorithm~\cite{Lei2008-xt}. Show the algorithm with its complexity.
-Out of scope: advanced data structures~\cite{Segall2011-jv}, other optimization methods.
-
-\vskip 6pt
-An argument is. A value is.
-
-\vskip 6pt
-The class of greedy algorithms:
-The end result will be a list of test cases that have A columns, where A is the number of arguments.
-\begin{enumerate}
-   \item Generate a list of all combinations of argument values. For instance, one entry would be that the first value of the second argument must appear with the fourth value of the third argument.
-   \item For an n-way coverage algorithm, initialize the first n columns of the test cases with a full factorial set of values.
-   \item For each argument from n+1 to A.
-   \begin{enumerate}
-      \item Grow the test cases wider by finding all cases that match the next empty argument.
-      \item Grow the test cases taller by adding a row for all cases that couldn't be matched.
-   \end{enumerate}
-   \item Fill in any missing values in test cases.
-\end{enumerate}
-
-Higher arity for greedy algorithms is a relatively recent development~\cite{Richard_Kuhn2008-ut}.
-
-\vskip 6pt
 \begin{lstlisting}[language=Julia]
-function ipog(arity, n_way)
-    nonincreasing = sortperm(arity, rev = true)
-    arity = arity[nonincreasing]
-
-    param_cnt = length(arity)
-    # 2D array of argument values.
-    test_set = all_combinations(
-            arity[1:n_way], n_way)
-
-    for param_idx in (n_way + 1):param_cnt
-        taller = zeros(eltype(arity), param_idx,
-                size(test_set, 2))
-        taller[1:(param_idx - 1), :] .= test_set
-        allc = one_parameter_combinations_matrix(
-                arity[1:param_idx], n_way)
-        choose_last_parameter!(taller, allc)
-        test_set = insert_tuple_into_tests(
-                taller, allc)
-    end
-
-    fill_remaining_missing_values!(test_set, arity)
-    test_set[sortperm(nonincreasing), :]
-end
+disallow(n, level, value, kind) = level == "high" && kind == :optim
+test_set = all_pairs(
+    [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
+    disallow = disallow
+    )
 \end{lstlisting}
 
 \vskip 6pt
-If we pick one entry from the proposal and one entry from the test cases, there are five ways they can compare.
+Pre-existing example calls.
+\begin{lstlisting}[language=Julia]
+must_test = [[1, "mid", 3.7, :relax], [1, "mid", 4.9, :relax]]
+test_cases = all_pairs(
+    [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
+    seeds = must_test
+    )
+\end{lstlisting}
+
+\subsection{Address risk}
+
+The combinatorial testing approach gives you a lever with which to address perceived risk in code. You decide the wayness of coverage, which is the number of arguments for which all combinations of argument values must appear. Pairwise testing has two-way coverage. Literature on how to generate these tests uses the word coverage to mean two-way, three-way, and so on. The term test coverage usually refers to which lines of code, if--then decision tests, or branches are executed during a test.
+
+\vskip 6pt
+The two uses of the word coverage are related, because combinations with higher wayness should lead to more decision coverage of code. It would therefore seem appropriate to use cyclomatic complexity measures to estimate whether two-way coverage is enough. While there is some evidence that high coverage finds faults in less-used parts of a code base~\cite{Cai2005-ex}, coverage shouldn't be the focus of unit testing~\cite{Inozemtseva2014-gz}. This can range from pairwise testing, which is two-way coverage, to six-way coverage, beyond which studies show little benefit~\cite{Petke2015-ex}.
+
+\vskip 6pt
+As described in Sec.~\ref{sec:statement-of-need}, combinatorial testing is most useful when there are constraints on testing resources. These constraints can force choices for the wayness of coverage. There are a couple of techniques for working within constraints, while still respecting our perception of risk.
+
+\vskip 6pt
+The first is to vary wayness of coverage for different sets of arguments. For instance, if the function under test used an evolutionary algorithm that had several options for the representation of individuals, their mutation, and recombination, we might want to test these choices exhaustively with full-factorial coverage, while selecting pairwise coverage for other options. This would be done by adding a \verb|wayness| argument to the function call.
+
+\begin{lstlisting}[language=Julia]
+array_of_forty_parameters = fill(1:4, 40)
+test_set = all_pairs(
+    array_of_forty_parameters...;
+    wayness = Dict(3 => [[3:6], [25:30]])
+    )
+\end{lstlisting}
+It's unclear whether mixing wayness will still yield a small set of test cases because mixed-level covering arrays don't have well-understood bounds~\cite{Cohen2003-pg}, however sample runs show it does produce fewer test cases than raising coverage on all arguments.
+
+\vskip 6pt
+One of the most powerful ways to address risk while conserving resources is to pair automated test generation with automated test selection. These are methods that evaluate the tests that are generated in order to select those that are most likely to find different faults in the code.
+
+\subsection{Pick a test generation strategy}
+
+There are a few different strategies for combinatorial test generation in \utd.
+
+\vskip 6pt
+The \emph{full factorial} method generates $n$-way coverage for $n$ arguments. That is, it generates all combinations of values for all arguments. This is equivalent to what you could create with an $n$-deep for-loop.
+
+\vskip 6pt
+The \emph{excursion} method makes a first test case using the first provided value for each argument. Then, for one-way excursions, it walks the first argument through all values, keeping the rest of the arguments the same. Then it walks the second argument through all values, keeping the rest of the arguments the same. It asks how the function under test would perform if you were to change any single argument value. A two-way excursion tries changes to any two argument values in combination.
+
+\vskip 6pt
+There are two ways the \utd package creates covering arrays, also known as \emph{fractional factorial designs}. The default generator is called \verb|IPOG| because it is similar to the \textsc{ipo-g} algorithm~\cite{Lei2008-xt}. It is deterministic, so it produces the same set of test cases for the same set of inputs. The other generator is called \verb|GND|, and it uses a random number generator to search for covering arrays. It returns test cases that obey the same covering properties as the \verb|IPOG| generator, but it uses a method similar to the \textsc{aetg} generator~\cite{Cohen1997-lb}. In both cases, the algorithms vary from the published examples, as discussed in Sec.~\ref{sec:implementation}.
+
+\begin{lstlisting}[language=Julia]
+rng = Random.MersenneTwister(9790242)
+slow_and_short = all_pairs(parameters...; engine = GND(rng = rng, M = 50))
+\end{lstlisting}
+
+\subsection{Evaluate results}
+
+When a testing suite contains only a few tests of a function, the test author can usually figure out how to check those few function outputs for failures. Automatic generation of test arguments creates a problem because it isn't paired with automatic generation of checks for test failures.
+
+\vskip 6pt
+One solution is to create a parallel implementation of the function under test. It could be an earlier version of the function, using a na{\"i}ve algorithm. It could be a function that computes the same values using a different mathematical representation, such as using numerical integration instead of using the result of symbolic integration. It could be an external implementation, in another language.
+
+\vskip 6pt
+It helps to consider the check for failure, not as \verb|result == oracle(test_case...)| but as a rule that takes both result and test case into account. For instance, some mathematical calculations solve inverse problems, so that the result can be fed into a related forward problem. The test becomes whether it can recover its input values.
+
+\vskip 6pt
+Automated testing of results often takes the form of testing for traits of the result, not exact values. For example, you could test a function for continuity of outputs near the given input. You could use statistical measures, such as maximum absolute error, to assert that a function's output is near some standard result. There is a powerful technique to assert symmetries in function arguments. For instance if, for some function under test, $f$, a symmetry test might check that \verb|f(a, b)=f(2*a, b/2)|~\cite{Segura2016-qh}.
+
+
+\section{Optimization of Test Cases with Practical Constraints}\label{sec:implementation}
+
+There are two ways to improve upon current use of combinatorial test generation. One is to help the tester whose testing resources are limited, by generating fewer test cases that still meet the wayness guarantee. The other is to make it more convenient to use combinatorial testing within the unit testing framework. Here, we could generate tests with so little time and memory that there is no need to cache test cases. Both of these improvements are limited by our need for algorithms that support the features, described above, that make automated test case generation practical to use.
+
+\vskip 6pt
+The \utd package expanded on the implementation of two $n$-way combinatorial interaction testing algorithms. One is the greedy, non-deterministic algorithm known as \textsc{aetg}~\cite{Cohen1997-lb}. The other is a deterministic, parameter-choosing algorithm called \textsc{ipo-g}~\cite{Lei2008-xt}. Like many greedy algorithms, these can be sensitive to small, sometimes unspecified, choices in implementation. We used two approaches for this package in order to make algorithms that had the right features and performed well.
+
+\vskip 6pt
+In order to support a feature where the test author can require certain pre-defined test cases, we added those test cases to the list of tuples to be covered, where a tuple is a combination of argument values. We just put that into the list and let the algorithms take care of covering it.
+
+\vskip 6pt
+In order to support multi-level wayness in coverage, we used multiple rounds of the official algorithm, starting at the highest wayness. For example, given a pairwise test generation strategy that requests all-triples over a set of five arguments, we first generated test cases that cover the all-triples, and then we presented these as initial seed values to the all-pairs calculation.
+
+\vskip 6pt
+In order to avoid forbidden combinations of arguments, we checked the validity of the next possible argument at every moment in the algorithm that a next argument is chosen. This sometimes meant that a test case being created could be thrown out and started new from a different seed argument value. This is a situation where it might help to use the Z3 theorem prover to reduce the need for retries, as some packages have done~\cite{Nie2011-yl}.
+
+\vskip 6pt
+There are a lot of choices in how to implement these algorithms, and they matter for speed and efficiency. The most important strategy for designing these algorithms was to generate an ensemble of algorithms and test them against sample inputs.
+
+\vskip 6pt
+For example, there is a common moment in these algorithms where a putative test case, partially specified, is matched against a coverage tuple, which will have $n$ specified argument values for $n$-way coverage. Given just one argument from the test case and one argument from the tuple, there are five ways they can compare.
 \begin{center}
 \begin{tabular}{rll}
-name & test cases & tuples \\ \hline
+comparison & test case & tuple \\ \hline
 ignores & * & * \\
 skips & $a$ & * \\
 misses & * & $b$ \\
@@ -212,47 +216,46 @@ matches & $a$ & $b=a$ \\
 mismatches & $a$ & $b\ne a$
 \end{tabular}
 \end{center}
-Only the last comparison is clearly a mismatch.
+Only the last comparison is clearly a mismatch. If we compare multiple arguments of the test case and tuple, we can quantify that comparison as having zero or more ``ignores,'' zero or more ``skips,'' and so-on. This means there are $2^4-1$ ways that a non-zero test case and tuple can compare, even if they have no mismatches.
 
 \vskip 6pt
-Let's take two strings of argument values. Each pair of arguments will compare with one of the five ways. If any mismatch, there is a mismatch of the two strings. That leaves several different ways we can call a string matching. We can think of the string as scoring either zero or more than zero ignores, zero or more than zero skips, and so-on. That means there are $2^4-1 = 15$ ways for two strings to match, because nonzero strings will match at least one of the four ways. Which of the 15 ways do we count as a match?
-
-
-\begin{enumerate}
-   \item No mismatches.
-   \item Some matches and no mismatches.
-   \item Only matches, skips, or ignores. No misses or mismatches.
-\end{enumerate}
+The \textsc{ipo-g} algorithm matches tuples in two places, once when it expands the number of columns of test cases and once when it fills in values at the end. In both cases, after testing $15\times 15$ ways of matching, we found that the simple requirement that there be no mismatches performed as well as any other choice, while more complicated matching strategies resulted in significantly more test cases for the same coverage.
 
 \vskip 6pt
-1 and 2 are equivalent when the tuples all have a value in the current column being filled.
-For filling the last tests, using no-mismatches works well.
+There are plenty of improvements to make to these algorithms, such as the use of advanced data structures~\cite{Segall2011-jv} or more adaptive optimization techniques like simulated annealing~\cite{Petke2015-ex}. There are also completely different greedy algorithms~\cite{Calvagna2012-ic,Koc2018-vs}. Any of these would be welcome to serve some use case if they can remain convenient to use within the testing framework.
 
-\section{Comparison of Approaches}
-Classic criticism that coverage shouldn't be your goal~\cite{Inozemtseva2014-gz}. Counterpoint that coverage can be more meaningful for less-used paths in the code~\cite{Cai2005-ex}.
 
-\vskip 6pt
-to random
-to generative
+\section{Comparison of Approaches}\label{sec:comparison}
+
+Now that we've explored combinatorial interaction testing, let's return to place it in the context of other similar testing techniques. Compared to other methods for automated test case generation, combinatorial interaction testing makes fewer tests, with some wayness guarantees.
 
 \vskip 6pt
-From a user perspective, it's about how easy it is to use one method or another. For instance, QuickCheck does more than generate tests. It reduces the cycle of debugging by finding the simplest test that fails.
+Random testing also generates test cases, and we know, from Arcuri et al, that these test cases increase code coverage with increasing numbers of test cases, in a predictable way~\cite{Arcuri2012-az}. Random testing also has the benefit that you can run it for an arbitrarily long time during acceptance testing. There is also no requirement that values be completely random within the domain of arguments. They are almost always biased towards values that carry risk, such as empty strings or other corner cases. Here, a preference for combinatorial interaction testing comes from a lack of test-running resources or the ease of specifying sample argument values instead of the complete domain of the arguments.
 
 \vskip 6pt
-to concolic~\cite{King1976-jt,Wang2018-xh}.
+There are also more mathematical test generation methods, such as orthogonal arrays or Sobol sequences~\cite{He2013-th}. These give an even distribution of values within high-dimensional spaces. They would be excellent to, for instance, seed an optimization problem with local minima, but they aren't designed to explore the space of execution paths of code, in the way that combinatorial methods are.
 
+\vskip 6pt
+There are also powerful testing methods that combine automated generation of test inputs with observation of test execution and outputs. For tests that run reasonably quickly, these strategies can shorten the time to find faults in the code, even if they don't shorten the length of a particular test run.
+
+\vskip 6pt
+Property-based testing offers domain-specific ways to describe the domain of each argument, or sets of arguments, so that the test author can focus on the domain of the function instead of the exact test suite. Tools of this kind can watch for failed tests, and then they can simplify the test arguments while checking for failure, in order to find the simplest test that fails. This is extraordinarily useful for fault-finding but, again, will use more testing resources~\cite{loscher2018automating}.
+
+\vskip 6pt
+Concolic testing performs the remarkable feat of executing a test case and recording that execution in order to learn which argument values control choices at each decision in the code. Then the concolic algorithm chooses a different argument value and tries the test again. This is an automated way to learn corner cases in the code, which should help with the challenge of deciding equivalence classes for arguments. At the same time, concolic testing generally uses logic solvers to decide equivalence classes, and these can be idiosyncratic for mathematical code~\cite{King1976-jt,Wang2018-xh}. The hardest part about concolic testing may be running it, conveniently, within the unit testing framework.
 
 \section{Conclusion}
+A lot of the strategies for using combinatorial testing, described in Sec.~\ref{sec:how-to-use}, also apply to competing methods for automated test case generation in Sec.~\ref{sec:comparison}. We showed that these methods apply to many kinds of software testing, from unit testing of functions to user-level testing of whole applications. We call them automated because the competing method is assiduous, manual creation of sets of unit tests. So automation is clearly an improvement.
+
+\vskip 6pt
+By showing how to use combinatorial interaction testing, we have shown that it should be used. This applies to other test generation techniques, too.
+
+\vskip 6pt
 Residual logical complexity.
 
-Combinatorial testing can benefit from simulated annealing~\cite{Petke2015-ex}.
 
 
 \vskip 6pt
-The person writing the unit tests has to pick the input values. In the same way that you would build up a decision table by selecting values from equivalence classes, you select values here. It can be an advantage in that you control the list and can make it more focused where you expect risk. It can be a disadvantage because your choice could exclude a value that random testing or concolic testing might discover exposes a fault.
-
-Another greedy algorithm~\cite{Calvagna2012-ic,Koc2018-vs}.
-
 This would work well with automated test selection if the the Julia testing framework defined tests such that they could be selected, as is done in X package.
 
 
