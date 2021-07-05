@@ -47,14 +47,11 @@ end
 Here, the \verb|all_pairs| function uses the sample argument values to create a set of test cases. The question is which set of cases it creates and when they are appropriate.
 
 \vskip 6pt
-There are a few common strategies for automated test case generation. A randomized approach chooses argument values from the space of allowed arguments, usually with some bias towards choosing possible corner cases~\cite{Lampropoulos2020-sd,Arcuri2012-az}. Some tools introduce more structure to choosing random arguments. The \texttt{QuickCheck} and \texttt{Hypothesis} packages use customized generators to create streams of test cases~\cite{loscher2018automating}. Concolic testing records the execution of the function under test in order to generate subsequent test cases that are likely to increase line coverage~\cite{King1976-jt,Wang2018-xh}. There are also more mathematical approaches, such as Sobol sequences and orthogonal arrays~\cite{He2013-th}, which have particular diagnostic uses.
+There are a few common strategies for automated test case generation. A randomized approach chooses argument values from the space of allowed arguments, usually with some bias towards choosing possible corner cases~\cite{Lampropoulos2020-sd,Arcuri2012-az}. Some tools introduce more structure to choosing random arguments. The \texttt{QuickCheck} and \texttt{Hypothesis} packages use customized generators to create streams of test cases~\cite{loscher2018automating}. Concolic testing records the execution of the function under test in order to generate subsequent test cases that are likely to increase line coverage~\cite{King1976-jt,Wang2018-xh,vira2019}. There are also more mathematical approaches, such as Sobol sequences and orthogonal arrays~\cite{He2013-th}, which have particular diagnostic uses.
 
 
 \section{Statement of Need}
 
-Why we need n-way combinatorial testing. Why we need it in Julia.
-
-\vskip 6pt
 Most of the techniques for test case generation focus more on making a smart set of tests than they focus on making few tests that are of high quality. Combinatorial testing generates fewer tests that are designed to give good branch coverage~\cite{Nie2011-yl,Grindal2005-su,Kuhn2010-ak}.
 
 \vskip 6pt
@@ -80,27 +77,67 @@ So it has to have a) forbid combinations of argument values, b) n-way testing c)
 
 \section{How to Use Combinatorial Testing}
 
-Depends on what your goals are.
-\begin{itemize}
-   \item At the top of the stack for comprehensive user-level testing. Here, you use the generator but then write test cases by creating command-line arguments and parameter files. Or you use it to create data sets with the given properties.
-   \item 
-   \end{itemize}
-Do the argument values represent:
-\begin{itemize}
-   \item Argument values for a function.
-   \item Equivalence classes from which to randomly choose values.
-   \item Directives on how to make a set of calls to an API.
-   \end{itemize}
+\subsection{Outline of the method}
+
+While you may already know how to use test case generation from the snippet in the introduction, it can help to think of automated test case generation as a set of steps, each of which has choices to make.
+\begin{enumerate}
+   \item Identify the system under test. It may be a function, but it could correspond to an \textsc{api} or an application.
+   \item Decide how a single test case, consisting of argument values, should correspond to a unit test.
+   \item Evaluate the risk associated with different arguments.
+   \item Pick a test generation strategy.
+   \item Choose a method for checking the results of each test.
+\end{enumerate}
+We'll explore these steps in this section.
+
+\subsection{Identify the system under test}
+
+We have assumed, thus far, that we are unit testing a function. In that case, the function has arguments and those arguments can take on particular values. Our test cases will correspond exactly to an invocation of the function. However, this need not be the case. The tool can be used more generally. Combinatorial testing is used outside Julia. It would apply, for instance, to testing compatibility of hardware subsystems.
+
+A common case in Julia is testing a scientific application at the user level. Here, we can consider the user's choices of command-line arguments and parameters in files. We could even generate classes of data according to keys that we assign to arguments in \utd.
+
+\subsection{Decide argument values}
+
+Some arguments to a function can take on only a few allowed values, such as \verb|true| or \verb|false|, but most arguments are integers, floating-point, or more complicated data structures. The theory of covering arrays presumes any argument will be assigned only one of a few values, so we need to make choices.
 
 \vskip 6pt
-The person writing the unit tests has to pick the input values. In the same way that you would build up a decision table by selecting values from equivalence classes, you select values here. It can be an advantage in that you control the list and can make it more focused where you expect risk. It can be a disadvantage because your choice could exclude a value that random testing or concolic testing might discover exposes a fault.
+We're looking for faults in the code that lead to failures of unit tests. These faults will be visible, or invisible, for different choices of argument values. If a given function fails for \verb|arg3<2.7|, then it will fail for \verb|arg3=2| as well as \verb|arg3=2.5|, so we consider those equivalent with respect to finding faults. Our goal, as authors of unit tests, is to select argument values that represent equivalence classes for the function under test. There isn't a lot of guidance on how to choose these values. You can guess them by looking at the code or by looking at a specification for the function.
+
+\vskip 6pt
+One way to defend against our uncertainty about equivalence classes is to combine combinatorial test generation with random testing. For each argument, partition the space of values into equivalence classes. Then generate test cases, but use the values in those test cases to select randomly from the partitions. This is one way to introduce bias, and control, into random test selection. It points to treating test case generation as a continuum of techniques.
+
+\vskip 6pt
+The argument values in test cases could also represent, for instance, the number of times to call a function on an \textsc{api}. The argument values could represent choices about what arguments to pass to each function in a series of function calls.
 
 \vskip 6pt
 There are cases where a function has one argument that is a flag and, when it's chosen, other argument values don't make sense to choose. We want to forbid these from the possible input choices. For instance, if \verb|arg1| can be \verb|true| or \verb|false|, and \verb|arg2| can be \verb|default|, \verb|high|, or \verb|low|, but we want to exclude the combination of \verb|false| and \verb|high| or \verb|low|, then the possible outcomes are \verb|true|-\verb|default|, \verb|true|-\verb|high|, \verb|true|-\verb|low|, \verb|false|-\verb|default|. We can either teach the test generator to forbid two combinations, or we can modify the input values, so that \verb|arg12| represents the four possible cases for \verb|arg1| and \verb|arg2| together.
 
 Forbidden tuples~\cite{Petke2015-ex} for combinatorial testing is a method. Among others~\cite{Grindal2006-vy}.
 
+
+\subsection{Evaluate risk}
+
+The combinatorial testing approach gives you a lever with which to address perceived risk in code. This can range from pairwise testing, which is two-way coverage, to six-way coverage, beyond which studies show little benefit~\cite{Petke2015-ex}. corresponds to if--then.
+
+depends on resources.
+
+vary with sets of arguments.
 Mixed-level covering arrays don't have well-understood bounds~\cite{Cohen2003-pg}.
+
+Can after-the-fact measure differences in fault-finding.
+
+
+\subsection{Pick a test generation strategy}
+
+full factorial
+excursion
+n-way coverage
+ - by greedy
+ - by greedy, non-deterministic
+
+
+\subsection{Evaluate results}
+
+tend to use traits.
 
 \vskip 6pt
 Do the results represent exact values? For mathematical code, we often don't have exact values. You may check the results with
@@ -209,6 +246,10 @@ to concolic~\cite{King1976-jt,Wang2018-xh}.
 Residual logical complexity.
 
 Combinatorial testing can benefit from simulated annealing~\cite{Petke2015-ex}.
+
+
+\vskip 6pt
+The person writing the unit tests has to pick the input values. In the same way that you would build up a decision table by selecting values from equivalence classes, you select values here. It can be an advantage in that you control the list and can make it more focused where you expect risk. It can be a disadvantage because your choice could exclude a value that random testing or concolic testing might discover exposes a fault.
 
 Another greedy algorithm~\cite{Calvagna2012-ic,Koc2018-vs}.
 
