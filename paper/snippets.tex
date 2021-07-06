@@ -2,3 +2,4 @@
 \vskip 6pt
 In practice, that means that you, the author of the unit test, has to choose a few possible values for each function argument. These values will be samples from equivalence classes for that argument and may include corner cases. Then the \utd library generates a set of test cases. In the unit testing framework, the code loops over the test cases, checking whether the results are acceptable.
 
+ There are times we want more of a guarantee that a function doesn't have faults. This may be that we recognize the function is complex, or that it's central to a sensitive calculation. We may test a part of a code base well because we want reduce the logical complexity that comes from uncertainty~\cite{Sha2001-ie}.
