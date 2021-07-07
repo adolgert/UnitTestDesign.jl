@@ -5,6 +5,7 @@
 \usepackage{xspace}
 \newcommand{\utd}{\texttt{UnitTestDesign}\xspace}
 \newcommand{\cit}{\textsc{cit}\xspace}
+\newcommand{\csv}{\textsc{csv}\xspace}
 
 \begin{document}
 
@@ -124,45 +125,55 @@ An \emph{equivalence class} is a set of input values that would discover the sam
 One way to defend against our uncertainty about equivalence classes is to combine combinatorial test generation with random testing. Decide that each argument value represents an equivalence class. Then generate test cases, but use the values in those test cases to sample randomly from the partitions. This is one way to introduce bias, and control, into random test selection. It points to treating test case generation as a continuum of techniques.
 
 \vskip 6pt
-There are other creative ways to apply automatic test case generation. For instance, if an application reads a \textsc{csv} file, we can use \cit to ensure rows of that \textsc{csv} have a wide mixture of column values. This would improve branch coverage in code that reads the \textsc{csv} as a data frame. Similarly, for module-level testing, arguments could represent choices about calls to a module's functions. Here, consecutive arguments become function calls that are consecutive in time.
+There are other creative ways to apply automatic test case generation. For instance, if an application reads a \csv file, we can use \cit to ensure rows of that \csv have a wide mixture of column values. This would improve branch coverage in code that reads the \csv as a data frame. Similarly, for module-level testing, arguments could represent choices about calls to a module's functions. Here, consecutive arguments become function calls that are consecutive in time.
 
 
 \subsubsection{Controlling value choices}
 
-There are cases where a function has one argument that is a flag and, when it's chosen, other argument values don't make sense to choose. We want to forbid these from the possible input choices. For instance, if \verb|arg1| can be \verb|true| or \verb|false|, and \verb|arg2| can be \verb|default|, \verb|high|, or \verb|low|, but we want to exclude the combination of \verb|false| and \verb|high| or \verb|low|, then the possible outcomes are \verb|true|-\verb|default|, \verb|true|-\verb|high|, \verb|true|-\verb|low|, \verb|false|-\verb|default|. We can either teach the test generator to forbid two combinations, or we can modify the input values, so that \verb|arg12| represents the four possible cases for \verb|arg1| and \verb|arg2| together.
-
-\vskip 6pt
-Forbidden tuples~\cite{Petke2015-ex} for combinatorial testing is a method. Among others~\cite{Grindal2006-vy}.
+Sometimes combinations of function arguments don't make sense. Imagine we have a function with two arguments.
 \begin{lstlisting}[language=Julia]
-disallow(n, level, value, kind) = level == "high" && kind == :optim
-test_set = all_pairs(
-    [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
-    disallow = disallow
-    )
+arg1 = ["quick", "complicated"]
+arg2 = [0.0, 1.0, 10.0]
 \end{lstlisting}
+If the first argument is \verb|"quick"|, then the second argument must be \verb|0.0|. If we generate all combinations of \verb|arg1| and \verb|arg2|, then some combinations won't make sense. The domain of the function isn't merely the sum of the domains of the arguments.
+
+One way to solve this problem is to rewrite the argument list to have a single argument that reflects only the allowed combinations. This replaces \verb|arg1| and \verb|arg2|.
+\begin{lstlisting}[language=Julia]
+arg12 = [("quick", 0.0), ("complicated", 0.0),
+    ("complicated", 1.0), ("complicated", 10.0)]
+\end{lstlisting}
+It can be more convenient to tell the \cit algorithm that certain combinations are forbidden~\cite{Petke2015-ex,Grindal2006-vy}.
+\begin{lstlisting}[language=Julia]
+forbid(arg1, arg2) = arg1 == "quick" && arg2 > 0.0
+test_set = full_factorial(arg1, arg2, disallow = forbid)
+\end{lstlisting}
+For testing functions with many arguments, this is simpler to use.
 
 \vskip 6pt
-Pre-existing example calls.
+Sometimes we want to begin with tests that are particular happy paths. These might be statistically common call signatures, or they could be pre-specified in design documents. Given that our goal is to minimize resource usage, we should ensure any tuples of argument values covered in these initial calls are included in our list of coverage.
 \begin{lstlisting}[language=Julia]
-must_test = [[1, "mid", 3.7, :relax], [1, "mid", 4.9, :relax]]
+must_test = [[1, "mid", 3.7, :relax],
+             [1, "mid", 4.9, :relax]]
 test_cases = all_pairs(
-    [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
+    [1, 2, 3], ["low", "mid" ,"high"],
+    [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
     seeds = must_test
     )
 \end{lstlisting}
+They are called seed cases and are easily specified.
 
 \subsection{Address risk}
 
-The combinatorial testing approach gives you a lever with which to address perceived risk in code. You decide the wayness of coverage, which is the number of arguments for which all combinations of argument values must appear. Pairwise testing has two-way coverage. Literature on how to generate these tests uses the word coverage to mean two-way, three-way, and so on. The term test coverage usually refers to which lines of code, if--then decision tests, or branches are executed during a test.
+The combinatorial testing approach gives you a lever with which to address perceived risk in code. You decide the wayness of coverage, which is the number of arguments for which all combinations of argument values must appear. Pairwise testing has two-way coverage, but higher wayness can yield some benefit~\cite{Petke2015-ex}. Literature on how to generate these tests uses the word coverage to mean two-way, three-way, and so on. The term test coverage usually refers to which lines of code executed (line coverage), if--then decision tests (decision coverage), or branches are executed during a test (branch coverage).
 
 \vskip 6pt
-The two uses of the word coverage are related, because combinations with higher wayness should lead to more decision coverage of code. It would therefore seem appropriate to use cyclomatic complexity measures to estimate whether two-way coverage is enough. While there is some evidence that high coverage finds faults in less-used parts of a code base~\cite{Cai2005-ex}, coverage shouldn't be the focus of unit testing~\cite{Inozemtseva2014-gz}. This can range from pairwise testing, which is two-way coverage, to six-way coverage, beyond which studies show little benefit~\cite{Petke2015-ex}.
+The two uses of the word coverage are related, because combinations with higher wayness as inputs are designed to lead to more decision coverage of code during execution. There isn't enough evidence for this connection for us to choose wayness according to code's cyclomatic complexity, and we are counseled against making coverage the goal of unit testing~\cite{Inozemtseva2014-gz}.
 
 \vskip 6pt
-As described in Sec.~\ref{sec:statement-of-need}, combinatorial testing is most useful when there are constraints on testing resources. These constraints can force choices for the wayness of coverage. There are a couple of techniques for working within constraints, while still respecting our perception of risk.
+For \cit, we address risk by ensuring more test cases include new combinations of arguments that affect the control flow of risky code. The first way to increase testing of an argument is to increase the number of values for an argument by adding corner cases. The second way is to increase the wayness of a set of arguments.
 
 \vskip 6pt
-The first is to vary wayness of coverage for different sets of arguments. For instance, if the function under test used an evolutionary algorithm that had several options for the representation of individuals, their mutation, and recombination, we might want to test these choices exhaustively with full-factorial coverage, while selecting pairwise coverage for other options. This would be done by adding a \verb|wayness| argument to the function call.
+For example, if the function under test used an evolutionary algorithm that had several options for the representation of individuals, their mutation, and recombination, we might want to test these choices exhaustively with full-factorial coverage, while selecting pairwise coverage for other options. This would be done by adding a \verb|wayness| argument to the function call.
 
 \begin{lstlisting}[language=Julia]
 array_of_forty_parameters = fill(1:4, 40)
@@ -171,10 +182,8 @@ test_set = all_pairs(
     wayness = Dict(3 => [[3:6], [25:30]])
     )
 \end{lstlisting}
-It's unclear whether mixing wayness will still yield a small set of test cases because mixed-level covering arrays don't have well-understood bounds~\cite{Cohen2003-pg}, however sample runs show it does produce fewer test cases than raising coverage on all arguments.
+Here, the third through sixth arguments will be tested with a wayness of three, as will the twenty-fifth through thirtieth. It's unclear whether mixing wayness will still yield a small set of test cases because mixed-level covering arrays don't have well-understood bounds~\cite{Cohen2003-pg}, however sample runs show it does produce fewer test cases than raising coverage on all arguments.
 
-\vskip 6pt
-One of the most powerful ways to address risk while conserving resources is to pair automated test generation with automated test selection. These are methods that evaluate the tests that are generated in order to select those that are most likely to find different faults in the code.
 
 \subsection{Pick a test generation strategy}
 
@@ -184,7 +193,7 @@ There are a few different strategies for combinatorial test generation in \utd.
 The \emph{full factorial} method generates $n$-way coverage for $n$ arguments. That is, it generates all combinations of values for all arguments. This is equivalent to what you could create with an $n$-deep for-loop.
 
 \vskip 6pt
-The \emph{excursion} method makes a first test case using the first provided value for each argument. Then, for one-way excursions, it walks the first argument through all values, keeping the rest of the arguments the same. Then it walks the second argument through all values, keeping the rest of the arguments the same. It asks how the function under test would perform if you were to change any single argument value. A two-way excursion tries changes to any two argument values in combination.
+The \emph{excursion} method makes a first test case using the first provided value for each argument. Then, for one-way excursions, it walks the first argument through all values, keeping the rest of the arguments the same. Then it walks the second argument through all values, keeping the rest of the arguments the same. It asks how the function under test would perform if you were to change any single argument value. A two-way excursion tries changes to any two argument values in combination, and so on.
 
 \vskip 6pt
 There are two ways the \utd package creates covering arrays, also known as \emph{fractional factorial designs}. The default generator is called \verb|IPOG| because it is similar to the \textsc{ipo-g} algorithm~\cite{Lei2008-xt}. It is deterministic, so it produces the same set of test cases for the same set of inputs. The other generator is called \verb|GND|, and it uses a random number generator to search for covering arrays. It returns test cases that obey the same covering properties as the \verb|IPOG| generator, but it uses a method similar to the \textsc{aetg} generator~\cite{Cohen1997-lb}. In both cases, the algorithms vary from the published examples, as discussed in Sec.~\ref{sec:implementation}.
@@ -194,7 +203,7 @@ rng = Random.MersenneTwister(9790242)
 slow_and_short = all_pairs(parameters...; engine = GND(rng = rng, M = 50))
 \end{lstlisting}
 
-\subsection{Evaluate results}
+\subsection{Evaluate results}\label{sec:results}
 
 When a testing suite contains only a few tests of a function, the test author can usually figure out how to check those few function outputs for failures. Automatic generation of test arguments creates a problem because it isn't paired with automatic generation of checks for test failures.
 
@@ -268,22 +277,9 @@ Property-based testing offers domain-specific ways to describe the domain of eac
 Concolic testing performs the remarkable feat of executing a test case and recording that execution in order to learn which argument values control choices at each decision in the code. Then the concolic algorithm chooses a different argument value and tries the test again. This is an automated way to learn corner cases in the code, which should help with the challenge of deciding equivalence classes for arguments. At the same time, concolic testing generally uses logic solvers to decide equivalence classes, and these can be idiosyncratic for mathematical code~\cite{King1976-jt,Wang2018-xh}. The hardest part about concolic testing may be running it, conveniently, within the unit testing framework.
 
 \section{Conclusion}
-A lot of the strategies for using combinatorial testing, described in Sec.~\ref{sec:how-to-use}, also apply to competing methods for automated test case generation in Sec.~\ref{sec:comparison}. We showed that these methods apply to many kinds of software testing, from unit testing of functions to user-level testing of whole applications. We call them automated because the competing method is assiduous, manual creation of sets of unit tests. So automation is clearly an improvement.
+Combinatorial interaction testing is an advanced technique because it's tailored to a difficult situation, when you can't afford not to spend the time to make your best guess at test cases. However, this kind of automation is easy to specify and run in Julia's ecosystem. The most difficult part of the transition is shifting from manual checks of test results to checks that work for any combination of arguments, as described in Sec.~\ref{sec:results}.
 
-\vskip 6pt
-By showing how to use combinatorial interaction testing, we have shown that it should be used. This applies to other test generation techniques, too.
-
-\vskip 6pt
-Residual logical complexity.
-
-
-
-\vskip 6pt
-This would work well with automated test selection if the the Julia testing framework defined tests such that they could be selected, as is done in X package.
-
-
-\vskip 6pt
-Unit test is a second telling of a function. A parable.
+A lot of the strategies in Sec.~\ref{sec:how-to-use} apply to any kind of automated test case generation. They point to the broad applicability of automation for testing and the effectiveness of tools that offer the test author control.
 
 \input{bib.tex}
 
