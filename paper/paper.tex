@@ -14,7 +14,7 @@
 \maketitle
 
 \begin{abstract}
-Combinatorial interaction testing is an automated way to generate test cases for unit tests. It's designed to be the best guess at the fewest unit tests that will give good decision coverage. This article discusses when to use this technique and how to apply it with the \utd package in the Julia testing ecosystem. This article offers a general approach to using automated test generation for different software testing applications.
+Combinatorial interaction testing is an automated way to generate test cases for unit tests. It's designed to be a best guess at the fewest unit tests that will give good decision coverage. This article discusses when to use this technique, a general approach to using automated test generation for different software testing applications, and, in particular, how to apply it with the \utd package in the Julia testing ecosystem.
 \end{abstract}
 
 \section{Introduction}
@@ -22,7 +22,7 @@ Combinatorial interaction testing is an automated way to generate test cases for
 We would like to think that our unit tests of code match perceived risk, that they match the components by which we judge risk: the hazard for failure, the cost of mitigating failure, and how much a result matters. However, user studies of the behavior of test authors show that much of our choices about testing are ruled by what is convenient within a given testing framework~\cite{Wiklund2017-ms}.
 
 \vskip 6pt
-The first unit tests for a new library often derive from mimicking how a user might write client code. These happy-path tests are narrative. We may add tests that are our best guesses for corner cases of a function under test, but these are all considered manual testing.
+The first unit tests for a new library often derive from mimicking how a user might write client code. These happy-path tests are narrative. We may add tests for corner cases of a function under test, but these may be limited by imagination and available effort.
 
 \vskip 6pt
 There is a world of automated testing tools. Some measure the quality of existing tests. Others select tests to run depending on test coverage or recent code modifications. Let's focus on the first antidote to the biases inherent in narrative testing, those that generate test cases.
@@ -44,7 +44,7 @@ for test_case in test_cases:
 end
 \end{lstlisting}
 
-Here, the \verb|all_pairs| function is a combinatorial interaction test (\cit) design that uses the sample argument values to create a set of 16~test cases. It's a simple algorithm, with inputs that are easy to specify and use within an existing unit testing framework. The name, all-pairs, means that, if we look at the test cases, and we pick any two arguments, then pick any two values those arguments can take, there will be at least one test case that includes that pair of arguments.
+Here, the \verb|all_pairs| function is a combinatorial interaction test (\cit) design that uses the sample argument values to choose a set of 16~test cases out of a total possible 768~test cases. The inputs are easy to specify and use within an existing unit testing framework. The name, all-pairs, means that, if we look at the test cases, and we pick any two arguments, then pick any two values those arguments can take, there will be at least one test case that includes that pair of arguments.
 \begin{lstlisting}[language=Julia]
 julia> test_cases
 16-element Vector{Vector{Any}}:
@@ -72,7 +72,7 @@ In this article, we describe when to use \cit and how to use \cit within the Jul
 
 \section{Statement of Need}\label{sec:statement-of-need}
 
-Most of the techniques for automatic test case generation focus more on making a smart set of tests than they focus on making few tests that are of high quality. \cit generates fewer tests that are designed to give good branch coverage~\cite{Nie2011-yl,Grindal2005-su,Kuhn2010-ak}.
+Compared to other techniques for automatic test case generation, \cit generates fewer tests, choosing them in a way designed to give good branch coverage~\cite{Nie2011-yl,Grindal2005-su,Kuhn2010-ak}.
 
 \vskip 6pt
 There are two circumstances where this is crucial. The first is that you have to test a slow function, such as a large, Monte Carlo inference. If the function under test runs for hours or days, then selective testing can respect resource limitations.
@@ -81,7 +81,7 @@ There are two circumstances where this is crucial. The first is that you have to
 The other circumstance is when there is a large test space. We've been talking about a function under test, but this is a stand-in for any test we can parametrize. Let's say we've written an application, that we've unit tested its important supporting functions, and we want to write user-level tests that look for problems from interactions among command-line arguments and choices in parameter files. This can be equivalent to testing a function with twenty or more arguments. Twenty arguments, with four possible values each, would lead to over $10^{12}$ ways to call this function.
 
 \vskip 6pt
-The \cit in \utd takes the time to optimize the choice of test cases so that they can test the code well. The theory of the game is that each if--then in the code will branch depending on interacting combinations of argument values, so \cit ensures all combinations of $n$ arguments are tried in at least one test case. Here, $n=2$ for two-way testing, also known as all-pairs testing~\cite{pairwise-website}, but studies have shown that wayness up to $n=6$ can be useful~\cite{Petke2015-ex}.
+The \cit in \utd takes the time to optimize the choice of test cases so that they can test the code well. The assumption is that each if--then in the code will branch depending on interacting combinations of argument values, so \cit ensures all combinations of $n$ arguments are tried in at least one test case. Here, $n=2$ for two-way testing, also known as all-pairs testing~\cite{pairwise-website}, but studies have shown that wayness up to $n=6$ can be useful~\cite{Petke2015-ex}.
 
 \vskip 6pt
 Lastly, even when \cit isn't the best of the automatic test case generation methods to use, it's easy specify tests and to insert them into a test suite, as we saw in the example above. There are excellent external \cit tools that define a domain-specific language for test specification and offer features that improve usability~\cite{Czerwonka2006-hm,Kuhn2010-ak}. The Julia environment offers both efficient integer computations necessary to generate test cases quickly and strong metaprogramming capabilities to make \cit simple to use.
@@ -104,11 +104,11 @@ We'll explore these steps in this section.
 
 We have assumed, thus far, that we are unit testing a function. In that case, the function has arguments and those arguments can take on particular values. Our test cases will correspond exactly to an invocation of the function. However, this need not be the case.
 
-\begin{unnumlist}
+\begin{itemize}
 \item Integration test of modules, where a module \textsc{api} produces many possible ways to call it.
 \item User-level tests of an application, where there are choices in dialog boxes, parameter files, and command-line options.
 \item Systems outside of Julia, such as the problem of hardware integration.
-\end{unnumlist}
+\end{itemize}
 
 \subsection{Decide argument values}
 
@@ -119,10 +119,10 @@ There are two choices to make about arguments and their values. We must decide w
 It's rare that a function expects arguments that really take only four possible values. We use integers, floating-point, and strings, but a function argument can be any struct. When we specify tests for \cit, and we choose a few argument values, they are representatives of equivalence classes.
 
 \vskip 6pt
-An \emph{equivalence class} is a set of input values that would discover the same faults in the code. For instance, if a given function fails for \verb|arg3<2.7|, then it will fail for \verb|arg3=2| as well as \verb|arg3=2.5|, so we consider those equivalent with respect to finding faults. Our goal, as authors of unit tests, is to select argument values that represent equivalence classes for the function under test. There isn't a lot of guidance on how to choose these values. You can guess them by looking at the code or by looking at a specification for the function.
+An \emph{equivalence class} is a set of input values that would discover the same faults in the code. For instance, if a given function fails for \verb|arg3<2.7|, then it will fail for \verb|arg3=2| as well as \verb|arg3=2.5|, so we consider those equivalent with respect to finding faults. As authors of unit tests, we select argument values that represent equivalence classes for the function under test. You can choose them by looking at the code or by looking at a specification for the function, but it's possible to miss an equivalence class and miss the faults discovered by that equivalence class.
 
 \vskip 6pt
-One way to defend against our uncertainty about equivalence classes is to combine combinatorial test generation with random testing. Decide that each argument value represents an equivalence class. Then generate test cases, but use the values in those test cases to sample randomly from the partitions. This is one way to introduce bias, and control, into random test selection. It points to treating test case generation as a continuum of techniques.
+One way to defend against our uncertainty about equivalence classes is to combine combinatorial test generation with random testing. Decide that each argument value in the \cit specification represents a generator of values from an equivalence class. Then each test case, output from \cit, is a list of random argument generators. This introduces bias, and control, into random test selection. It points to treating test case generation as a continuum of techniques.
 
 \vskip 6pt
 There are other creative ways to apply automatic test case generation. For instance, if an application reads a \csv file, we can use \cit to ensure rows of that \csv have a wide mixture of column values. This would improve branch coverage in code that reads the \csv as a data frame. Similarly, for module-level testing, arguments could represent choices about calls to a module's functions. Here, consecutive arguments become function calls that are consecutive in time.
@@ -199,7 +199,7 @@ The \emph{excursion} method makes a first test case using the first provided val
 There are two ways the \utd package creates covering arrays, also known as \emph{fractional factorial designs}. The default generator is called \verb|IPOG| because it is similar to the \textsc{ipo-g} algorithm~\cite{Lei2008-xt}. It is deterministic, so it produces the same set of test cases for the same set of inputs. The other generator is called \verb|GND|, and it uses a random number generator to search for covering arrays. It returns test cases that obey the same covering properties as the \verb|IPOG| generator, but it uses a method similar to the \textsc{aetg} generator~\cite{Cohen1997-lb}. In both cases, the algorithms vary from the published examples, as discussed in Sec.~\ref{sec:implementation}.
 
 \begin{lstlisting}[language=Julia]
-rng = Random.MersenneTwister(9790242)
+rng = Random.MersenneTwister(9790375)
 slow_and_short = all_pairs(parameters...; engine = GND(rng = rng, M = 50))
 \end{lstlisting}
 
@@ -211,10 +211,15 @@ When a testing suite contains only a few tests of a function, the test author ca
 One solution is to create a parallel implementation of the function under test. It could be an earlier version of the function, using a na{\"i}ve algorithm. It could be a function that computes the same values using a different mathematical representation, such as using numerical integration instead of using the result of symbolic integration. It could be an external implementation, in another language.
 
 \vskip 6pt
-It helps to consider the check for failure, not as \verb|result == oracle(test_case...)| but as a rule that takes both result and test case into account. For instance, some mathematical calculations solve inverse problems, so that the result can be fed into a related forward problem. The test becomes whether it can recover its input values.
-
-\vskip 6pt
-Automated testing of results often takes the form of testing for traits of the result, not exact values. For example, you could test a function for continuity of outputs near the given input. You could use statistical measures, such as maximum absolute error, to assert that a function's output is near some standard result. There is a powerful technique to assert symmetries in function arguments. For instance if, for some function under test, $f$, a symmetry test might check that \verb|f(a, b)=f(2*a, b/2)|~\cite{Segura2016-qh}.
+It helps to consider the check for failure, not as an assertion about the result,
+\begin{lstlisting}[language=Julia]
+@assert result == oracle(test_case...)
+\end{lstlisting}
+but as a rule that takes both result and test case into account.
+\begin{lstlisting}[language=Julia]
+@assert invariant(result, test_case...)
+\end{lstlisting}
+For instance, some mathematical calculations solve inverse problems, so that the result can be fed into a related forward problem. The test becomes whether it can recover its input values. Another test would be whether nearby inputs give continuous outputs. Lastly, a technique to assert symmetries in function arguments, when such symmetries exist in the function under test, has been shown to find faults~\cite{Segura2016-qh}. For instance, for some function under test, $f$, a symmetry test might check that \verb|f(a, b)=f(2*a, b/2)|.
 
 
 \section{Optimization of Test Cases with Practical Constraints}\label{sec:implementation}
@@ -222,7 +227,7 @@ Automated testing of results often takes the form of testing for traits of the r
 There are two ways to improve upon current use of combinatorial test generation. One is to help the tester whose testing resources are limited, by generating fewer test cases that still meet the wayness guarantee. The other is to make it more convenient to use combinatorial testing within the unit testing framework. Here, we could generate tests with so little time and memory that there is no need to cache test cases. Both of these improvements are limited by our need for algorithms that support the features, described above, that make automated test case generation practical to use.
 
 \vskip 6pt
-The \utd package expanded on the implementation of two $n$-way combinatorial interaction testing algorithms. One is the greedy, non-deterministic algorithm known as \textsc{aetg}~\cite{Cohen1997-lb}. The other is a deterministic, parameter-choosing algorithm called \textsc{ipo-g}~\cite{Lei2008-xt}. Like many greedy algorithms, these can be sensitive to small, sometimes unspecified, choices in implementation. We used two approaches for this package in order to make algorithms that had the right features and performed well.
+The \utd package expands on the implementation of two $n$-way combinatorial interaction testing algorithms. One is the greedy, non-deterministic algorithm known as \textsc{aetg}~\cite{Cohen1997-lb}. The other is a deterministic, parameter-choosing algorithm called \textsc{ipo-g}~\cite{Lei2008-xt}. Like many greedy algorithms, these can be sensitive to small, sometimes unspecified, choices in implementation. We used two approaches for this package in order to make algorithms that had the right features and performed well.
 
 \vskip 6pt
 In order to support a feature where the test author can require certain pre-defined test cases, we added those test cases to the list of tuples to be covered, where a tuple is a combination of argument values. We just put that into the list and let the algorithms take care of covering it.
@@ -248,10 +253,7 @@ matches & $a$ & $b=a$ \\
 mismatches & $a$ & $b\ne a$
 \end{tabular}
 \end{center}
-Only the last comparison is clearly a mismatch. If we compare multiple arguments of the test case and tuple, we can quantify that comparison as having zero or more ``ignores,'' zero or more ``skips,'' and so-on. This means there are $2^4-1$ ways that a non-zero test case and tuple can compare, even if they have no mismatches.
-
-\vskip 6pt
-The \textsc{ipo-g} algorithm matches tuples in two places, once when it expands the number of columns of test cases and once when it fills in values at the end. In both cases, after testing $15\times 15$ ways of matching, we found that the simple requirement that there be no mismatches performed as well as any other choice, while more complicated matching strategies resulted in significantly more test cases for the same coverage.
+Only the last comparison is clearly a mismatch. If we compare multiple arguments of the test case and tuple, we can quantify that comparison as having zero or more ``ignores,'' zero or more ``skips,'' and so-on. This means there are $2^4-1$ ways that a non-zero test case and tuple can compare, even if they have no mismatches. The \utd library has tuned its search for test cases by optimizing across these matching algorithms.
 
 \vskip 6pt
 There are plenty of improvements to make to these algorithms, such as the use of advanced data structures~\cite{Segall2011-jv} or more adaptive optimization techniques like simulated annealing~\cite{Petke2015-ex}. There are also completely different greedy algorithms~\cite{Calvagna2012-ic,Koc2018-vs}. Any of these would be welcome to serve some use case if they can remain convenient to use within the testing framework.
@@ -271,7 +273,7 @@ There are also more mathematical test generation methods, such as orthogonal arr
 There are also powerful testing methods that combine automated generation of test inputs with observation of test execution and outputs. For tests that run reasonably quickly, these strategies can shorten the time to find faults in the code, even if they don't shorten the length of a particular test run.
 
 \vskip 6pt
-Property-based testing offers domain-specific ways to describe the domain of each argument, or sets of arguments, so that the test author can focus on the domain of the function instead of the exact test suite. Tools of this kind can watch for failed tests, and then they can simplify the test arguments while checking for failure, in order to find the simplest test that fails. This is extraordinarily useful for fault-finding but, again, will use more testing resources~\cite{loscher2018automating}.
+Property-based testing offers a specification to describe the domain of each argument, or sets of arguments, so that the test author can focus on the domain of the function instead of the exact test suite. Tools of this kind can watch for failed tests, and then they can simplify the test arguments while checking for failure, in order to find the simplest test that fails. This is extraordinarily useful for fault-finding but, again, will use more testing resources~\cite{loscher2018automating}.
 
 \vskip 6pt
 Concolic testing performs the remarkable feat of executing a test case and recording that execution in order to learn which argument values control choices at each decision in the code. Then the concolic algorithm chooses a different argument value and tries the test again. This is an automated way to learn corner cases in the code, which should help with the challenge of deciding equivalence classes for arguments. At the same time, concolic testing generally uses logic solvers to decide equivalence classes, and these can be idiosyncratic for mathematical code~\cite{King1976-jt,Wang2018-xh}. The hardest part about concolic testing may be running it, conveniently, within the unit testing framework.
