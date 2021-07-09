@@ -178,7 +178,6 @@ For \cit, that means shifting test cases towards combinations of those arguments
 
 \vskip 6pt
 For example, if the function under test used an evolutionary algorithm that had several options for the representation of individuals, their mutation, and recombination, we might want to test these choices exhaustively with full-factorial coverage, while selecting pairwise coverage for other options. This would be done by adding a \verb|wayness| argument to the function call.
-
 \begin{lstlisting}[language=Julia]
 array_of_forty_parameters = fill(1:4, 40)
 test_set = all_pairs(
@@ -186,7 +185,7 @@ test_set = all_pairs(
     wayness = Dict(3 => [[3,4,5,6]])
     )
 \end{lstlisting}
-Here, the third through sixth arguments will be tested with a wayness of three, generating a total of 64~test cases. It's unclear whether mixing wayness will still yield a small set of test cases because mixed-level covering arrays don't have well-understood bounds~\cite{Cohen2003-pg}, however sample runs show it does produce fewer test cases than raising coverage on all arguments.
+Here, an all-pairs coverage of these 40~arguments would lead to 45~test cases, and an all-triples coverage would lead to 290~test cases, but we increase coverage on only the third through sixth arguments to a wayness of three, and this increases the total to 64~test cases. It's unclear whether mixing wayness will always yield a small set of test cases because mixed-level covering arrays don't have well-understood bounds~\cite{Cohen2003-pg}, however sample runs show it does produce fewer test cases than raising coverage on all arguments.
 
 
 \subsection{Pick a test generation strategy}
@@ -221,7 +220,7 @@ rng = Random.MersenneTwister(9790375)
 slow_and_short = all_triples(parameters...;
     engine = GND(rng = rng, M = 50))
 \end{lstlisting}
-The \verb|M=50| argument to the \verb|GND| generator controls the number of times it guesses each new argument of a test case before chooses an optimal value.
+The \verb|M=50| argument to the \verb|GND| generator controls the number of times it guesses each new argument of a test case before it chooses an optimal value.
 
 \subsection{Evaluate results}\label{sec:results}
 
