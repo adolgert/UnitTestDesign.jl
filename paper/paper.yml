@@ -1,0 +1,18 @@
+title: "UnitTestDesign.jl: Combinatorial design for unit tests"
+keywords:
+  - combinatorial interaction testing
+  - automated test case generation
+  - unit testing
+  - Julia
+authors:
+  - name: Andrew Dolgert
+    orcid: 0000-0002-6477-7981
+    affiliation: 1
+  - name: Joseph Wagner
+    orcid: 0000-0003-3638-2656
+    affiliation: 1
+affiliations:
+  - name: Institute for Health Metrics and Evaluation, University of Washington, Seattle, WA, USA
+    index: 1
+date: 8 July 2021
+bibliography: ref.bib
