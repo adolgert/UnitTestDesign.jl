@@ -8,6 +8,7 @@
 Chooses function arguments to make unit testing faster and more effective.
 
 * [Documentation](http://computingkitchen.com/UnitTestDesign.jl/stable/)
+* [JuliaCon2021 Gentle Introduction](https://www.youtube.com/watch?v=3KIE3yrQ3lw) (YouTube Link)
 
 This package generates parameter values for unit tests, chooses software configurations for integration testing, or generates test datasets. If the system-under-test takes a long time to run or has many possible parameters or many possible values each parameter can take, this library chooses combinations of parameters that are more likely to find faults in the code. It assumes that code will break when there are _interactions_ between different parameter choices, so it generates test data that covers all possible interactions among two parameters, the **all-pairs** algorithm, or three parameters, the **all-triples** algorithm, or higher-order combinatorial interactions.
 
