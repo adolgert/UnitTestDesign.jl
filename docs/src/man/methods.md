@@ -69,7 +69,9 @@ in the code makes its decision based on variables which, in some way,
 depend on input parameters. If we include every combination of parameters,
 we will tend to cover more of the decisions of the if-thens.
 
-A better measure is mutation analysis. This technique introduces errors
+A better measure is mutation analysis,
+e.g. [Vimes.jl](https://github.com/MikeInnes/Vimes.jl).
+This technique introduces errors
 into the code, on the fly. Then it runs unit tests against that code
 in order to ask which unit tests find the same failures. If two unit
 tests consistently find the same failures, then delete one of them
