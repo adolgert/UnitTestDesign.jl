@@ -10,7 +10,7 @@ test_set = all_pairs(
     [0.1, 0.01, 0.001],
     [:RungeKutta, :Midpoint]
     )
-for test_case in test_set
+@testset "custom_integrate $test_case" for test_case in test_set
     a, b = test_case[1]
     result = custom_integrate(a, b, test_case[2:end]...)
     @test result == compare_with_symbolic_integration(a, b)
