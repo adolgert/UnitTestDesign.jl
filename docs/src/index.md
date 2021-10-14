@@ -14,7 +14,7 @@ problems in that function.
 ## Install
 
 ```
-pkg> add https://github.com/adolgert/UnitTestDesign.jl
+pkg> add UnitTestDesign
 ```
 
 ## Description
