@@ -32,13 +32,9 @@ These could then be made available for testing through
 
 ## Test data generation
 
-We use combinatoric testing because it finds all code paths. Code
-paths are lines of code chosen by the same if-then decision.
-Some code has few code paths but many branches. For instance,
+This library will create test data as easily as it creates test cases. In the same way that testing different sets of arguments to a function improves test coverage, testing different datasets improves coverage. For instance,
 `data_frame = all_data_frame[data_frame[:, :time] > 10]` has two
 branches, one for times less than ten and one for times greater than ten.
-
-This library will create test data as easily as it creates test cases.
 
 ```@example
 using UnitTestDesign  # hide
