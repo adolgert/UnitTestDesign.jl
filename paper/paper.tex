@@ -22,10 +22,10 @@ Combinatorial interaction testing is an automated way to generate test cases for
 We would like to think that our unit tests of code match how much risk we perceived in that code, that they match the components by which we judge risk: the hazard for failure, the cost of mitigating failure, and how much a result matters. However, user studies of the behavior of test authors show that our choices about testing are ruled by what is convenient within a given testing framework~\cite{Wiklund2017-ms}.
 
 \vskip 6pt
-The first unit tests for a new library often derive from mimicking how a user might write client code. These happy-path tests are narrative. We may add tests for corner cases of a function under test, but these are limited by imagination and available effort.
+The first unit tests for a new library often derive from mimicking how a user might write client code. These happy-path tests are narrative because they tell stories of successful use. As we develop, we strengthen tests where we see risk in code. For low-level code, this may mean testing corner cases. For high-level code, it may mean modifying the code to be easier to test~\cite{chowdhary2009practicing}. Once we've done this software engineering, we can ask what tools within our testing framework can help improve test quality.
 
 \vskip 6pt
-Automated testing tools aid that effort. Some measure the quality of existing tests. Others select which tests to run depending on test coverage or recent code modifications. Let's focus on the first antidote to the biases inherent in narrative testing, automated generation of test cases.
+Some automated testing tools measure the quality of existing tests. Others select which tests to run depending on test coverage or recent code modifications. Let's focus on the first antidote to the biases inherent in narrative testing, automated generation of test cases.
 
 \begin{lstlisting}[language=Julia]
 using UnitTestDesign: all_pairs
