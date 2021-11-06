@@ -18,6 +18,7 @@ makedocs(;
         "Manual" => [
             "Guide" => "man/guide.md",
             "Examples" => "man/examples.md",
+            "Extended Example" => "man/example_extended.md",
             "Testing Methods" => "man/methods.md",
             "Engines" => "man/engines.md",
             "IPOG" => "man/ipog.md"
