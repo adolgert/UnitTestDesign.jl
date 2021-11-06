@@ -60,17 +60,54 @@ within each test case.
 We can generate a lot of tests. How do we know they are a good set
 of tests? I'd like to make lots of tests and then keep only those
 that are sufficiently different from the others that they would
-find different failures. I don't see any of these tools currently in
-Julia.
+find different failures. There is opportunity for test selection tools
+in the Julia testing ecosystem, so let's make a recipe for how test
+selection would work, in three steps.
 
-One measure is line coverage of code. We use all-pairs in order to
-to generate tests that cover every path through the code. An if-then
-in the code makes its decision based on variables which, in some way,
-depend on input parameters. If we include every combination of parameters,
-we will tend to cover more of the decisions of the if-thens.
+1. Every test, manual or generated, needs to be recorded by the
+   test framework so that the framework can observe the test run
+   and select it to include in the test suite.
 
-A better measure is mutation analysis. This technique introduces errors
-into the code, on the fly. Then it runs unit tests against that code
-in order to ask which unit tests find the same failures. If two unit
-tests consistently find the same failures, then delete one of them
-and keep the other.
+2. There has to be a way to measure each of those tests, as criteria
+   for inclusion in the production test suite. These can be measurements
+   of resource usage, such as runtime or memory requirements, but
+   they can also be code coverage of the individual tests.
+
+3. Finally, the test selection framework will use those criteria to
+   prioritize or exclude tests from later test runs. This can be used
+   to reduce the size of a test suite or it can be used to choose the
+   tests that have most often failed in the past and run them first.
+
+All three of these steps are challenging. For the first step, the Julia
+framework considers the `@testset` the smallest unit of testing, so a test
+automation tool would need to generate many `@testset` instances. While
+the main framework won't record and replay tests, optional frameworks
+such as [Jute.jl](https://github.com/fjarri/Jute.jl) can.
+
+For the second step, it can be difficult to record coverage of individual
+tests. The classic measure is line coverage, and, while Julia has built-in
+ways to measure coverage for invocation of whole applications, the same
+facility isn't available for testing coverage of individual tests.
+
+The other challenge of coverage is that line coverage isn't a strong indicator
+of how thorough testing is. Correlation between coverage and fault-finding
+diminishes above sixty percent coverage. There is an alternative kind of
+coverage, called mutation coverage, that has better support as an indicator
+of testing thoroughness. This technique introduces errors, mutations, into
+the code on the fly. Then it runs unit tests against that code
+in order to ask which unit tests find the error. This is a different technique
+from mutation testing ([Vimes.jl](https://github.com/MikeInnes/Vimes.jl)), but
+it uses the same tools. The trouble with mutation coverage is that it's very
+slow. There aren't known methods for calculating mutation coverage and
+then updating it incrementally when there is a change to the code.
+
+The last step is test selection. We run tests at different times for different
+reasons, and there are different tests we might like to select. For
+instance, we would run all of the tests during acceptance testing. For
+continuous integration on Github, maybe it's better to run less
+resource-intensive tests in order to save computing time. For checkout testing,
+when you first install software on your local computer, you might choose
+to run tests that will interact more closely with architecture-specific
+machine instructions. And a most common choice is to select first for testing
+those that failed most recently, because that's the bug you
+were fixing. So a good test selection tool would be situation-specific.
