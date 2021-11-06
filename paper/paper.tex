@@ -65,10 +65,16 @@ julia> test_cases
  [1, :d, greville, "RK4", Inf]
  [4, :d, monotonic, "none", -1.2]
 \end{lstlisting}
-For a three-way \cit, we could pick any three arguments and any three values those arguments can take, and there will be at least one test case including that triple. In this article, we describe when to use \cit and how to use \cit within the Julia language's unit testing ecosystem.
+For a three-way \cit, we could pick any three arguments and any three values those arguments can take, and there will be at least one test case including that triple. In this article, we describe when to use \cit and how to use \cit within the Julia language's unit testing ecosystem. We introduce the \verb!UnitTestDesign.jl! library which has several features that make it convenient to use.
+\begin{itemize}
+    \item Different levels of coverage, including all-pairs, all-triples, and higher level coverage.
+    \item Both deterministic and stochastic generators of test cases.
+    \item An option to prime the generation of test cases with a manually-chosen list.
+    \item The ability to forbid combinations of arguments.
+\end{itemize}
 
 \vskip 6pt
-\cit is one of a few common strategies for automated test case generation. A randomized strategy chooses argument values from the space of allowed arguments, usually with some bias towards choosing possible corner cases~\cite{Lampropoulos2020-sd,Arcuri2012-az}. Some tools introduce more structure to choosing random arguments. The \href{https://hackage.haskell.org/package/QuickCheck}{\texttt{QuickCheck}}(Haskell) and \href{https://github.com/HypothesisWorks/hypothesis}{\texttt{Hypothesis}} (Python) packages use customized generators to create streams of test cases~\cite{loscher2018automating}. Concolic testing records the execution of the function under test in order to generate subsequent test cases that are likely to increase line coverage~\cite{King1976-jt,Wang2018-xh,vira2019}. We will compare these methods in Sec.~\ref{sec:comparison}, after we understand the scope of combinatorial interaction testing.
+\cit is a popular tool for testing frameworks~\cite{pairwise-website} and one of a few common strategies for automated test case generation. A randomized strategy chooses argument values from the space of allowed arguments, usually with some bias towards choosing possible corner cases~\cite{Lampropoulos2020-sd,Arcuri2012-az}. Some tools introduce more structure to choosing random arguments. The \href{https://hackage.haskell.org/package/QuickCheck}{\texttt{QuickCheck}}(Haskell) and \href{https://github.com/HypothesisWorks/hypothesis}{\texttt{Hypothesis}} (Python) packages use customized generators to create streams of test cases~\cite{loscher2018automating}. Concolic testing records the execution of the function under test in order to generate subsequent test cases that are likely to increase line coverage~\cite{King1976-jt,Wang2018-xh,vira2019}. We will compare these methods in Sec.~\ref{sec:comparison}, after we understand the scope of combinatorial interaction testing.
 
 
 \section{Statement of Need}\label{sec:statement-of-need}
