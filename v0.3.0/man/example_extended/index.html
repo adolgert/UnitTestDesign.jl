@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Extended Example · UnitTestDesign.jl</title><link rel="canonical" href="https://adolgert.github.io/UnitTestDesign.jl/man/example_extended/"/><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit">UnitTestDesign.jl</span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Manual</span><ul><li><a class="tocitem" href="../guide/">Guide</a></li><li><a class="tocitem" href="../examples/">Examples</a></li><li class="is-active"><a class="tocitem" href>Extended Example</a><ul class="internal"><li><a class="tocitem" href="#Code-Under-Test"><span>Code Under Test</span></a></li><li><a class="tocitem" href="#Combinatorial-Test-of-the-Code"><span>Combinatorial Test of the Code</span></a></li></ul></li><li><a class="tocitem" href="../methods/">Testing Methods</a></li><li><a class="tocitem" href="../engines/">Engines</a></li><li><a class="tocitem" href="../ipog/">IPOG</a></li></ul></li><li><a class="tocitem" href="../../reference/">Reference</a></li><li><a class="tocitem" href="../../contributing/">Contributing</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Manual</a></li><li class="is-active"><a href>Extended Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Extended Example</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/adolgert/UnitTestDesign.jl/blob/master/docs/src/man/example_extended.md#L" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Extended-Example"><a class="docs-heading-anchor" href="#Extended-Example">Extended Example</a><a id="Extended-Example-1"></a><a class="docs-heading-anchor-permalink" href="#Extended-Example" title="Permalink"></a></h1><p>Combinatorial interaction testing is most useful when testing a complicated function, so let&#39;s look at testing code with more branches.</p><h2 id="Code-Under-Test"><a class="docs-heading-anchor" href="#Code-Under-Test">Code Under Test</a><a id="Code-Under-Test-1"></a><a class="docs-heading-anchor-permalink" href="#Code-Under-Test" title="Permalink"></a></h2><p>This code takes any pair of integers, <span>$(i, j)$</span> and returns a single integer, <span>$z$</span> that will be unique for every unique <span>$(i,j)$</span>. It&#39;s called a Hilbert index, and it&#39;s used to provide an ad-hoc clustering of values in a grid. What we see in this code is lots of if-then decisions and some bitshifting. Writing this, I was worried about type stability, interactions among signed and unsigned integers, and errors due to integer size differences.</p><pre><code class="language-julia">struct Simple2D{T}
+end
+
+function encode_hilbert_zero(::Simple2D{T}, X::Vector{A})::T where {A, T}
+    x = X[1]
+    y = X[2]
+    z = zero(T)
+    if x == zero(A) &amp;&amp; y == zero(A)
+        return z
+    end
+    rmin = convert(Int, floor(log2(max(x, y))) + 1)
+    w = one(A) &lt;&lt; (rmin - 1)
+    while rmin &gt; 0
+        z &lt;&lt;= 2
+        if rmin&amp;1 == 1  # odd
+            if x &lt; w
+                if y &gt;= w
+                    # 1
+                    x, y = (y - w, x)
+                    z += one(T)
+                end  # else x, y remain the same.
+            else
+                if y &lt; w
+                    x, y = ((w&lt;&lt;1) - x - one(w), w - y - one(w))
+                    # 3
+                    z += T(3)
+                else
+                    x, y = (y - w, x - w)
+                    z += T(2)
+                    # 2
+                end
+            end
+        else  # even
+            if x &lt; w
+                if y &gt;= w
+                    # Quadrant 3
+                    x, y = (w - x - one(w), (w &lt;&lt; 1) - y - one(w))
+                    z += T(3)
+                end  # else do nothing for quadrant 0.
+            else
+                if y &lt; w
+                    # 1
+                    x, y = (y, x-w)
+                    z += one(T)
+                else
+                    # 2
+                    x, y = (y-w, x-w)
+                    z += T(2)
+                end
+            end
+        end
+        rmin -= 1
+        w &gt;&gt;= 1
+    end
+    z
+end
+
+# Decoding does the opposite of encoding, so it turns a single z into an (i,j).
+function decode_hilbert_zero!(::Simple2D{T}, X::Vector{A}, z::T) where {A,T}
+    r = z &amp; T(3)
+    x, y = [(zero(A), zero(A)), (zero(A), one(A)), (one(A), one(A)), (one(A), zero(A))][r + 1]
+    z &gt;&gt;= 2
+    rmin = 2
+    w = one(A) &lt;&lt; 1
+    while z &gt; zero(T)
+        r = z &amp; T(3)
+        parity = 2 - rmin&amp;1
+        if rmin &amp; 1 != 0
+            # Nothing to do for quadrant 0.
+            if r == 1
+                x, y = (y, x + w)
+            elseif r == 2
+                x, y = (y + w, x + w)
+            elseif r == 3
+                x, y = ((w &lt;&lt; 1) - x - one(A), w - y - one(A))
+            end
+        else
+            if r == 1
+                x, y = (y + w, x)
+            elseif r == 2
+                x, y = (y + w, x + w)
+            elseif r == 3
+                x, y = (w - x - one(A), (w &lt;&lt; 1) - y - one(A))
+            end
+        end
+        z &gt;&gt;= 2
+        rmin += 1
+        w &lt;&lt;= 1
+    end
+    X[1] = x
+    X[2] = y
+end
+
+# These are the same functions with 1-offsets, for use in Julia array indexing.
+function encode_hilbert(gg::Simple2D{T}, X::Vector{A}) where {A, T}
+    encode_hilbert_zero(gg, X .- one(A)) + one(T)
+end
+
+
+function decode_hilbert!(gg::Simple2D{T}, X::Vector{A}, h::T) where {A,T}
+    decode_hilbert_zero!(gg, X, h - one(T))
+    X .+= one(A)
+end</code></pre><h2 id="Combinatorial-Test-of-the-Code"><a class="docs-heading-anchor" href="#Combinatorial-Test-of-the-Code">Combinatorial Test of the Code</a><a id="Combinatorial-Test-of-the-Code-1"></a><a class="docs-heading-anchor-permalink" href="#Combinatorial-Test-of-the-Code" title="Permalink"></a></h2><p>The code above is a just two functions, but there is lots of opportunity for problems. Because Julia let&#39;s us create a single function to work for multiple types, we effectively have multiple functions to test. How many cases are there, in total?</p><ul><li>The <span>$(i,j)$</span> can be Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128 (10).</li><li>The same options are possible for the <span>$z$</span> value, the Hilbert index (10).</li><li>This function could be called in a 0-based or 1-based way (2).</li><li>The <span>$(i,j)$</span> could range over different extents. This is a semi-infinite set, but let&#39;s choose powers of two, so 4, 8, 16, 32, 64, and trust past that (5).</li><li>This test allows the input vector to be too-large. That&#39;s a feature of some Hilbert implementations, and means we test for 2D, 3D, 4D (3).</li></ul><p>In all, we could have 3000 test runs. Of those 3000, the <code>all_pairs</code> function chooses 100 tests that contain every possible pair of arguments. In each test run, the code will do self-consistency checks. It will check that consecutive <span>$z$</span> values produce contiguous <span>$(i,j)$</span> values. It will test that decoding is the opposite of encoding. These tests may sound trivial, but four out of the six major papers on Hilbert indices contained code that failed these tests. All were later fixed after publication.</p><p>Combinatorial interaction testing of this function caught one major problem. The use of types wasn&#39;t consistent within the functions. While there are user-chosen types for input and output, all bitshifting should use simple integers. This testing also reassured the author that unsigned and signed integers would work together for this particular use of bitshifting functions.</p><pre><code class="language-julia">using UnitTestDesign
+using Random
+using Test
+rng = Random.MersenneTwister(9790323)
+for retrial in 1:5
+    AxisTypes = shuffle(rng, [Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128])
+    IndexTypes = shuffle(rng, [Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128])
+    Count= shuffle(rng, [0, 1])
+    Dims = shuffle(rng, [2, 3, 4])
+    Bits = shuffle(rng, [2, 3, 4, 5])
+    test_set = all_pairs(
+        AxisTypes, IndexTypes, Count, Dims, Bits;
+    )
+    for (A, I, C, D, B) in test_set
+        gg = Simple2D{I}()
+        if B * D &gt; log2(typemax(I))
+            continue
+        end
+        # Add this because these values aren&#39;t in Hilbert order because
+        # It&#39;s an asymmetrical space.
+        if B * D &gt; log2(typemax(A))
+            continue
+        end
+        last = (one(I) &lt;&lt; (B * D)) - one(I) + I(C)
+        mid = one(I) &lt;&lt; (B * D - 1)
+        few = 5
+        X = zeros(A, D)
+        hlarr = vcat(C:min(mid, few), max(mid + 1, last - few):last)
+        for hl in hlarr
+            hli = I(hl)
+            if C == 0
+                decode_hilbert_zero!(gg, X, hli)
+                hl2 = encode_hilbert_zero(gg, X)
+                if hl2 != hli
+                    @show A, I, C, D, B, X
+                    @test hl2 == hli
+                end
+                @test typeof(hl2) == typeof(hli)
+            else
+                decode_hilbert!(gg, X, hli)
+                hl3 = encode_hilbert(gg, X)
+                @test hl3 == hli
+                @test typeof(hl3) == typeof(hli)
+            end
+        end
+    end
+end</code></pre><p>One technique you might note above is that the code generates five versions of the test suite. It does this because the combinatorial tests are generated with a deterministic algorithm, so one way to increase test coverage is to shuffle test inputs and regenerate the test suite.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../examples/">« Examples</a><a class="docs-footer-nextpage" href="../methods/">Testing Methods »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Sunday 5 December 2021 19:24">Sunday 5 December 2021</span>. Using Julia version 1.7.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
