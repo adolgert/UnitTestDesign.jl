@@ -26,7 +26,7 @@ to understand the interface to the data structure.
 """
 mutable struct MatrixCoverage{T <: Integer}
     allc::Array{T, 2}
-    remain::Integer
+    remain::T
     arity::Array{T, 1}
 end
 
