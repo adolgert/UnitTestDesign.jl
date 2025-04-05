@@ -47,9 +47,9 @@ while time() - start_time < test_time
     local arity
     arity = rand(rng, 2:max_arity, n)
     k = rand(rng, 2:minimum([4, n]))
-    println("$(arity) $(k)")
+    # println("$(arity) $(k)")
     r1 = UnitTestDesign.ipog_multi(arity, k, x -> false, nothing)
-    println("$(size(r1))")
+    # println("$(size(r1))")
     cover1 = UnitTestDesign.test_coverage(r1, arity, k)
     @test cover1.finish == 0
 end
@@ -67,9 +67,9 @@ while time() - start_time < test_time
     arity = rand(rng, 2:max_arity, n)
     arity[2] = maximum([3, arity[2]]) # make sure it's >=3.
     k = rand(rng, 2:minimum([4, n]))
-    println("$(arity) $(k)")
+    # println("$(arity) $(k)")
     r2 = UnitTestDesign.ipog_multi(arity, k, not32, nothing)
-    println("$(size(r2))")
+    # println("$(size(r2))")
     out_arity = vec(maximum(r2, dims = 2))
     @test out_arity == arity
     all_combos = UnitTestDesign.all_combinations(arity, k)
