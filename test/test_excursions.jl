@@ -33,3 +33,4 @@ levels = Dict(3 => [[1, 2, 3], [2, 3, 4]])
 be5_res = UnitTestDesign.build_excursion_multi(be5_arity, 2, levels, x -> false, be5_seed)
 @test be5_res[:, 1] == be5_seed[:, 1]
 @test size(be5_res) == (4, 1 +25 + 2*1 + 3*2)
+@inferred UnitTestDesign.build_excursion_multi(be5_arity, 2, levels, x -> false, be5_seed)

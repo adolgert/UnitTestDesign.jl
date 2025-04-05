@@ -427,7 +427,7 @@ function multi_way_coverage(arity, wayness, base_wayness)
     @assert maximum(orders) <= length(arity)
 
     param_cnt = length(arity)
-    order_combos = Any[]
+    order_combos = Vector{Matrix{eltype(arity)}}(undef, 0)
     for order in orders
         # The parameter set is a list of parameter indices.
         for param_set in wayness[order]
@@ -439,5 +439,5 @@ function multi_way_coverage(arity, wayness, base_wayness)
         # We could remove duplicates of higher orders.
     end
     push!(order_combos, all_combinations(arity, base_wayness))
-    hcat(order_combos...)
+    return reduce(hcat, order_combos)
 end

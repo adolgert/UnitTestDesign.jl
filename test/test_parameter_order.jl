@@ -4,6 +4,7 @@ using UnitTestDesign
 
 ip232 = UnitTestDesign.ipog([2, 3, 2], 2)
 @test size(ip232) == (3, 6)
+@inferred UnitTestDesign.ipog([2, 3, 2], 2)
 ip2324 = UnitTestDesign.ipog([2, 3, 2, 4, 7, 2], 2)
 @test size(ip2324) == (6, 28)
 
@@ -13,6 +14,7 @@ im232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, nothing)
 
 seed232 = [2 1; 3 3; 1 2]
 is232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, seed232)
+@inferred UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, seed232)
 # total cases doesn't change.
 @test size(is232) == (3, 6)
 # the test cases come first.
@@ -89,6 +91,7 @@ imw_arity = [2, 3, 2, 3]
 imw_k = 2
 imw_ind = [1, 3, 4]
 imw1 = UnitTestDesign.ipog_multi_way(imw_arity, imw_k, Dict(3 => [imw_ind]), x -> false, nothing)
+@inferred UnitTestDesign.ipog_multi_way(imw_arity, imw_k, Dict(3 => [imw_ind]), x -> false, nothing)
 imw_cover1 = UnitTestDesign.test_coverage(imw1, imw_arity, imw_k)
 @test imw_cover1.finish == 0
 imw_cover2 = UnitTestDesign.test_coverage(imw1[imw_ind, :], imw_arity[imw_ind], 3)
