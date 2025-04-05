@@ -21,7 +21,7 @@ jobs:
         include:
           - version: "1.11"
             os: macOS-latest
-            arch: aarm64
+            arch: arm64
           - version: "1.11"
             os: windows-latest
             arch: x64
