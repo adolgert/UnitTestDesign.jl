@@ -29,7 +29,7 @@ remaining(sc::SetCoverage) = sum([length(aset) for aset in values(sc.cover)])
 function build_all_combinations!(sc::SetCoverage, n_way)
     allc = all_combinations(sc.arity, n_way)
     param_cnt = size(allc, 1)
-    for cover_idx in 1:size(allc, 2)
+    for cover_idx in axes(allc, 2)
         acover = allc[:, cover_idx]
         nonzero = acover .!= 0
         indices = tuple((1:param_cnt)[nonzero]...)
@@ -88,7 +88,7 @@ function tuples_in_trials(trials, n_way)
     # The dictionary with keys = parameter indices and dictionary
     # value is set of tuples of parameter values.
     seen = Dict(x => Set{NTuple{n_way,Int}}() for x in param_combo)
-    for trial_idx in 1:length(trials)
+    for trial_idx in eachindex(trials)
         entry = trials[trial_idx]
         for params in param_combo
             values = entry[[x for x in params]]

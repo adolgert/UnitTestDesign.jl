@@ -96,7 +96,7 @@ function seeds_to_integers(seed, parameters, Counter = Int)
     param_cnt = length(parameters)
     if length(seed) > 0
         seed_array = zeros(Counter, param_cnt, length(seed))
-        for seed_idx in 1:length(seed)
+        for seed_idx in eachindex(seed)
             seed_array[:, seed_idx] = [indexin([c], p)[1] for (p, c) in zip(parameters, seed[seed_idx])]
         end
     else
@@ -128,7 +128,7 @@ function generate_tuples(engine::IPOG, n_way, parameters, disallow, seeds, wayne
     else
         result = ipog(arity, n_way)
     end
-    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in 1:size(result, 2)]
+    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in axes(result, 2)]
 end
 
 
@@ -175,7 +175,7 @@ function generate_tuples(engine::Excursion, n_way, parameters, disallow, seeds, 
     else
         result = build_excursion(arity, n_way, disallow_integer, seeds_int)
     end
-    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in 1:size(result, 2)]
+    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in axes(result, 2)]
 end
 
 
@@ -367,5 +367,5 @@ function full_factorial(parameters...; disallow = nothing)
         disallow = x -> false
     end
     result = full_factorial(arity, disallow)
-    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in 1:size(result, 2)]
+    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in axes(result, 2)]
 end

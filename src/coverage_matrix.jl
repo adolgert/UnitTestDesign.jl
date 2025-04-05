@@ -93,7 +93,7 @@ end
 function combination_histogram(allc, arity)
     height = maximum(arity)
     hist = zeros(Int, height, length(arity))
-    for colh_idx in 1:size(allc, 2)
+    for colh_idx in axes(allc, 2)
         for rowh_idx in 1:height
             if allc[rowh_idx, colh_idx] > 0
                 hist[allc[rowh_idx, colh_idx], rowh_idx] += 1

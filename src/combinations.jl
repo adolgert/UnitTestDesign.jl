@@ -51,7 +51,7 @@ function all_combinations(arity, n_way)
 
     coverage = zeros(eltype(arity), v_cnt, combinations_cnt)
     idx = 1
-    for indices_idx in 1:length(indices)
+    for indices_idx in eachindex(indices)
         offset = indices[indices_idx]
         sub_arity = arity[offset]
         sub_cnt = prod(sub_arity)
