@@ -30,6 +30,7 @@ cover = UnitTestDesign.n_way_coverage_filter(arity, n_way, x -> x[3] == 1 && x[4
 nn = UnitTestDesign.n_way_coverage([4,4,4,4,4,4,4,4,4], 2, M, rng)
 @test length(nn) > 20
 @test length(nn) < 100
+@inferred UnitTestDesign.n_way_coverage([4,4,4,4,4,4,4,4,4], 2, M, rng)
 
 ### n_way_coverage_multi
 rng = MersenneTwister(789607)

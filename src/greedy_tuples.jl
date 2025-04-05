@@ -12,7 +12,7 @@ function argmin_rand(rng, v)
     small = typemax(v[1])
     small_extra_cnt = 0
     small_idx = -1
-    for i in 1:length(v)
+    for i in eachindex(v)
         if v[i] < small
             small = v[i]
             small_extra_cnt = 0
@@ -99,7 +99,7 @@ function n_way_coverage_init(arity, n_way, seed, M, rng)
     # Array of arrays.
     coverage = Array{Array{Int64,1},1}()
 
-    for seed_idx in 1:size(seed, 2)
+    for seed_idx in axes(seed, 2)
         push!(coverage, seed[:, seed_idx])
         remain = add_coverage!(allc, seed[:, seed_idx])
     end
@@ -181,7 +181,7 @@ function n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
     # Array of arrays.
     coverage = Array{Array{Int64,1},1}()
 
-    for seed_idx in 1:size(seed, 2)
+    for seed_idx in axes(seed, 2)
         push!(coverage, seed[:, seed_idx])
         remain = add_coverage!(allc, seed[:, seed_idx])
     end
@@ -236,7 +236,7 @@ function n_way_coverage_multi(allc, disallow, seed, M, rng)
     # Array of arrays.
     coverage = Array{Array{Int64,1},1}()
 
-    for seed_idx in 1:size(seed, 2)
+    for seed_idx in axes(seed, 2)
         push!(coverage, seed[:, seed_idx])
         add_coverage!(allc, seed[:, seed_idx])
     end

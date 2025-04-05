@@ -24,6 +24,7 @@ using Test
     @assert pf1([1, 2, 2])
     @assert !pf1([1, 1, 2])
 
+    @inferred UnitTestDesign.wrap_disallow(filter_bc, params)
 end
 
 ## seeds_to_integers, an internal function

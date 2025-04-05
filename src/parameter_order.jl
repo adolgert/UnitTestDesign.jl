@@ -6,7 +6,7 @@ has not been chosen, this fills in the last parameters for each test case.
 """
 function choose_last_parameter!(taller, allc, matcher = case_partial_cover)
     param_idx  = size(taller, 1)
-    for set_col_idx in 1:size(taller, 2)
+    for set_col_idx in axes(taller, 2)
         if any(taller[:, set_col_idx] .== 0)
             match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx, matcher)
             if (any(match_hist .> 0))
@@ -22,7 +22,7 @@ end
 function choose_last_parameter_filter!(taller, allc, disallow)
     param_idx  = size(taller, 1)
     putative = similar(taller[:, 1])
-    for set_col_idx in 1:size(taller, 2)
+    for set_col_idx in axes(taller, 2)
         if any(taller[:, set_col_idx] .== 0)
             match_hist = matches_from_missing(
                 allc, taller[:, set_col_idx], param_idx, case_partial_cover)
@@ -48,7 +48,7 @@ This fills in missing values anywhere they cover tuples.
 """
 function fill_missing_test_set_values!(taller, allc, matcher = case_compatible_with_tuple)
     param_idx  = size(taller, 1)
-    for missing_col_idx in 1:size(taller, 2)
+    for missing_col_idx in axes(taller, 2)
         nonzero = sum(taller[1:(param_idx - 1), missing_col_idx] .> 0)
         if nonzero < param_idx - 1
             # The found_values has what format?
@@ -82,7 +82,7 @@ end
 
 
 function put_tuple_in_case(tuple, case)
-    for i in 1:length(tuple)
+    for i in eachindex(tuple)
         if tuple[i] != 0
             if case[i] == 0
                 case[i] = tuple[i]
@@ -105,7 +105,7 @@ function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_
     for find_cover_idx in allc.remain:-1:1
         tuple = allc.allc[:, find_cover_idx]
         unmatched = true
-        for test_idx in 1:size(test_set, 2)
+        for test_idx in axes(test_set, 2)
             test_case = test_set[:, test_idx]
             matches = matcher(test_case, tuple)
             if matches
@@ -115,7 +115,7 @@ function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_
             end
         end
         if unmatched
-            for tc_idx in 1:length(add_tests)
+            for tc_idx in eachindex(add_tests)
                 test_case = add_tests[tc_idx]
                 if matcher(test_case, tuple)
                     add_tests[tc_idx] = put_tuple_in_case(tuple, test_case)
@@ -146,7 +146,7 @@ function insert_tuple_into_tests_filter(test_set, allc, disallow)
     for find_cover_idx in allc.remain:-1:1
         tuple = allc.allc[:, find_cover_idx]
         unmatched = true
-        for test_idx in 1:size(test_set, 2)
+        for test_idx in axes(test_set, 2)
             test_case = test_set[:, test_idx]
             matches = case_compatible_with_tuple(test_case, tuple)
             if matches && putative_allowed(putative, test_case, tuple, disallow)
@@ -156,7 +156,7 @@ function insert_tuple_into_tests_filter(test_set, allc, disallow)
             end
         end
         if unmatched
-            for tc_idx in 1:length(add_tests)
+            for tc_idx in eachindex(add_tests)
                 test_case = add_tests[tc_idx]
                 if case_compatible_with_tuple(test_case, tuple) &&
                         putative_allowed(putative, test_case, tuple, disallow)
@@ -185,15 +185,15 @@ function fill_remaining_missing_values!(test_set, arity)
     # We could have zero values at the end, so fill them in with the
     # least-used values.
     hist = zeros(Int, param_cnt, maximum(arity))
-    for hist_entry in 1:size(test_set, 2)
-        for hist_param in 1:size(test_set, 1)
+    for hist_entry in axes(test_set, 2)
+        for hist_param in axes(test_set, 1)
             if test_set[hist_param, hist_entry] > 0
                 hist[hist_param, test_set[hist_param, hist_entry]] += 1
             end
         end
     end
-    for fill_col in 1:size(test_set, 2)
-        for fill_param in 1:size(test_set, 1)
+    for fill_col in axes(test_set, 2)
+        for fill_param in axes(test_set, 1)
             if test_set[fill_param, fill_col] == 0
                 fill_val = argmin(hist[fill_param, 1:arity[fill_param]])
                 test_set[fill_param, fill_col] = fill_val
@@ -209,16 +209,16 @@ function fill_remaining_missing_values_filter!(test_set, arity, disallow)
     # We could have zero values at the end, so fill them in with the
     # least-used values.
     hist = zeros(Int, param_cnt, maximum(arity))
-    for hist_entry in 1:size(test_set, 2)
-        for hist_param in 1:size(test_set, 1)
+    for hist_entry in axes(test_set, 2)
+        for hist_param in axes(test_set, 1)
             if test_set[hist_param, hist_entry] > 0
                 hist[hist_param, test_set[hist_param, hist_entry]] += 1
             end
         end
     end
     putative = similar(test_set[:, 1])
-    for fill_col in 1:size(test_set, 2)
-        for fill_param in 1:size(test_set, 1)
+    for fill_col in axes(test_set, 2)
+        for fill_param in axes(test_set, 1)
             if test_set[fill_param, fill_col] == 0
                 putative .= test_set[:, fill_col]
                 for fill_val in sortperm(hist[fill_param, 1:arity[fill_param]])
@@ -291,7 +291,7 @@ end
 function keep_allowed(test_set, disallow)
     allow_cnt = 0
     allowed = zeros(Int, size(test_set, 2))
-    for idx in 1:size(test_set, 2)
+    for idx in axes(test_set, 2)
         if !disallow(test_set[:, idx])
             allow_cnt += 1
             allowed[allow_cnt] = idx
@@ -366,12 +366,12 @@ unique for the few parameters in the combination test.
 function add_tests_to_seeds(seeds, tests)
     append_cnt = 0
     to_append = zeros(Int, size(tests, 2))
-    for tidx in 1:size(tests, 2)
+    for tidx in axes(tests, 2)
         found = false
         test = tests[:, tidx]
-        for sidx in 1:size(seeds, 2)
+        for sidx in axes(seeds, 2)
             if case_compatible_with_tuple(test, seeds[:, sidx])
-                for pidx in 1:length(test)
+                for pidx in eachindex(test)
                     if test[pidx] != 0
                         seeds[pidx, sidx] = test[pidx]
                     end

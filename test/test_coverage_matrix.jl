@@ -265,4 +265,4 @@ end
 ## multi_way_coverage
 mwc = UnitTestDesign.multi_way_coverage([2,3,4,2,2,3], Dict(3 => [[1,3,4,5]]), 2)
 @test maximum(sum(mwc .!= 0, dims = 1)) == 3
-
+@inferred UnitTestDesign.multi_way_coverage([2,3,4,2,2,3], Dict(3 => [[1,3,4,5]]), 2)

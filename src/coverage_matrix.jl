@@ -26,7 +26,7 @@ to understand the interface to the data structure.
 """
 mutable struct MatrixCoverage{T <: Integer}
     allc::Array{T, 2}
-    remain::Integer
+    remain::Int64
     arity::Array{T, 1}
 end
 
@@ -93,7 +93,7 @@ end
 function combination_histogram(allc, arity)
     height = maximum(arity)
     hist = zeros(Int, height, length(arity))
-    for colh_idx in 1:size(allc, 2)
+    for colh_idx in axes(allc, 2)
         for rowh_idx in 1:height
             if allc[rowh_idx, colh_idx] > 0
                 hist[allc[rowh_idx, colh_idx], rowh_idx] += 1
@@ -427,7 +427,7 @@ function multi_way_coverage(arity, wayness, base_wayness)
     @assert maximum(orders) <= length(arity)
 
     param_cnt = length(arity)
-    order_combos = Any[]
+    order_combos = Vector{Matrix{eltype(arity)}}(undef, 0)
     for order in orders
         # The parameter set is a list of parameter indices.
         for param_set in wayness[order]
@@ -439,5 +439,5 @@ function multi_way_coverage(arity, wayness, base_wayness)
         # We could remove duplicates of higher orders.
     end
     push!(order_combos, all_combinations(arity, base_wayness))
-    hcat(order_combos...)
+    return reduce(hcat, order_combos)
 end

@@ -17,7 +17,7 @@ function build_excursion(arity, n_way, disallow, seed = nothing)
 
     allowed = zeros(Int, length(seeded))
     allow_cnt = 0
-    for case_idx in 1:size(seeded, 2)
+    for case_idx in axes(seeded, 2)
         if !disallow(seeded[:, case_idx])
             allow_cnt += 1
             allowed[allow_cnt] = case_idx
@@ -68,7 +68,7 @@ function build_excursion_multi(arity, n_way, levels, disallow, seed = nothing)
 
     allowed = zeros(Int, length(seeded))
     allow_cnt = 0
-    for case_idx in 1:size(seeded, 2)
+    for case_idx in axes(seeded, 2)
         if !disallow(seeded[:, case_idx])
             allow_cnt += 1
             allowed[allow_cnt] = case_idx

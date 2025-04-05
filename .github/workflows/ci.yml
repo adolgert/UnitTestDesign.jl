@@ -10,11 +10,8 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.6'
-          - '1.7'
-          - '1.8'
-          - '1.9'
-          - '1.10'
+          - '1.2'
+          - 'lts'
           - '1.11'
           - '1.12.0-beta1'
         os:
@@ -24,7 +21,7 @@ jobs:
         include:
           - version: "1.11"
             os: macOS-latest
-            arch: x64
+            arch: arm64
           - version: "1.11"
             os: windows-latest
             arch: x64
