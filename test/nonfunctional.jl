@@ -7,7 +7,7 @@ using CSV
 using Dates
 using UnitTestDesign
 using DataFrames
-import Random: MersenneTwister
+import Random: Xoshiro
 import StatsBase: trim, trimvar, winsor, mean
 
 function ipog_extra(arity, n_way, M = nothing, rng = nothing)
@@ -20,6 +20,7 @@ function greedy_extra(arity, n_way, M, rng)
 end
 
 
+# fut = Function under test.
 fut_map = Dict(:ipog => ipog_extra, :greedy => greedy_extra)
 
 
@@ -32,7 +33,7 @@ end
 
 
 function test_against_cases!(df, sample_cnt, rng)
-    for idx in 1:size(df, 1)
+    for idx in axes(df, 1)
         duration = zeros(sample_cnt)
         memory = zeros(sample_cnt)
         case_cnt = zeros(Int, sample_cnt)
@@ -164,61 +165,17 @@ push!(cases, DataFrame(
 
 
 df = vcat(cases...)
+N = nrow(df)
 # Add a place in the dataframe to store results.
-df[:, :duration] = zeros(N),
-df[:, :duration_max] = zeros(N),
-df[:, :mbytes] = zeros(Float64, N),
-df[:, :mbytes_max] = zeros(Float64, N),
-df[:, :cases] = zeros(Int, N),
-df[:, :cases_max] = zeros(Int, N),
+df[:, :duration] = zeros(N)
+df[:, :duration_max] = zeros(N)
+df[:, :mbytes] = zeros(Float64, N)
+df[:, :mbytes_max] = zeros(Float64, N)
+df[:, :cases] = zeros(Int, N)
+df[:, :cases_max] = zeros(Int, N)
 
-rng = MersenneTwister(947234)
+rng = Xoshiro(947234)
 test_against_cases!(df, 10, rng)
 df
 
 CSV.write("nonfunctional_cases_$(today()).csv", df)
-
-match_options = [
-    UnitTestDesign.case_compatible_with_tuple,
-    UnitTestDesign.case_partial_cover,
-    UnitTestDesign.case_covers_tuple
-]
-opt_cnt = length(match_options)^3
-opt_res = zeros(Int, 4, opt_cnt)
-for opt_choice in 1:opt_cnt
-    strat_idx = digits(opt_choice - 1, base = 3, pad = 3) .+ 1
-    if strat_idx[1] != 3
-        strategy = Dict((a, match_options[b]) for (a, b) in
-            zip([:lastparam, :missingvals, :expand], strat_idx))
-
-        ret = UnitTestDesign.ipog_instrumented(fill(4, 20), 2, strategy)
-        opt_res[:, opt_choice] = vcat(size(ret[1], 2), strat_idx)
-    end
-end
-opt_res
-
-
-match_options = [
-    UnitTestDesign.case_compatible_with_tuple,
-    UnitTestDesign.case_partial_cover,
-    UnitTestDesign.case_covers_tuple
-]
-strat_cnt = 2
-opt_cnt = length(match_options)^strat_cnt
-opt_res = zeros(Int, 1 + strat_cnt, opt_cnt)
-for opt_choice in 1:opt_cnt
-    strat_idx = digits(opt_choice - 1, base = 3, pad = strat_cnt) .+ 1
-    if strat_idx[1] != 3
-        strategy = Dict((a, match_options[b]) for (a, b) in
-            zip([:lastparam, :expand], strat_idx))
-
-        ret = UnitTestDesign.ipog_bytuple_instrumented(fill(4, 20), 2, strategy)
-        opt_res[:, opt_choice] = vcat(size(ret[1], 2), strat_idx)
-    end
-end
-opt_res
-
-strat_idx = [2, 1]
-strategy = Dict((a, match_options[b]) for (a, b) in
-    zip([:lastparam, :expand], strat_idx))
-ret = UnitTestDesign.ipog_bytuple_instrumented(fill(4, 30), 2, strategy)

@@ -26,7 +26,7 @@ to understand the interface to the data structure.
 """
 mutable struct MatrixCoverage{T <: Integer}
     allc::Array{T, 2}
-    remain::T
+    remain::Int64
     arity::Array{T, 1}
 end
 
@@ -53,7 +53,7 @@ function all_combinations_matrix(arity, n_way)
     # Every combination is nonzero.
     @assert sum(sum(allc, dims = 1) == 0) == 0
     remain = size(allc, 2)
-    MatrixCoverage(allc, convert(eltype(arity), remain), arity)
+    MatrixCoverage(allc, remain, arity)
 end
 
 
@@ -70,7 +70,7 @@ once for each possible value of the given parameter.
 """
 function one_parameter_combinations_matrix(arity, n_way)
     comb = one_parameter_combinations(arity, n_way)
-    MatrixCoverage(comb, convert(eltype(arity), size(comb, 2)), arity)
+    MatrixCoverage(comb, size(comb, 2), arity)
 end
 
 
