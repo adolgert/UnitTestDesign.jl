@@ -5,7 +5,7 @@ CI = get(ENV, "CI", nothing) == "true"
 
 makedocs(;
     modules=[UnitTestDesign],
-    authors="Andrew Dolgert <adolgert@uw.edu>",
+    authors="Andrew Dolgert <adolgert@andrew.cmu.edu>",
     repo="https://github.com/adolgert/UnitTestDesign.jl/blob/{commit}{path}#L{line}",
     sitename="UnitTestDesign.jl",
     format=Documenter.HTML(;
