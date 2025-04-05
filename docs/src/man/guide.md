@@ -3,21 +3,25 @@
 
 ## Kinds of test generation
 
-* Combinatorial coverage - Makes the shortest test sets to cover all options.
+A function has multiple arguments, and each argument can take multiple values.
+We choose one of the following strategies to ensure different combinations of
+argument values are tested by the test cases.
 
-    - [`all_values`](@ref): Every value is used at least once.
+* Combinatorial coverage - Makes test cases that include combinations of argument values.
+
+    - [`all_values`](@ref): Every value of every argument is used at least once.
     - [`all_pairs`](@ref): Every pair of values is used at least once.
     - [`all_triples`](@ref): Every triple of values is used at least once.
     - [`all_tuples`](@ref): Generate test sets with arbitrary coverage level.
 
-* Excursions from a single parameter set
+* Excursions from a single parameter set - Start from a base set of arguments, keep them fixed, and vary one or more arguments.
 
     - [`values_excursion`](@ref): Tries each parameter, one at a time.
     - [`pairs_excursion`](@ref): Tries pairs of parameters, two at a time.
     - [`triples_excursion`](@ref): Tries three parameters away from the original set.
     - [`all_tuples`](@ref): This function works for general excursions, too.
 
-* Full factorial - Every combinations of parameters.
+* Full factorial - Make a test case for every possible combination of parameters.
 
     - [`full_factorial`](@ref): Generates all combinations of parameters, filtering
       those that aren't permitted.
