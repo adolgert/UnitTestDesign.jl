@@ -41,7 +41,7 @@ using UnitTestDesign  # hide
 using DataFrames
 names = ["time", "event", "who", "location"]
 at = all_triples([0.1, 5.1, 10.9], [:infect, :recover], [10, 11], ["forest", "home"])
-DataFrame(Dict(names[i] => [row[i] for row in at] for i in 1:length(names))...)
+DataFrame(Dict(names[i] => [row[i] for row in at] for i in eachindex(names))...)
 ```
 
 ## Excursions
