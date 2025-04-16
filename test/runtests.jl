@@ -31,7 +31,8 @@ using TestItemRunner
         if args["ci"]
             return 0.2
         elseif !isnothing(args["longer"])
-            return args["longer"]
+            longer = args["longer"]
+            return longer
         else
             return 1.0
         end
