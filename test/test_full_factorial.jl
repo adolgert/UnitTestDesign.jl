@@ -2,7 +2,6 @@ using Test
 
 using TestItemRunner
 
-using UnitTestDesign
 
 @testitem "full factorial with exclusion" begin
     res1 = UnitTestDesign.full_factorial([2, 3, 4, 2, 2], x -> false)

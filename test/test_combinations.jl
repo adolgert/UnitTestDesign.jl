@@ -3,7 +3,6 @@ using Random
 
 using TestItemRunner
 
-using UnitTestDesign
 
 
 @testitem "total combinations from integers" begin

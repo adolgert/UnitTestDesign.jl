@@ -1,7 +1,6 @@
 using Test
 using TestItemRunner
 
-using UnitTestDesign
 
 @testitem "tuples_in_trials set-based" begin
     tt_cases = [

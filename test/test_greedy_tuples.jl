@@ -1,8 +1,6 @@
 using Test
 using TestItemRunner
 
-using UnitTestDesign
-
 
 @testitem "argmin_rand" begin
     using Random

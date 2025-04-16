@@ -1,7 +1,6 @@
 using TestItemRunner
 
 using Random
-using UnitTestDesign
 
 
 @testitem "ensure these little functions are mutually exclusive" begin

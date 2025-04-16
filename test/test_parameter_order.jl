@@ -3,7 +3,6 @@ using Random
 
 using TestItemRunner
 
-using UnitTestDesign
 
 @testitem "ipog base" begin
     ip232 = UnitTestDesign.ipog([2, 3, 2], 2)
@@ -12,6 +11,7 @@ using UnitTestDesign
     ip2324 = UnitTestDesign.ipog([2, 3, 2, 4, 7, 2], 2)
     @test size(ip2324) == (6, 28)
 end
+
 
 @testitem "ipog multi" begin
     im232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, nothing)
@@ -54,14 +54,13 @@ end
 end
 
 
-@testitem "long random of ipog_multi" begin
+@testitem "long random of ipog_multi" setup=[UTSetup] begin
     using Random
-    CI = get(ENV, "CI", false) == "true"
-
+    
     rng = Xoshiro(90714134)
-    test_time = CI ? 5 : 30
-    max_n = CI ? 6 : 10
-    max_arity = CI ? 5 : 7
+    test_time = 30 * test_run_multiplier()
+    max_n = 10
+    max_arity = 7
     start_time = time()
     while time() - start_time < test_time
         n = rand(rng, 3:max_n)
@@ -76,14 +75,14 @@ end
     end
 end
 
-@testitem "all combinations long random" begin
+
+@testitem "all combinations long random" setup=[UTSetup] begin
     using Random
-    CI = get(ENV, "CI", false) == "true"
 
     rng = Xoshiro(2424324)
-    test_time = CI ? 2 : 30
-    max_n = CI ? 6 : 10
-    max_arity = CI ? 5 : 7
+    test_time = 30 * test_run_multiplier()
+    max_n = 10
+    max_arity = 7
     start_time = time()
     not32 = (x -> (length(x) >= 3 && x[2] == 3 && x[3] == 2))
     while time() - start_time < test_time

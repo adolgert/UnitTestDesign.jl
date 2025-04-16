@@ -1,6 +1,5 @@
 using Test
 using TestItemRunner
-using UnitTestDesign
 
 @testitem "arity excursion with an exclusion" begin
     be1_arity = [2, 3, 2, 4]

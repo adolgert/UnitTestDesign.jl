@@ -4,7 +4,6 @@ using TestItemRunner
 ### wrap_disallow, an internal function.
 
 @testitem "wrap_disallow" begin
-    using UnitTestDesign
 
     function filter_bc(a, b, c)
         !b && c == "two"
@@ -31,7 +30,6 @@ end
 ## seeds_to_integers, an internal function
 
 @testitem "seeds_to_integers" begin
-    using UnitTestDesign
 
     params = (["a", "b", "c"], [1, 2], [4, 7])
     seeds = [["a", 2, 4], ["b", 1, 7]]
@@ -43,7 +41,6 @@ end
 ## IPOG
 
 @testitem "IPOG init" begin
-    using UnitTestDesign
     ipog = IPOG()
     @test isa(ipog, IPOG)
 end
@@ -52,7 +49,6 @@ end
 
 @testitem "GND init" begin
     using Random
-    using UnitTestDesign
     gnd1 = GND()
     @test gnd1.M == 50
     sample1 = randn(gnd1.rng)
@@ -75,7 +71,6 @@ end
 ## generate_tuples(IPOG())
 
 @testitem "IPOG generate tuples" begin
-    using UnitTestDesign
     trials1 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
         nothing, nothing, nothing, Int)
     @test length(trials1) == 6
@@ -118,7 +113,6 @@ end
 end
 
 @testitem "GND generate tuples" begin
-    using UnitTestDesign
     gndt1 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
     nothing, nothing, nothing, Int)
     @test length(gndt1) > 3
@@ -163,8 +157,6 @@ end
 
 ## all_values
 @testitem "IPOG generate tuples" begin
-    using UnitTestDesign
-
     av1 = all_values([1, 2], ["a", "b", "c"], [4, 7])
     @test length(av1) == 3
     @test av1[1][3] in [4, 7]
@@ -173,8 +165,6 @@ end
 
 ## all_pairs
 @testitem "IPOG generate tuples" begin
-    using UnitTestDesign
-
     pairs1 = all_pairs([1, 2], ["a", "b", "c"], [4, 7])
     @test length(pairs1) > 3
     @test pairs1[1][3] in [4, 7]
@@ -183,7 +173,6 @@ end
 
 ## all_triples
 @testitem "IPOG generate tuples" begin
-    using UnitTestDesign
     at1 = all_triples([1, 2], ["a", "b", "c"], [4, 7], [true, false])
     @test length(at1) > 9
     @test at1[1][3] in [4, 7]
@@ -192,7 +181,6 @@ end
 
 
 @testitem "values excursion" begin
-    using UnitTestDesign
     ve1_params = [1:3, 1:2, 1:4, 1:2, 1:2]
     ve1 = values_excursion(ve1_params...)
     ve1_arity = maximum.(ve1_params)
@@ -201,7 +189,6 @@ end
 
 
 @testitem "pairs excursion" begin
-    using UnitTestDesign
     pe1_arity = [1:4, 1:4, 1:4, 1:4, 1:3, 1:3, 1:3, 1:4]
     pe1 = pairs_excursion(pe1_arity...)
     @test length(pe1) == 214
@@ -239,13 +226,11 @@ end
 
 
 @testitem "triples excursion" begin
-    using UnitTestDesign
     te1 = triples_excursion([1:4, 1:4, 1:4, 1:4, 1:3, 1:3, 1:3, 1:4]...)
 end
 
 
 @testitem "full factorial" begin
-    using UnitTestDesign
     ff1 = full_factorial([1:2, 1:2, 1:3, 1:2]...)
     @test length(ff1) == 24
 
