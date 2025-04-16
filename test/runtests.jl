@@ -21,6 +21,18 @@ using TestItemRunner
     #    to try it again, this will get you there.
     #
     function parse_commandline()
+        CI = get(ENV, "CI", "false") == "true"
+        default_args = Dict(
+            "longer" => 1.0, "ci" => CI, "randseed" => false, "seed" => zero(UInt64)
+            )
+        # VisualStudio Code calls package testing with its own set of arguments
+        # that differ from those we want to use on the command line.
+        # ArgParse doesn't have an option to allow spurious argument, so let's
+        # look for a keyword and short-circuit the ArgParse in that case.
+        if "v:UnitTestDesign" in ARGS
+            return default_args
+        end
+
         settings = ArgParseSettings()
         add_arg_table!(settings,
             "--longer",
@@ -46,8 +58,16 @@ using TestItemRunner
                 :default => zero(UInt64)
             ),
         )
-        parsed = parse_args(settings)
-        if get(ENV, "CI", "false") == "true"
+        parsed = try
+             parse_args(settings)
+        catch err
+            if isa(err, ArgParseError)
+                default_args
+            else
+                rethrow(err)
+            end
+        end
+        if CI
             parsed["ci"] = true
         end
         return parsed
