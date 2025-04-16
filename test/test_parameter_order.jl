@@ -57,7 +57,7 @@ end
 @testitem "long random of ipog_multi" setup=[UTSetup] begin
     using Random
     
-    rng = Xoshiro(90714134)
+    rng = Xoshiro(90714134 ⊻ seed_mod())
     test_time = 30 * test_run_multiplier()
     max_n = 10
     max_arity = 7
@@ -79,7 +79,7 @@ end
 @testitem "all combinations long random" setup=[UTSetup] begin
     using Random
 
-    rng = Xoshiro(2424324)
+    rng = Xoshiro(2424324 ⊻ seed_mod())
     test_time = 30 * test_run_multiplier()
     max_n = 10
     max_arity = 7
