@@ -74,7 +74,6 @@ end
 
 
 @testitem "coverage_by_value" begin
-
     # (coverage matrix, remaining uncovered, arity,
     #  parameter, coverage of that parameter)
     cbv_cases = [
@@ -205,6 +204,7 @@ end
     @test res1 == [1, 2, 3]
 end
 
+
 @testitem "fill_consistent_matches incrmental change" begin
     arity = [2, 4, 4]
     mat2 = [
@@ -219,6 +219,7 @@ end
     @test res2 == [1, 2, 4]
 end
 
+
 @testitem "fill_consistent_matches another increment" begin
     arity = [2, 4, 4]
     mat3 = [
@@ -232,6 +233,7 @@ end
     res3 = UnitTestDesign.fill_consistent_matches(mc3, [0, 2, 0])
     @test res3 == [1, 2, 3]
 end
+
 
 @testitem "add_coverage!(allc, row_cnt, entry)" begin
     # This checks that the rows of the matrix are reordered

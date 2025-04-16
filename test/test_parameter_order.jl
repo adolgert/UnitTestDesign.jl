@@ -19,6 +19,7 @@ end
     @test UnitTestDesign.test_coverage(im232, [2, 3, 2], 2) == (start = 16, finish = 0)
 end
 
+
 @testitem "ipog multi with seed and exclusion" begin
     seed232 = [2 1; 3 3; 1 2]
     is232 = UnitTestDesign.ipog_multi([2, 3, 2], 2, x -> false, seed232)

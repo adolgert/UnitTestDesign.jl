@@ -1,6 +1,7 @@
 using Test
 using TestItemRunner
 
+
 @testitem "arity excursion with an exclusion" begin
     be1_arity = [2, 3, 2, 4]
     be1_res = UnitTestDesign.build_excursion(be1_arity, 2, x -> false)
