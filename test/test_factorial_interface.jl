@@ -1,7 +1,6 @@
 using Test
 using TestItemRunner
 
-### wrap_disallow, an internal function.
 
 @testitem "wrap_disallow" begin
 
@@ -27,7 +26,6 @@ using TestItemRunner
     @inferred UnitTestDesign.wrap_disallow(filter_bc, params)
 end
 
-## seeds_to_integers, an internal function
 
 @testitem "seeds_to_integers" begin
 
@@ -38,14 +36,12 @@ end
 
 end
 
-## IPOG
 
 @testitem "IPOG init" begin
     ipog = IPOG()
     @test isa(ipog, IPOG)
 end
 
-## GND
 
 @testitem "GND init" begin
     using Random
@@ -68,7 +64,6 @@ end
     @test randn(gnd5.rng) == sample3
 end
 
-## generate_tuples(IPOG())
 
 @testitem "IPOG generate tuples" begin
     trials1 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
@@ -111,6 +106,7 @@ end
         nothing, nothing, nothing, Int8)
     @test length(trials6) == 6
 end
+
 
 @testitem "GND generate tuples" begin
     gndt1 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
@@ -155,24 +151,24 @@ end
     @test length(trials6) == 6
 end
 
-## all_values
-@testitem "IPOG generate tuples" begin
+
+@testitem "IPOG generate all values" begin
     av1 = all_values([1, 2], ["a", "b", "c"], [4, 7])
     @test length(av1) == 3
     @test av1[1][3] in [4, 7]
 
 end
 
-## all_pairs
-@testitem "IPOG generate tuples" begin
+
+@testitem "IPOG generate all pairs" begin
     pairs1 = all_pairs([1, 2], ["a", "b", "c"], [4, 7])
     @test length(pairs1) > 3
     @test pairs1[1][3] in [4, 7]
 
 end
 
-## all_triples
-@testitem "IPOG generate tuples" begin
+
+@testitem "IPOG generate all triples" begin
     at1 = all_triples([1, 2], ["a", "b", "c"], [4, 7], [true, false])
     @test length(at1) > 9
     @test at1[1][3] in [4, 7]

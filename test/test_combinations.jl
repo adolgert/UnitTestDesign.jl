@@ -43,10 +43,13 @@ end
 end
 
 
-@testitem "All combinations" begin
+@testitem "All combinations" setup=[UTSetup] begin
     using Random
-    rng = Xoshiro(9237425)
-    for ac_trial_idx in 1:5
+    rng = Xoshiro(9237425 ⊻ seed_mod())
+    test_time = 30 * test_run_multiplier()
+
+    start_time = time()
+    while time() - start_time < test_time
         n_way = [2, 3, 4][rand(rng, 1:3)]
         param_cnt = rand(rng, (n_way + 1):(n_way + 3))
         arity = rand(rng, 2:4, param_cnt)
