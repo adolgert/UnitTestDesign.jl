@@ -1,3 +1,4 @@
+using ArgParse
 using TestEnv
 using TestItemRunner
 
@@ -8,5 +9,5 @@ using UnitTestDesign
 # You need to ensure the test/Project.toml is set to Plg.develop(UnitTestDesign)
 # so that it can load that in the activate() below.
 TestEnv.activate("UnitTestDesign") do
-    @run_package_tests
+    @run_package_tests # filter=ti->(endswith(ti.filename, "commandline.jl"))
 end
