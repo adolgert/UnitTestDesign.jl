@@ -24,6 +24,5 @@ include("parameter_order.jl")
 include("full_factorial.jl")
 include("excursions.jl")
 include("factorial_interface.jl")
-include("commandline.jl")
 
 end

@@ -2,4 +2,5 @@
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 UnitTestDesign = "239896fa-e45a-40e8-9993-3c434b0bc450"
