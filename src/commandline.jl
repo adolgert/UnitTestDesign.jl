@@ -3,6 +3,33 @@ using TOML
 using CSV
 
 
+# This function has the same signature as the all_tuples function but encodes
+# the parameters in a dictionary for a TOML file.
+function convert_to_dict_all_tuples(
+    parameters...;
+    n_way::Integer = 2, engine = IPOG(), disallow = nothing, seeds = nothing, wayness = nothing, Counter = Int
+    )
+    toml_contents = Dict{String,Any}()
+    toml_contents["parameters"] = Dict("params" => [collect(p) for p in parameters])
+    toml_contents["config"] = Dict(
+        "n_way" => n_way,
+        "engine" => string(typeof(engine)),
+        "Counter" => string(Counter),
+    )
+    if disallow !== nothing
+        toml_contents["config"]["disallow"] = disallow
+    end
+    if wayness !== nothing
+        # TOML can represent a dictionary if the key is a string.
+        toml_contents["config"]["wayness"] = Dict(string(k) => v for (k, v) in wayness)
+    end
+    if seeds !== nothing
+        toml_contents["seeds"] = Dict("seeds" => [collect(s) for s in seeds])
+    end
+    return toml_contents
+end
+
+
 function config_from_io(io)
     parsed = TOML.tryparse(io)
     if isa(parsed, TOML.ParserError)
@@ -10,13 +37,16 @@ function config_from_io(io)
         return nothing
     end
 
-    config = Dict{String, Any}()
+    kwargs = Dict{Symbol, Any}()
     parameters = Any[]
     if "parameters" ∈ keys(parsed)
-        argnames = collect(keys(parsed["parameters"]))
-        sort!(argnames)
-        for argname in argnames
-            push!(parameters, parsed["parameters"][argname])
+        param_dict = parsed["parameters"]
+        if length(param_dict) == 1
+            parameters = first(values(param_dict))
+        else
+            println("expected 1 entry in the parameters section" *
+                    "but found $(length(param_dict)) entries")
+            return nothing
         end
     else
         println("""
@@ -25,44 +55,47 @@ function config_from_io(io)
             """)
         return nothing
     end
-    seeds = nothing
+    kwargs[:seeds] = nothing
     if "seeds" ∈ keys(parsed)
-        seeds = Any[]
-        for (seedidx, seedlist) in parsed["seeds"]
-            push!(seeds, seedlist)
+        seed_dict = parsed["seeds"]
+        if length(seed_dict) == 1
+            kwargs[:seeds] = first(values(seed_dict))
+        elseif length(seed_dict) > 1
+            println("expected 0 or 1 entry in the seeds section" *
+                    "but found $(length(seed_dict)) entries")
+            return nothing
         end
-        config["seeds"] = seeds
     end
     int_types = Dict("Int8" => Int8, "Int16" => Int16, "Int32" => Int32, "Int64" => Int64)
     if "config" ∈ keys(parsed)
         for (kwarg, value) in parsed["config"]
             if kwarg == "n_way"
-                config[kwarg] = value
+                kwargs[:n_way] = value
             elseif kwarg == "engine"
                 if value == "IPOG"
-                    config[kwarg] = IPOG()
+                    kwargs[:engine] = IPOG()
                 elseif value == "GND"
-                    config[kwarg] = GND()
+                    kwargs[:engine] = GND()
                 else
                     println("Engine must be either IPOG or GND")
                     return nothing
                 end
             elseif kwarg == "disallow"
-                config[kwarg] = value
+                kwargs[:disallow] = value
             elseif kwarg == "wayness"
-                config[kwarg] = Dict{Int, Vector{Vector{Int}}}()
+                kwargs[:wayness] = Dict{Int, Vector{Vector{Int}}}()
                 for (k, v) in value
-                    config[kwarg][parse(Int, k)] = v
+                    kwargs[:wayness][parse(Int, k)] = v
                 end
             elseif kwarg == "Counter"
                 if value in keys(int_types)
-                    config[kwarg] = int_types[value]
+                    kwargs[:Counter] = int_types[value]
                 else
                     println("Counter must be one of $(keys(int_types))")
                     return nothing
                 end
             else
-                config[kwarg] = value
+                @error "Unknown config key: $(kwarg)"
             end
         end
     else
@@ -72,7 +105,7 @@ function config_from_io(io)
             """)
         return nothing
     end
-    return config, parameters
+    return parameters, kwargs
 end
 
 

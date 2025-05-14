@@ -3,34 +3,30 @@ using TestItemRunner
 using Random
 
 
-@testitem "commandline parses arguments" begin
+@testitem "Write and read TOML" begin
     using TOML
-
-    toml_contents = Dict{String,Any}()
-    toml_contents["config"] = Dict(
-        "n_way" => 2,
-        "engine" => "IPOG",
-        "disallow" => "nothing",
-        "wayness" => Dict("3" => [[1, 3, 4, 5]]),
-        "Counter" => "Int8",
+    toml_contents = UnitTestDesign.convert_to_dict_all_tuples(
+        [1, 2, 3],
+        ["a", "b", "c"],
+        [1, 5, 7],
+        [7, 9, 11],
+        [1, 2, 3];
+        n_way = 2,
+        engine = IPOG(),
+        disallow = nothing,
+        seeds = [[3, "a", 5, 7, 1], [1, "a", 7, 11, 3]],
+        wayness = Dict(3 => [[1, 3, 4, 5]]),
+        Counter = Int8,
     )
-    toml_contents["parameters"] = Dict(
-        "a" => [1, 2, 3],
-        "b" => ["a", "b", "c"],
-        "c" => [1, 5, 7],
-        "d" => [7, 9, 11],
-        "e" => [1, 2, 3],
-    )
-    toml_contents["seeds"] = Dict("1" => [3, "a", 5, 7, 1], "2" => [1, "a", 7, 11, 3])
     io = IOBuffer()
     TOML.print(io, toml_contents, sorted=true)
     io_rewound = seek(io, 0)
-    config, parameters = UnitTestDesign.config_from_io(io_rewound)
-    @test config["n_way"] == 2
-    @test config["engine"] == IPOG()
-    @test config["disallow"] == "nothing"
-    @test config["wayness"] == Dict(3 => [[1, 3, 4, 5]])
-    @test config["Counter"] == Int8
+    parameters, config = UnitTestDesign.config_from_io(io_rewound)
+    @test config[:n_way] == 2
+    @test config[:engine] == IPOG()
+    @test :disallow ∉ keys(config)
+    @test config[:wayness] == Dict(3 => [[1, 3, 4, 5]])
+    @test config[:Counter] == Int8
     @test parameters == Any[
         [1, 2, 3],
         ["a", "b", "c"],
@@ -38,7 +34,7 @@ using Random
         [7, 9, 11],
         [1, 2, 3],
     ]
-    @test config["seeds"] == Any[[3, "a", 5, 7, 1], [1, "a", 7, 11, 3]]
+    @test config[:seeds] == Any[[3, "a", 5, 7, 1], [1, "a", 7, 11, 3]]
 end
 
 
@@ -56,4 +52,30 @@ end
     @test parsed["n-way"] == 0
     @test parsed["input"] == "festoon.toml"
     @test parsed["output"] == "calibrate.csv"
+end
+
+
+@testitem "end-to-end parsing" begin
+    using TOML
+
+    toml_contents = UnitTestDesign.convert_to_dict_all_tuples(
+        [1, 2, 3],
+        ["a", "b", "c"],
+        [1, 5, 7],
+        [7, 9, 11],
+        [1, 2, 3];
+        n_way = 2,
+        engine = IPOG(),
+        disallow = nothing,
+        seeds = [[3, "a", 5, 7, 1], [1, "a", 7, 11, 3]],
+        wayness = Dict(3 => [[1, 3, 4, 5]]),
+        Counter = Int8,
+    )
+    io = IOBuffer()
+    TOML.print(io, toml_contents, sorted=true)
+    io_rewound = seek(io, 0)
+    parameters, kwargs = UnitTestDesign.config_from_io(io_rewound)
+    compare_contents = UnitTestDesign.convert_to_dict_all_tuples(parameters...; kwargs...)
+
+    @test Set(keys(toml_contents)) == Set(keys(compare_contents))
 end
