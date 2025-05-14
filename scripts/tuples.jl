@@ -1,6 +1,9 @@
-using ArgParse
+using Pkg
 using TOML
+
+using ArgParse
 using CSV
+using UnitTestDesign
 
 
 # This function has the same signature as the all_tuples function but encodes
@@ -33,7 +36,7 @@ end
 function config_from_io(io)
     parsed = TOML.tryparse(io)
     if isa(parsed, TOML.ParserError)
-        println("Error parsing input config file at line $(err.line) column $(err.column)")
+        println("Error parsing input config file at line $(parsed.line) column $(parsed.column)")
         return nothing
     end
 
@@ -54,17 +57,6 @@ function config_from_io(io)
             are $(keys(parsed)).
             """)
         return nothing
-    end
-    kwargs[:seeds] = nothing
-    if "seeds" ∈ keys(parsed)
-        seed_dict = parsed["seeds"]
-        if length(seed_dict) == 1
-            kwargs[:seeds] = first(values(seed_dict))
-        elseif length(seed_dict) > 1
-            println("expected 0 or 1 entry in the seeds section" *
-                    "but found $(length(seed_dict)) entries")
-            return nothing
-        end
     end
     int_types = Dict("Int8" => Int8, "Int16" => Int16, "Int32" => Int32, "Int64" => Int64)
     if "config" ∈ keys(parsed)
@@ -94,6 +86,8 @@ function config_from_io(io)
                     println("Counter must be one of $(keys(int_types))")
                     return nothing
                 end
+            elseif kwarg == "seeds"
+                kwargs[:seeds] = value
             else
                 @error "Unknown config key: $(kwarg)"
             end
@@ -156,40 +150,28 @@ end
 
 function julia_main()::Cint
     args = parse_commandline(ARGS)
-    all_config = config_from_io(args["arg1"])
-    if isnothing(all_config)
-        return 1
+    parameters, config = open(args["input"], "r") do io
+        all_config = config_from_io(io)
+        all_config === nothing && return 1
+        all_config
     end
-    config, parameters = all_config
     if args["n-way"] != 0
-        config["n_way"] = args["n-way"]
+        config[:n_way] = args["n-way"]
     end
     println(stderr, "Generating test cases")
-    testcases = all_tuples(parameters...;
-        n_way = config["n_way"],
-        engine = config["engine"],
-        wayness = config["wayness"],
-        Counter = config["Counter"],
-    )
+    testcases = all_tuples(parameters...; config...)
     if length(testcases) == 0
         println("No test cases generated.")
         return 2
     end
-    outfile = args["output"]
-    println(stderr, "Writing $(length(testcases)) test cases to $(outfile)")
-    if outfile ∉ ["stdout", "stderr"]
-        open(outfile, "w") do io
+    if isnothing(args["output"])
+        write_testcases(stdout, testcases)
+    else
+        open(args["output"], "w") do io
             write_testcases(io, testcases)
         end
-    else
-        if outfile == "stdout"
-            outio = stdout
-        elseif outfile == "stderr"
-            outio = stderr
-        else
-            @error "Invalid output file name: $(outfile)"
-        end
-        write_testcases(outio, testcases)
     end
     return 0
 end
+
+julia_main()
