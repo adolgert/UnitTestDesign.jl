@@ -147,7 +147,7 @@ end
 
 function write_testcases(io, testcases)
     colcnt = length(testcases[1])
-    letters = [x * y for x in 'a':'z' for y in 'a':'z'][1:colcnt]
+    letters = [Symbol(x * y) for x in 'a':'z' for y in 'a':'z'][1:colcnt]
     cols = [letters[col] => [tc[row] for row in 1:length(testcases)] for col in 1:colcnt]
     table = NamedTuple(cols)
     CSV.write(io, table; header = false)
