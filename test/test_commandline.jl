@@ -1,6 +1,5 @@
 using TestItemRunner
 using Random
-using CSV
 
 @testitem "Write and read TOML" begin
     using TOML
@@ -79,18 +78,18 @@ end
     @test Set(keys(toml_contents)) == Set(keys(compare_contents))
 end
 
+
 @testitem "write_testcases writes and reads correctly" begin
+    using CSV
     testcases = [[i, i+1, string(Char('a'+i-1))] for i in 1:10]
     io = IOBuffer()
     UnitTestDesign.write_testcases(io, testcases)
     seek(io, 0)
-    tbl = CSV.read(io, DataFrame, header=false)
-    # Convert DataFrame rows to lists for comparison
-    read_cases = [collect(tbl[i, :]) for i in 1:nrow(tbl)]
-    # Convert all elements to string for comparison, since CSV.read may infer types
+    tbl = CSV.File(io; header=false)
+    # Convert CSV.File rows to lists for comparison
+    read_cases = [collect(row) for row in tbl]
+    # Convert all elements to string for comparison, since CSV.File may infer types
     input_cases_str = [[string(x) for x in row] for row in testcases]
     read_cases_str = [[string(x) for x in row] for row in read_cases]
     @test input_cases_str == read_cases_str
 end
-
-

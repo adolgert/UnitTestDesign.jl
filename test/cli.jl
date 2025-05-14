@@ -16,6 +16,10 @@ function parse_testcli(env_args)
             help = "File to test"
             arg_type = String
             required = false
+        "--name"
+            help = "Name of the test to run"
+            arg_type = String
+            required = false
     end
     return parse_args(env_args, settings)
 end
@@ -23,9 +27,12 @@ end
 
 TestEnv.activate("UnitTestDesign") do
     args = parse_testcli(ARGS)
-    if args["file"] === nothing
-        @run_package_tests
-    else
-        @run_package_tests filter=ti->(endswith(ti.filename, args["file"]))
+    matches = Function[ti -> true]
+    if args["file"] !== nothing
+        push!(matches, ti -> endswith(join(splitext(ti.filename)[1:end-1]), args["file"]))
     end
+    if args["name"] !== nothing
+        push!(matches, ti -> occursin(args["name"], ti.name))
+    end
+    @run_package_tests filter=ti -> all(map(f -> f(ti), matches))
 end

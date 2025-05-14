@@ -148,7 +148,7 @@ end
 function write_testcases(io, testcases)
     colcnt = length(testcases[1])
     letters = [Symbol(x * y) for x in 'a':'z' for y in 'a':'z'][1:colcnt]
-    cols = [letters[col] => [tc[row] for row in 1:length(testcases)] for col in 1:colcnt]
+    cols = [letters[col] => [tc[col] for tc in testcases] for col in 1:colcnt]
     table = NamedTuple(cols)
     CSV.write(io, table; header = false)
 end
@@ -177,7 +177,7 @@ function julia_main()
     end
     outfile = args["output"]
     println(stderr, "Writing $(length(testcases)) test cases to $(outfile)")
-    if outfile ∉ ["stdout" || "stderr"]
+    if outfile ∉ ["stdout", "stderr"]
         open(outfile, "w") do io
             write_testcases(io, testcases)
         end
