@@ -154,6 +154,26 @@ function indices_to_arguments(arguments, indices)
 end
 
 """
+    allowed_argmax(rng, entry, param_idx, scores, disallow)
+
+Choose the highest-scoring value for `param_idx`, breaking ties at random,
+among the values that `disallow` permits given the values already set in
+`entry`. Returns 0 if `disallow` rejects every value.
+"""
+function allowed_argmax(rng, entry, param_idx, scores, disallow)
+    masked = -scores
+    for value in eachindex(scores)
+        entry[param_idx] = value
+        if disallow(entry)
+            masked[value] = typemax(eltype(masked))
+        end
+    end
+    entry[param_idx] = 0
+    all(masked .== typemax(eltype(masked))) ? 0 : argmin_rand(rng, masked)
+end
+
+
+"""
     n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
 
 Greedy coverage generator that includes a filter for tuples
@@ -198,16 +218,25 @@ function n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
         params[1] = argmin_rand(rng, -param_coverage)
         params[params[1]] = 1
         trial_cnt = 0
+        attempt_cnt = 0
         while trial_cnt < M
+            attempt_cnt += 1
+            if attempt_cnt > 100 * M && trial_cnt == 0
+                error("Could not construct a test case that the disallow function " *
+                      "permits after $(attempt_cnt - 1) attempts.")
+            elseif attempt_cnt > 100 * M
+                break
+            end
             params[2:end] = shuffle(rng, params[2:end])
             entry[:] .= 0
             candidate_params = coverage_by_value(allc, params[1])
-            entry[params[1]] = argmin_rand(rng, -candidate_params)
+            entry[params[1]] = allowed_argmax(rng, entry, params[1], candidate_params, disallow)
             for p_idx in 2:param_cnt
+                entry[params[p_idx - 1]] == 0 && break
                 candidate_values = most_matches_existing(allc, entry, params[p_idx])
-                entry[params[p_idx]] = argmin_rand(rng, -candidate_values)
+                entry[params[p_idx]] = allowed_argmax(rng, entry, params[p_idx], candidate_values, disallow)
             end
-            if !disallow(entry)
+            if all(entry .!= 0) && !disallow(entry)
                 trial_cnt += 1
                 score = match_score(allc, entry)
                 trial_scores[trial_cnt] = score
@@ -253,16 +282,25 @@ function n_way_coverage_multi(allc, disallow, seed, M, rng)
         params[1] = argmin_rand(rng, -param_coverage)
         params[params[1]] = 1
         trial_cnt = 0
+        attempt_cnt = 0
         while trial_cnt < M
+            attempt_cnt += 1
+            if attempt_cnt > 100 * M && trial_cnt == 0
+                error("Could not construct a test case that the disallow function " *
+                      "permits after $(attempt_cnt - 1) attempts.")
+            elseif attempt_cnt > 100 * M
+                break
+            end
             params[2:end] = shuffle(rng, params[2:end])
             entry[:] .= 0
             candidate_params = coverage_by_value(allc, params[1])
-            entry[params[1]] = argmin_rand(rng, -candidate_params)
+            entry[params[1]] = allowed_argmax(rng, entry, params[1], candidate_params, disallow)
             for p_idx in 2:param_cnt
+                entry[params[p_idx - 1]] == 0 && break
                 candidate_values = most_matches_existing(allc, entry, params[p_idx])
-                entry[params[p_idx]] = argmin_rand(rng, -candidate_values)
+                entry[params[p_idx]] = allowed_argmax(rng, entry, params[p_idx], candidate_values, disallow)
             end
-            if !disallow(entry)
+            if all(entry .!= 0) && !disallow(entry)
                 trial_cnt += 1
                 score = match_score(allc, entry)
                 trial_scores[trial_cnt] = score

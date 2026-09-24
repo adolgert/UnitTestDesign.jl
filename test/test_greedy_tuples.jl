@@ -118,3 +118,16 @@ end
         end
     end
 end
+
+
+@testitem "GND design size is competitive" setup=[UTSetup] begin
+    using Random
+    # Before the scoring fix in most_matches_existing, GND chose most values
+    # at random and needed 36-38 cases here, compared with 28 for IPOG.
+    arity = fill(4, 10)
+    for seed in 1:3
+        cases = UnitTestDesign.n_way_coverage(arity, 2, 50, Xoshiro(seed))
+        @test length(cases) <= 32
+        @test UnitTestDesign.coverage_by_tuple(cases, 2) == UnitTestDesign.total_combinations(arity, 2)
+    end
+end

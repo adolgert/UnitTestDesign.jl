@@ -129,7 +129,7 @@ end
         [[1; 1; 0; 1], [1, 0, 0, 0], 1],
         [[1; 1; 0; 1], [0, 0, 0, 0], 1],
         [[1; 1; 0; 1], [1, 0, 2, 0], 0],  # This could be a 1. This is subtle. Must match all existing.
-        [[1; 1; 0; 1], [1, 1, 2, 0], 0]   # again, compatible but not exact.
+        [[1; 1; 0; 1], [1, 1, 2, 0], 1]   # Covers: parameter 3 is outside the tuple.
     ]
     for mm2_case in mm2_cases
         mc = UnitTestDesign.MatrixCoverage(reshape(mm2_case[1], length(mm2_arity), 1), 1, mm2_arity)
@@ -138,6 +138,16 @@ end
     end
 end
 
+
+@testitem "most_matches_existing scores pairs after two parameters are known" begin
+    # A pair tuple that includes the unset parameter can match at most one
+    # known value, so it must still be scored once two or more values are set.
+    arity = [2, 2, 2]
+    allc = reshape([1; 0; 1], 3, 1)  # covers parameter 1 = 1, parameter 3 = 1
+    mc = UnitTestDesign.MatrixCoverage(allc, 1, arity)
+    @test UnitTestDesign.most_matches_existing(mc, [1, 2, 0], 3) == [1, 0]
+    @test UnitTestDesign.most_matches_existing(mc, [2, 2, 0], 3) == [0, 0]
+end
 
 @testitem "insert_tuple_into_tests" begin
     test_set = [

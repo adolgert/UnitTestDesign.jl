@@ -190,7 +190,7 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
                     match_cnt += 1
                 end
             end
-            if match_cnt == min(max_known, n_way)
+            if match_cnt == min(max_known, n_way - 1)
                 hist[mc.allc[param_idx, col_idx]] += 1
             end
         end
