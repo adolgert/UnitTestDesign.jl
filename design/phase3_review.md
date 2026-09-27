@@ -331,3 +331,33 @@ changed files, counted alone in the same environment, went from 143 to 187
 build clean from a scratch copy of the `docs/` environment with the
 repository developed into it, with the same missing-docstrings warning as
 before. `docs/Manifest.toml` is untouched.
+
+## CI-runner baseline and compatibility matrix (review round 1, item 5)
+
+The benchmark job added to `.github/workflows/ci.yml` ran on commit
+`6df2fa2` (ubuntu-latest, AMD EPYC 7763, 4 cores, Julia 1.13.1, 1 thread,
+`--skip-slow`). The full report is `design/benchmark_ci_20260927.md`.
+Designs are identical to the laptop's (same fingerprints and case counts).
+
+| Measurement | Laptop (M2) | CI runner | Ratio |
+|:--|--:|--:|--:|
+| Fixture 1, IPOG, strength 4 (958 cases) | 4.0 s | 6.84 s | 1.7 |
+| `bench12`, IPOG, strength 2 | 1.4 ms | 1.9 ms | 1.4 |
+| `bench12`, GND, strength 2 | 21 ms | 29 ms | 1.4 |
+| `bench12`, IPOG, strength 3 | 17 ms | 24 ms | 1.4 |
+| `bench12`, GND, strength 3 | 0.30 s | 0.43 s | 1.4 |
+| `bench12`, full factorial (after index-space validation) | 76 ms | 112 ms | 1.5 |
+
+Within-run spread on the CI runner (warm min to max over 5 calls) was
+under 6% for every measurement over 10 ms. That is one run; the job now
+runs on every push, so the across-run spread accumulates from here.
+Allocation counts are identical to the laptop's and are diagnostic
+evidence only, not a gate.
+
+**Tolerance stance:** the 35% figure stays provisional. Automated
+acceptance will use explicit thresholds derived from at least three CI
+runs on the same commit, set in Phase 8 from the accumulated job history.
+
+**Compatibility matrix** for PR #54 (`6df2fa2`): Julia 1.10, 1.11 and 1
+on ubuntu, 1.11 on macOS arm64 and Windows, plus the docs build and the
+benchmark job, all green.
