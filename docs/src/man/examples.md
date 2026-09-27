@@ -54,18 +54,20 @@ walks all pairs away from the initial value.
 
 ```@example
 using UnitTestDesign  # hide
-values_excursion([1, 2], [true, false], ["c", "b", "a"])
+excursions([1, 2], [true, false], ["c", "b", "a"]; distance = 1)
 ```
+
+An excursion promises only that every case is within `distance` changes of
+the base case. It is not a covering design.
 
 ## Filtering a factorial
 
 The full-factorial test generates every possible test. If some combinations
 of parameters aren't interesting or allowed for a function, you can
-exclude them. In 0.4 you did that with an extra argument.
-
-0.4 syntax; the 1.0 manual replaces `disallow` with constraints on a `TestSpace`.
+exclude them with constraints on named parameters. (In 0.4 you did that with
+a `disallow` argument, which 1.0 removes.)
 
 ```julia
-disallow = (a, b, c) -> b == 7 && c == false
-full_factorial([1, 2, 3], [7, 8], [true, false]; disallow = disallow)
+full_factorial((a = [1, 2, 3], b = [7, 8], c = [true, false]);
+               constraints = [@forbid(b == 7 && c == false)])
 ```

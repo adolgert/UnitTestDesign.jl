@@ -309,7 +309,7 @@ end
     # Without rules: every row, in lexicographic order.
     free = generate(IPOG(), positional_request([2, 3]; strength = 2)).matrix
     @test free == [1 1 1 2 2 2; 1 2 3 1 2 3]
-    @test all_tuples([1, 2], [:a, :b]; n_way = 2) == [[1, :a], [1, :b], [2, :a], [2, :b]]
+    @test covering([1, 2], [:a, :b]; strength = 2) == [(1, :a), (1, :b), (2, :a), (2, :b)]
     @test length(all_triples([1, 2], [3, 4], [5, 6])) == 8
     @test_throws ArgumentError all_triples([1, 2], [3, 4])   # strength above n (§11.2)
 end
@@ -319,8 +319,8 @@ end
     rows = all_pairs([1], [1, 2], [:a, :b])
     @test length(rows) == 4
     @test all(r -> r[1] == 1, rows)
-    @test Set(r[2:3] for r in rows) == Set([[1, :a], [1, :b], [2, :a], [2, :b]])
-    @test all_values([:only]) == [[:only]]
+    @test Set(r[2:3] for r in rows) == Set([(1, :a), (1, :b), (2, :a), (2, :b)])
+    @test all_values([:only]) == [(:only,)]
     space = TestSpace((a = [1], b = 1:3, c = [:x, :y]); constraints = [forbid((b = 3, c = :y))])
     request = Request(space)
     design = generate(IPOG(), request)

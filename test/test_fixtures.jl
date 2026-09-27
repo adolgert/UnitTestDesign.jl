@@ -211,8 +211,8 @@ end
     # Phase 2 — TestSpace keeps 1 and 1.0 as two choices and nothing as a value
     @test length(test_space(heterogeneous_values).values[1]) == 2
     @test test_space(heterogeneous_values).values[2][1] === nothing
-    # pending: Phase 4 — generated rows keep Int, Float64, Nothing, Symbol and String values
-    @test_skip Set(typeof(r.x) for r in all_pairs(test_space(heterogeneous_values))) == Set([Int, Float64])
+    # Phase 4 — generated rows keep Int, Float64, Nothing, Symbol and String values
+    @test Set(typeof(r.x) for r in all_pairs(test_space(heterogeneous_values))) == Set([Int, Float64])
     # pending: Phase 5 — coverage of the 3 valid rows is 7 of 7, keyed by identity
     @test_skip coverage(valid_rows(heterogeneous_values.space), test_space(heterogeneous_values)).covered == 7
 end
@@ -226,14 +226,14 @@ end
     @test classify_target(s, only(partial_seeds.request.infeasible)).status == :implied
     r = check_design(partial_seeds.request.violating, s)
     @test only(r.ordinary.rejected).rules == [1]
-    # pending: Phase 4 — (solver = :lu,) is completed in place and comes first
-    @test_skip first(all_pairs(test_space(partial_seeds); must_include = [(solver = :lu,)])) ==
-               (mode = :exact, solver = :lu, tol = 1e-6)
-    # pending: Phase 4 — an infeasible partial row is an error carrying its explanation
-    @test_skip throws(ArgumentError, () -> all_pairs(test_space(partial_seeds); must_include = [(solver = :lu, tol = 1e-3)]))
-    # pending: Phase 4 — a complete row violating rule 1 is an error naming it
-    @test_skip throws(ArgumentError, () -> all_pairs(test_space(partial_seeds);
-                                                     must_include = [(mode = :fast, solver = :lu, tol = 1e-6)]))
+    # Phase 4 — (solver = :lu,) is completed in place and comes first
+    @test first(all_pairs(test_space(partial_seeds); must_include = [(solver = :lu,)])) ==
+          (mode = :exact, solver = :lu, tol = 1e-6)
+    # Phase 4 — an infeasible partial row is an error carrying its explanation
+    @test_throws ArgumentError all_pairs(test_space(partial_seeds); must_include = [(solver = :lu, tol = 1e-3)])
+    # Phase 4 — a complete row violating rule 1 is an error naming it
+    @test_throws ArgumentError all_pairs(test_space(partial_seeds);
+                                         must_include = [(mode = :fast, solver = :lu, tol = 1e-6)])
 end
 
 
@@ -260,9 +260,9 @@ end
     wayness = f.legacy.wayness()
     @test length(all_pairs(f.legacy.domains...; wayness)) >= 8
     @test wayness == f.legacy.wayness()
-    # pending: Phase 4 — covering(space; stronger) covers the union; the caller's vector is unchanged
-    @test_skip complete(check_design(covering(test_space(f); stronger = f.request.stronger), f.space;
-                                     stronger = f.request.stronger))
+    # Phase 4 — covering(space; stronger) covers the union; the caller's vector is unchanged
+    @test complete(check_design(covering(test_space(f); stronger = f.request.stronger), f.space;
+                                stronger = f.request.stronger))
 end
 
 

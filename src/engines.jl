@@ -51,13 +51,6 @@ end
 engine_rng(engine::GND) = engine.rng === nothing ? Xoshiro(engine.seed) : copy(engine.rng)
 
 """
-This class requests tests that are excursions from a base case.
-"""
-struct Excursion
-end
-
-
-"""
     generate(engine, request::Request) -> Design
 
 The one engine entry point (plan Phase 3 step 1): a design for `request` in
