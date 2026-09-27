@@ -24,7 +24,8 @@ makedocs(;
             "IPOG" => "man/ipog.md"
             ],
         "Reference" => "reference.md",
-        "Contributing" => "contributing.md"
+        "Contributing" => "contributing.md",
+        "Developer" => ["Contract" => "dev/contract.md"]
     ]
 )
 
