@@ -66,7 +66,8 @@ attributions:
 - *direct*: one or more applicable rules whose scope lies within the target's
   parameters forbid it. Every such rule is named, in rule order.
 - *implied*: no rule forbids it directly, and a deletion search found a set of
-  rules proven sufficient to exclude it (§3.13–§3.16).
+  rules proven sufficient to exclude it (§3.13–§3.16). The set may be a
+  single rule whose scope reaches beyond the target's parameters.
 - *unknown*: a resource limit prevented a conclusion; the target is neither
   required nor excluded (§1.7).
 
@@ -146,8 +147,15 @@ prefix curve belong to `report` and `coverage`, never to `show`.
 
 **1.24** If the space is proven to have no valid ordinary row, covering
 generation returns a result with no generated ordinary rows and reports every
-ordinary target as excluded. This is not an error. Must-include rows in such
-a space fail validation under §10.3.
+ordinary target as excluded. This is not an error. Such a space can still
+have valid negative rows, because a negative row skips every rule whose scope
+contains its invalid parameter (§5.5). With `a` in `[1, Invalid(0)]`, `b` in
+`[1]`, and a rule forbidding `(a = 1, b = 1)`, no ordinary row is valid, but
+`(a = Invalid(0), b = 1)` is a valid negative row. Negative targets, negative
+generation, and negative must-include rows are unaffected and follow §5, §6,
+and §10. Ordinary must-include rows, and only they, fail validation: a
+complete one under §10.3, and a partial one, which has no completion, under
+§10.4.
 
 ### Checking assignments
 
@@ -176,9 +184,24 @@ coverage keys, and diagnosis.
 choices. `0.0` and `-0.0` are different choices. `NaN` and `NaN` are the same
 choice.
 
-**2.3** Each supplied value is stored as given. No stage (storage, tabulation,
-rule evaluation, generation, result construction, coverage, display, export)
-may promote, convert, or merge values.
+**2.3** Each supplied value is stored as given. Stored choices, tabulation
+keys, coverage keys, and the values in returned cases keep their identity
+(§2.1): no stage (storage, tabulation, rule evaluation, generation, result
+construction, coverage) may promote, convert, or merge them. The documented
+projections below are the only exceptions, each confined to its purpose:
+
+- Rules, patterns, and targets see a `Partition` as its name (§4.5, §12.14).
+  The name is the partition's identity (§2.13) and cannot equal another
+  choice of the same parameter (§4.3, §4.4), so this merges nothing.
+- `show` and `report` print a textual rendering of each value.
+- `github_matrix` (§13.1) encodes values as JSON: a `Symbol` becomes a
+  string, `nothing` becomes null, and `Invalid` and `Partition` wrappers are
+  rejected.
+
+A projection serves predicates and output, never identity. No stage compares,
+deduplicates, or looks up choices by their projection, so two distinct
+choices never become one because their projections coincide: `:x` and `"x"`
+remain two choices even though `github_matrix` writes both as `"x"`.
 
 **2.4** A value read from a returned row has the same concrete type as the
 domain value and is `isequal` to it. Result element types are chosen so that

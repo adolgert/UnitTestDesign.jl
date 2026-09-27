@@ -62,10 +62,18 @@ all of it either way, and the harder problems are the ones that matter.)
 
 Expected-failure policy: only `BoundsError` at index 0 from IPOG is
 recorded, with `@test_broken`, so Phase 3 flips it to an unexpected pass.
-GND is skipped exactly when the checker finds an implied target, recorded
-with `@test_skip`; on every other problem it ran to completion. A watchdog
-on `disallow` calls turns an unexpected hang into a failure. Nothing else
-is masked.
+A ceiling on the crash count (50% at 500 problems, widened for small runs)
+catches a regression in the problems IPOG handles today. GND is skipped
+exactly when the checker finds an implied target, recorded with
+`@test_skip`; on every other problem it must return a checker-complete
+design, and its attempt-cap error is an ordinary failure. A watchdog on
+`disallow` calls turns an unexpected hang into a failure. Nothing else is
+masked. The 13 + 4 greedy dead ends (IPOG crashes with no implied target)
+are frozen as four explicit fixtures so Phase 3 must handle them too.
+
+The multiplier can be forced for a full CI run with the environment
+variable `UNITTESTDESIGN_TEST_LONGER=1.0`, which wins over the CI default
+of 0.2 (as does an explicit `--longer`).
 
 ## Pending tests and their activation phase
 
@@ -74,13 +82,16 @@ comment, plus the two gate lines in `test/test_random_problems.jl`.
 
 | Phase | Count | What |
 |:--|--:|:--|
-| 2 | 11 | `explain`/classify for Astra, Fable, Opus; `completable` on the unsatisfiable component; witness combination; whole-case implication; `unknown` at limit 1; mixed-type storage; `1` beside `Invalid(1)`; rules see partition names; five constructions rejected |
-| 3 | 8 + 2 gate | generation for the three examples (closes #51), empty design for the unsatisfiable space, witness space, whole-case, `ResourceLimitError` at limit 1, overlapping groups; IPOG `@test_broken` and GND `@test_skip` at both strengths |
+| 2 | 12 | `explain`/classify for Astra, Fable, Opus; `completable` on the unsatisfiable component; witness combination; whole-case implication; `unknown` at limit 1; mixed-type storage; `1` beside `Invalid(1)`; rules see partition names; five constructions rejected |
+| 3 | 14 + 2 gate | generation for the three examples (closes #51), empty design for the unsatisfiable space, witness space, whole-case, `ResourceLimitError` at limit 1, overlapping groups, the four greedy dead ends, `bench12` at strengths 2 and 3; IPOG `@test_broken` and GND `@test_skip` at both strengths |
 | 4 | 5 | mixed value types preserved in results; three `must_include` cases; `stronger` keyword |
 | 5 | 3 | Fable coverage/report; coverage under a limit; identity-keyed coverage |
-| 6 | 3 | negative targets covered separately; partial row with `Invalid` completed as negative; partition wrappers kept |
+| 6 | 5 | negative targets covered separately; partial row with `Invalid` completed as negative; partition wrappers kept; a space with no valid ordinary row accepts a negative must-include and rejects an ordinary one |
 
-Only the IPOG `BoundsError` is an expected failure (`@test_broken`).
+Only the IPOG `BoundsError` is an expected failure (`@test_broken`). The
+legacy `BoundsError` on the dead-end and `bench12` fixtures is asserted
+with `@test_throws` today because it is the documented defect; Phase 3
+replaces those lines with completeness checks.
 
 ## Dependents (step 6)
 
@@ -128,14 +139,37 @@ From the contract (clause in brackets); say at review if you want another:
     `triples_excursion`: the decisions table calls them deprecated
     aliases that warn, Phase 4 step 5 calls them thin aliases (no
     warning). The contract follows the decisions table (deprecated) [13.1].
-12. A space with no valid case returns an empty design, not an error [1.24].
+12. A space with no valid ordinary row returns an empty ordinary design,
+    not an error; negative rows can still exist there and are unaffected
+    [1.24].
 13. Strength must be at least 1; a group listed twice acts as its highest
     strength; output and docs never call a count "minimal", "optimal", or
     "fewest" [11.1, 11.8, 8.4].
 
 ## Benchmark plan for Phase 3
 
-See `design/benchmark_procedure.md`. Note that Fable's 12-parameter
-example survives only as statistics (331776 product, 207360 valid, 590
-pairs, 4 uncoverable); Phase 3 must define a concrete fixture and record
-it.
+See `design/benchmark_procedure.md`. Fable's 12-parameter example
+survives only as statistics, but its arities are recoverable from them
+(product 331776 and 590 pairs give 4,4,4,4,3,3,3,3,2,2,2,2), so a
+replacement fixture `bench12` is frozen in `test/fixtures.jl` whose
+checker statistics match the recorded ones exactly: 207360 valid rows, 3
+directly forbidden pairs, 1 implied pair `(p1 = 2, p2 = 2)`. Legacy
+baseline on it: IPOG throws `BoundsError` at both strengths; GND does not
+return within 20 million rule calls.
+
+## Review round 1 (2026-09-26)
+
+Six suggestions received; all accepted and applied:
+
+1. GND attempt-cap errors are ordinary failures; IPOG crashes have a
+   ceiling as well as the `@test_broken`.
+2. Contract §1.24 restricted to ordinary rows; fixture
+   `empty_ordinary_negative_seed` added.
+3. "Implied" now means "infeasible with no direct rule match"; a single
+   wider-scope rule can cause it (checker docs and contract §1.4).
+4. Contract §2.3 keeps identity absolute for stored choices, keys, and
+   returned cases, and names the permitted output projections (partition
+   name in rules, textual rendering, JSON encoding).
+5. Harder random distribution kept; dead ends frozen as fixtures;
+   `UNITTESTDESIGN_TEST_LONGER` override added.
+6. `bench12` frozen with its legacy baseline.

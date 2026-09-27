@@ -62,8 +62,13 @@
 #   An infeasible target is :forbidden when a single applicable rule whose
 #   scope lies within the target's parameters forbids the target's values
 #   (for a negative target, applicable means the scope omits p); every such
-#   rule is named, in rule order. Otherwise it is :implied: impossible only
-#   because rules combine (contract §1.4).
+#   rule is named, in rule order. Otherwise it is :implied: infeasible with
+#   no direct rule match, that is, infeasible although no rule within the
+#   target's parameters forbids it (contract §1.4). One rule with a wider
+#   scope can be the whole cause: a rule over (a, b, c) that forbids every c
+#   when a = 1 and b = 1 makes the target (a = 1, b = 1) :implied, so an
+#   explanation of an :implied target may contain a single rule. The checker
+#   names no rules for :implied targets.
 #   A stronger group listed twice acts as its highest strength (§11.8).
 #
 # Cases. A case is a NamedTuple naming every parameter once, in any order,
@@ -481,9 +486,11 @@ end
 `status` is `:required` when some valid row contains the target,
 `:forbidden` when a single applicable rule within the target's parameters
 forbids it (`rule` is the first such rule, `rules` all of them), and
-`:implied` when it is infeasible only because rules combine. A target with
-one `CheckInvalid` is judged against negative rows. A partition may be
-given by name.
+`:implied` when it is infeasible with no direct rule match: infeasible
+although no rule within the target's parameters forbids it. A single rule
+with a wider scope can cause an `:implied` target, so an explanation may
+contain one rule. A target with one `CheckInvalid` is judged against
+negative rows. A partition may be given by name.
 """
 function classify_target(space::CheckSpace, target::NamedTuple)
     return only(classify_all(space, [read_target(space, target)], enumerate_rows(space)))
@@ -502,7 +509,9 @@ One part of a check: the ordinary rows or the negative rows.
 - `feasible`, `covered`, `missing`: required targets, and which the design has.
 - `forbidden`: directly forbidden targets, as `target => rules`, every rule
   that forbids the target by itself, in rule order.
-- `implied`: targets infeasible only because rules combine.
+- `implied`: targets infeasible with no direct rule match: no rule within
+  the target's parameters forbids them. The cause may be one rule with a
+  wider scope.
 - `counts`: the lengths of the above.
 """
 struct CheckPart

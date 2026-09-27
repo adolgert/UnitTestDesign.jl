@@ -565,3 +565,21 @@ end
     # (x = 1, z = 1) is forbidden by rule 3 only through y, so it is implied.
     @test (x = 1, z = 1) in r.ordinary.implied
 end
+
+
+@testitem "checker: one rule with a wider scope makes a target implied" setup=[Checker] begin
+    # Contract §1.4: :implied means infeasible with no direct rule match. One
+    # rule over (a, b, c) forbids every c when a = 1 and b = 1. That rule
+    # alone excludes (a = 1, b = 1), but its scope is wider than the target's
+    # parameters, so the target is :implied by definition, not :forbidden.
+    space = CheckSpace((a = [1, 2], b = [1, 2], c = [1, 2]),
+        [((:a, :b, :c), (a, b, c) -> a == 1 && b == 1)])
+    @test classify_target(space, (a = 1, b = 1)) == (status = :implied, rule = nothing, rules = Int[])
+    # The same rule is direct for a target that assigns its whole scope.
+    @test classify_target(space, (a = 1, b = 1, c = 2)) == (status = :forbidden, rule = 1, rules = [1])
+    @test classify_target(space, (a = 1, c = 1)).status == :required
+    r = check_design(valid_rows(space), space)
+    @test complete(r)
+    @test r.ordinary.implied == [(a = 1, b = 1)]
+    @test isempty(r.ordinary.forbidden)
+end

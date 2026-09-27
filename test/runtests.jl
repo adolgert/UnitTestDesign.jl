@@ -9,6 +9,13 @@ using TestItemRunner
     #    Use --longer 1.0, with a larger number, and it will run longer.
     #    In the test, use time() to decide when to quit the test, and multiply
     #    time duration by test_run_multiplier().
+    #    Under CI (CI=true or --ci) the multiplier defaults to 0.2. Two things
+    #    override that default. An explicit --longer on the command line wins
+    #    over it, and the environment variable UNITTESTDESIGN_TEST_LONGER
+    #    (a Float64, such as "1.0" or "5") wins over everything, because a
+    #    GitHub Actions job sets env more easily than test arguments.
+    #    Precedence: UNITTESTDESIGN_TEST_LONGER, then --longer, then CI's
+    #    0.2, then 1.0.
     #
     # 2. It's sometimes good to try new random seeds.
     #    Usually pin test seeds so that unit tests don't fail randomly, but
@@ -22,8 +29,10 @@ using TestItemRunner
     #
     function parse_commandline()
         CI = get(ENV, "CI", "false") == "true"
+        # "longer" is nothing unless --longer is given, so an explicit value
+        # can win over the CI default in test_run_multiplier().
         default_args = Dict(
-            "longer" => 1.0, "ci" => CI, "randseed" => false, "seed" => zero(UInt64)
+            "longer" => nothing, "ci" => CI, "randseed" => false, "seed" => zero(UInt64)
             )
         # VisualStudio Code calls package testing with its own set of arguments
         # that differ from those we want to use on the command line.
@@ -37,9 +46,9 @@ using TestItemRunner
         add_arg_table!(settings,
             "--longer",
             Dict(
-                :help => "Multiply randomized test lengths by this factor",
+                :help => "Multiply randomized test lengths by this factor (default 1.0, or 0.2 under CI)",
                 :arg_type => Float64,
-                :default => 1.0
+                :default => nothing
             ),
             "--ci",
             Dict(
@@ -75,12 +84,18 @@ using TestItemRunner
 
 
     function test_run_multiplier()
-        args = parse_commandline()
-        if args["ci"]
-            return 0.2
-        elseif !isnothing(args["longer"])
-            longer = args["longer"]
+        env = strip(get(ENV, "UNITTESTDESIGN_TEST_LONGER", ""))
+        if !isempty(env)
+            longer = tryparse(Float64, env)
+            isnothing(longer) && throw(ArgumentError(
+                "UNITTESTDESIGN_TEST_LONGER must be a Float64, got \"$env\""))
             return longer
+        end
+        args = parse_commandline()
+        if !isnothing(args["longer"])
+            return args["longer"]
+        elseif args["ci"]
+            return 0.2
         else
             return 1.0
         end

@@ -123,6 +123,41 @@ end
 end
 
 
+@testitem "fixtures: greedy dead ends" setup=[Checker] begin
+    using Combinatorics: combinations
+    using Random
+    "The `k`-way sub-combinations of a partial row."
+    subrows(t, k) = [NamedTuple{Tuple(ks)}(Tuple(t[x] for x in ks)) for ks in combinations(collect(keys(t)), k)]
+
+    counts = Dict(
+        :dead_end_pairwise_1 => (29, 42, 2), :dead_end_pairwise_2 => (63, 59, 3),
+        :dead_end_threeway_1 => (81, 167, 4), :dead_end_threeway_2 => (2672, 1284, 5))
+    for f in (dead_end_pairwise_1, dead_end_pairwise_2, dead_end_threeway_1, dead_end_threeway_2)
+        s, k = f.space, f.request.strength
+        r = check_design([], s; strength = k)
+        # No target is implied: each is feasible or directly forbidden.
+        @test r.ordinary.counts.implied == 0
+        @test (length(valid_rows(s)), r.ordinary.counts.feasible, r.ordinary.counts.forbidden) == counts[f.name]
+        # The partial row the 0.4 IPOG cannot complete is infeasible, although
+        # each of its k-way sub-combinations is feasible.
+        dead = f.request.dead_end
+        @test classify_target(s, dead).status == :implied
+        @test all(t -> classify_target(s, t).status == :required, subrows(dead, k))
+
+        generate = k == 2 ? all_pairs : all_triples
+        # The legacy defect (issue #51): the 0.4 IPOG throws on a greedy dead
+        # end. Phase 3 replaces this with a @test that its design is complete.
+        @test_throws BoundsError generate(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
+        # The 0.4 GND completes these problems, under a watchdog.
+        watched = budgeted(f.legacy.disallow, 20_000_000, f)
+        design = generate(f.legacy.domains...; disallow = watched, engine = GND(rng = Xoshiro(0)))
+        @test complete(check_design(design, s; strength = k))
+        # pending: Phase 3 — IPOG covers every feasible target without throwing
+        @test_skip complete(check_design(generate(test_space(f); engine = IPOG()), s; strength = k))
+    end
+end
+
+
 @testitem "fixtures: heterogeneous values" setup=[Checker] begin
     same_list(a, b) = length(a) == length(b) && all(same_target(x, y) for (x, y) in zip(a, b))
     s = heterogeneous_values.space
@@ -216,6 +251,64 @@ end
     @test_skip explain(test_space(partition_names), (size = :tiny, mode = :b)).outcome == :forbidden
     # pending: Phase 6 — generated rows hold the Partition wrappers; realize draws each once
     @test_skip all(r -> !(r.size isa Symbol), all_pairs(test_space(partition_names)))
+end
+
+
+@testitem "fixtures: no ordinary row, one negative row" setup=[Checker] begin
+    f = empty_ordinary_negative_seed
+    s = f.space
+    bad = CheckInvalid(0)
+    @test isempty(valid_rows(s))
+    @test negative_rows(s) == [(a = bad, b = 1)]
+    @test negative_targets(s; strength = 1) == [(a = bad,)]
+    @test negative_targets(s) == [(a = bad, b = 1)]
+    r = check_design([], s)
+    @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (0, 1, 0)
+    @test r.ordinary.forbidden == [(a = 1, b = 1) => [1]]
+    @test complete(r.ordinary) && !complete(r.negative)
+    # The negative row is valid and covers the negative targets at strengths 1 and 2.
+    @test complete(check_design(f.request.negative_seed, s; strength = 1))
+    @test complete(check_design(f.request.negative_seed, s))
+    # The ordinary row violates rule 1.
+    r = check_design(f.request.ordinary_seed, s)
+    @test only(r.ordinary.rejected).reason == :violates_rule
+    @test only(r.ordinary.rejected).rules == [1]
+    # pending: Phase 6 — the negative must-include row is accepted: it is the whole result
+    @test_skip collect(all_pairs(test_space(f); must_include = [(a = Invalid(0), b = 1)])) == [(a = Invalid(0), b = 1)]
+    # pending: Phase 6 — the ordinary must-include row is an error naming rule 1
+    @test_skip throws(ArgumentError, () -> all_pairs(test_space(f); must_include = f.request.ordinary_seed))
+end
+
+
+@testitem "fixtures: bench12 constrained benchmark" setup=[Checker] begin
+    f = bench12
+    s = f.space
+    recorded = f.request.recorded
+    # The replacement matches the statistics recorded for Fable's example.
+    @test length(s.names) == 12
+    @test count(r -> length(r[1]) == 3, s.rules) == 1 && length(s.rules) == 4
+    @test prod(length, s.domains) == recorded.product
+    @test length(valid_rows(s)) == recorded.valid
+    r = check_design([], s; strength = 2)
+    c = r.ordinary.counts
+    @test c.feasible + c.forbidden + c.implied == recorded.pairs
+    @test (c.feasible, c.forbidden, c.implied) == (586, recorded.forbidden, recorded.implied)
+    @test r.ordinary.implied == [recorded.implied_pair]
+    @test r.ordinary.forbidden == [(p1 = 2, p9 = 2) => [1], (p5 = 1, p6 = 1) => [3], (p7 = 1, p10 = 1) => [4]]
+    r = check_design([], s; strength = 3)
+    @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (5702, 92, 26)
+    @test all(t -> t.p1 == 2 && t.p2 == 2, r.ordinary.implied)
+
+    # Legacy baseline: the 0.4 IPOG throws on the implied pair (issue #51).
+    # Phase 3 replaces these with @test that each design is complete. The 0.4
+    # GND never returns here, so it is not run.
+    @test_throws BoundsError all_pairs(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
+    @test_throws BoundsError all_triples(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
+    # pending: Phase 2 — explain((p1 = 2, p2 = 2)) is infeasible with rules [1, 2]
+    @test_skip explain(test_space(bench12), (p1 = 2, p2 = 2)).rules == [1, 2]
+    # pending: Phase 3 — IPOG and GND cover all 586 feasible pairs and 5702 feasible triples
+    @test_skip complete(check_design(all_pairs(test_space(bench12)), bench12.space))
+    @test_skip complete(check_design(all_triples(test_space(bench12); engine = GND()), bench12.space; strength = 3))
 end
 
 
