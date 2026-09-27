@@ -10,70 +10,6 @@
 
 
 """
-In-parameter-order General (IPOG).
-
-This algorithm generates test cases quickly. It will generate
-tuples of any order. It always generates the same set of test
-cases for the same set of input values.
-
-Lei, Yu, Raghu Kacker, D. Richard Kuhn, Vadim Okun, and James Lawrence. 2008. “IPOG/IPOG-D: Efficient Test Generation for Multi-Way Combinatorial Testing.” Software Testing, Verification & Reliability 18 (3): 125–48.
-"""
-struct IPOG
-end
-
-
-"""
-Greedy Non-deterministic (GND).
-
-This algorithm searches for test cases. It will generate tuples
-of any order. It generates a different set every time it is invoked.
-
-# Arguments
-
-- `rng::Random.AbstractRNG`: This option is a random number
-  generator. Set this if you want to generate the same test cases
-  twice in a row.
-- `M::Int`: The number of times it should create a candidate test case
-  each time it creates a candidate. The default is 50. Raising this
-  number could improve test cases and slow generation.
-
-# Extended
-
-This algorithm starts with the seeded test cases and then
-adds test cases, one at a time. It chooses those parameters
-that are least used, so far, and then chooses values of those
-parameters that are least covered by previous tuples. At each
-step, there is some probability of choosing among nearly-equal
-next values.
-
-It's not complicated, but it can be slow because every next choice
-checks against all possible tuples. For large numbers of parameters
-or large numbers of possible values of each parameter, this generator
-can be slow, so test it for fewer values first and gradually increase
-the number of parameters or parameter values.
-"""
-struct GND
-    rng::Random.AbstractRNG
-    M::Int
-
-    function GND(; rng = nothing, M = 50)
-        if rng === nothing
-            new(Random.MersenneTwister(), M)
-        else
-            new(rng, M)
-        end
-    end
-end
-
-
-"""
-This class requests tests that are excursions from a base case.
-"""
-struct Excursion
-end
-
-
-"""
 The user specifies forbidden test cases in terms of parameter values,
 but inner code thinks of parameter values as integers, so this function
 wraps the user's function in order to do the translation.
@@ -147,9 +83,9 @@ function generate_tuples(engine::GND, n_way, parameters, disallow, seeds, waynes
     if wayness !== nothing
         mwc = multi_way_coverage(arity, wayness, n_way)
         mc = UnitTestDesign.MatrixCoverage(mwc, size(mwc, 1), arity)
-        result = n_way_coverage_multi(mc, disallow_integer, seeds_int, engine.M, engine.rng)
+        result = n_way_coverage_multi(mc, disallow_integer, seeds_int, engine.candidates, engine_rng(engine))
     else
-        result = n_way_coverage_filter(arity, n_way, disallow_integer, seeds_int, engine.M, engine.rng)
+        result = n_way_coverage_filter(arity, n_way, disallow_integer, seeds_int, engine.candidates, engine_rng(engine))
     end
     [[p[c] for (p, c) in zip(parameters, answer)] for answer in result]
 end
