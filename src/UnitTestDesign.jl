@@ -16,6 +16,7 @@ export pairs_excursion
 export triples_excursion
 export full_factorial
 
+include("rule_table.jl")
 include("combinations.jl")
 include("coverage_matrix.jl")
 include("coverage_set.jl")
