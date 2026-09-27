@@ -202,7 +202,7 @@ end
 end
 
 
-@testitem "GND design size is competitive" begin
+@testitem "GND design size is competitive" setup=[IndexCoverage] begin
     using Random
     using UnitTestDesign: Request, generate
     # Before the scoring fix in most_matches_existing, GND chose most values
@@ -212,7 +212,7 @@ end
     for seed in 1:3
         cases = UnitTestDesign.n_way_coverage(arity, 2, 50, Xoshiro(seed))
         @test length(cases) <= 32
-        @test UnitTestDesign.coverage_by_tuple(cases, 2) == UnitTestDesign.total_combinations(arity, 2)
+        @test coverage_by_tuple(cases, 2) == UnitTestDesign.total_combinations(arity, 2)
         design = generate(GND(; seed), Request(space))
         @test size(design.matrix, 2) <= 32
         @test design.covered == UnitTestDesign.total_combinations(arity, 2)
@@ -220,7 +220,7 @@ end
 end
 
 
-@testitem "GND: unconstrained coverage at strengths 1 to 3 and with a stronger group" setup=[Checker] begin
+@testitem "GND: unconstrained coverage at strengths 1 to 3 and with a stronger group" setup=[IndexCoverage, Checker] begin
     using UnitTestDesign: Request, generate, to_cases
     domains = [[1, 2], [1, 2, 3], [1, 2], [1, 2, 3]]
     names = [:a, :b, :c, :d]
@@ -242,7 +242,7 @@ end
     design = generate(GND(), request)
     @test complete(check_design(to_cases(request, design.matrix), checker; strength = 2, stronger))
     rows = [design.matrix[:, j] for j in axes(design.matrix, 2)]
-    @test UnitTestDesign.coverage_by_tuple([r[[1, 3, 4, 5]] for r in rows], 3) ==
+    @test coverage_by_tuple([r[[1, 3, 4, 5]] for r in rows], 3) ==
           UnitTestDesign.total_combinations(arity[[1, 3, 4, 5]], 3)
 end
 
@@ -266,7 +266,7 @@ end
 end
 
 
-@testitem "GND: must-include rows come first and unchanged (§10.5)" setup=[Checker] begin
+@testitem "GND: must-include rows come first and unchanged (§10.5)" setup=[IndexCoverage, Checker] begin
     using UnitTestDesign: Request, generate, to_cases
     space = test_space(fable_solver)
     seeds = [(mode = :exact, solver = :qr, tol = 1e-6), (solver = :lu,),
@@ -286,7 +286,7 @@ end
     request = Request(space; must_include = seeds)
     cases = to_cases(request, generate(GND(), request).matrix)
     @test [Tuple(c) for c in cases[1:3]] == seeds
-    @test UnitTestDesign.coverage_by_tuple([collect(Tuple(c)) for c in cases], 2) == 16 * 28
+    @test coverage_by_tuple([collect(Tuple(c)) for c in cases], 2) == 16 * 28
 end
 
 
@@ -319,14 +319,14 @@ end
 end
 
 
-@testitem "n_way_coverage" setup=[UTSetup] begin
+@testitem "n_way_coverage" setup=[IndexCoverage, UTSetup] begin
     using Random
     # The unconstrained form the nonfunctional benchmark scripts call.
     rng = Xoshiro(9234724 ⊻ seed_mod())
     arity = [2, 3, 2, 3]
     for n_way in (2, 3)
         cover = UnitTestDesign.n_way_coverage(arity, n_way, 50, rng)
-        @test UnitTestDesign.coverage_by_tuple(cover, n_way) == UnitTestDesign.total_combinations(arity, n_way)
+        @test coverage_by_tuple(cover, n_way) == UnitTestDesign.total_combinations(arity, n_way)
     end
     @test length(UnitTestDesign.n_way_coverage(fill(4, 9), 2, 50, rng)) in 16:40
 end

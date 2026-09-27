@@ -12,6 +12,7 @@ export TestSpace, parameters, Invalid, Partition, hasinvalid
 export Constraint, forbid, require, @forbid, @require, ConstraintError
 export ResourceLimitError
 export isallowed, explain
+export coverage, missing_interactions, Coverage, iscomplete
 
 include("rule_table.jl")
 include("constraints.jl")
@@ -21,9 +22,9 @@ include("explain.jl")
 include("request.jl")
 include("engines.jl")
 include("testcases.jl")
+include("measure.jl")
 include("combinations.jl")
 include("coverage_matrix.jl")
-include("coverage_set.jl")
 include("greedy_tuples.jl")
 include("parameter_order.jl")
 include("full_factorial.jl")

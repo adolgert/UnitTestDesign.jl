@@ -118,8 +118,7 @@ end
 end
 
 
-@testitem "covering: rules, must_include and stronger on the 0.4 problems, both engines" setup=[InterfaceSetup] begin
-    using UnitTestDesign: test_coverage
+@testitem "covering: rules, must_include and stronger on the 0.4 problems, both engines" setup=[IndexCoverage, InterfaceSetup] begin
     matrix(cases) = reduce(hcat, [collect(c) for c in cases])
     domains = (p1 = [1, 2], p2 = [true, false], p3 = ["a", "b", "c"])
     for engine in (IPOG(), GND())

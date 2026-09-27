@@ -377,6 +377,41 @@ end
 end
 
 
+@testitem "request: an unconstrained request's targets stay lazy, and the recount streams (§1.8, §1.21, §9.7)" setup=[RequestSetup] begin
+    using UnitTestDesign: TargetList, generate
+    # Phase 3 review, round 1, item 4: with no rule every target is required,
+    # so classify_targets returns the TargetList, which computes each target
+    # on demand, and validate_design certifies it one support at a time.
+    free = Request(TestSpace((a = 1:2, b = 1:3, c = 1:2, d = [:x, :y]));
+                   stronger = [(:a, :b, :c) => 3, (:c, :b, :a) => 3, (:a, :b, :c, :d) => 3])
+    required, excluded = classify_targets(free)
+    @test required isa TargetList && isempty(excluded)
+    @test collect(required) == targets(free)     # the same targets, in the same order
+    # 30 pairs; the triples of (a, b, c, d), of which (a, b, c)'s 12 are counted once.
+    @test length(required) == 30 + (12 + 12 + 8 + 12)
+    @test required[1] == [1, 1, 0, 0] && required[end] == [0, 3, 2, 2]
+    @test_throws BoundsError required[length(required) + 1]
+    # A constrained request lists its required targets.
+    @test first(classify_targets(Request(solver_space()))) isa Vector{Vector{Int}}
+    for engine in (IPOG(), GND())
+        design = generate(engine, free)
+        @test design.required == design.covered == length(required)
+    end
+    # The streamed recount agrees with the listed one, and names the same
+    # first uncovered target.
+    matrix = generate(IPOG(), free).matrix
+    listed = collect(required)
+    @test validate_design(free, matrix, required) == validate_design(free, matrix, listed) == length(required)
+    for drop in (1, size(matrix, 2))
+        short = matrix[:, setdiff(axes(matrix, 2), drop)]
+        streamed, list = message(() -> validate_design(free, short, required)),
+                         message(() -> validate_design(free, short, listed))
+        @test streamed !== nothing && streamed == list
+        @test occursin("internal error: required target", streamed)
+    end
+end
+
+
 @testitem "request: to_cases round trip keeps values and types (§2.1, §2.9)" setup=[RequestSetup] begin
     space = TestSpace((x = Any[1, 1.0], y = [nothing, :a], z = Any[:s, "s", missing]))
     request = Request(space)

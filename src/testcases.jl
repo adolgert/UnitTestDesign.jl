@@ -345,11 +345,20 @@ end
 # triples, or combinations when the size is another or the sizes differ
 # (stronger groups).
 function _print_excluded(io::IO, tc::TestCases)
-    forbidden = count(e -> e.status === :forbidden, tc.excluded)
-    implied = count(e -> e.status === :implied, tc.excluded)
-    unresolved = count(e -> e.minimal === :unresolved, tc.excluded)
-    sizes = unique(length(e.target) for e in tc.excluded)
-    noun = sizes == [2] ? "pair" : sizes == [3] ? "triple" : "combination"
+    print(io, "excluded: ", _excluded_counts(tc.excluded), "; see report(cases)")
+    return nothing
+end
+
+"The noun for targets of these sizes: pair, triple, or combination (§13.5)."
+_target_noun(sizes) = sizes == [2] ? "pair" : sizes == [3] ? "triple" : "combination"
+
+# "3 pairs forbidden, 2 impossible under the constraints, 1 with an unresolved
+# explanation", for a nonempty list of exclusions. Shared with `Coverage`.
+function _excluded_counts(excluded::AbstractVector{Exclusion})
+    forbidden = count(e -> e.status === :forbidden, excluded)
+    implied = count(e -> e.status === :implied, excluded)
+    unresolved = count(e -> e.minimal === :unresolved, excluded)
+    noun = _target_noun(unique(length(e.target) for e in excluded))
     clauses = Pair{String, Int}[]
     forbidden > 0 && push!(clauses, "forbidden" => forbidden)
     implied > 0 && push!(clauses, "impossible under the constraints" => implied)
@@ -358,8 +367,7 @@ function _print_excluded(io::IO, tc::TestCases)
         push!(parts, k == 1 ? string(_plural(n, noun), " ", what) : string(n, " ", what))
     end
     unresolved > 0 && push!(parts, "$unresolved with an unresolved explanation")
-    print(io, "excluded: ", join(parts, ", "), "; see report(cases)")
-    return nothing
+    return join(parts, ", ")
 end
 
 # `s` cut to textwidth `w`, ending in "…" when cut.

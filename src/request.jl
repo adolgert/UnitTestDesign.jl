@@ -54,9 +54,7 @@ function Request(space::TestSpace; strength = 2, stronger = [], must_include = [
     feasibility_limit = _check_limit(:feasibility_limit, feasibility_limit)
     explanation_limit = _check_limit(:explanation_limit, explanation_limit)
     n = length(space.names)
-    strength = _check_integer(:strength, strength, 1, "§11.1")
-    strength <= n || throw(ArgumentError(
-        "strength $strength is larger than the number of parameters, $n (contract §11.2)"))
+    strength = _check_strength(strength, n)
     for (i, name) in enumerate(space.names)
         isempty(invalid_indices(space, i)) || throw(ArgumentError(
             "parameter `$name` has an Invalid value; generation with Invalid or Partition values " *
@@ -77,6 +75,14 @@ function Request(space::TestSpace; strength = 2, stronger = [], must_include = [
 end
 
 n_must_include(request::Request) = size(request.must_include, 2)
+
+"A base strength for a space of `n` parameters: an integer from 1 to `n` (contract §11.1, §11.2)."
+function _check_strength(strength, n::Integer)
+    strength = _check_integer(:strength, strength, 1, "§11.1")
+    strength <= n || throw(ArgumentError(
+        "strength $strength is larger than the number of parameters, $n (contract §11.2)"))
+    return strength
+end
 
 "The lazy-rule verdicts memoized by this request so far (contract §12.19)."
 memo_size(request::Request) = memo_size(request.feasibility)
@@ -263,35 +269,84 @@ end
 isconstrained(request::Request) = !isempty(request.feasibility.tables)
 
 """
+    _supports(groups) -> Vector{Vector{Int}}
+
+The parameter sets that carry targets (contract §1.8): for each group
+`(G, s)`, each `s`-subset of `G` in `combinations` order, the base group
+first. A subset that two groups share is listed once, where it first
+appears, so that a target arising from two groups is one target. Each
+subset is sorted, since every group's members are.
+"""
+function _supports(groups)
+    out = Vector{Int}[]
+    seen = Set{Vector{Int}}()
+    for (members, s) in groups, subset in combinations(members, s)
+        subset in seen && continue
+        push!(seen, subset)
+        push!(out, subset)
+    end
+    return out
+end
+
+"""
+    TargetList(request) <: AbstractVector{Vector{Int}}
+
+Every target of the request as a partial row in engine positions, computed
+on demand rather than stored: for each support (`_supports`), each
+assignment of engine positions, the first parameter varying fastest. The
+order is fixed by the space and the request (contract §9.7). `offsets[k]`
+counts the targets before support `k`; the last entry is the total, checked
+against `Int` overflow.
+
+An unconstrained request requires every target, so `classify_targets`
+returns this list without building it, and `validate_design` recounts it one
+support at a time (plan Phase 3 review, round 1, item 4).
+"""
+struct TargetList <: AbstractVector{Vector{Int}}
+    arity::Vector{Int}
+    supports::Vector{Vector{Int}}
+    offsets::Vector{Int}
+end
+
+function TargetList(request::Request)
+    supports = _supports(request.groups)
+    offsets = zeros(Int, length(supports) + 1)
+    for (k, support) in enumerate(supports)
+        block = 1
+        for p in support
+            block = Base.checked_mul(block, request.arity[p])
+        end
+        offsets[k + 1] = Base.checked_add(offsets[k], block)
+    end
+    return TargetList(copy(request.arity), supports, offsets)
+end
+
+Base.size(list::TargetList) = (last(list.offsets),)
+Base.IndexStyle(::Type{TargetList}) = IndexLinear()
+
+function Base.getindex(list::TargetList, i::Int)
+    @boundscheck checkbounds(list, i)
+    k = searchsortedlast(list.offsets, i - 1)
+    r = i - 1 - list.offsets[k]
+    row = zeros(Int, length(list.arity))
+    for p in list.supports[k]
+        a = list.arity[p]
+        row[p] = r % a + 1
+        r ÷= a
+    end
+    return row
+end
+
+"""
     targets(request) -> Vector{Vector{Int}}
 
 Every target of the request as a partial row in engine positions: for each
 group `(G, s)`, each `s`-subset of `G`, each assignment (contract §1.8).
 The union over groups, deduplicated, in a fixed order (base group first,
 subsets in `combinations` order, assignments with the first parameter
-varying fastest).
+varying fastest). `collect(TargetList(request))`.
 """
-function targets(request::Request)
-    n = length(request.arity)
-    out = Vector{Int}[]
-    seen = Set{Vector{Int}}()
-    for (members, s) in request.groups
-        for subset in combinations(members, s)
-            ranges = (1:request.arity[i] for i in subset)
-            for assignment in Iterators.product(ranges...)
-                row = zeros(Int, n)
-                for (i, v) in zip(subset, assignment)
-                    row[i] = v
-                end
-                if !(row in seen)
-                    push!(seen, row)
-                    push!(out, row)
-                end
-            end
-        end
-    end
-    return out
-end
+targets(request::Request) = collect(TargetList(request))
 
 """
     Excluded
@@ -319,10 +374,12 @@ Classify every target (contract §1.4): `required` is the list of targets an
 engine must cover, `excluded` the `Excluded` records. An `:unknown` target
 is a `ResourceLimitError`: generation never returns an uncertified design
 (§3.6). An unconstrained request classifies nothing and requires
-everything.
+everything: `required` is then the `TargetList` itself, never materialized,
+and `validate_design` recounts it one support at a time. A constrained
+request returns a `Vector` of the required targets, in target order.
 """
 function classify_targets(request::Request)
-    all_targets = targets(request)
+    all_targets = TargetList(request)
     isconstrained(request) || return all_targets, Excluded[]
     f = request.feasibility
     required = Vector{Int}[]
@@ -425,22 +482,48 @@ function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, re
                 error("internal error: must_include row $s was changed at parameter $(request.space.names[i])")
         end
     end
+    strategy == :covering || return 0
+    return _recount(request, matrix, required)
+end
+
+_uncovered(request::Request, t) = error(
+    "internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")
+
+# The rows' projections onto each target's parameters, built once per
+# parameter set, so the check is linear in targets plus rows.
+function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required)
     covered = 0
-    if strategy == :covering
-        # The rows' projections onto each target's parameters, built once per
-        # parameter set, so the check is linear in targets plus rows.
-        projections = Dict{Vector{Int}, Set{Vector{Int}}}()
-        for t in required
-            support = findall(!=(0), t)
-            seen = get!(() -> Set(matrix[support, j] for j in axes(matrix, 2)), projections, support)
-            if t[support] in seen
-                covered += 1
-            else
-                error("internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")
-            end
-        end
+    projections = Dict{Vector{Int}, Set{Vector{Int}}}()
+    for t in required
+        support = findall(!=(0), t)
+        seen = get!(() -> Set(matrix[support, j] for j in axes(matrix, 2)), projections, support)
+        t[support] in seen || _uncovered(request, t)
+        covered += 1
     end
     return covered
+end
+
+# Every target of an unconstrained request is required. For each support, a
+# row's projection onto it, whose entries were checked against the arity
+# above, has the code `TargetList` gives that target: its position within the
+# support's block, first parameter fastest. The support is covered exactly
+# when every code appears. The same certification as the list, with no list.
+function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList)
+    arity = required.arity
+    for (k, support) in enumerate(required.supports)
+        seen = falses(required.offsets[k + 1] - required.offsets[k])
+        for j in axes(matrix, 2)
+            code, stride = 0, 1
+            for p in support
+                code += (matrix[p, j] - 1) * stride
+                stride *= arity[p]
+            end
+            seen[code + 1] = true
+        end
+        missed = findfirst(!, seen)
+        missed === nothing || _uncovered(request, required[required.offsets[k] + missed])
+    end
+    return length(required)
 end
 
 """

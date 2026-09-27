@@ -74,8 +74,11 @@ end
         @test complete(check) && check.ordinary.counts.covered == 11
     end
     @test length(gen(IPOG(), test_space(fable_solver))) == 5
-    # pending: Phase 5 — coverage and report agree with the checker
-    @test_skip coverage(valid_rows(fable_solver.space), test_space(fable_solver)).covered == 11
+    # Phase 5 — coverage agrees with the checker: 11 of 11, 3 forbidden, 2 implied
+    c = coverage(valid_rows(fable_solver.space), test_space(fable_solver))
+    @test iscomplete(c) && c.ordinary.covered == c.ordinary.feasible == 11
+    @test [(e.status, e.rules) for e in c.ordinary.excluded] ==
+          [(:forbidden, [1]), (:forbidden, [1]), (:forbidden, [2]), (:implied, [1, 2]), (:implied, [1, 2])]
 
     s = opus_gpu.space
     @test length(valid_rows(s)) == 7
@@ -160,8 +163,11 @@ end
         @test_throws ResourceLimitError gen(engine, test_space(limit_exhaustion); feasibility_limit = 1)
         @test gen(engine, test_space(limit_exhaustion)) == valid_rows(s)
     end
-    # pending: Phase 5 — coverage with limit 1 lists unknown targets and claims no percentage
-    @test_skip !complete(coverage([], test_space(limit_exhaustion); feasibility_limit = 1))
+    # Phase 5 — coverage with limit 1 lists unknown targets and claims no percentage
+    c = coverage([], test_space(limit_exhaustion); feasibility_limit = limit_exhaustion.request.small_limit)
+    @test !iscomplete(c) && length(c.ordinary.unknown) == 448
+    @test !occursin('%', sprint(show, MIME"text/plain"(), c)) && !occursin("complete", sprint(show, MIME"text/plain"(), c))
+    @test iscomplete(coverage(valid_rows(s), test_space(limit_exhaustion)))
 end
 
 
@@ -213,8 +219,11 @@ end
     @test test_space(heterogeneous_values).values[2][1] === nothing
     # Phase 4 — generated rows keep Int, Float64, Nothing, Symbol and String values
     @test Set(typeof(r.x) for r in all_pairs(test_space(heterogeneous_values))) == Set([Int, Float64])
-    # pending: Phase 5 — coverage of the 3 valid rows is 7 of 7, keyed by identity
-    @test_skip coverage(valid_rows(heterogeneous_values.space), test_space(heterogeneous_values)).covered == 7
+    # Phase 5 — coverage of the 3 valid rows is 7 of 7, keyed by identity: 1 and 1.0 are two values
+    c = coverage(valid_rows(heterogeneous_values.space), test_space(heterogeneous_values))
+    @test iscomplete(c) && c.ordinary.covered == c.ordinary.feasible == 7
+    @test (count(t -> t.x === 1, [e.target for e in c.ordinary.excluded if haskey(e.target, :x)]),
+           count(t -> t.x === 1.0, [e.target for e in c.ordinary.excluded if haskey(e.target, :x)])) == (1, 2)
 end
 
 
