@@ -32,13 +32,14 @@ What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
   result's `stronger` groups.
 - `excluded::Vector{`[`Exclusion`](@ref)`}`: the targets no valid row can
   hold, with the rules that exclude them, as this report's measurement
-  classified and explained them with its own `explanation_limit`: the same
-  list as `coverage.ordinary.excluded` (§1.23).
+  classified and explained them with its own `explanation_limit`:
+  `coverage.ordinary.excluded`, then `coverage.negative.excluded`, whose
+  targets hold an [`Invalid`](@ref) value (§1.23, §5.10).
 - `recorded::Vector{Exclusion}`: exclusions generation recorded for targets
   this measurement left unresolved (a search reached `feasibility_limit`),
-  shown as "(recorded at generation)". Empty when the measurement resolved
-  every target, and always for an excursion or a full factorial, which
-  record none.
+  ordinary then negative, shown as "(recorded at generation)". Empty when
+  the measurement resolved every target, and always for an excursion or a
+  full factorial, which record none.
 - `bonus`: coverage of the same rows at `strength + 1`, as `(strength,
   covered, feasible, unknown, applicable, reason)`. `applicable` is `false`,
   with a `reason`, when there are no targets at `strength + 1`: the strength
@@ -56,7 +57,7 @@ percentage or claims completeness (§3.10, §3.12).
 `UnitTestDesign.plain(report)` gives a representation with no executable
 state: nested `NamedTuple`s and `Vector`s of `Int`, `Float64`, `String`,
 `Symbol`, `Bool` and `nothing`, with the space reduced to its names, its
-printed domains and its rule labels. Phase 6's JSON support will use it.
+printed domains and its rule labels. `github_matrix` validates values itself and rejects wrappers rather than stringifying them.
 """
 struct Report
     guarantee::String
@@ -118,6 +119,14 @@ excursion's must-include rows are kept first and are not bound by its
 distance, so the guarantee counts them apart, as in "1 must-include row
 kept first, then 1 case within distance 0 of (…)" (§7.5, §7.9).
 
+With [`Invalid`](@ref) values the rows make two guarantees, stated apart
+(§5.10): the ordinary one, then, after "negative:", what the negative rows
+cover of the negative targets (§6) and which of those are excluded, as in
+"6 cases cover all 9 feasible pairs of a 12-combination space (2 pairs
+forbidden, 1 impossible under the constraints); negative: covers 4 of 4
+feasible pairs". The excluded list gives the negative exclusions after the
+ordinary ones.
+
 The measurement searches, within `feasibility_limit` nodes per target, for
 the targets no row holds (§3.9). A search that runs out leaves its target
 unresolved: the counts become bounds ("8 of at least 11"), no percentage is
@@ -149,23 +158,24 @@ function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_lim
                           for k in eachindex(prefix)]
     bonus = _bonus(rows, cases.space, strength; feasibility_limit, explanation_limit)
     return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c,
-                  copy(c.ordinary.excluded), recorded, bonus, points, cases.seed, cases.engine,
-                  cases.n_must_include)
+                  [c.ordinary.excluded; c.negative.excluded], recorded, bonus, points, cases.seed,
+                  cases.engine, cases.n_must_include)
 end
 
 """
     _recorded_exclusions(cases, c) -> Vector{Exclusion}
 
 The exclusions generation recorded for targets the measurement `c` left
-unknown, in the recorded (target) order: the fallback `report` shows as
-"(recorded at generation)" (§1.23, §3.15). Targets match by value index, so
-by identity (§2.1).
+unknown, in the recorded (target) order, ordinary then negative: the
+fallback `report` shows as "(recorded at generation)" (§1.23, §3.15).
+Targets match by value index, so by identity (§2.1).
 """
 function _recorded_exclusions(cases::TestCases, c::Coverage)
-    isempty(c.ordinary.unknown) && return Exclusion[]
+    isempty(c.ordinary.unknown) && isempty(c.negative.unknown) && return Exclusion[]
     space = cases.space
-    unresolved = Set(case_indices(space, t) for t in c.ordinary.unknown)
-    return Exclusion[e for e in cases.excluded if case_indices(space, e.target) in unresolved]
+    unresolved = Set(case_indices(space, t) for t in [c.ordinary.unknown; c.negative.unknown])
+    return Exclusion[e for e in [cases.excluded; cases.negative_excluded]
+                     if case_indices(space, e.target) in unresolved]
 end
 
 "Coverage of `rows` at `strength + 1`, or why there is none (§3.12)."
@@ -225,10 +235,14 @@ end
 _excluded_note(c::Coverage) =
     isempty(c.ordinary.excluded) ? "" : " (" * _excluded_counts(c.ordinary.excluded) * ")"
 
+# The negative guarantee, stated apart from the ordinary one (§5.10): "; negative:
+# covers 4 of 4 feasible pairs (1 pair impossible under the constraints)".
 function _negative_note(c::Coverage)
     _has_invalid(c.space) || return ""
     noun, limit = _coverage_noun(c), c.limits.feasibility_limit
-    return "; negative: " * sprint(io -> _print_part(io, c.negative, noun, limit; lists = false))
+    note = "; negative: " * sprint(io -> _print_part(io, c.negative, noun, limit; lists = false))
+    isempty(c.negative.excluded) || (note *= " (" * _excluded_counts(c.negative.excluded) * ")")
+    return note
 end
 
 """
@@ -241,7 +255,9 @@ and GND's seed; for an excursion, the must-include rows kept first, which
 the distance does not bind (§7.5, §7.9), then the rows within the distance
 of the base, the dropped rows and missing values, that it is not a covering
 design, and what it covers at the measured strength; for a full factorial,
-that it is every valid row, and what it covers.
+that it is every valid row, and what it covers. With `Invalid` values, the
+negative targets' coverage and exclusions follow, after "negative:", stated
+apart from the ordinary guarantee (§5.10).
 """
 function _guarantee(tc::TestCases, c::Coverage)
     lead = _plural(length(tc), "case")
@@ -263,7 +279,7 @@ function _guarantee(tc::TestCases, c::Coverage)
         # Must-include rows are exempt from the distance (§7.5, §7.9), so the
         # claim is made of the rows after them only.
         notes = tc.notes
-        within = "within distance $(notes.distance) of $(_text(notes.base))"
+        within = "within distance $(notes.distance) of $(sprint(io -> print(io, _row_text(io, notes.base))))"
         head = tc.n_must_include == 0 ? "$lead $within" :
                "$must, then $(_plural(length(tc) - tc.n_must_include, "case")) $within"
         notes.dropped > 0 && push!(tail, _plural(notes.dropped, "row") * " dropped")

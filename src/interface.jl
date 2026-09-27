@@ -309,6 +309,22 @@ The parameters come in one of four forms:
 Values are kept as given, with their types: `Any[1, 1.0]` is two values, and
 `nothing` and `missing` are ordinary values (§2.1, §2.9).
 
+A [`Partition`](@ref) is an ordinary value that rules and targets see by its
+name; returned rows hold the wrapper, and [`realize`](@ref) draws the
+concrete values (§4). An [`Invalid`](@ref) value is for negative tests
+(§5, §6). The covering design is built over ordinary values; then, for each
+invalid value `v` of a parameter `p`, negative rows hold `p = v` beside
+ordinary values of the other parameters, and cover every feasible
+combination of `v` with `strength - 1` other parameters' values, and within
+each `stronger` group that contains `p`, with its strength less one. At
+strength 2, each invalid value appears beside every value of every other
+parameter that some valid negative row holds (§6.6). A negative row
+satisfies the rules that do not read `p`; rules that read `p` do not apply
+to it (§5.5). The rows are the must-include rows, then the ordinary rows,
+then the negative rows (§5.12), and a row never holds two `Invalid` values
+(§5.7). `hasinvalid(case)` tells a test body which kind it has, and the
+result counts the two kinds of targets separately (§5.10).
+
 # Keywords
 
 - `strength = 2`: from 1 to the number of parameters (§11.1, §11.2). At the
@@ -324,7 +340,10 @@ Values are kept as given, with their types: `Any[1, 1.0]` is two values, and
   `TestCases`, whose rows are kept and topped up with the rows needed to cover
   what they miss (§9.10). A positional call takes tuples or vectors with one
   value per parameter. A row that breaks a rule, or a partial row with no valid
-  completion, is an error naming the row and the rules (§10.2–§10.4).
+  completion, is an error naming the row and the rules (§10.2–§10.4). A row
+  with one `Invalid` value is a negative row, judged and completed under the
+  negative policy, with ordinary values elsewhere; a partial row without one
+  is completed as an ordinary row; a row with two is an error (§5.7, §7.9).
 - `engine = IPOG()`: [`IPOG`](@ref) or [`GND`](@ref). Both are deterministic
   for the same inputs (§9.1). Neither promises the fewest cases (§8.1).
 - `feasibility_limit = 1_000_000`: the node budget of each search that
@@ -513,10 +532,11 @@ covering design. It makes no claim that every pair, or even every value,
 appears: a value whose rows within the distance all break a rule appears in no
 row (§7.7).
 
-- `from`: the base, a complete valid row, as a `NamedTuple` or, for a
-  positional call, a tuple of values in argument order. Omitted, it is the
-  first value of each parameter. A base that is partial or breaks a rule is an
-  error naming the rules it breaks (§7.6). The base is never dropped.
+- `from`: the base, a complete valid ordinary row, as a `NamedTuple` or, for
+  a positional call, a tuple of values in argument order. Omitted, it is the
+  first ordinary value of each parameter. A base that is partial, holds an
+  [`Invalid`](@ref) value, or breaks a rule is an error naming the cause
+  (§7.6). The base is never dropped.
 - `distance = 1`: an integer of at least 0. 0 gives the must-include rows and
   the base alone; a distance above the number of parameters is the number of
   parameters. Excursion distance is not covering strength, and there are no
@@ -525,6 +545,10 @@ row (§7.7).
   kept as given, duplicates included. A partial row is completed toward the
   base. An excursion row equal to a must-include row is not repeated
   (§7.11).
+
+Changing a parameter to one of its `Invalid` values gives a negative row,
+which is kept when it satisfies the rules that do not read that parameter
+(§5.5, §7.5). A row with two `Invalid` values is never returned (§5.7).
 
 Rows within the distance that break a rule are left out. The result reports
 how many in `cases.notes.dropped`, and `cases.notes.never_appear` lists the
@@ -562,9 +586,18 @@ once, and a valid row equal to a must-include row is not repeated. Returns a
 [`TestCases`](@ref) with strategy `:full_factorial`; the inputs are the four
 forms [`covering`](@ref) takes.
 
+With [`Invalid`](@ref) values, the valid ordinary rows come first, then the
+valid negative rows: for each parameter in order and each of its invalid
+values in domain order, the rows holding that value beside ordinary values
+of the other parameters, kept when they satisfy the rules that do not read
+that parameter (§5.5). A row with two `Invalid` values is never returned
+(§5.7).
+
 `limit` guards against a product too large to enumerate. Before looking at
-any row, must-include rows included, the call counts the candidate rows, the
-product of the domain sizes, and if that exceeds `limit` it throws a
+any row, must-include rows included, the call counts the candidate rows,
+the product of the parameters' ordinary value counts plus, for each
+parameter, its number of `Invalid` values times the product of the other
+parameters' ordinary value counts, and if that exceeds `limit` it throws a
 [`ResourceLimitError`](@ref) that gives the count and the keyword (§7.3), so
 no search runs for a refused enumeration. Raise `limit` to go ahead, or use
 [`covering`](@ref) for a smaller design. Candidates are then enumerated one
@@ -599,7 +632,7 @@ function full_factorial(input...; limit = 10^6, must_include = nothing, constrai
     space, positional = _space(:full_factorial, input, constraints)
     # The count comes before the Request, whose must-include checks may search
     # (§7.3): an enumeration that is refused never runs a feasibility search.
-    check_full_factorial_limit([length(ordinary_indices(space, i)) for i in eachindex(space.names)], limit)
+    check_full_factorial_limit(space, limit)
     request = Request(space; strength = 1, feasibility_limit, explanation_limit,
                       must_include = _must_include_rows(must_include, space, positional))
     return TestCases(request, generate_full_factorial(request; limit); positional)

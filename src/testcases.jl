@@ -64,8 +64,13 @@ All recorded at generation and never recomputed (§1.19, §1.22):
 `names => strength` pairs, base group excluded),
 `engine::Symbol`, `seed`, `n_must_include`, `required` and `covered`
 (ordinary target counts; zero for non-covering strategies), `excluded`
-([`Exclusion`](@ref)s, in target order, §9.7), `positional::Bool`, and
-`notes`, which is strategy specific (§7.3, §7.7):
+(ordinary [`Exclusion`](@ref)s, in target order, §9.7), `positional::Bool`,
+`notes`, which is strategy specific (§7.3, §7.7), and the negative
+bookkeeping, kept apart from the ordinary (§5.10, §6): `negative_required`
+and `negative_covered` (negative target counts, zero without
+[`Invalid`](@ref) values and for non-covering strategies) and
+`negative_excluded` (the negative targets no valid negative row can hold,
+as `Exclusion`s in the order `coverage` lists them):
 
 - an excursion's `base`, the base row, of the result's row type `T`;
   `distance`, after clamping to the parameter count; `dropped`, the number
@@ -73,13 +78,13 @@ All recorded at generation and never recomputed (§1.19, §1.22):
   values that appear in no returned row, as a `Vector{Pair{Symbol, Any}}`
   of `name => value` in parameter and domain order (`:p2 => 3` for a
   positional result);
-- a full factorial's `candidates` (the product) and `accepted` (the valid
-  rows);
+- a full factorial's `candidates` (the ordinary product plus the rows with
+  one `Invalid` value, §7.3) and `accepted` (the valid rows, ordinary and
+  negative);
 - nothing for a covering design.
 
 `strength` is 0 when the strategy has no strength (excursions and full
 factorials); measurement of such a result needs an explicit strength.
-Negative bookkeeping arrives in Phase 6 and is kept separate.
 
 # Display
 
@@ -103,7 +108,28 @@ full factorial), the parameter count and the size of the full product. It
 adds the number of valid rows only when generation already knows it: for a
 full factorial, and for a covering design at strength equal to the parameter
 count, where the required targets are the valid rows. Values print with
-`show`, so `:fast` and `"fast"` differ. In a REPL (an `IOContext` with
+`show`, so `:fast` and `"fast"` differ.
+
+With [`Invalid`](@ref) values, a covering design's summary ends with its
+count of negative targets, the excluded line counts negative exclusions
+after "negative:", and a negative row, one holding an `Invalid` value, is
+marked with `!` after its row number. For
+`all_pairs(TestSpace((n = [1, 2, Invalid(1)], m = [:a, :b], k = [:x, :y]);
+constraints = [@forbid(n == 2 && m == :b), @forbid(m == :a && k == :y)]))`:
+
+```
+6 cases · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets
+excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)
+     n           m   k
+ 1   1           :b  :x
+ 2   2           :a  :x
+ 3   1           :a  :x
+ 4   1           :b  :y
+ 5!  Invalid(1)  :b  :y
+ 6!  Invalid(1)  :a  :x
+```
+
+In a REPL (an `IOContext` with
 `:limit => true`), long results keep their first 10 and last 5 rows and wide
 cells and columns are cut to the display size, as a `DataFrame` does;
 otherwise every row prints in full. Inside a container, a `TestCases`
@@ -147,7 +173,16 @@ struct TestCases{T} <: AbstractVector{T}
     excluded::Vector{Exclusion}
     positional::Bool
     notes::NamedTuple
+    negative_required::Int
+    negative_covered::Int
+    negative_excluded::Vector{Exclusion}
 end
+
+# The form without negative bookkeeping: none recorded.
+TestCases{T}(cases, space, strategy, strength, stronger, engine, seed, n_must_include, required, covered,
+             excluded, positional, notes) where {T} =
+    TestCases{T}(cases, space, strategy, strength, stronger, engine, seed, n_must_include, required,
+                 covered, excluded, positional, notes, 0, 0, Exclusion[])
 
 Base.size(tc::TestCases) = size(tc.cases)
 Base.getindex(tc::TestCases, i::Int) = tc.cases[i]
@@ -190,16 +225,22 @@ function TestCases(request::Request, design::Design; positional::Bool = false)
     cases = positional ? T[Tuple(values(c)) for c in named] : T[c for c in named]
     stronger = Pair{Tuple{Vararg{Symbol}}, Int}[
         Tuple(space.names[g]) => s for (g, s) in request.groups[2:end]]
-    excluded = Exclusion[
-        Exclusion(from_indices(space, _space_indices(request, e.target)), e.status, e.rules,
-                  [rule_label(space, k) for k in e.rules], e.minimal, e.limit)
-        for e in design.excluded]
+    excluded = Exclusion[_exclusion(request, e) for e in design.excluded]
+    negative_excluded = Exclusion[_exclusion(request, e) for e in design.negative_excluded]
     strength = design.strategy === :covering ? request.strength : 0
     notes = design.strategy === :excursion ? _excursion_notes(request, design.notes, T, positional) :
                                              design.notes
     return TestCases{T}(cases, space, design.strategy, strength, stronger, design.engine,
                         design.seed, design.n_must_include, design.required, design.covered,
-                        excluded, positional, notes)
+                        excluded, positional, notes, design.negative_required, design.negative_covered,
+                        negative_excluded)
+end
+
+"An engine's `Excluded` record in the caller's vocabulary: the target's values, the rules' labels."
+function _exclusion(request::Request, e::Excluded)
+    space = request.space
+    return Exclusion(from_indices(space, _space_indices(request, e.target)), e.status, e.rules,
+                     [rule_label(space, k) for k in e.rules], e.minimal, e.limit)
 end
 
 """
@@ -263,11 +304,14 @@ end
 The number of valid rows in the full product when generation already knows
 it (§1.22), else `nothing`. A full factorial counted them (`notes.accepted`).
 A covering design at strength equal to the parameter count has the complete
-rows as its targets, so its required targets are exactly the valid rows.
+rows as its targets, so its required targets are exactly the valid rows:
+the ordinary targets are the valid ordinary rows, and the negative targets
+the valid negative rows.
 """
 function _valid_count(tc::TestCases)
     tc.strategy === :full_factorial && return tc.notes.accepted
-    tc.strategy === :covering && tc.strength == length(tc.space.names) && return tc.required
+    tc.strategy === :covering && tc.strength == length(tc.space.names) &&
+        return tc.required + tc.negative_required
     return nothing
 end
 
@@ -278,9 +322,18 @@ end
 
 _shown(io::IO, x) = sprint(show, x; context = IOContext(io, :typeinfo => Any))
 
+# A row as a literal, with no type prefix: a NamedTuple whose field types are
+# Unions, as for a parameter with an Invalid value (§2.4), would otherwise
+# print as `@NamedTuple{…}((…))`.
+_row_text(io::IO, row::Tuple) = _shown(io, row)
+function _row_text(io::IO, row::NamedTuple)
+    entries = [string(name, " = ", _shown(io, row[name])) for name in keys(row)]
+    return string("(", join(entries, ", "), length(row) == 1 ? ",)" : ")")
+end
+
 # The first `k` entries of a row, then "…": "(mode = :fast, …)" or "(:fast, …)".
 function _row_prefix(io::IO, row::Union{NamedTuple, Tuple}, k::Integer)
-    k >= length(row) && return _shown(io, row)
+    k >= length(row) && return _row_text(io, row)
     entries = row isa NamedTuple ?
         [string(name, " = ", _shown(io, row[name])) for name in keys(row)[1:k]] :
         [_shown(io, row[j]) for j in 1:k]
@@ -319,6 +372,9 @@ function _summary_parts(io::IO, tc::TestCases; base_entries::Integer = length(tc
         product *= ", " * _plural(tc.notes.dropped, "row") * " dropped"
     end
     push!(parts, product)
+    if tc.strategy === :covering && _has_invalid(tc.space)
+        push!(parts, _plural(tc.negative_required, "negative target"))
+    end
     return parts
 end
 
@@ -343,9 +399,13 @@ end
 # from a single rule over a wider scope, so the summary names no cause; each
 # `Exclusion` names its rules. The noun follows the targets' size: pairs,
 # triples, or combinations when the size is another or the sizes differ
-# (stronger groups).
+# (stronger groups). Negative exclusions follow, after "negative:", as
+# `coverage` prints them.
 function _print_excluded(io::IO, tc::TestCases)
-    print(io, "excluded: ", _excluded_counts(tc.excluded), "; see report(cases)")
+    counts = String[]
+    isempty(tc.excluded) || push!(counts, _excluded_counts(tc.excluded))
+    isempty(tc.negative_excluded) || push!(counts, "negative: " * _excluded_counts(tc.negative_excluded))
+    print(io, "excluded: ", join(counts, "; "), "; see report(cases)")
     return nothing
 end
 
@@ -450,7 +510,9 @@ end
 The rows as an aligned table under a header of parameter names, with row
 numbers. `used` counts the lines printed above the rows, the header
 included. Under `:limit` the rows and columns are cut to `displaysize(io)`;
-otherwise everything prints.
+otherwise everything prints. When a printed row is negative (it holds an
+`Invalid` value), each row number gains a marker column: `!` for a negative
+row, a space otherwise, so the mark survives when columns are cut.
 """
 function _print_table(io::IO, tc::TestCases, used::Integer)
     limit = get(io, :limit, false)::Bool
@@ -461,12 +523,15 @@ function _print_table(io::IO, tc::TestCases, used::Integer)
     names = [string(name) for name in tc.space.names]
     cells = [[_shown(io, tc.cases[r][j]) for r in rows] for j in eachindex(names)]
     natural = [maximum(textwidth, cells[j]; init = textwidth(names[j])) for j in eachindex(names)]
-    number = max(textwidth(string(n)), tail > 0 ? 1 : 0)
+    marked = any(r -> hasinvalid(tc.cases[r]), rows)
+    label(r) = marked ? string(r, hasinvalid(tc.cases[r]) ? "!" : " ") : string(r)
+    number = max(textwidth(string(n)), tail > 0 ? 1 : 0) + marked
     widths, ncols = limit ? _column_layout(natural, number, width) : (natural, length(names))
     _print_line(io, "", names, widths, ncols, number)
     for (k, r) in enumerate(rows)
-        _print_line(io, string(r), [cells[j][k] for j in eachindex(names)], widths, ncols, number)
-        tail > 0 && k == head && _print_line(io, "⋮", fill("⋮", length(names)), widths, ncols, number)
+        _print_line(io, label(r), [cells[j][k] for j in eachindex(names)], widths, ncols, number)
+        tail > 0 && k == head &&
+            _print_line(io, marked ? "⋮ " : "⋮", fill("⋮", length(names)), widths, ncols, number)
     end
     return nothing
 end
@@ -476,7 +541,7 @@ Base.show(io::IO, tc::TestCases) = _print_summary(io, tc)
 function Base.show(io::IO, ::MIME"text/plain", tc::TestCases)
     _print_summary(io, tc)
     used = 1
-    if !isempty(tc.excluded)
+    if !isempty(tc.excluded) || !isempty(tc.negative_excluded)
         print(io, "\n")
         _print_excluded(io, tc)
         used += 1

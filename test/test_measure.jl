@@ -49,7 +49,7 @@ using TestItemRunner
     fixture_request(f) = f.name == :overlapping_groups ? (stronger = f.request.stronger,) :
         haskey(f.request, :strength) && f.request.strength isa Integer ? (strength = f.request.strength,) : (;)
 
-    "Fixtures whose spaces hold Invalid or Partition values, which generation takes in Phase 6."
+    "Fixtures whose spaces hold Invalid or Partition values (generation takes them since Phase 6)."
     const WRAPPED = (:invalid_beside_ordinary, :partition_names, :empty_ordinary_negative_seed)
 
     "The ArgumentError message of `f()`, or what happened instead."
@@ -134,7 +134,7 @@ end
 
 @testitem "coverage: every generated covering design is complete, and agrees with its bookkeeping (§1.3, §1.12)" setup=[Checker, MeasureSetup] begin
     for f in FIXTURES, engine in (IPOG(), GND())
-        (f.space === nothing || f.name in WRAPPED || f.name == :bench12) && continue   # bench12 below
+        (f.space === nothing || f.name == :bench12) && continue   # bench12 below
         request = fixture_request(f)
         @testset "$(f.name) $engine" begin
             cases = covering(test_space(f); engine, request...)
@@ -144,11 +144,16 @@ end
             @test c.ordinary.feasible == cases.required
             @test isempty(c.ordinary.missing) && isempty(c.ordinary.unknown)
             @test same_exclusions(c.ordinary.excluded, cases.excluded)
-            @test c.ordinary.rows + c.ordinary.duplicates == length(cases)
-            @test isempty(c.ordinary.rejected)
+            # The negative part, for the fixtures with Invalid values (§5.10).
+            @test c.negative.covered == c.negative.feasible == cases.negative_covered == cases.negative_required
+            @test same_exclusions(c.negative.excluded, cases.negative_excluded)
+            @test c.ordinary.rows + c.ordinary.duplicates + c.negative.rows + c.negative.duplicates == length(cases)
+            @test isempty(c.ordinary.rejected) && isempty(c.negative.rejected)
             @test c.strength == cases.strength && c.stronger == cases.stronger
-            # The checker agrees on the count.
-            @test c.ordinary.covered == check_design(cases, f.space; request...).ordinary.counts.covered
+            # The checker agrees on the counts.
+            check = check_design(as_checker.(collect(cases)), f.space; request...)
+            @test c.ordinary.covered == check.ordinary.counts.covered
+            @test c.negative.covered == check.negative.counts.covered
         end
     end
     # bench12 at strengths 2 and 3, both engines: 586 pairs and 5702 triples.
@@ -615,7 +620,7 @@ end
 
 @testitem "coverage: targets are the request's targets, in its order (§1.8, §9.7)" setup=[Checker, MeasureSetup] begin
     for f in FIXTURES
-        (f.space === nothing || f.name in WRAPPED || f.name == :bench12) && continue
+        (f.space === nothing || f.name == :bench12) && continue
         request = fixture_request(f)
         space = test_space(f)
         r = Request(space; request...)

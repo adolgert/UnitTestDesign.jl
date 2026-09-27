@@ -57,6 +57,12 @@ ordinary value (§5.2).
 `Invalid(x)` and `Invalid(y)` are the same choice exactly when `x` and `y` are;
 `Invalid(x)` and `x` are different choices, so a domain may hold both (§2.12).
 `Invalid(Invalid(x))` and `Invalid(Partition(...))` are errors (§4.12).
+
+Generation builds the covering design over ordinary values, then adds
+negative rows: each holds one invalid value beside ordinary values, and
+together they cover that value's negative targets (§6), such as, at strength
+2, the invalid value beside every feasible value of every other parameter.
+Rows keep the wrapper, so a test body can branch on [`hasinvalid`](@ref).
 """
 struct Invalid{T}
     value::T
@@ -232,6 +238,16 @@ struct TestSpace
                            for (k, c) in enumerate(rules)]
         return new(copy(names), values, rules, tables, limit, ordinary, invalid)
     end
+
+    # Internal: a space from parts that are already validated and tabulated,
+    # with nothing checked or evaluated again. Negative generation (invalid.jl)
+    # builds one over the parameters other than a negative row's invalid
+    # parameter, reusing that space's domains, rules and tables.
+    function TestSpace(::Val{:parts}, names::Vector{Symbol}, values::Vector{AbstractVector},
+                       constraints::Vector{Constraint}, tables::Vector{RuleTable}, tabulation_limit::Int,
+                       ordinary::Vector{Vector{Int}}, invalid::Vector{Vector{Int}})
+        return new(names, values, constraints, tables, tabulation_limit, ordinary, invalid)
+    end
 end
 
 TestSpace(domains::NamedTuple; constraints = Constraint[], tabulation_limit = 10^5) =
@@ -328,6 +344,9 @@ feasibility layer assigns only these, except for the fixed invalid value of a
 negative row. The vector belongs to the space; do not mutate it.
 """
 ordinary_indices(space::TestSpace, i::Integer) = space.ordinary[i]
+
+"Whether some parameter of the space has an `Invalid` value (contract §5.1)."
+_has_invalid(space::TestSpace) = any(!isempty, space.invalid)
 
 """
     invalid_indices(space, i) -> Vector{Int}

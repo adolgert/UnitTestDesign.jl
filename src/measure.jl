@@ -749,8 +749,6 @@ function _print_part(io::IO, part::CoveragePart, noun::AbstractString, limit; li
     return nothing
 end
 
-_has_invalid(space::TestSpace) = any(!isempty, space.invalid)
-
 function _rejection_phrase(space::TestSpace, r::_Rejected)
     r.reason === :multiple_invalid && return "row $(r.index) has more than one Invalid value"
     labels = [rule_label(space, k) for k in r.rules]

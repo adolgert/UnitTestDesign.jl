@@ -14,6 +14,9 @@ export ResourceLimitError
 export isallowed, explain
 export coverage, missing_interactions, Coverage, iscomplete
 export report, Report, design_sizes, DesignSizes
+export diagnose, followups
+export github_matrix
+export realize
 
 include("rule_table.jl")
 include("constraints.jl")
@@ -31,6 +34,10 @@ include("greedy_tuples.jl")
 include("parameter_order.jl")
 include("full_factorial.jl")
 include("excursions.jl")
+include("invalid.jl")
+include("partition.jl")
 include("interface.jl")
+include("diagnose.jl")
+include("export.jl")
 
 end
