@@ -42,7 +42,7 @@ From your answers:
     `must_include`.
   - Outcomes enter only through the pure function `diagnose(cases, passed)`.
   - Julia target is the latest LTS, 1.10, and nothing earlier: `julia = "1.10"`
-    in `Project.toml`, CI runs on 1.10, 1.11, and the latest release, and
+    in `Project.toml`, CI runs on 1.10 (LTS), 1.13, and the latest release, and
     the code uses 1.10 features freely (package extensions, `Returns`,
     `@NamedTuple`) with no compatibility shims for older versions.
   - Vocabulary: `TestSpace`, `constraints`, `must_include` (alias `seeds`),
@@ -209,7 +209,7 @@ Steps:
    unsatisfiable components, exhausted limits, heterogeneous values,
    partial seeds, overlapping stronger groups, and wrapper interactions.
 5. **Bump `Project.toml`** to `1.0.0-DEV`, `julia = "1.10"` (the latest LTS;
-   nothing earlier is supported). Set the CI matrix to `'1.10'`, `'1.11'`,
+   nothing earlier is supported). Set the CI matrix to `'1.10'`, `'1.13'`,
    and `'1'`, replacing the `lts` alias so the floor is explicit. Add `.DS_Store`, `Manifest.toml`, `.vscode/`
    to `.gitignore`. Move `interface_*.{md,pdf,tex}`, `interface_synthesis.*`,
    `z3_example.jl`, and the two dated files into `design/` so the root is clean.
@@ -661,7 +661,7 @@ or unconditional follow-up isolation.
 
 Steps:
 
-1. Full matrix green (1.10, 1.11, latest release, three OSes), Aqua,
+1. Full matrix green (1.10, 1.13, latest release, three OSes), Aqua,
    doctests, deterministic regressions, the full random-problem gate, and
    benchmark results within the Phase 3 tolerance on the documented runner.
 2. `CHANGELOG.md` for 1.0.0: breaking changes (return type, `disallow`
