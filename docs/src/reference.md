@@ -7,5 +7,5 @@ CurrentModule = UnitTestDesign
 ```@autodocs
 Modules = [UnitTestDesign]
 Private = false
-Order = [:type, :function]
+Order = [:type, :macro, :function]
 ```

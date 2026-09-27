@@ -51,8 +51,9 @@ engines the same way before and after the constraint fix.
    IPOG builds rows with `p1 = 2, p2 = 2` and then finds no `p9` for them
    (1 of its 21 rows pairwise, 6 of 91 three-way). GND loops without
    raising its attempt-cap error. So the prior revision has no "before"
-   number for this fixture; it joins fixture 3. The IPOG failure is
-   asserted with `@test_throws BoundsError` in `test/test_fixtures.jl`;
+   number for this fixture; it joins fixture 3. The IPOG failure was
+   asserted with `@test_throws BoundsError` in `test/test_fixtures.jl`
+   until Phase 3 replaced it with completeness tests for both engines;
    the GND hang is recorded here only.
 3. **Repaired cases.** The random problems that crash IPOG or hang GND on
    the prior revision (see issue #51), `bench12`, and the four greedy
@@ -106,5 +107,8 @@ engines the same way before and after the constraint fix.
    test asserts machine-dependent seconds. Limit exhaustion and
    progress-guarantee regressions go in the deterministic suite.
 
-The benchmark script lives at `benchmark/run.jl` when Phase 3 lands and
-writes a Markdown table that is pasted into the Phase 3 review.
+The benchmark script lives at `benchmark/run.jl` and writes Markdown tables
+that are pasted into the Phase 3 review. Its header gives the commands for
+this revision and for the prior one. The Phase 3 results, with the 0.4
+comparison and the proposed tolerance, are in
+`design/benchmark_results_phase3.md`.

@@ -20,7 +20,6 @@ using TestItemRunner
         (() -> all_triples([1, 2], invalid, [3, 4]), "parameter 2 lists Invalid(0)"),
         (() -> full_factorial([1, 2], [3, 4], invalid), "parameter 3 lists Invalid(0)"),
         (() -> full_factorial(tiny, [3, 4]), "parameter 1 lists Partition(:tiny)"),
-        (() -> full_factorial([1, 2], invalid; disallow = (a, b) -> false), "parameter 2 lists Invalid(0)"),
         (() -> pairs_excursion([1, 2], invalid, [:a, :b]), "parameter 2 lists Invalid(0)"),
         (() -> values_excursion(tiny, [1, 2]), "parameter 1 lists Partition(:tiny)"),
     ]

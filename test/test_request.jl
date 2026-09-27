@@ -269,6 +269,64 @@ end
 end
 
 
+@testitem "request: a placement search at its limit throws; no design is incomplete (§3.6–§3.8)" setup=[RequestSetup, Checker] begin
+    # The acceptance gate of plan Phase 3: a limited search raises an error
+    # rather than returning an incomplete design. Here the limit runs out while
+    # an engine places a value, after every target was classified.
+    #
+    # Ten two-valued parameters, then a, b and c with three values, and one
+    # whole-case rule forbidding a = b = c = 1. A whole-case rule is checked
+    # only when at most one parameter is left, so proving that (a = 1, b = 1,
+    # c = 1) has no completion visits every assignment of the x's, about 2^10
+    # nodes. Every other question has a witness about a dozen nodes deep: each
+    # pair (the search fills the x's with 1 and then gives whichever of a, b,
+    # c is left a value the rule allows), the empty row, and the partial
+    # must-include row (a = 1, b = 1). Both engines, completing that row, try
+    # c = 1 beside it and ask the expensive question.
+    using UnitTestDesign: generate
+    xs = [Symbol(:x, i) for i in 1:10]
+    names = [xs; :a; :b; :c]
+    domains = [fill(1:2, 10); fill(1:3, 3)]
+    space = TestSpace(Pair.(names, domains)...;
+                      constraints = [forbid(case -> case.a == 1 && case.b == 1 && case.c == 1)])
+    oracle = CheckSpace(names, collect.(domains), [(Tuple(names), (v...) -> v[11] == 1 && v[12] == 1 && v[13] == 1)])
+    seeds = [(a = 1, b = 1)]
+    for engine in (IPOG(), GND())
+        request = Request(space; must_include = seeds, feasibility_limit = 100)
+        required, excluded = classify_targets(request)   # resolved within the limit
+        @test length(required) == length(targets(request)) && isempty(excluded)
+        err = try generate(engine, request); nothing catch e; e end
+        @test err isa ResourceLimitError
+        @test (err.limit, err.keyword) == (100, :feasibility_limit)
+        @test startswith(err.what, "placing a value")
+        @test occursin("a = 1, b = 1", err.what) && occursin("c = 1", err.what)
+
+        # Every limit either throws ResourceLimitError or returns a design the
+        # oracle accepts; a larger limit never changes a returned design.
+        designs = Matrix{Int}[]
+        for limit in (1, 10, 100, 1_000, 3_000, 10_000, 1_000_000)
+            outcome = try
+                limited = Request(space; must_include = seeds, feasibility_limit = limit)
+                (limited, generate(engine, limited))
+            catch e
+                e
+            end
+            if outcome isa Exception
+                @test outcome isa ResourceLimitError
+                continue
+            end
+            limited, design = outcome
+            cases = to_cases(limited, design.matrix)
+            @test complete(check_design(cases, oracle))
+            @test cases[1].a == 1 && cases[1].b == 1 && cases[1].c != 1
+            push!(designs, design.matrix)
+        end
+        @test length(designs) >= 2
+        @test all(==(first(designs)), designs)
+    end
+end
+
+
 @testitem "request: validate_design names each internal error (§1.21)" setup=[RequestSetup] begin
     request = Request(solver_space(); must_include = [(solver = :lu,)])
     required, _ = classify_targets(request)

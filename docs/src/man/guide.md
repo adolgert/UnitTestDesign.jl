@@ -64,11 +64,12 @@ test_set = all_pairs(
 ## Exclude forbidden combinations of parameters
 
 Keep the test engine from making tests that aren't allowed for
-your function. Pass it a filter function, one that returns `true`
-whenever a parameter combinations is forbidden.
+your function. In 0.4 you passed it a filter function, one that returns `true`
+whenever a parameter combination is forbidden.
 
-```@example
-using UnitTestDesign  # hide
+0.4 syntax; the 1.0 manual replaces `disallow` with constraints on a `TestSpace`.
+
+```julia
 disallow(n, level, value, kind) = level == "high" && kind == :optim
 test_set = all_pairs(
     [1, 2, 3], ["low", "mid" ,"high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim];
@@ -76,19 +77,11 @@ test_set = all_pairs(
     )
 ```
 
-There are *two problems* with excluding values.
-
-1. The `disallow` function needs to handle possible `nothing` arguments.
-   The generator will call this function on partially-constructed argument lists,
-   and it will pass `nothing` for those arguments that have not yet been chosen.
-
-2. The generator *may fail to find a solution* if there is a disallow list.
-   Both the IPOG and GND generators can get stuck when there are rules that
-   forbid combinations. It depends on the combinations and some luck. When it
-   does fail, you will see the code try to access a vector at location 0.
-
-There are papers that solve these problems by pairing tuple generation with
-logic solvers. That sounds great. It isn't implemented here.
+In 0.4 that function had to accept `nothing` for parameters not yet chosen,
+and a generator could fail on rules that forbid combinations. In 1.0 a rule
+sees only complete values of the parameters it names, and generation either
+covers every combination that some allowed test contains or stops with a
+`ResourceLimitError`.
 
 
 ## Seed test cases

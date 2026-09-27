@@ -4,10 +4,21 @@ using TestItemRunner
 # The fixture inventory (fixtures.jl), checked against the independent oracle.
 # Each item asserts the hand-known facts now. `test_space(fixture)` is the
 # adapter from a fixture to a production `TestSpace` (fixture_model.jl), and
-# the "Phase 2" lines ask the production model the fixture's question. Each
-# `@test_skip` line is an engine or production test waiting for a later
-# phase; its comment says which. The skipped expressions sketch the future
-# call and are never evaluated; `throws(T, f)` stands for `@test_throws`.
+# the "Phase 2" lines ask the production model the fixture's question. The
+# "Phase 3" lines generate with both engines through the internal request,
+# `gen(engine, space; kwargs...)` below, until Phase 4 brings `all_pairs` and
+# `covering` over a `TestSpace`. Each `@test_skip` line is an engine or
+# production test waiting for a later phase; its comment says which. The
+# skipped expressions sketch the future call and are never evaluated;
+# `throws(T, f)` stands for `@test_throws`.
+
+@testsnippet FixtureGen begin
+    using UnitTestDesign: Request, generate, to_cases
+    "The named cases `engine` generates for `space` (Phase 4 spells this `covering`)."
+    gen(engine, space; kwargs...) = (r = Request(space; kwargs...); to_cases(r, generate(engine, r).matrix))
+    "Both engines, each with its default seed."
+    ENGINES = (IPOG(), GND())
+end
 
 @testitem "fixtures: inventory" setup=[Checker] begin
     @test allunique(f.name for f in FIXTURES)
@@ -31,7 +42,7 @@ using TestItemRunner
 end
 
 
-@testitem "fixtures: named examples" setup=[Checker] begin
+@testitem "fixtures: named examples" setup=[Checker, FixtureGen] begin
     s = astra_chain.space
     @test valid_rows(s) == [(A = 1, B = 1, C = 1), (A = 2, B = 2, C = 2)]
     @test classify_target(s, (A = 1, C = 2)).status == :implied
@@ -39,8 +50,10 @@ end
     @test check_design([], s).ordinary.counts.feasible == 6
     # Phase 2 — explain((A = 1, C = 2)) is infeasible, implied by rules 1 and 2
     @test explain(test_space(astra_chain), (A = 1, C = 2)).rules == [1, 2]
-    # pending: Phase 3 — IPOG and GND cover all 6 feasible pairs
-    @test_skip complete(check_design(all_pairs(test_space(astra_chain)), astra_chain.space))
+    # Phase 3 — IPOG and GND cover all 6 feasible pairs
+    for engine in ENGINES
+        @test complete(check_design(gen(engine, test_space(astra_chain)), astra_chain.space))
+    end
 
     s = fable_solver.space
     @test length(valid_rows(s)) == 5
@@ -55,8 +68,12 @@ end
     excluded = vcat(first.(r.ordinary.forbidden), r.ordinary.implied)
     @test [(c.status, c.rules) for c in UnitTestDesign.classify(test_space(fable_solver), excluded)] ==
           [(:forbidden, [1]), (:forbidden, [1]), (:forbidden, [2]), (:implied, [1, 2]), (:implied, [1, 2])]
-    # pending: Phase 3 — IPOG and GND cover all 11 feasible pairs; IPOG in 5 rows
-    @test_skip length(all_pairs(test_space(fable_solver))) == 5
+    # Phase 3 — IPOG and GND cover all 11 feasible pairs; IPOG in 5 rows
+    for engine in ENGINES
+        check = check_design(gen(engine, test_space(fable_solver)), fable_solver.space)
+        @test complete(check) && check.ordinary.counts.covered == 11
+    end
+    @test length(gen(IPOG(), test_space(fable_solver))) == 5
     # pending: Phase 5 — coverage and report agree with the checker
     @test_skip coverage(valid_rows(fable_solver.space), test_space(fable_solver)).covered == 11
 
@@ -67,12 +84,15 @@ end
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (13, 2, 1)
     # Phase 2 — explain((os = :windows, gpu = true)) is infeasible with rules [1, 2]
     @test explain(test_space(opus_gpu), (os = :windows, gpu = true)).rules == [1, 2]
-    # pending: Phase 3 — both engines cover all 13 feasible pairs (issue #51)
-    @test_skip complete(check_design(all_pairs(test_space(opus_gpu); engine = GND()), opus_gpu.space))
+    # Phase 3 — both engines cover all 13 feasible pairs (issue #51)
+    for engine in ENGINES
+        check = check_design(gen(engine, test_space(opus_gpu)), opus_gpu.space)
+        @test complete(check) && check.ordinary.counts.covered == 13
+    end
 end
 
 
-@testitem "fixtures: disconnected components" setup=[Checker] begin
+@testitem "fixtures: disconnected components" setup=[Checker, FixtureGen] begin
     s = disconnected_unsat.space
     @test isempty(valid_rows(s))
     @test classify_target(s, (free = 1,)).status == :implied
@@ -83,8 +103,16 @@ end
     @test complete(r)  # nothing is required, so the empty design is complete (§1.24)
     # Phase 2 — completable((free = 1,)) is proven infeasible by the {x, y} component
     @test explain(test_space(disconnected_unsat), (free = 1,)).outcome == :infeasible
-    # pending: Phase 3 — all_pairs returns no rows and reports every target excluded
-    @test_skip isempty(all_pairs(test_space(disconnected_unsat)))
+    # Phase 3 — generation returns no rows and reports every target excluded
+    for engine in ENGINES
+        request = Request(test_space(disconnected_unsat))
+        design = generate(engine, request)
+        @test isempty(to_cases(request, design.matrix))
+        @test design.required == design.covered == 0
+        @test length(design.excluded) == length(UnitTestDesign.targets(request)) == 16
+        @test count(e -> e.status == :forbidden, design.excluded) == 4
+        @test count(e -> e.status == :implied, design.excluded) == 12
+    end
 
     s = disconnected_witness.space
     rows = valid_rows(s)
@@ -96,8 +124,12 @@ end
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (14, 11, 32)
     # Phase 2 — the witness for (e = 1,) combines both components
     @test explain(test_space(disconnected_witness), (e = 1,)).witness == rows[1]
-    # pending: Phase 3 — IPOG and GND return only rows with a = b = 3 and c = d = :y
-    @test_skip complete(check_design(all_pairs(test_space(disconnected_witness)), disconnected_witness.space))
+    # Phase 3 — IPOG and GND return only rows with a = b = 3 and c = d = :y
+    for engine in ENGINES
+        cases = gen(engine, test_space(disconnected_witness))
+        @test complete(check_design(cases, disconnected_witness.space))
+        @test all(c -> c.a == c.b == 3 && c.c == c.d == :y, cases)
+    end
 
     s = whole_case_connects.space
     @test valid_rows(s) == [(a = 3, b = 3, c = :y, d = :y, e = 2)]
@@ -107,12 +139,14 @@ end
     @test classify_target(s, (a = 3, b = 3, c = :y, d = :y, e = 1)).rules == [3]
     # Phase 2 — explain((e = 1,)) is infeasible with rules [2, 3]
     @test explain(test_space(whole_case_connects), (e = 1,)).rules == [2, 3]
-    # pending: Phase 3 — generation returns the single valid row
-    @test_skip collect(all_pairs(test_space(whole_case_connects))) == valid_rows(whole_case_connects.space)
+    # Phase 3 — generation returns the single valid row
+    for engine in ENGINES
+        @test gen(engine, test_space(whole_case_connects)) == valid_rows(whole_case_connects.space)
+    end
 end
 
 
-@testitem "fixtures: limit exhaustion" setup=[Checker] begin
+@testitem "fixtures: limit exhaustion" setup=[Checker, FixtureGen] begin
     s = limit_exhaustion.space
     @test valid_rows(s) == [NamedTuple{Tuple(s.names)}(ntuple(_ -> 4, 8))]
     r = check_design([], s)
@@ -121,16 +155,18 @@ end
     # Phase 2 — explain with feasibility_limit = 1 is unknown; the default finds the witness
     @test explain(test_space(limit_exhaustion), (x1 = 4,); feasibility_limit = 1).outcome == :unknown
     @test explain(test_space(limit_exhaustion), (x1 = 4,)).witness == only(valid_rows(s))
-    # pending: Phase 3 — generation with limit 1 throws ResourceLimitError; the retry succeeds
-    @test_skip throws(ResourceLimitError, () -> all_pairs(test_space(limit_exhaustion); feasibility_limit = 1))
+    # Phase 3 — generation with limit 1 throws ResourceLimitError; the retry succeeds
+    for engine in ENGINES
+        @test_throws ResourceLimitError gen(engine, test_space(limit_exhaustion); feasibility_limit = 1)
+        @test gen(engine, test_space(limit_exhaustion)) == valid_rows(s)
+    end
     # pending: Phase 5 — coverage with limit 1 lists unknown targets and claims no percentage
     @test_skip !complete(coverage([], test_space(limit_exhaustion); feasibility_limit = 1))
 end
 
 
-@testitem "fixtures: greedy dead ends" setup=[Checker] begin
+@testitem "fixtures: greedy dead ends" setup=[Checker, FixtureGen] begin
     using Combinatorics: combinations
-    using Random
     "The `k`-way sub-combinations of a partial row."
     subrows(t, k) = [NamedTuple{Tuple(ks)}(Tuple(t[x] for x in ks)) for ks in combinations(collect(keys(t)), k)]
 
@@ -149,16 +185,12 @@ end
         @test classify_target(s, dead).status == :implied
         @test all(t -> classify_target(s, t).status == :required, subrows(dead, k))
 
-        generate = k == 2 ? all_pairs : all_triples
-        # The legacy defect (issue #51): the 0.4 IPOG throws on a greedy dead
-        # end. Phase 3 replaces this with a @test that its design is complete.
-        @test_throws BoundsError generate(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
-        # The 0.4 GND completes these problems, under a watchdog.
-        watched = budgeted(f.legacy.disallow, 20_000_000, f)
-        design = generate(f.legacy.domains...; disallow = watched, engine = GND(rng = Xoshiro(0)))
-        @test complete(check_design(design, s; strength = k))
-        # pending: Phase 3 — IPOG covers every feasible target without throwing
-        @test_skip complete(check_design(generate(test_space(f); engine = IPOG()), s; strength = k))
+        # Phase 3 — the 0.4 IPOG threw a BoundsError on each of these (issue
+        # #51), and the 0.4 GND completed them. Both engines now cover every
+        # feasible target.
+        for engine in ENGINES
+            @test complete(check_design(gen(engine, test_space(f); strength = k), s; strength = k))
+        end
     end
 end
 
@@ -205,7 +237,7 @@ end
 end
 
 
-@testitem "fixtures: overlapping stronger groups" setup=[Checker] begin
+@testitem "fixtures: overlapping stronger groups" setup=[Checker, FixtureGen] begin
     f = overlapping_groups
     r = check_design([], f.space; stronger = f.request.stronger)
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (35, 5, 0)
@@ -217,9 +249,17 @@ end
     @test twice.ordinary.feasible == r.ordinary.feasible
     @test f.legacy.wayness() == Dict(3 => [[1, 2, 3], [2, 3, 4]])
     @test f.legacy.wayness() !== f.legacy.wayness()
-    # pending: Phase 3 — ipog_multi_way and GND cover all 35 targets and leave wayness unmutated
-    @test_skip complete(check_design(all_pairs(f.legacy.domains...; disallow = f.legacy.disallow,
-                                               wayness = f.legacy.wayness()), f.space; stronger = f.request.stronger))
+    # Phase 3 — ipog_multi_way and GND cover all 35 targets and leave the
+    # caller's groups unmutated
+    for engine in ENGINES, stronger in (f.request.stronger, f.request.stronger_twice)
+        given = deepcopy(stronger)
+        cases = gen(engine, test_space(f); stronger = given)
+        @test complete(check_design(cases, f.space; stronger = f.request.stronger))
+        @test given == stronger
+    end
+    wayness = f.legacy.wayness()
+    @test length(all_pairs(f.legacy.domains...; wayness)) >= 8
+    @test wayness == f.legacy.wayness()
     # pending: Phase 4 — covering(space; stronger) covers the union; the caller's vector is unchanged
     @test_skip complete(check_design(covering(test_space(f); stronger = f.request.stronger), f.space;
                                      stronger = f.request.stronger))
@@ -286,7 +326,7 @@ end
 end
 
 
-@testitem "fixtures: bench12 constrained benchmark" setup=[Checker] begin
+@testitem "fixtures: bench12 constrained benchmark" setup=[Checker, FixtureGen] begin
     f = bench12
     s = f.space
     recorded = f.request.recorded
@@ -305,16 +345,17 @@ end
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (5702, 92, 26)
     @test all(t -> t.p1 == 2 && t.p2 == 2, r.ordinary.implied)
 
-    # Legacy baseline: the 0.4 IPOG throws on the implied pair (issue #51).
-    # Phase 3 replaces these with @test that each design is complete. The 0.4
-    # GND never returns here, so it is not run.
-    @test_throws BoundsError all_pairs(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
-    @test_throws BoundsError all_triples(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
     # Phase 2 — explain((p1 = 2, p2 = 2)) is infeasible with rules [1, 2]
     @test explain(test_space(bench12), (p1 = 2, p2 = 2)).rules == [1, 2]
-    # pending: Phase 3 — IPOG and GND cover all 586 feasible pairs and 5702 feasible triples
-    @test_skip complete(check_design(all_pairs(test_space(bench12)), bench12.space))
-    @test_skip complete(check_design(all_triples(test_space(bench12); engine = GND()), bench12.space; strength = 3))
+    # Phase 3 — IPOG and GND cover all 586 feasible pairs and 5702 feasible
+    # triples. The 0.4 IPOG threw a BoundsError on the implied pair at both
+    # strengths, and the 0.4 GND never returned (design/benchmark_procedure.md).
+    for (k, feasible) in ((2, 586), (3, 5702)), engine in ENGINES
+        cases = gen(engine, test_space(bench12); strength = k)
+        check = check_design(cases, bench12.space; strength = k)
+        @test complete(check) && check.ordinary.counts.covered == feasible
+        @test !any(c -> c.p1 == 2 && c.p2 == 2, cases)
+    end
 end
 
 

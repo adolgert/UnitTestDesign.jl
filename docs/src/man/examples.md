@@ -61,9 +61,11 @@ values_excursion([1, 2], [true, false], ["c", "b", "a"])
 
 The full-factorial test generates every possible test. If some combinations
 of parameters aren't interesting or allowed for a function, you can
-exclude them by using an extra argument.
-```@example
-using UnitTestDesign  # hide
+exclude them. In 0.4 you did that with an extra argument.
+
+0.4 syntax; the 1.0 manual replaces `disallow` with constraints on a `TestSpace`.
+
+```julia
 disallow = (a, b, c) -> b == 7 && c == false
 full_factorial([1, 2, 3], [7, 8], [true, false]; disallow = disallow)
 ```

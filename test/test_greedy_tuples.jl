@@ -93,6 +93,28 @@ end
 end
 
 
+@testitem "GND: overlapping stronger groups with a rule across them (§1.3, §1.8, §11.8)" setup=[Checker] begin
+    using UnitTestDesign: Request, generate, to_cases
+    # The regression IPOG's test of the same name guards: in 0.4 a value set
+    # for the group (a, b, c) could clash through the rule (a = 1, d = 1) with
+    # the group (b, c, d), and rows broke a rule. GND builds each row with every
+    # value visible to `dead`, so no row breaks either rule, whatever the draws.
+    space = TestSpace((a = 1:2, b = 1:2, c = 1:2, d = 1:2);
+                      constraints = [forbid((b = 2, c = 2)), forbid((a = 1, d = 1))])
+    oracle = CheckSpace((a = 1:2, b = 1:2, c = 1:2, d = 1:2),
+                        [((:b, :c), (b, c) -> b == 2 && c == 2), ((:a, :d), (a, d) -> a == 1 && d == 1)])
+    stronger = [(:a, :b, :c) => 3, (:b, :c, :d) => 3]
+    for seed in 0:9
+        request = Request(space; stronger)
+        design = generate(GND(; seed), request)
+        check = check_design(to_cases(request, design.matrix), oracle; stronger)
+        @test complete(check)
+        @test design.required == design.covered == check.ordinary.counts.feasible
+        @test length(design.excluded) == check.ordinary.counts.forbidden + check.ordinary.counts.implied
+    end
+end
+
+
 @testitem "GND: bench12 at strengths 2 and 3" setup=[Checker] begin
     using UnitTestDesign: Request, generate, to_cases
     # design/benchmark_procedure.md fixture 2. The 0.4 GND never returned on
