@@ -55,3 +55,16 @@ This class requests tests that are excursions from a base case.
 """
 struct Excursion
 end
+
+
+"""
+    generate(engine, request::Request) -> Design
+
+The one engine entry point (plan Phase 3 step 1): a design for `request` in
+index space, certified by `validate_design` before it returns (contract
+§1.21). `IPOG()` and `GND()` build covering designs (§1.3). Every target
+classification, must-include completion and placement decision is resolved or
+the call throws `ResourceLimitError` (§3.6); a design is never returned with a
+target unresolved or dropped.
+"""
+function generate end

@@ -1,39 +1,22 @@
 using Test
 using TestItemRunner
 
+# The 0.4 positional entry points, now routed through a TestSpace, a Request
+# and an engine (plan Phase 3 step 7). They return the 0.4 shape, a vector of
+# Vector{Any}, until Phase 4 changes the return type (contract §13.4). Rules
+# need a TestSpace; the tests that used `disallow` build one and call the
+# engine directly.
 
-@testitem "wrap_disallow" begin
+@testsnippet InterfaceSetup begin
+    using UnitTestDesign: Request, generate, to_cases, generate_excursion, generate_full_factorial,
+        engine_rng, _stronger_from_wayness
 
-    function filter_bc(a, b, c)
-        !b && c == "two"
-    end
-    @assert !filter_bc(1, false, "one")
-    @assert !filter_bc(1, true, "two")
-    @assert filter_bc(1, false, "two")  # So we disallow this one.
-    @assert !filter_bc(1, true, "two")
-    function parameter_filter(choices, filter, parameter_map)
-        filter((p[c] for (p, c) in zip(parameter_map, choices))...)
-    end
+    "Positional names p1, p2, ... and named rules, as a positional caller would write them."
+    positional_space(domains...; constraints = []) =
+        TestSpace((Symbol(:p, i) => d for (i, d) in enumerate(domains))...; constraints = constraints)
 
-    params = ([1,2,3], [true, false], ["one", "two"])
-    pf1 = UnitTestDesign.wrap_disallow(filter_bc, params)
-    # These should mirror the ones above.
-    @assert !pf1([1, 2, 1])
-    @assert !pf1([1, 1, 2])
-    @assert pf1([1, 2, 2])
-    @assert !pf1([1, 1, 2])
-
-    @inferred UnitTestDesign.wrap_disallow(filter_bc, params)
-end
-
-
-@testitem "seeds_to_integers" begin
-
-    params = (["a", "b", "c"], [1, 2], [4, 7])
-    seeds = [["a", 2, 4], ["b", 1, 7]]
-    sti_res = UnitTestDesign.seeds_to_integers(seeds, params)
-    @test sti_res == collect([1 2 1; 2 1 2]')
-
+    "The named cases of a design."
+    cases_of(request, design) = to_cases(request, design.matrix)
 end
 
 
@@ -43,102 +26,149 @@ end
 end
 
 
-@testitem "GND init" begin
+@testitem "GND init (§9.5, §9.6)" setup=[InterfaceSetup] begin
     using Random
     gnd1 = GND()
-    @test gnd1.M == 50
-    sample1 = randn(gnd1.rng)
-    gnd2 = GND(M = 100)
-    @test gnd2.M == 100
-    sample2 = randn(gnd2.rng)
-    @test sample1 != sample2
-    gnd3 = GND(rng = Xoshiro(23423523))
-    @test gnd3.M == 50
-    sample3 = randn(gnd3.rng)
-    @test sample3 != sample2
-    gnd4 = GND(rng = Xoshiro(23423523))
-    sample4 = randn(gnd4.rng)
-    @test sample3 == sample4
-    gnd5 = GND(rng = Xoshiro(23423523), M = 70)
-    @test gnd5.M == 70
-    @test randn(gnd5.rng) == sample3
+    @test gnd1.candidates == 50 && gnd1.seed == 0 && gnd1.rng === nothing
+    # Each call starts a fresh generator from the seed.
+    @test randn(engine_rng(gnd1)) == randn(engine_rng(gnd1)) == randn(Xoshiro(0))
+    gnd2 = GND(candidates = 100, seed = 7)
+    @test gnd2.candidates == 100 && gnd2.seed == 7
+    @test randn(engine_rng(gnd2)) != randn(engine_rng(gnd1))
+    caller = Xoshiro(23423523)
+    gnd3 = GND(rng = caller)
+    @test gnd3.candidates == 50 && gnd3.seed === nothing
+    sample3 = randn(engine_rng(gnd3))
+    @test sample3 == randn(engine_rng(gnd3))       # a copy, so repeated calls agree
+    @test randn(caller) == sample3                 # and the caller's generator is unadvanced
+    @test_throws ArgumentError GND(candidates = 0)
+    # The 0.4 keyword M is deprecated and means candidates.
+    gnd5 = @test_deprecated GND(rng = Xoshiro(23423523), M = 70)
+    @test gnd5.candidates == 70
 end
 
 
-@testitem "IPOG generate tuples" begin
-    trials1 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-        nothing, nothing, nothing, Int)
+@testitem "removed: disallow, Counter, generate_tuples (§12.10, §13.3)" begin
+    @test_throws MethodError all_pairs([1, 2], [3, 4], [5, 6]; disallow = (a, b, c) -> false)
+    @test_throws MethodError all_tuples([1, 2], [3, 4]; n_way = 1, disallow = (a, b) -> false)
+    @test_throws MethodError full_factorial([1, 2], [3, 4]; disallow = (a, b) -> false)
+    @test_throws MethodError pairs_excursion([1, 2], [3, 4], [5, 6]; disallow = (a, b, c) -> false)
+    @test_throws MethodError all_pairs([1, 2], [3, 4], [5, 6]; Counter = Int8)
+    @test !isdefined(UnitTestDesign, :generate_tuples)
+    @test !isdefined(UnitTestDesign, :wrap_disallow)
+    @test !isdefined(UnitTestDesign, :seeds_to_integers)
+    @test !(:generate_tuples in names(UnitTestDesign))
+end
+
+
+@testitem "positional calls return the 0.4 shape and keep values (§2.9)" begin
+    rows = all_pairs([1, 2], ["a", "b", "c"], [4, 7])
+    @test rows isa Vector{Vector{Any}}
+    @test length(rows) == 6
+    @test all(r -> r[1] isa Int && r[2] isa String && r[3] isa Int, rows)
+    # nothing and missing are values, and 1 and 1.0 are two values.
+    rows = all_pairs(Any[1, 1.0], [nothing, :a], [missing, 2])
+    @test any(r -> r[1] === 1.0, rows) && any(r -> r[1] === 1, rows)
+    @test any(r -> r[2] === nothing, rows) && any(r -> r[3] === missing, rows)
+    # Domains may be vectors, ranges or tuples.
+    @test length(all_pairs((1, 2), 1:2, [:a, :b])) == 4
+    @test_throws ArgumentError all_pairs()
+    @test_throws ArgumentError all_pairs([1, 1, 2], [3, 4])   # a value listed twice (§2.5)
+    @test_throws ArgumentError all_pairs([1, 2], [3, 4]; engine = :fast)
+end
+
+
+@testitem "IPOG generate tuples" setup=[InterfaceSetup] begin
+    trials1 = all_tuples([1, 2], [true, false], ["a", "b", "c"])
     @test length(trials1) == 6
     @test trials1[1][3] in ["a", "b", "c"]
 
-    disallow = (x, y, z) -> y == false && z in ["b", "c"]
-    trials2 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-        disallow, nothing, nothing, Int)
+    # Rules live in a TestSpace.
+    space2 = positional_space([1, 2], [true, false], ["a", "b", "c"];
+                              constraints = [forbid((y, z) -> y == false && z in ("b", "c"), :p2, :p3)])
+    request2 = Request(space2)
+    trials2 = cases_of(request2, generate(IPOG(), request2))
     for trial2 in trials2
-        @test !(!trial2[2] && trial2[3] in ["b", "c"])
+        @test !(!trial2.p2 && trial2.p3 in ["b", "c"])
     end
 
-    disallow = (x...) -> x[1] == 2 && x[3] in ["a", "b"]
-    trials3 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-        disallow, nothing, nothing, Int)
+    space3 = positional_space([1, 2], [true, false], ["a", "b", "c"];
+                              constraints = [forbid(case -> case.p1 == 2 && case.p3 in ("a", "b"))])
+    request3 = Request(space3)
+    trials3 = cases_of(request3, generate(IPOG(), request3))
     for trial3 in trials3
-        @test !(trial3[1] == 2 && trial3[3] in ["a", "b"])
+        @test !(trial3.p1 == 2 && trial3.p3 in ["a", "b"])
     end
 
     seeds = [[1, 2, 3, 4, 1, 2, 3, 4], fill(4, 8)]
-    trials4 = generate_tuples(IPOG(), 2, fill(1:4, 8), nothing, seeds, nothing, Int)
+    trials4 = all_tuples(fill(1:4, 8)...; seeds = seeds)
     @test trials4[1] == seeds[1]
     @test trials4[2] == seeds[2]
     cover4 = UnitTestDesign.test_coverage(hcat(trials4...), fill(4, 8), 2)
     @test cover4.finish == 0
+    @test_throws ArgumentError all_tuples(fill(1:4, 8)...; seeds = [[1, 2, 3]])
+    @test_throws ArgumentError all_tuples(fill(1:4, 8)...; seeds = [fill(5, 8)])
 
     params5 = fill(1:2, 20)
     wayness5 = Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
-    trials5 = generate_tuples(IPOG(), 2, params5, nothing, nothing, wayness5, Int)
+    trials5 = all_tuples(params5...; wayness = wayness5)
     trails5_arr = hcat(trials5...)
     arity5 = [length(x) for x in params5]
     @test UnitTestDesign.test_coverage(trails5_arr, arity5, 2).finish == 0
     @test UnitTestDesign.test_coverage(trails5_arr[1:5, :], arity5[1:5], 3).finish == 0
     @test UnitTestDesign.test_coverage(trails5_arr[4:6, :], arity5[4:6], 3).finish == 0
-    @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0    
-
-    trials6 = generate_tuples(IPOG(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-        nothing, nothing, nothing, Int8)
-    @test length(trials6) == 6
+    @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0
+    # The caller's wayness is not mutated (§11.9).
+    @test wayness5 == Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
 end
 
 
-@testitem "GND generate tuples" begin
-    gndt1 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-    nothing, nothing, nothing, Int)
+@testitem "wayness is translated to stronger (§11.10)" setup=[InterfaceSetup] begin
+    @test _stronger_from_wayness(nothing) == []
+    @test _stronger_from_wayness(Dict(3 => [[3, 4, 5, 6]])) == [[3, 4, 5, 6] => 3]
+    @test _stronger_from_wayness(Dict(4 => [11:18], 3 => [(1, 2, 3), [4, 5, 6]])) ==
+          [[1, 2, 3] => 3, [4, 5, 6] => 3, collect(11:18) => 4]
+    # A group at the base strength adds nothing (§11.7).
+    @test length(all_pairs(fill(1:2, 4)...; wayness = Dict(2 => [[1, 2, 3]]))) ==
+          length(all_pairs(fill(1:2, 4)...))
+    @test_throws ArgumentError all_pairs(fill(1:2, 4)...; wayness = [[1, 2, 3]])
+    @test_throws ArgumentError all_pairs(fill(1:2, 4)...; wayness = Dict(3 => [1, 2, 3]))
+    @test_throws ArgumentError all_pairs(fill(1:2, 4)...; wayness = Dict(1 => [[1, 2, 3]]))  # below the base (§11.6)
+    @test_throws ArgumentError all_pairs(fill(1:2, 4)...; wayness = Dict(3 => [[1, 2, 9]]))  # no parameter 9 (§11.4)
+end
+
+
+@testitem "GND generate tuples" setup=[InterfaceSetup] begin
+    gndt1 = all_tuples([1, 2], [true, false], ["a", "b", "c"]; engine = GND())
     @test length(gndt1) > 3
     @test gndt1[1][2] in [true, false]
     @test gndt1[1][3] in ["a", "b", "c"]
 
-    disallow = (x, y, z) -> y == false && z in ["b", "c"]
-    trials2 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-        disallow, nothing, nothing, Int)
+    space2 = positional_space([1, 2], [true, false], ["a", "b", "c"];
+                              constraints = [forbid((y, z) -> y == false && z in ("b", "c"), :p2, :p3)])
+    request2 = Request(space2)
+    trials2 = cases_of(request2, generate(GND(), request2))
     for trial2 in trials2
-        @test !(!trial2[2] && trial2[3] in ["b", "c"])
+        @test !(!trial2.p2 && trial2.p3 in ["b", "c"])
     end
 
-    disallow = (x...) -> x[1] == 2 && x[3] in ["a", "b"]
-    trials3 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-        disallow, nothing, nothing, Int)
+    space3 = positional_space([1, 2], [true, false], ["a", "b", "c"];
+                              constraints = [forbid(case -> case.p1 == 2 && case.p3 in ("a", "b"))])
+    request3 = Request(space3)
+    trials3 = cases_of(request3, generate(GND(), request3))
     for trial3 in trials3
-        @test !(trial3[1] == 2 && trial3[3] in ["a", "b"])
+        @test !(trial3.p1 == 2 && trial3.p3 in ["a", "b"])
     end
 
     seeds = [[1, 2, 3, 4, 1, 2, 3, 4], fill(4, 8)]
-    trials4 = generate_tuples(GND(), 2, fill(1:4, 8), nothing, seeds, nothing, Int)
-    @test seeds[1] in trials4
-    @test seeds[2] in trials4
+    trials4 = all_tuples(fill(1:4, 8)...; seeds = seeds, engine = GND())
+    @test trials4[1:2] == seeds
     cover4 = UnitTestDesign.test_coverage(hcat(trials4...), fill(4, 8), 2)
     @test cover4.finish == 0
 
     params5 = fill(1:2, 20)
     wayness5 = Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
-    trials5 = generate_tuples(GND(), 2, params5, nothing, nothing, wayness5, Int)
+    trials5 = all_tuples(params5...; wayness = wayness5, engine = GND(candidates = 20))
     trails5_arr = hcat(trials5...)
     arity5 = [length(x) for x in params5]
     @test UnitTestDesign.test_coverage(trails5_arr, arity5, 2).finish == 0
@@ -146,9 +176,8 @@ end
     @test UnitTestDesign.test_coverage(trails5_arr[4:6, :], arity5[4:6], 3).finish == 0
     @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0
 
-    trials6 = generate_tuples(GND(), 2, ([1, 2], [true, false], ["a", "b", "c"]),
-        nothing, nothing, nothing, Int8)
-    @test length(trials6) == 6
+    # A fixed default seed: two calls agree (§9.5).
+    @test all_pairs(fill(1:3, 6)...; engine = GND()) == all_pairs(fill(1:3, 6)...; engine = GND())
 end
 
 
@@ -156,7 +185,6 @@ end
     av1 = all_values([1, 2], ["a", "b", "c"], [4, 7])
     @test length(av1) == 3
     @test av1[1][3] in [4, 7]
-
 end
 
 
@@ -164,7 +192,6 @@ end
     pairs1 = all_pairs([1, 2], ["a", "b", "c"], [4, 7])
     @test length(pairs1) > 3
     @test pairs1[1][3] in [4, 7]
-
 end
 
 
@@ -184,16 +211,19 @@ end
 end
 
 
-@testitem "pairs excursion" begin
+@testitem "pairs excursion" setup=[InterfaceSetup] begin
     pe1_arity = [1:4, 1:4, 1:4, 1:4, 1:3, 1:3, 1:3, 1:4]
     pe1 = pairs_excursion(pe1_arity...)
     @test length(pe1) == 214
     @test length(pe1[1]) == length(pe1_arity)
 
-    disallow = (x, y, z) -> y == false && z in ["b", "c"]
-    trials2 = pairs_excursion([1, 2], [true, false], ["a", "b", "c"]; disallow = disallow)
+    space2 = positional_space([1, 2], [true, false], ["a", "b", "c"];
+                              constraints = [forbid((y, z) -> y == false && z in ("b", "c"), :p2, :p3)])
+    request2 = Request(space2; strength = 2)
+    trials2 = cases_of(request2, generate_excursion(request2; distance = 2))
+    @test !isempty(trials2)
     for trial2 in trials2
-        @test !(!trial2[2] && trial2[3] in ["b", "c"])
+        @test !(!trial2.p2 && trial2.p3 in ["b", "c"])
     end
 
     seeds = [[1, 2, 3, 4, 1, 2, 3, 4], fill(4, 8)]
@@ -204,7 +234,7 @@ end
     double_walk = UnitTestDesign.total_combinations(fill(3, 8), 2)
     single_walk = UnitTestDesign.total_combinations(fill(3, 8), 1)
     seed_cnt = length(seeds)
-    @test length(trials4) == origin + double_walk + single_walk + seed_cnt 
+    @test length(trials4) == origin + double_walk + single_walk + seed_cnt
 
     params5 = fill(1:2, 20)
     wayness5 = Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
@@ -216,23 +246,28 @@ end
     @test UnitTestDesign.test_coverage(trails5_arr[4:6, :], arity5[4:6], 3).finish == 0
     @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0
 
-    trials6 = pairs_excursion([1, 2], [true, false], ["a", "b", "c"]; Counter = Int8)
-    @test length(trials6) == 10
+    @test length(pairs_excursion([1, 2], [true, false], ["a", "b", "c"])) == 10
 end
 
 
 @testitem "triples excursion" begin
     te1 = triples_excursion([1:4, 1:4, 1:4, 1:4, 1:3, 1:3, 1:3, 1:4]...)
+    @test length(te1) > 214
 end
 
 
-@testitem "full factorial" begin
+@testitem "full factorial" setup=[InterfaceSetup] begin
     ff1 = full_factorial([1:2, 1:2, 1:3, 1:2]...)
     @test length(ff1) == 24
+    @test length(unique(ff1)) == 24
+    @test length(full_factorial([1])) == 1
 
-    disallow = (a, b, c) -> b == 7 && c == false
-    ff2 = full_factorial([1, 2, 3], [7, 8], [true, false]; disallow = disallow)
+    space2 = positional_space([1, 2, 3], [7, 8], [true, false];
+                              constraints = [forbid((b, c) -> b == 7 && c == false, :p2, :p3)])
+    request2 = Request(space2; strength = 1)
+    ff2 = cases_of(request2, generate_full_factorial(request2))
+    @test length(ff2) == 9
     for ffs in ff2
-        @test !(ffs[2] == 7 && !ffs[3])
+        @test !(ffs.p2 == 7 && !ffs.p3)
     end
 end

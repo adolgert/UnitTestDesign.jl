@@ -1,3 +1,10 @@
+# In-parameter-order generation, IPOG (Lei et al. 2008).
+#
+# The first half of this file is the classic, unconstrained algorithm, `ipog`.
+# It sorts parameters by arity and works on "taller" matrices whose last row
+# is the parameter being added. The second half is the constrained,
+# mixed-strength form that `generate(::IPOG, request)` uses otherwise.
+
 """
     choose_last_parameter!(taller, arity, n_way)
 
@@ -18,28 +25,6 @@ function choose_last_parameter!(taller, allc, matcher = case_partial_cover)
     end
 end
 
-
-function choose_last_parameter_filter!(taller, allc, disallow)
-    param_idx  = size(taller, 1)
-    putative = similar(taller[:, 1])
-    for set_col_idx in axes(taller, 2)
-        if any(taller[:, set_col_idx] .== 0)
-            match_hist = matches_from_missing(
-                allc, taller[:, set_col_idx], param_idx, case_partial_cover)
-            for max_idx in (midx for midx in sortperm(match_hist, rev = true)
-                    if match_hist[midx] > 0)
-                # The argmax tie-breaks in a consistent manner.
-                putative .= taller[:, set_col_idx]
-                putative[param_idx] = max_idx
-                if !disallow(putative)
-                    taller[param_idx, set_col_idx] = max_idx
-                    add_coverage!(allc, taller[:, set_col_idx])
-                    break
-                end
-            end  # else don't set this entry by leaving it zero.
-        end
-    end
-end
 
 
 """
@@ -133,48 +118,6 @@ function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_
 end
 
 
-function putative_allowed(buffer, base, replace, disallow)
-    buffer .= base
-    buffer[replace .!= 0] .= replace[replace .!= 0]
-    !disallow(buffer)
-end
-
-
-function insert_tuple_into_tests_filter(test_set, allc, disallow)
-    add_tests = Array{eltype(allc), 1}[]
-    putative = similar(test_set[:, 1])
-    for find_cover_idx in allc.remain:-1:1
-        tuple = allc.allc[:, find_cover_idx]
-        unmatched = true
-        for test_idx in axes(test_set, 2)
-            test_case = test_set[:, test_idx]
-            matches = case_compatible_with_tuple(test_case, tuple)
-            if matches && putative_allowed(putative, test_case, tuple, disallow)
-                test_set[:, test_idx] = put_tuple_in_case(tuple, test_case)
-                unmatched = false
-                break
-            end
-        end
-        if unmatched
-            for tc_idx in eachindex(add_tests)
-                test_case = add_tests[tc_idx]
-                if case_compatible_with_tuple(test_case, tuple) &&
-                        putative_allowed(putative, test_case, tuple, disallow)
-                    add_tests[tc_idx] = put_tuple_in_case(tuple, test_case)
-                    unmatched = false
-                    break
-                end
-            end
-        end
-        if unmatched
-            push!(add_tests, tuple)
-        end
-    end
-    allc.remain = 0
-    hcat(test_set, add_tests...)
-end
-
-
 """
 As a finishing step on a set of test cases, this fills in missing values
 which aren't needed to cover the tuples but can increase coverage
@@ -198,37 +141,6 @@ function fill_remaining_missing_values!(test_set, arity)
                 fill_val = argmin(hist[fill_param, 1:arity[fill_param]])
                 test_set[fill_param, fill_col] = fill_val
                 hist[fill_param, fill_val] += 1
-            end
-        end
-    end
-end
-
-
-function fill_remaining_missing_values_filter!(test_set, arity, disallow)
-    param_cnt = size(test_set, 1)
-    # We could have zero values at the end, so fill them in with the
-    # least-used values.
-    hist = zeros(Int, param_cnt, maximum(arity))
-    for hist_entry in axes(test_set, 2)
-        for hist_param in axes(test_set, 1)
-            if test_set[hist_param, hist_entry] > 0
-                hist[hist_param, test_set[hist_param, hist_entry]] += 1
-            end
-        end
-    end
-    putative = similar(test_set[:, 1])
-    for fill_col in axes(test_set, 2)
-        for fill_param in axes(test_set, 1)
-            if test_set[fill_param, fill_col] == 0
-                putative .= test_set[:, fill_col]
-                for fill_val in sortperm(hist[fill_param, 1:arity[fill_param]])
-                    putative[fill_param] = fill_val
-                    if !disallow(putative)
-                        test_set[fill_param, fill_col] = fill_val
-                        hist[fill_param, fill_val] += 1
-                        break
-                    end
-                end
             end
         end
     end
@@ -288,221 +200,288 @@ function ipog(arity, n_way)
 end
 
 
-function keep_allowed(test_set, disallow)
-    allow_cnt = 0
-    allowed = zeros(Int, size(test_set, 2))
-    for idx in axes(test_set, 2)
-        if !disallow(test_set[:, idx])
-            allow_cnt += 1
-            allowed[allow_cnt] = idx
-        end  # else not allowed so not put into the list.
-    end
-    test_set[:, allowed[1:allow_cnt]]
-end
-
-
-function reorder_disallow(disallow, original_order)
-    let oo = original_order, dis = disallow
-        choices -> begin
-            v = zeros(eltype(oo), size(oo)...)
-            v[1:length(choices)] .= choices
-            dis(v[oo])
-        end
-    end
-end
-
-
-function ipog_multi(arity, n_way, disallow, seed)
-    nonincreasing = sortperm(arity, rev = true)
-    original_arity = arity
-    arity = arity[nonincreasing]
-    original_order = sortperm(nonincreasing)
-    forbid = reorder_disallow(disallow, original_order)
-
-    param_cnt = length(arity)
-    if seed !== nothing
-        seed = seed[nonincreasing, :]
-        seed_tests = seed[1:n_way, :]
-    else
-        seed = zeros(Int, n_way, 0)
-        seed_tests = zeros(Int, n_way, 0)
-    end
-    # Setup by taking first n_way parameters.
-    # This is a 2D array.
-    combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), forbid)
-    test_set = add_tests_to_seeds(seed[1:n_way, :], combo_tests)
-
-    for param_idx in (n_way + 1):param_cnt
-        taller = zeros(eltype(arity), param_idx, size(test_set, 2))
-        taller[1:(param_idx - 1), :] .= test_set
-        # Seed test cases by adding them once params are covered and not double-covering.
-        # Make mixed strength here, once all params at a strength are covered.
-        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
-        remove_combinations!(allc, forbid)
-
-        if size(seed, 2) > 0
-            taller[param_idx, 1:size(seed, 2)] = seed[param_idx, :]
-            for seed_cover_idx in 1:size(seed, 2)
-                add_coverage!(allc, taller[:, seed_cover_idx])
-            end
-        end
-        choose_last_parameter_filter!(taller, allc, forbid)
-
-        test_set = insert_tuple_into_tests_filter(taller, allc, forbid)
-    end
-
-    fill_remaining_missing_values_filter!(test_set, arity, forbid)
-
-    # reorder test columns with `original_order`.
-    test_set[original_order, :]
-end
+## Constrained, mixed-strength IPOG
+#
+# `generate(::IPOG, request)` uses `ipog` above only for an unconstrained
+# request with one strength and no must-include rows. Everything else goes
+# through `ipog_multi_way`, which differs from `ipog` in three ways:
+#
+# - Rows are full width, in the space's parameter order, with 0 for unset.
+#   Parameters are added in `ipog_order`, but no row is ever permuted, so the
+#   `dead` predicate always sees every value a row holds. (The 0.4 code
+#   rotated each group's parameters to the front and hid the others from its
+#   predicate, which let overlapping groups commit a value that clashed with
+#   one set by an earlier group.)
+# - The targets are the request's required list (contract §1.2), bucketed by
+#   the parameter of each target that comes last in the order. Adding
+#   parameter `p` covers the bucket of `p`, so targets of different strengths
+#   (`stronger`, §1.8) are covered in one pass, and no infeasible target is
+#   ever waited on.
+# - A value is committed only when the row stays completable: `dead(row)` is
+#   false (plan Phase 3 step 2). Must-include rows are completable when the
+#   request accepts them (§10.4), and every required target is completable
+#   (§1.2), so every row starts completable, and each of the three sites below
+#   keeps it so. By induction every row is completable after every step, and
+#   the final fill ends each at a complete completable row, which is a valid
+#   row (§1.3).
 
 
 """
-The seeds may not be unique, so we can't combine tests and seeds
-with the unique function. The problem is that seeds may not be
-unique for the few parameters in the combination test.
+    choose_last_parameter_filter!(test_set, allc, param_idx, dead)
+
+Horizontal growth: give parameter `param_idx` a value in each row that has
+none, choosing the value that covers the most targets of `allc`, and skipping
+values that would make the row dead. A row that no target favors keeps `0`.
 """
-function add_tests_to_seeds(seeds, tests)
-    append_cnt = 0
-    to_append = zeros(Int, size(tests, 2))
-    for tidx in axes(tests, 2)
-        found = false
-        test = tests[:, tidx]
-        for sidx in axes(seeds, 2)
-            if case_compatible_with_tuple(test, seeds[:, sidx])
-                for pidx in eachindex(test)
-                    if test[pidx] != 0
-                        seeds[pidx, sidx] = test[pidx]
-                    end
-                end
-                found = true
+function choose_last_parameter_filter!(test_set, allc, param_idx, dead)
+    putative = zeros(eltype(test_set), size(test_set, 1))
+    for col in axes(test_set, 2)
+        test_set[param_idx, col] == 0 || continue  # set by a must-include row
+        putative .= view(test_set, :, col)
+        match_hist = matches_from_missing(allc, putative, param_idx, case_partial_cover)
+        # sortperm is stable, so ties go to the lower value, as argmax does.
+        for value in sortperm(match_hist; rev = true)
+            match_hist[value] > 0 || break
+            putative[param_idx] = value
+            # Invariant: the row is completable before this assignment, and
+            # it is committed only if the row stays completable.
+            if !dead(putative)
+                test_set[param_idx, col] = value
+                add_coverage!(allc, putative)
                 break
             end
         end
-        if !found
-            append_cnt += 1
-            to_append[append_cnt] = tidx
-        end
     end
-    if append_cnt > 0
-        extracted = tests[:, to_append[1:append_cnt]]
-        hcat(seeds, extracted)
-    else
-        seeds
-    end
+    return test_set
 end
 
 
-function ipog_inner(arity, n_way, forbid, seed)
-    param_cnt = length(arity)
-    # Setup by taking first n_way parameters.
-    # This is a 2D array.
-    combo_tests = keep_allowed(all_combinations(arity[1:n_way], n_way), forbid)
-    test_set = add_tests_to_seeds(seed[1:n_way, :], combo_tests)
+"""
+    merge_if_alive!(buffer, case, tuple, dead) -> Bool
 
-    for param_idx in (n_way + 1):param_cnt
-        taller = zeros(eltype(arity), param_idx, size(test_set, 2))
-        taller[1:(param_idx - 1), :] .= test_set
-        # Seed test cases by adding them once params are covered and not double-covering.
-        # Make mixed strength here, once all params at a strength are covered.
-        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
-        remove_combinations!(allc, forbid)
+Write `case` with the values of `tuple` filled in to `buffer` and return
+whether they agree and the merged row is not dead.
+"""
+function merge_if_alive!(buffer, case, tuple, dead)
+    case_compatible_with_tuple(case, tuple) || return false
+    buffer .= case
+    for i in eachindex(tuple)
+        tuple[i] != 0 && (buffer[i] = tuple[i])
+    end
+    return !dead(buffer)
+end
 
-        if size(seed, 2) > 0
-            taller[param_idx, 1:size(seed, 2)] = seed[param_idx, :]
-            for seed_cover_idx in 1:size(seed, 2)
-                add_coverage!(allc, taller[:, seed_cover_idx])
+
+"""
+    insert_tuple_into_tests_filter(test_set, allc, dead)
+
+Vertical growth: place each uncovered target of `allc` in the first row, old
+or new, that agrees with it and stays completable with it; otherwise start a
+new row with the target alone. Returns the rows, old rows first and unmoved.
+"""
+function insert_tuple_into_tests_filter(test_set, allc, dead)
+    add_tests = Vector{eltype(test_set)}[]
+    putative = zeros(eltype(test_set), size(test_set, 1))
+    for find_cover_idx in allc.remain:-1:1
+        tuple = allc.allc[:, find_cover_idx]
+        placed = false
+        for test_idx in axes(test_set, 2)
+            # Invariant: a row changes only if the merged row is completable.
+            if merge_if_alive!(putative, view(test_set, :, test_idx), tuple, dead)
+                test_set[:, test_idx] .= putative
+                placed = true
+                break
             end
         end
-        choose_last_parameter_filter!(taller, allc, forbid)
-
-        test_set = insert_tuple_into_tests_filter(taller, allc, forbid)
+        if !placed
+            for added in add_tests
+                if merge_if_alive!(putative, added, tuple, dead)
+                    added .= putative
+                    placed = true
+                    break
+                end
+            end
+        end
+        # A new row holds one required target, which is completable (§1.2),
+        # so the new row starts completable.
+        placed || push!(add_tests, copy(tuple))
     end
-    test_set
+    allc.remain = 0
+    return isempty(add_tests) ? test_set : hcat(test_set, stack(add_tests))
 end
 
 
-struct WayWork
-    indices
-    arity
-    n_way
-    combo_cnt
-end
+"""
+    fill_remaining_missing_values_filter!(test_set, arity, dead)
 
-
-function ipog_multi_way(arity, n_way, levels, disallow, seed)
-    param_cnt = length(arity)
-    levels[n_way] = [collect(1:param_cnt)]
-    waynesses = sort(collect(keys(levels)), rev = true)
-    work = WayWork[]
-    for wayness in waynesses
-        for indices_idx = 1:length(levels[wayness])
-            indices = levels[wayness][indices_idx]
-            an_arity = arity[indices]
-            # We sort arity so that the in-parameter-order tackles harder parms first.
-            arity_order = sortperm(an_arity, rev = true)
-            indices_sorted = indices[arity_order]
-            arity_sorted = an_arity[arity_order]
-            combo_cnt = total_combinations(arity_sorted, wayness)
-            push!(work, WayWork(indices_sorted, arity_sorted, wayness, combo_cnt))
+Give every unset entry a value, the least-used value of that parameter that
+keeps the row completable, so that rows end complete and valid.
+"""
+function fill_remaining_missing_values_filter!(test_set, arity, dead)
+    param_cnt = size(test_set, 1)
+    # We could have zero values at the end, so fill them in with the
+    # least-used values.
+    hist = zeros(Int, param_cnt, maximum(arity))
+    for hist_entry in axes(test_set, 2)
+        for hist_param in axes(test_set, 1)
+            if test_set[hist_param, hist_entry] > 0
+                hist[hist_param, test_set[hist_param, hist_entry]] += 1
+            end
         end
     end
-    # I guess this will work better if we put the stiffer wayness first.
-    sort!(work; by = (x -> (x.n_way, x.combo_cnt)), rev = true)
-
-    if seed === nothing
-        test_cases = zeros(Int, param_cnt, 0)
-    else
-        test_cases = seed
+    putative = zeros(eltype(test_set), param_cnt)
+    for fill_col in axes(test_set, 2)
+        for fill_param in axes(test_set, 1)
+            test_set[fill_param, fill_col] == 0 || continue
+            putative .= view(test_set, :, fill_col)
+            chosen = 0
+            for fill_val in sortperm(hist[fill_param, 1:arity[fill_param]])
+                putative[fill_param] = fill_val
+                # Invariant: the row is completable, so some value keeps it
+                # completable (a witness's value), and only such a value is set.
+                if !dead(putative)
+                    chosen = fill_val
+                    break
+                end
+            end
+            chosen == 0 && error("internal error: no value of parameter $fill_param keeps case " *
+                                 "$fill_col completable, though the case was completable")
+            test_set[fill_param, fill_col] = chosen
+            hist[fill_param, chosen] += 1
+        end
     end
-    for round in work
-        round_seed = test_cases[round.indices, :]
-        whole_order = vcat(round.indices, [ind for ind in 1:param_cnt if ind ∉ round.indices])
-        forbid = reorder_disallow(disallow, sortperm(whole_order))
-        rotated_cases = test_cases[round.indices, :]
-        tests_rotated = ipog_inner(round.arity, round.n_way, forbid, rotated_cases)
-        expand_cases = zeros(Int, param_cnt, size(tests_rotated, 2))
-        expand_cases[:, 1:size(test_cases, 2)] .= test_cases
-        # reverse ordering?
-        expand_cases[round.indices, :] .= tests_rotated
-        test_cases = expand_cases
-    end
-
-    fill_remaining_missing_values_filter!(test_cases, arity, disallow)
-    test_cases
+    return test_set
 end
 
 
-function ipog_bytuple_instrumented(arity, n_way, strategy)
-    nonincreasing = sortperm(arity, rev = true)
-    original_arity = arity
-    arity = arity[nonincreasing]
-    original_order = sortperm(nonincreasing)
+"""
+    ipog_order(arity, groups) -> Vector{Int}
 
-    param_cnt = length(arity)
-    widen = zeros(Int, param_cnt)
-    fillz = zeros(Int, param_cnt)
-    cover = zeros(Int, param_cnt)
-    # Setup by taking first n_way parameters.
-    # This is a 2D array.
-    test_set = all_combinations(arity[1:n_way], n_way)
-
-    for param_idx in (n_way + 1):param_cnt
-        taller = zeros(eltype(arity), param_idx, size(test_set, 2))
-        taller[1:(param_idx - 1), :] .= test_set
-
-        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
-
-        choose_last_parameter!(taller, allc, strategy[:lastparam])
-
-        widen[param_idx] = size(allc.allc, 2) - allc.remain
-
-        test_set = insert_tuple_into_tests(taller, allc, strategy[:expand])
+The order in which IPOG adds parameters: members of stronger groups first
+(highest strength first), then larger domains first, then parameter index.
+With one group this is the classic IPOG order, `sortperm(arity, rev = true)`.
+"""
+function ipog_order(arity::AbstractVector{<:Integer}, groups)
+    n = length(arity)
+    top = zeros(Int, n)
+    for (members, s) in groups, i in members
+        top[i] = max(top[i], s)
     end
+    return sortperm(collect(1:n); by = i -> (-top[i], -arity[i], i))
+end
 
-    # remove the part to fill missing values at the end.
 
-    # reorder test columns with `original_order`.
-    (test_set[original_order, :], widen, fillz, cover)
+"""
+    ipog_multi_way(arity, required, dead, seeds; order) -> Matrix{Int}
+
+In-parameter-order generation for any set of targets, in index space.
+
+- `arity`: values per parameter; value positions are `1:arity[i]`.
+- `required`: the targets to cover, each a full-width partial row with `0`
+  for unset parameters. Each must be feasible; the engine never checks.
+- `dead(row)`: `true` when the partial row has no valid completion. It may
+  throw (a `ResourceLimitError`); the engine does not catch it.
+- `seeds`: must-include rows, parameters × rows, `0` for unset. Each must be
+  completable. They come first, in order, their values unchanged; their unset
+  entries are filled like any other (§10.5, §7.10).
+- `order`: the order in which parameters are added (`ipog_order`).
+
+Returns a parameters × cases matrix of complete rows, none dead, that covers
+every target in `required`. Deterministic: no randomness, no hashing order
+(contract §9.3, §9.4).
+"""
+function ipog_multi_way(arity::AbstractVector{<:Integer}, required, dead,
+                        seeds::AbstractMatrix{<:Integer} = zeros(Int, length(arity), 0);
+                        order = ipog_order(arity, [collect(1:length(arity)) => 1]))
+    n = length(arity)
+    arity = collect(Int, arity)
+    size(seeds, 1) == n || throw(ArgumentError("seeds have $(size(seeds, 1)) rows for $n parameters"))
+    rank = invperm(order)
+    buckets = [Vector{Int}[] for _ in 1:n]
+    for t in required
+        last = 0
+        for i in 1:n
+            t[i] != 0 && (last == 0 || rank[i] > rank[last]) && (last = i)
+        end
+        last == 0 && throw(ArgumentError("a target assigns no parameter"))
+        push!(buckets[last], collect(Int, t))
+    end
+    test_set = Matrix{Int}(seeds)
+    for p in order
+        isempty(buckets[p]) && continue
+        allc = MatrixCoverage(stack(buckets[p]), length(buckets[p]), arity)
+        # Must-include rows that already hold `p` cover what they cover.
+        for col in axes(test_set, 2)
+            test_set[p, col] != 0 && add_coverage!(allc, test_set[:, col])
+        end
+        choose_last_parameter_filter!(test_set, allc, p, dead)
+        test_set = insert_tuple_into_tests_filter(test_set, allc, dead)
+    end
+    return fill_remaining_missing_values_filter!(test_set, arity, dead)
+end
+
+
+"""
+    full_strength_rows(request, required) -> Matrix{Int}
+
+Strength equal to the parameter count: every required target is a complete
+valid row, so the design is the must-include rows (partial ones completed)
+followed by every valid row they do not already hold, in lexicographic order.
+Without must-include rows this is the set `full_factorial` returns (contract
+§7.8, §11.2).
+"""
+function full_strength_rows(request::Request, required)
+    n = length(request.arity)
+    rows = Vector{Int}[]
+    for j in axes(request.must_include, 2)
+        row = request.must_include[:, j]
+        push!(rows, any(==(0), row) ? witness(request, row) : row)
+    end
+    held = Set(rows)
+    for t in sort(required)
+        t in held || push!(rows, t)
+    end
+    return isempty(rows) ? zeros(Int, n, 0) : stack(rows)
+end
+
+
+"""
+    generate(::IPOG, request::Request) -> Design
+
+A covering design for `request` (contract §1.3): every returned row is valid,
+and every required target, at the base strength and in every `stronger`
+group, is in some row. Steps:
+
+1. Classify every target (`classify_targets`); an unknown classification is a
+   `ResourceLimitError` (§3.6). Excluded targets go to the bookkeeping.
+2. A proven empty space (no required target) without must-include rows
+   returns no rows (§1.24).
+3. Strength equal to the parameter count returns every valid row
+   (`full_strength_rows`, §7.8).
+4. An unconstrained request with one strength and no must-include rows uses
+   the classic `ipog`.
+5. Everything else uses `ipog_multi_way` over the required targets, with
+   `dead(request, row)` deciding each placement.
+
+The result is certified by `validate_design` before it is returned (§1.21).
+IPOG uses no randomness (§9.4); the recorded seed is `nothing`.
+"""
+function generate(::IPOG, request::Request)
+    required, excluded = classify_targets(request)
+    n = length(request.arity)
+    seeds = request.must_include
+    matrix = if isempty(required) && isempty(seeds)
+        zeros(Int, n, 0)
+    elseif request.strength == n
+        full_strength_rows(request, required)
+    elseif !isconstrained(request) && isempty(seeds) && length(request.groups) == 1
+        ipog(request.arity, request.strength)
+    else
+        alive = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
+        ipog_multi_way(request.arity, required, alive, seeds;
+                       order = ipog_order(request.arity, request.groups))
+    end
+    covered = validate_design(request, matrix, required; strategy = :covering)
+    return Design(matrix, :covering, :IPOG, nothing, length(required), covered, excluded,
+                  n_must_include(request), (;))
 end

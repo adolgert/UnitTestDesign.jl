@@ -1,125 +1,25 @@
 ## all_values
 ## all_pairs
 ## all_triples
-## all_n_tuples
+## all_tuples
 ## values_excursion
 ## pairs_excursion
-## n_tuples_excursion
+## triples_excursion
 ## full_factorial
-## driven_factorial
-
-
-"""
-The user specifies forbidden test cases in terms of parameter values,
-but inner code thinks of parameter values as integers, so this function
-wraps the user's function in order to do the translation.
-"""
-function wrap_disallow(disallow, parameters)
-    if disallow !== nothing
-        inner_filter = let filter = disallow, params = parameters
-            choices -> begin
-                as_values = ((c != 0 ? p[c] : nothing) for (p, c) in zip(params, choices))
-                filter(as_values...)
-            end
-        end
-    else
-        inner_filter = nothing
-    end
-end
-
-
-function seeds_to_integers(seed, parameters, Counter = Int)
-    param_cnt = length(parameters)
-    if length(seed) > 0
-        seed_array = zeros(Counter, param_cnt, length(seed))
-        for seed_idx in eachindex(seed)
-            seed_array[:, seed_idx] = [indexin([c], p)[1] for (p, c) in zip(parameters, seed[seed_idx])]
-        end
-    else
-        seed_array = []
-    end
-    seed_array
-end
-
-
-function generate_tuples(engine::IPOG, n_way, parameters, disallow, seeds, wayness, Counter)
-    # We convert from parameters to integers here so that different generators
-    # can use different internal representations.
-    arity = Counter[length(p) for p in parameters]
-    param_cnt = length(arity)
-    if disallow !== nothing
-        disallow_integer = wrap_disallow(disallow, parameters)
-    else
-        disallow_integer = x -> false
-    end
-    if seeds !== nothing && length(seeds) > 0
-        seeds_int = seeds_to_integers(seeds, parameters, Counter)
-    else
-        seeds_int = zeros(Counter, param_cnt, 0)
-    end
-    if wayness !== nothing
-        result = ipog_multi_way(arity, n_way, wayness, disallow_integer, seeds_int)
-    elseif disallow !== nothing || seeds !== nothing
-        result = ipog_multi(arity, n_way, disallow_integer, seeds_int)
-    else
-        result = ipog(arity, n_way)
-    end
-    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in axes(result, 2)]
-end
-
-
-function generate_tuples(engine::GND, n_way, parameters, disallow, seeds, wayness, Counter)
-    arity = Counter[length(p) for p in parameters]
-    if disallow !== nothing
-        disallow_integer = wrap_disallow(disallow, parameters)
-    else
-        disallow_integer = x -> false
-    end
-    if seeds !== nothing && length(seeds) > 0
-        seeds_int = seeds_to_integers(seeds, parameters, Counter)
-    else
-        seeds_int = zeros(Int, length(arity), 0)
-    end
-    if wayness !== nothing
-        mwc = multi_way_coverage(arity, wayness, n_way)
-        mc = UnitTestDesign.MatrixCoverage(mwc, size(mwc, 1), arity)
-        result = n_way_coverage_multi(mc, disallow_integer, seeds_int, engine.candidates, engine_rng(engine))
-    else
-        result = n_way_coverage_filter(arity, n_way, disallow_integer, seeds_int, engine.candidates, engine_rng(engine))
-    end
-    [[p[c] for (p, c) in zip(parameters, answer)] for answer in result]
-end
-
-
-function generate_tuples(engine::Excursion, n_way, parameters, disallow, seeds, wayness, Counter)
-    # We convert from parameters to integers here so that different generators
-    # can use different internal representations.
-    arity = Counter[length(p) for p in parameters]
-    param_cnt = length(arity)
-    if disallow !== nothing
-        disallow_integer = wrap_disallow(disallow, parameters)
-    else
-        disallow_integer = x -> false
-    end
-    if seeds !== nothing && length(seeds) > 0
-        seeds_int = seeds_to_integers(seeds, parameters, Counter)
-    else
-        seeds_int = zeros(Counter, param_cnt, 0)
-    end
-    if wayness !== nothing
-        result = build_excursion_multi(arity, n_way, wayness, disallow_integer, seeds_int)
-    else
-        result = build_excursion(arity, n_way, disallow_integer, seeds_int)
-    end
-    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in axes(result, 2)]
-end
+#
+# The 0.4 positional entry points. Each builds a TestSpace whose parameters
+# are named p1, p2, ... from the positional domains, builds a Request, asks an
+# engine for a Design, and returns the rows in the 0.4 shape, a vector of
+# `Vector{Any}`. Phase 4 changes the return type to `TestCases{Tuple}`
+# (contract §13.4).
 
 
 # Remove in Phase 6. The positional generators treat every value as an
 # ordinary one, so they would return rows with several `Invalid` values and
 # partitions that are never drawn. Until negative generation arrives, they
 # refuse wrapper values instead of applying different semantics (contract
-# §0.2; plan Phase 2 step 2).
+# §0.2; plan Phase 2 step 2). `Request` refuses them too; this message names
+# the argument's position, which is the caller's vocabulary here.
 function _reject_wrappers(parameters)
     for (position, domain) in enumerate(parameters)
         for value in domain
@@ -135,24 +35,86 @@ end
 
 
 """
-    all_tuples(parameters...; n_way, engine, disallow, seeds, wayness, Counter)
+    _positional_space(parameters) -> TestSpace
 
-Given a tuple of parameters, generate all test cases that cover all `n_way` combinations
-of those parameters.
+A space whose parameters are named `p1`, `p2`, ... in argument order, with the
+given domains. Values and their types are kept; `nothing` and `missing` are
+values (contract §2.9).
+"""
+function _positional_space(parameters)
+    isempty(parameters) && throw(ArgumentError(
+        "pass the values of at least one parameter, for example all_values([1, 2, 3])"))
+    _reject_wrappers(parameters)
+    return TestSpace((Symbol(:p, i) => parameters[i] for i in eachindex(parameters))...)
+end
+
+
+"""
+    _stronger_from_wayness(wayness) -> Vector{Pair}
+
+The 0.4 `wayness`, a `Dict` from a strength to a list of parameter index
+groups, as `stronger` pairs: `Dict(3 => [[3, 4, 5, 6]])` becomes
+`[[3, 4, 5, 6] => 3]` (contract §11.10). The caller's `Dict` and its groups
+are copied, never mutated (§11.9).
+"""
+function _stronger_from_wayness(wayness)
+    wayness === nothing && return Pair{Vector{Int}, Int}[]
+    wayness isa AbstractDict || throw(ArgumentError(
+        "`wayness` is a Dict from a strength to a list of parameter index groups, " *
+        "for example Dict(3 => [[3, 4, 5, 6]]); got $(repr(wayness))"))
+    stronger = Pair{Vector{Int}, Int}[]
+    for s in sort!(collect(keys(wayness)))
+        s isa Integer || throw(ArgumentError(
+            "`wayness` keys are strengths, integers; got $(repr(s))"))
+        groups = wayness[s]
+        (groups isa AbstractVector || groups isa Tuple) && all(g -> g isa Union{AbstractVector, Tuple}, groups) ||
+            throw(ArgumentError(
+                "`wayness` maps a strength to a list of parameter index groups, such as " *
+                "$s => [[1, 2, 3]]; got $s => $(repr(groups))"))
+        for g in groups
+            all(i -> i isa Integer, g) || throw(ArgumentError(
+                "`wayness` groups list parameter positions, integers; got $(repr(g))"))
+            push!(stronger, collect(Int, g) => Int(s))
+        end
+    end
+    return stronger
+end
+
+
+_positional_design(engine::IPOG, request::Request, n_way) = generate(engine, request)
+_positional_design(engine::GND, request::Request, n_way) = generate(engine, request)
+_positional_design(::Excursion, request::Request, n_way) = generate_excursion(request; distance = n_way)
+_positional_design(engine, request::Request, n_way) = throw(ArgumentError(
+    "`engine` is IPOG(), GND(), or Excursion(); got $(repr(engine))"))
+
+"The rows of a design in the 0.4 shape: one `Vector{Any}` per case."
+_positional_rows(request::Request, design::Design) =
+    Vector{Any}[collect(Any, values(case)) for case in to_cases(request, design.matrix)]
+
+
+"""
+    all_tuples(parameters...; n_way = 2, engine = IPOG(), seeds = [], wayness = nothing)
+
+Given the values of each parameter, generate test cases that include every
+combination of values of every `n_way` parameters at least once. Each
+argument is the list of values of one parameter, a vector, range, or tuple;
+a parameter may have a single value. Values are kept as given, so `nothing`
+and `missing` are ordinary values. Returns one vector of values per case.
 
 # Arguments
 
-- `engine=IPOG()`: The `engine` is `IPOG()`, `GND()` or `Excursion()`.
-- `disallow=nothing`: The disallow function is a function of the parameters that
-  returns `true` when that combination should be forbidden.
-- `seeds=[]`: is a list of test cases that must be included among those
-generated.
-- `wayness` is a dictionary that specifies subsets of parameters for
-  which to increase the `n_way` combinations. For instance, if the combinations are
-  two-way, and you want the third-sixth parameters to be three-way covered, use,
+- `n_way = 2`: the strength, from 1 to the number of parameters. At the number
+  of parameters, the result is every combination.
+- `engine = IPOG()`: `IPOG()`, `GND()`, or `Excursion()`.
+- `seeds = []`: test cases that must be included, each a vector or tuple with
+  one value per parameter. They come first in the result, in order.
+- `wayness`: a dictionary that raises the strength for groups of parameters,
+  by position. If the combinations are two-way, and you want the third to
+  sixth parameters to be three-way covered, use
   `wayness = Dict(3 => [[3, 4, 5, 6]])`.
-- `Counter=Int`The Counter is an integer type to use for
-the computation. It must be large enough to hold the integer number of the parameters.
+
+Positional calls do not take rules. To exclude combinations, build a
+[`TestSpace`](@ref) with constraints.
 
 # Examples
 ```julia
@@ -161,44 +123,12 @@ parameters = fill(collect(1:3), 10)
 all_tuples(parameters...; n_way = 4, engine = Excursion())
 ```
 """
-function all_tuples(
-    parameters...;
-    n_way::Integer = 2, engine = IPOG(), disallow = nothing, seeds = nothing, wayness = nothing, Counter = Int
-    )
-    if length(parameters) < 2
-        throw(DomainError(
-            parameters,
-            "Arguments should be lists of parameter values for more than one parameter"))
-    end
-    for param in parameters
-        if length(param) < 2
-            throw(DomainError(param, "Each argument should be a list of parameter values"))
-        end
-    end
-    _reject_wrappers(parameters)
-    if disallow !== nothing && !isa(disallow, Function)
-        throw(DomainError(disallow, "The disallow argument should be a function that
-        returns true or false to exclude or include a test case."))
-    end
-    if seeds !== nothing && length(seeds) > 0
-        if !all(length(s) .== length(parameters) for s in seeds)
-            throw(DomainError(seeds, "The seeded test cases should have the same number
-            of parameter values as the passed parameter values."))
-        end
-    end
-    if wayness !== nothing
-        keys_are_ints = all(isa(k, Int) for k in keys(wayness))
-        if !keys_are_ints
-            throw(DomainError(wayness, "The wayness argument is a dictionary with integer keys."))
-        end
-        values_are_lists = all(isa(v, AbstractArray) for v in values(wayness))
-        lists_of_lists = all(isa(first(v), AbstractArray) for v in values(wayness))
-        if !values_are_lists || !lists_of_lists
-            throw(DomainError(wayness, "The wayness argument is a dictionary with values
-            that are lists of lists of parameters."))
-        end
-    end
-    generate_tuples(engine, n_way, parameters, disallow, seeds, wayness, Counter)
+function all_tuples(parameters...; n_way::Integer = 2, engine = IPOG(), seeds = [], wayness = nothing)
+    space = _positional_space(parameters)
+    must_include = seeds === nothing ? Tuple[] : [Tuple(s) for s in seeds]
+    request = Request(space; strength = n_way, stronger = _stronger_from_wayness(wayness),
+                      must_include = must_include)
+    return _positional_rows(request, _positional_design(engine, request, n_way))
 end
 
 
@@ -286,7 +216,7 @@ end
 
 
 """
-    pairs_excursion(parameters...; kwargs...)
+    triples_excursion(parameters...; kwargs...)
 
 This starts with the first choice for each of the parameters.
 It creates test cases by varying each parameter, one at a time,
@@ -302,27 +232,18 @@ end
 
 """
     full_factorial(parameters...)
-    full_factorial(parameters...; disallow = filter_function)
 
-Generates a test case for every combination of the parameters.
+Generates a test case for every combination of the parameters' values.
 
 # Examples
 ```julia
 full_factorial([0.1, 0.2, 0.3], ["low", "high"], [false, true])
 ```
 
-If you specify a filter function, it will remove combinations
-that are disallowed.
+To leave out combinations, build a [`TestSpace`](@ref) with constraints.
 """
-function full_factorial(parameters...; disallow = nothing)
-    _reject_wrappers(parameters)
-    arity = [length(p) for p in parameters]
-    param_cnt = length(arity)
-    if disallow !== nothing
-        disallow = wrap_disallow(disallow, parameters)
-    else
-        disallow = x -> false
-    end
-    result = full_factorial(arity, disallow)
-    [[p[c] for (p, c) in zip(parameters, result[:, i])] for i in axes(result, 2)]
+function full_factorial(parameters...)
+    space = _positional_space(parameters)
+    request = Request(space; strength = 1)
+    return _positional_rows(request, generate_full_factorial(request; limit = 10^6))
 end

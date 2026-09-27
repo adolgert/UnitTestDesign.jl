@@ -6,7 +6,6 @@ module UnitTestDesign
 export IPOG
 export GND
 export Excursion
-export generate_tuples
 export all_tuples
 export all_values
 export all_pairs

@@ -130,21 +130,24 @@ function _must_include_matrix(request::Request, rows)
     n = length(space.names)
     columns = Vector{Int}[]
     for (r, row) in enumerate(rows)
-        idx = if row isa NamedTuple
-            case_indices(space, row)
-        elseif row isa Tuple || row isa AbstractVector
+        if row isa Tuple || row isa AbstractVector
             length(row) == n || throw(ArgumentError(
                 "must_include row $r has $(length(row)) values; the space has $n parameters"))
-            case_indices(space, Tuple(row))
-        else
+        elseif !(row isa NamedTuple)
             throw(ArgumentError("must_include row $r is a $(typeof(row)); use a NamedTuple or a Tuple"))
+        end
+        idx = try
+            case_indices(space, row isa NamedTuple ? row : Tuple(row))
+        catch err
+            err isa ArgumentError || rethrow()
+            throw(ArgumentError("must_include row $r: " * err.msg))   # §10.2 names the row
         end
         any(i -> idx[i] != 0 && !(idx[i] in request.candidates[i]), 1:n) && throw(ArgumentError(
             "must_include row $r uses an Invalid or Partition value; not supported yet (contract §0.2)"))
         positions = _positions(request, idx)
         if violates(request.feasibility, _space_indices(request, positions))
             rules = violated_rules(request.feasibility, _space_indices(request, positions))
-            labels = join(("rule $k (" * rule_label(space, k) * ")" for k in rules), ", ")
+            labels = join((_rule_ref(space.constraints[k], k) for k in rules), ", ")
             throw(ArgumentError("must_include row $r, $(from_indices(space, idx)), breaks $labels (contract §10.3)"))
         end
         if any(==(0), positions)
@@ -182,8 +185,15 @@ to have no valid completion; `false` only with a completion witness; throws
 contract §3.6). This is the predicate that replaces `disallow` at every
 engine site.
 """
-dead(request::Request, partial::AbstractVector{<:Integer}) =
-    dead(request.feasibility, _space_indices(request, partial))
+function dead(request::Request, partial::AbstractVector{<:Integer})
+    f = request.feasibility
+    key = _checked_key(f, _space_indices(request, partial))
+    status, _ = _completable(f, key, f.limit)
+    status === :unknown && throw(ResourceLimitError(
+        "placing a value: the feasibility search for $(from_indices(request.space, key))",
+        f.limit, :feasibility_limit))
+    return status === :infeasible
+end
 
 """
     witness(request, partial) -> Vector{Int}
@@ -194,8 +204,9 @@ partial is infeasible (callers ask `dead` first).
 """
 function witness(request::Request, partial::AbstractVector{<:Integer})
     status, w = completable(request.feasibility, _space_indices(request, partial))
-    status == :unknown && throw(ResourceLimitError("completing a row", request.feasibility_limit,
-                                                    :feasibility_limit))
+    status == :unknown && throw(ResourceLimitError(
+        "completing the row $(from_indices(request.space, _space_indices(request, partial)))",
+        request.feasibility_limit, :feasibility_limit))
     status == :infeasible && error("internal error: asked for a witness of an infeasible row $partial")
     return _positions(request, w)
 end
@@ -354,8 +365,13 @@ function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, re
     end
     covered = 0
     if strategy == :covering
+        # The rows' projections onto each target's parameters, built once per
+        # parameter set, so the check is linear in targets plus rows.
+        projections = Dict{Vector{Int}, Set{Vector{Int}}}()
         for t in required
-            if covers(matrix, t)
+            support = findall(!=(0), t)
+            seen = get!(() -> Set(matrix[support, j] for j in axes(matrix, 2)), projections, support)
+            if t[support] in seen
                 covered += 1
             else
                 error("internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")

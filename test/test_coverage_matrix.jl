@@ -300,3 +300,13 @@ end
     @test maximum(sum(mwc .!= 0, dims = 1)) == 3
     @inferred UnitTestDesign.multi_way_coverage([2,3,4,2,2,3], Dict(3 => [[1,3,4,5]]), 2)
 end
+
+
+@testitem "multi_way_coverage: a group at the base wayness adds nothing (§11.7, §11.9)" begin
+    wayness = Dict(2 => [[1, 2, 3]], 3 => [[1, 3, 4]])
+    mwc = UnitTestDesign.multi_way_coverage([2, 3, 4, 2], wayness, 2)
+    @test size(mwc, 2) == UnitTestDesign.total_combinations([2, 3, 4, 2], 2) + 2 * 4 * 2
+    @test wayness == Dict(2 => [[1, 2, 3]], 3 => [[1, 3, 4]])
+    @test_throws ArgumentError UnitTestDesign.multi_way_coverage([2, 3, 4, 2], Dict(1 => [[1, 2]]), 2)
+    @test_throws ArgumentError UnitTestDesign.multi_way_coverage([2, 3, 4, 2], Dict(5 => [[1, 2]]), 2)
+end
