@@ -267,8 +267,9 @@ end
 function breakdown(opts, out)
     println(out, "## Where the time goes\n")
     println(out, "Parts of the calls above, timed alone (median of 5 after one discarded call). " *
-                 "Recorded as Phase 4/5 candidates; only the final validation changed in Phase 3 (review " *
-                 "round 1 moved it to index space).\n")
+                 "Recorded as Phase 4/5 candidates. Phase 3 review round 1 moved the final validation to " *
+                 "index space; Phase 5 made an unconstrained request's target list lazy (`TargetList`) and " *
+                 "its recount streamed, one support at a time.\n")
     println(out, "| Call | Part | Time (s) | Allocated (MiB) | Note |")
     println(out, "|:--|:--|--:|--:|:--|")
 
@@ -333,7 +334,9 @@ function breakdown(opts, out)
                  "$(seconds(lookup_t)) | $(mib(lookup_b)) | $(share(lookup_t)) of the call |")
 
     # Fixture 1 through IPOG: the classic unconstrained `ipog` is the 0.4
-    # core; the request adds the target list and the final validation.
+    # core; the request adds the lazy target list, which an unconstrained
+    # request never materializes, and the final validation, which recounts
+    # it one support at a time.
     wide = TestSpace((Symbol(:p, i) => 1:4 for i in 1:15)...)
     whole, whole_b = quick(() -> covering(IPOG(), wide, 4))
     targets_t, targets_b = quick(() -> UnitTestDesign.classify_targets(UnitTestDesign.Request(wide; strength = 4)))
@@ -345,9 +348,11 @@ function breakdown(opts, out)
     wshare(t) = @sprintf("%.0f%%", 100 * t / whole)
     println(out, "| fixture 1, IPOG | whole `generate` call | $(seconds(whole)) | $(mib(whole_b)) | |")
     println(out, "| fixture 1, IPOG | classic `ipog`, the 0.4 core | $(seconds(core_t)) | $(mib(core_b)) | $(wshare(core_t)) |")
-    println(out, "| fixture 1, IPOG | `classify_targets`: the list of $(count_str(length(required))) targets | " *
-                 "$(seconds(targets_t)) | $(mib(targets_b)) | $(wshare(targets_t)); unconstrained, so nothing is excluded |")
-    println(out, "| fixture 1, IPOG | `validate_design` | $(seconds(check_t)) | $(mib(check_b)) | $(wshare(check_t)) |")
+    println(out, "| fixture 1, IPOG | `classify_targets`: the lazy `TargetList` of $(count_str(length(required))) " *
+                 "targets, not materialized | $(seconds(targets_t)) | $(mib(targets_b)) | $(wshare(targets_t)); " *
+                 "unconstrained, so nothing is excluded |")
+    println(out, "| fixture 1, IPOG | `validate_design`, the recount streamed per support | $(seconds(check_t)) | " *
+                 "$(mib(check_b)) | $(wshare(check_t)) |")
     println(out)
 end
 

@@ -190,14 +190,16 @@ function _coverage_row(space::TestSpace, row, k::Integer)
 end
 
 """
-    _read_rows(context, rows) -> (kept, duplicates, rejected)
+    _read_rows(context, rows) -> (kept, duplicates, rejected, slots)
 
 Sort the rows by kind and validity (contract §1.11, §1.14, §5.3–§5.7): `kept`
 holds the distinct valid ordinary rows and the distinct valid negative rows,
 in first-seen order; `duplicates` counts repeats of each kind; `rejected`
 lists, per kind, the rows that break an applicable rule (judged under
 `active_rules`, so a negative row at `p` skips every rule that reads `p`) and
-the rows with more than one `Invalid` value (negative kind). Rules are
+the rows with more than one `Invalid` value (negative kind). `slots[k]` is
+the position in `kept[1]` of row `k` when it is the first appearance of a
+valid ordinary row, else 0: the prefix curve of `report` reads it. Rules are
 checked through the call's `FeasibilityContext`, so a lazy rule's verdicts
 are memoized for the call and no longer (§3.5, §12.19).
 """
@@ -206,6 +208,7 @@ function _read_rows(context::FeasibilityContext, rows::AbstractVector)
     kept = (Vector{Int}[], Vector{Int}[])
     duplicates = [0, 0]
     rejected = (_Rejected[], _Rejected[])
+    slots = zeros(Int, length(rows))
     seen = Set{Vector{Int}}()
     for (k, row) in enumerate(rows)
         idx = _coverage_row(space, row, k)
@@ -224,9 +227,10 @@ function _read_rows(context::FeasibilityContext, rows::AbstractVector)
         else
             push!(seen, idx)
             push!(kept[part], idx)
+            part == 1 && (slots[k] = length(kept[1]))
         end
     end
-    return kept, duplicates, rejected
+    return kept, duplicates, rejected, slots
 end
 
 
@@ -247,7 +251,7 @@ function _code(idx::AbstractVector{<:Integer}, support::Vector{Int}, radix::Vect
 end
 
 """
-    _projections(table, support, radix, codes)
+    _projections(table, support, radix, codes, firsts)
 
 The rows' projections onto `support`, the set that decides coverage without
 a search (contract §1.10). `table` holds the rows parameter-major, one row
@@ -255,8 +259,13 @@ per case and one column per parameter, so a support reads only its own
 columns, in order. A support with at most `_MAX_MARKS` value combinations
 gets a `BitVector` over the codes of `_code`, accumulated column by column in
 the buffer `codes`; a larger one gets a `Set` of value-index vectors.
+
+`firsts`, when it is a vector, gains one at row `j` for each projection that
+row `j` is the first to hold: summed over the supports, the targets each row
+adds to the rows before it, which is the prefix curve of `report`.
 """
-function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{Int}, codes::Vector{Int})
+function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{Int},
+                      codes::Vector{Int}, firsts::Union{Nothing, Vector{Int}} = nothing)
     if prod(BigInt, (radix[p] for p in support); init = big(1)) <= _MAX_MARKS
         fill!(codes, 0)
         stride = 1
@@ -268,12 +277,21 @@ function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{In
             stride *= radix[p]
         end
         marks = falses(stride)
-        for code in codes
+        for (j, code) in enumerate(codes)
+            marks[code + 1] && continue
             marks[code + 1] = true
+            firsts === nothing || (firsts[j] += 1)
         end
         return marks
     end
-    return Set{Vector{Int}}(table[j, support] for j in axes(table, 1))
+    set = Set{Vector{Int}}()
+    for j in axes(table, 1)
+        key = table[j, support]
+        key in set && continue
+        push!(set, key)
+        firsts === nothing || (firsts[j] += 1)
+    end
+    return set
 end
 
 _contains(marks::BitVector, t, support, radix) = marks[_code(t, support, radix) + 1]
@@ -368,7 +386,7 @@ function _measure_block!(lists::_Lists, context::FeasibilityContext, support::Ve
 end
 
 """
-    _measure_support!(lists, context, support, kind, table, codes, radix, explanation_limit)
+    _measure_support!(lists, context, support, kind, table, codes, radix, explanation_limit, firsts)
         -> (covered, missing, excluded, unknown)
 
 The targets of `kind` on one support, in a fixed order (contract §9.7):
@@ -382,11 +400,13 @@ The targets of `kind` on one support, in a fixed order (contract §9.7):
 """
 function _measure_support!(lists::_Lists, context::FeasibilityContext, support::Vector{Int},
                            kind::Symbol, table::Matrix{Int}, codes::Vector{Int}, radix::Vector{Int},
-                           explanation_limit::Int)
+                           explanation_limit::Int, firsts)
     space = context.space
     t = zeros(Int, length(space.names))
     kind === :negative && all(p -> isempty(space.invalid[p]), support) && return (0, 0, 0, 0)
-    seen = _projections(table, support, radix, codes)
+    # Only ordinary rows have firsts: a negative row's projection onto a
+    # support without its invalid parameter is no negative target.
+    seen = _projections(table, support, radix, codes, kind === :ordinary ? firsts : nothing)
     kind === :ordinary &&
         return _measure_block!(lists, context, support, support, t, seen, radix, explanation_limit)
     total = (0, 0, 0, 0)
@@ -401,16 +421,18 @@ function _measure_support!(lists::_Lists, context::FeasibilityContext, support::
 end
 
 """
-    _measure_part(context, groups, supports, rows, kind; explanation_limit, duplicates, rejected)
-        -> CoveragePart
+    _measure_part(context, groups, supports, rows, kind; explanation_limit, duplicates, rejected,
+                  firsts = nothing) -> CoveragePart
 
 Measure the targets of `kind` (`:ordinary` or `:negative`) against `rows`,
 the distinct valid rows of that kind, support by support, and sum each
-group's supports for its breakdown (§1.15).
+group's supports for its breakdown (§1.15). For the ordinary part, `firsts`,
+a vector of zeros aligned with `rows`, receives the number of targets each
+row is the first to cover (see `_projections`).
 """
 function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vector{Int}},
                        rows::Vector{Vector{Int}}, kind::Symbol; explanation_limit::Int,
-                       duplicates::Int, rejected::Vector{_Rejected})
+                       duplicates::Int, rejected::Vector{_Rejected}, firsts = nothing)
     space = context.space
     radix = [length(v) for v in space.values]
     lists = _Lists()
@@ -419,7 +441,7 @@ function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vec
     counts = Dict{Vector{Int}, NTuple{4, Int}}()   # support => (covered, missing, excluded, unknown)
     for support in supports
         counts[support] = _measure_support!(lists, context, support, kind, table, codes, radix,
-                                            explanation_limit)
+                                            explanation_limit, firsts)
     end
     breakdown = _GroupCounts[]
     for (members, s) in groups
@@ -437,30 +459,40 @@ function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vec
 end
 
 """
-    _coverage(rows, space; strength, stronger, feasibility_limit, explanation_limit) -> Coverage
+    _measure(rows, space; strength, stronger, feasibility_limit, explanation_limit)
+        -> (coverage, prefix)
 
-The measurement behind every `coverage` method. Checks the request (§11),
-reads and sorts the rows (§1.13, §1.14), then measures the ordinary targets
-(§1.8) and, when the space has `Invalid` values, the negative targets (§6).
-The targets are those of `Request(space; strength, stronger)`, in the same
-order: `_supports(groups)`, each over its ordinary values.
+The measurement behind every `coverage` method and `report`. Checks the
+request (§11), reads and sorts the rows (§1.13, §1.14), then measures the
+ordinary targets (§1.8) and, when the space has `Invalid` values, the
+negative targets (§6). The targets are those of `Request(space; strength,
+stronger)`, in the same order: `_supports(groups)`, each over its ordinary
+values.
+
+`prefix[k]` is the number of ordinary targets the first `k` rows cover, from
+the same pass (each row adds the targets it is the first to hold), so
+`prefix[end] == coverage.ordinary.covered`.
 """
-function _coverage(rows::AbstractVector, space::TestSpace; strength, stronger,
-                   feasibility_limit, explanation_limit)
+function _measure(rows::AbstractVector, space::TestSpace; strength, stronger,
+                  feasibility_limit, explanation_limit)
     strength = _check_strength(strength, length(space.names))
     groups = _groups(space, strength, stronger)
     context = FeasibilityContext(space; feasibility_limit)
     explanation_limit = _check_limit(:explanation_limit, explanation_limit)
-    kept, duplicates, rejected = _read_rows(context, rows)
+    kept, duplicates, rejected, slots = _read_rows(context, rows)
     supports = _supports(groups)
+    firsts = zeros(Int, length(kept[1]))
     ordinary = _measure_part(context, groups, supports, kept[1], :ordinary; explanation_limit,
-                             duplicates = duplicates[1], rejected = rejected[1])
+                             duplicates = duplicates[1], rejected = rejected[1], firsts)
     negative = _measure_part(context, groups, supports, kept[2], :negative; explanation_limit,
                              duplicates = duplicates[2], rejected = rejected[2])
     named = Pair{Tuple{Vararg{Symbol}}, Int}[Tuple(space.names[g]) => s for (g, s) in groups[2:end]]
-    return Coverage(ordinary, negative, space, strength, named,
-                    (feasibility_limit = context.feasibility_limit, explanation_limit = explanation_limit))
+    c = Coverage(ordinary, negative, space, strength, named,
+                 (feasibility_limit = context.feasibility_limit, explanation_limit = explanation_limit))
+    return c, cumsum(Int[slot == 0 ? 0 : firsts[slot] for slot in slots])
 end
+
+_coverage(rows::AbstractVector, space::TestSpace; kwargs...) = first(_measure(rows, space; kwargs...))
 
 
 ## The public functions

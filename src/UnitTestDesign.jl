@@ -13,6 +13,7 @@ export Constraint, forbid, require, @forbid, @require, ConstraintError
 export ResourceLimitError
 export isallowed, explain
 export coverage, missing_interactions, Coverage, iscomplete
+export report, Report, design_sizes, DesignSizes
 
 include("rule_table.jl")
 include("constraints.jl")
@@ -23,6 +24,7 @@ include("request.jl")
 include("engines.jl")
 include("testcases.jl")
 include("measure.jl")
+include("report.jl")
 include("combinations.jl")
 include("coverage_matrix.jl")
 include("greedy_tuples.jl")
