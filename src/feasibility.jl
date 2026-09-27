@@ -19,6 +19,14 @@
 # first candidate, and every cache hit are free. One `completable` call has
 # one budget, shared by every connected component it solves. A search that
 # needs N nodes succeeds exactly when the limit is at least N.
+#
+# Rule checks are not budgeted but are counted (contract §3.3). A check is one
+# `forbids` call: a set lookup for a tabulated table, a memoized evaluation
+# for a lazy one. After a node assigns `x`, forward checking checks each
+# surviving candidate of the one unset parameter of every table of `x` that
+# has one left, so the checks a node causes are at most the sum of those
+# parameters' candidate counts. The direct check adds at most one check per
+# table, and the initial prune the same sum once per component.
 
 """
     ResourceLimitError(what, limit, keyword)
@@ -56,15 +64,23 @@ function _grouped(n::Integer)
 end
 
 
-"Counters for one `Feasibility`, for tests and for reporting search effort."
+"""
+Counters for one `Feasibility`, for tests and for reporting search effort.
+`evaluations` counts every rule check made through the object: each
+`forbids` call by `violates`, `violated_rules`, the direct check of
+`completable` and `explain_partial`, and forward-checking prunes. A check of a
+tabulated table is a set lookup and a check of a lazy one a memoized
+evaluation, so `evaluations` bounds the predicate calls from above.
+"""
 mutable struct SearchStats
     queries::Int      # `completable` questions asked, cached or not
     memo_hits::Int    # questions answered from the whole-assignment memo
     last_nodes::Int   # nodes spent by the most recent question
     total_nodes::Int  # nodes spent by every question
+    evaluations::Int  # rule checks (`forbids` calls) by every question and check
 end
 
-SearchStats() = SearchStats(0, 0, 0, 0)
+SearchStats() = SearchStats(0, 0, 0, 0, 0)
 
 
 """
@@ -222,7 +238,9 @@ violates(f::Feasibility, partial::AbstractVector{<:Integer}) = _violates(f, _che
 
 function _violates(f::Feasibility, key::Vector{Int})
     for t in f.tables
-        assigned(t, key) && forbids(t, key) && return true
+        assigned(t, key) || continue
+        f.stats.evaluations += 1
+        forbids(t, key) && return true
     end
     return false
 end
@@ -237,8 +255,15 @@ Empty when `violates(f, partial)` is false.
 violated_rules(f::Feasibility, partial::AbstractVector{<:Integer}) =
     _violated_rules(f, _checked_key(f, partial))
 
-_violated_rules(f::Feasibility, key::Vector{Int}) =
-    Int[k for (k, t) in enumerate(f.tables) if assigned(t, key) && forbids(t, key)]
+function _violated_rules(f::Feasibility, key::Vector{Int})
+    rules = Int[]
+    for (k, t) in enumerate(f.tables)
+        assigned(t, key) || continue
+        f.stats.evaluations += 1
+        forbids(t, key) && push!(rules, k)
+    end
+    return rules
+end
 
 
 """
@@ -416,9 +441,11 @@ function _prune!(s::_Search, t::Int, y::Int)
     table = s.f.tables[t]
     cands = s.f.candidates[y]
     alive = s.alive[y]
+    stats = s.f.stats
     for k in eachindex(cands)
         alive[k] || continue
         s.work[y] = cands[k]
+        stats.evaluations += 1
         if forbids(table, s.work)
             alive[k] = false
             s.live[y] -= 1
@@ -502,6 +529,12 @@ result: `:feasibility_limit` for `:unknown`; for an `:unresolved` explanation,
 `:explanation_limit` when the deletion search ran out of budget, otherwise
 `:feasibility_limit` when a trial reached its own limit; `nothing` when no
 limit mattered.
+
+`nodes` and `evaluations` are what this answer cost (contract §3.3): the
+nodes of its completability search plus those of every deletion trial, and
+the rule checks (`forbids` calls, see `SearchStats`) of its direct check,
+search, and deletion trials. An answer found in `f`'s caches costs no nodes,
+so these depend on the questions asked before; the answer itself does not.
 """
 struct IndexExplanation
     outcome::Symbol
@@ -509,6 +542,8 @@ struct IndexExplanation
     minimal::Symbol
     witness::Union{Nothing, Vector{Int}}
     limit::Union{Nothing, Symbol}
+    nodes::Int
+    evaluations::Int
 end
 
 """
@@ -528,17 +563,21 @@ function explain_partial(f::Feasibility, partial::AbstractVector{<:Integer};
     explanation_limit >= 1 || throw(ArgumentError(
         "explanation_limit must be a positive Int, got $explanation_limit"))
     key = _checked_key(f, partial)
+    nodes, evaluations = f.stats.total_nodes, f.stats.evaluations
+    cost(trials = (0, 0)) = (f.stats.total_nodes - nodes + trials[1],
+                             f.stats.evaluations - evaluations + trials[2])
     direct = _violated_rules(f, key)
-    isempty(direct) || return IndexExplanation(:forbidden, direct, :not_applicable, nothing, nothing)
-    all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, key, nothing)
+    isempty(direct) ||
+        return IndexExplanation(:forbidden, direct, :not_applicable, nothing, nothing, cost()...)
+    all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, key, nothing, cost()...)
     status, witness = _completable(f, key, f.limit)
     if status === :feasible
-        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness), nothing)
+        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness), nothing, cost()...)
     elseif status === :unknown
-        return IndexExplanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit)
+        return IndexExplanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit, cost()...)
     end
-    rules, minimal, limit = _deletion_search(f, key, Int(explanation_limit))
-    return IndexExplanation(:infeasible, rules, minimal, nothing, limit)
+    rules, minimal, limit, trials = _deletion_search(f, key, Int(explanation_limit))
+    return IndexExplanation(:infeasible, rules, minimal, nothing, limit, cost(trials)...)
 end
 
 # The deletion search of contract §3.14–§3.16 for `key`, which is proven
@@ -549,12 +588,14 @@ end
 # rule; a feasible trial (with a witness) proves the rule necessary; an
 # unknown trial keeps the rule unverified. The kept set is sufficient by
 # construction, and a rule proven necessary stays necessary as others are
-# dropped, because fewer rules allow more rows.
+# dropped, because fewer rules allow more rows. Also returns the trials' cost,
+# (nodes, rule checks).
 function _deletion_search(f::Feasibility, key::Vector{Int}, explanation_limit::Int)
     keep = collect(eachindex(f.tables))
     remaining = explanation_limit
     verified = true
     limit = nothing
+    nodes = evaluations = 0
     for r in eachindex(f.tables)
         if remaining <= 0
             verified = false
@@ -565,6 +606,8 @@ function _deletion_search(f::Feasibility, key::Vector{Int}, explanation_limit::I
         trial = Feasibility(f.candidates, f.tables[trial_rules]; limit = f.limit)
         status, _ = _completable(trial, key, min(f.limit, remaining))
         remaining -= trial.stats.last_nodes
+        nodes += trial.stats.total_nodes
+        evaluations += trial.stats.evaluations
         if status === :infeasible
             keep = trial_rules
         elseif status === :unknown
@@ -572,7 +615,7 @@ function _deletion_search(f::Feasibility, key::Vector{Int}, explanation_limit::I
             limit = remaining <= 0 ? :explanation_limit : :feasibility_limit
         end
     end
-    return keep, verified ? :verified : :unresolved, limit
+    return keep, verified ? :verified : :unresolved, limit, (nodes, evaluations)
 end
 
 
@@ -591,8 +634,8 @@ into a `Classification` (contract §1.2, §1.4, §1.7). `status` is
 - `:unknown`: the feasibility search reached its limit; neither required
   nor excluded.
 
-`minimal` is `:not_applicable` except for `:implied`. `limit` is as in
-`IndexExplanation`.
+`minimal` is `:not_applicable` except for `:implied`. `limit`, `nodes` and
+`evaluations` are as in `IndexExplanation`.
 """
 struct IndexClassification
     status::Symbol
@@ -600,13 +643,15 @@ struct IndexClassification
     minimal::Symbol
     witness::Union{Nothing, Vector{Int}}
     limit::Union{Nothing, Symbol}
+    nodes::Int
+    evaluations::Int
 end
 
 const _STATUS_OF_OUTCOME = (allowed = :required, completable = :required,
     forbidden = :forbidden, infeasible = :implied, unknown = :unknown)
 
-IndexClassification(e::IndexExplanation) =
-    IndexClassification(_STATUS_OF_OUTCOME[e.outcome], e.rules, e.minimal, e.witness, e.limit)
+IndexClassification(e::IndexExplanation) = IndexClassification(_STATUS_OF_OUTCOME[e.outcome],
+    e.rules, e.minimal, e.witness, e.limit, e.nodes, e.evaluations)
 
 """
     classify(f::Feasibility, targets; explanation_limit = 1_000_000) -> Vector{IndexClassification}

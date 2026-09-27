@@ -146,6 +146,14 @@ valid row (contract §1.26). It prints as one sentence. Fields:
   assignment, as a `NamedTuple`; otherwise `nothing`.
 - `limit`: the limit that decided an `:unknown` outcome or an `:unresolved`
   explanation, as `keyword => value`; otherwise `nothing`.
+- `nodes`, `evaluations`: the search effort of this answer. `nodes` counts
+  the tentative assignments of §3.3, those of the feasibility search plus
+  those of the deletion search; `feasibility_limit` and `explanation_limit`
+  bound them. `evaluations` counts rule checks, each one consultation of one
+  rule on one assignment of its scope (a table lookup, or a memoized
+  evaluation for a lazily evaluated rule): the direct check, forward
+  checking, and the deletion trials. No limit bounds `evaluations`; it
+  shows how much rule checking the nodes caused (§3.3).
 """
 struct Explanation
     assignment::NamedTuple
@@ -155,6 +163,8 @@ struct Explanation
     minimal::Symbol
     witness::Union{Nothing, NamedTuple}
     limit::Union{Nothing, Pair{Symbol, Int}}
+    nodes::Int
+    evaluations::Int
 end
 
 """
@@ -190,7 +200,9 @@ Deciding a partial assignment may search the rows that complete it, up to
 `feasibility_limit` nodes; a search that reaches the limit gives `:unknown`
 (§1.7, §3.3). When the assignment is infeasible, a deletion search looks for
 the rules that exclude it, within `explanation_limit` nodes; the assignment
-stays infeasible even if that search is cut short (§3.13–§3.16).
+stays infeasible even if that search is cut short (§3.13–§3.16). The result's
+`nodes` and `evaluations` report the effort the answer took: nodes against
+those limits, and the rule checks those nodes caused, which no limit bounds.
 """
 function explain(space::TestSpace, assignment::Union{NamedTuple, Tuple};
                  feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
@@ -199,14 +211,14 @@ function explain(space::TestSpace, assignment::Union{NamedTuple, Tuple};
     idx = case_indices(space, assignment)
     shown = from_indices(space, idx)
     if length(_invalid_parameters(space, idx)) > 1
-        return Explanation(shown, :forbidden, Int[], String[], :not_applicable, nothing, nothing)
+        return Explanation(shown, :forbidden, Int[], String[], :not_applicable, nothing, nothing, 0, 0)
     end
     f, active = feasibility_for(context, idx)
     e = explain_partial(f, idx; explanation_limit)
     rules = active[e.rules]
     return Explanation(shown, e.outcome, rules, [rule_label(space, k) for k in rules], e.minimal,
         e.witness === nothing ? nothing : from_indices(space, e.witness),
-        _limit_pair(e.limit, context.feasibility_limit, explanation_limit))
+        _limit_pair(e.limit, context.feasibility_limit, explanation_limit), e.nodes, e.evaluations)
 end
 
 _limit_pair(::Nothing, feasibility_limit, explanation_limit) = nothing
@@ -274,6 +286,10 @@ One target's classification from `classify(space, targets)` (contract §1.2,
   `:implied`; empty otherwise.
 - `minimal`, `limit`: as in `Explanation`.
 - `witness`: a valid row containing a `:required` target, else `nothing`.
+- `nodes`, `evaluations`: this target's search effort, as in `Explanation`.
+  An answer the call had already cached for an earlier target costs no
+  nodes, so these depend on the order of `targets`; the classification does
+  not.
 """
 struct Classification
     target::NamedTuple
@@ -283,6 +299,8 @@ struct Classification
     minimal::Symbol
     witness::Union{Nothing, NamedTuple}
     limit::Union{Nothing, Pair{Symbol, Int}}
+    nodes::Int
+    evaluations::Int
 end
 
 """
@@ -320,5 +338,5 @@ function _classify_one(context::FeasibilityContext, target, explanation_limit)
     return Classification(from_indices(space, idx), c.status, rules,
         [rule_label(space, k) for k in rules], c.minimal,
         c.witness === nothing ? nothing : from_indices(space, c.witness),
-        _limit_pair(c.limit, context.feasibility_limit, explanation_limit))
+        _limit_pair(c.limit, context.feasibility_limit, explanation_limit), c.nodes, c.evaluations)
 end

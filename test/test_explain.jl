@@ -395,3 +395,73 @@ end
     @test_throws ArgumentError classify(space, [(size = 3,)])
     @test_throws ArgumentError classify(space, [(colour = :red,)])
 end
+
+
+@testitem "explain: results report nodes and rule checks, which no limit bounds (§3.3)" setup=[ExplainSetup] begin
+    # The probe of the Phase 2 review: a fresh unary rule over 2,000 values,
+    # evaluated lazily. The initial prune checks every value before the first
+    # node, so feasibility_limit = 1 suffices and the answer is exact.
+    calls = Ref(0)
+    last_only() = forbid(:x; reason = "only the last value") do x
+        calls[] += 1
+        x < 2000
+    end
+    space = @test_logs (:warn,) TestSpace((x = 1:2000,); constraints = [last_only()],
+                                          tabulation_limit = 1000)
+    e = explain(space, NamedTuple(); feasibility_limit = 1)
+    @test e.outcome == :completable && e.witness == (x = 2000,)
+    @test (e.nodes, e.evaluations, calls[]) == (1, 2000, 2000)
+    # The same question again: the same checks, answered by the rule's memo.
+    e = explain(space, NamedTuple(); feasibility_limit = 1)
+    @test (e.nodes, e.evaluations, calls[]) == (1, 2000, 2000)
+    # A direct check is one rule check and no node.
+    e = explain(space, (x = 3,))
+    @test (e.outcome, e.nodes, e.evaluations) == (:forbidden, 0, 1)
+
+    # Classification reports each target's own cost.
+    solver = solver_space()
+    results = classify(solver, [(solver = :lu, tol = 1e-3), (mode = :fast, solver = :lu), (solver = :lu,)])
+    @test [c.status for c in results] == [:implied, :forbidden, :required]
+    @test all(c -> c.evaluations > 0, results)
+    @test results[1].nodes > 0          # the deletion trials search
+    @test results[2].nodes == 0         # a direct exclusion needs no search
+    @test explain(solver, (solver = :lu, tol = 1e-3)).nodes == results[1].nodes
+    # An assignment with two Invalid values is decided without a check.
+    neg = TestSpace((a = [1, Invalid(0)], b = [1, Invalid(0)]))
+    e = explain(neg, (a = Invalid(0), b = Invalid(0)))
+    @test (e.outcome, e.nodes, e.evaluations) == (:forbidden, 0, 0)
+end
+
+
+@testitem "explain: a lazy rule's memo belongs to the space and grows across calls (§12.19, §3.5)" setup=[ExplainSetup] begin
+    using UnitTestDesign: memo_size
+    # A whole-case rule is lazy; its memo is kept by the space between calls,
+    # while each call's search caches are dropped.
+    space = TestSpace((a = 1:3, b = 1:3, c = 1:2);
+        constraints = [forbid(case -> case.a + case.b + case.c > 6; reason = "small sums")])
+    @test memo_size(space) == 0
+    explain(space, (a = 3,))
+    first_call = memo_size(space)
+    @test first_call > 0
+    explain(space, (a = 1, c = 2))
+    second_call = memo_size(space)
+    @test second_call > first_call
+    # Bounded by the product of the ordinary domains, 18 rows.
+    classify(space, ordinary_pairs(space))
+    @test second_call <= memo_size(space) <= 18
+    # A question already answered adds nothing.
+    before = memo_size(space)
+    explain(space, (a = 3,))
+    @test memo_size(space) == before
+
+    # A fully tabulated space has no memo, however it is queried.
+    tabulated = solver_space()
+    explain(tabulated, (solver = :lu, tol = 1e-3))
+    classify(tabulated, ordinary_pairs(tabulated))
+    @test memo_size(tabulated) == 0
+    # A scoped rule above tabulation_limit is lazy too, and counted.
+    lazy = @test_logs (:warn,) TestSpace((a = 1:3, b = 1:3); constraints = [@forbid(a == b)],
+                                         tabulation_limit = 4)
+    explain(lazy, (a = 1,))
+    @test 0 < memo_size(lazy) <= 9
+end

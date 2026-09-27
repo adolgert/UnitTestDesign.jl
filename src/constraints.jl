@@ -198,12 +198,21 @@ Which identifiers are parameters (contract §12.6, §12.7):
   `n < 3`), as is a dotted name (`Base.isodd(n)`, `M.x`). To read a field of
   a parameter, write `getproperty(p, :field)`.
 - `nothing`, `missing`, `true`, `false`, and literals (`:fast`, `1e-3`,
-  `"s"`) are values, so no parameter may be named `nothing` or `missing`.
+  `"s"`, `r"re"`) are values, so no parameter may be named `nothing` or
+  `missing`.
 - `\$x` interpolates the caller's `x`, evaluated once when the rule is built:
   `@forbid n < \$threshold`. Write `\$Inf`, `\$Int` and the like for any
   other global that is not called.
-- Identifiers bound inside the expression by `->` or a generator are not
-  parameters.
+- Names bound inside the expression are local, not parameters, with Julia's
+  scoping: the arguments of `->` and of an anonymous `function` (including
+  keyword arguments and `do`-block arguments), `let` bindings, and the
+  variables of generators and comprehensions. So in
+  `@forbid (n -> n)(m) > n` the scope is `(m, n)`: the lambda's `n` is local.
+- Anything else that binds or assigns a name or runs statements (an
+  assignment outside a `let` binding, `for`, `while`, `try`, `global`,
+  `local`, a quoted expression, or a macro call) is an `ArgumentError` when
+  the macro expands. Write such a rule with the function form,
+  `forbid(f, names...)`.
 
 The rule's label is its source text as Julia prints it, such as
 `"@forbid(mode == :fast && solver != :none)"`, preceded by the reason if one
@@ -221,8 +230,9 @@ end
 
 Allow only the combinations for which `expr` is `true`, written with bare
 parameter names: `@require mode == :exact || solver == :none`. Identifiers are
-read as in [`@forbid`](@ref). The macro builds the same [`Constraint`](@ref)
-as [`require`](@ref) with listed names.
+read, and binding forms accepted or rejected, as in [`@forbid`](@ref). The
+macro builds the same [`Constraint`](@ref) as [`require`](@ref) with listed
+names.
 """
 macro require(args...)
     return _rule_macro(:require, args)
@@ -250,116 +260,341 @@ function _rule_macro(polarity::Symbol, args)
         end
     end
     body === nothing && throw(ArgumentError(usage))
-    text = "@$polarity(" * string(Base.remove_linenums!(deepcopy(body))) * ")"
+    text = "@$polarity(" * _source_text(body) * ")"
 
-    names = Symbol[]                  # parameter names, in order of first appearance
-    renamed = Dict{Symbol,Symbol}()   # parameter name => the lambda argument standing for it
-    interpolated = Pair{Symbol,Any}[] # gensym => the caller's expression
-    lowered = _rule_walk(body, names, renamed, interpolated, Set{Symbol}())
+    w = _RuleWalk(polarity, text)
+    lowered = _walk(w, body, Set{Symbol}())
 
-    lambda = Expr(:->, Expr(:tuple, (renamed[n] for n in names)...), lowered)
-    call = Expr(:call, _macro_rule, QuoteNode(polarity), Expr(:tuple, map(QuoteNode, names)...),
+    lambda = Expr(:->, Expr(:tuple, (w.renamed[n] for n in w.names)...), lowered)
+    call = Expr(:call, _macro_rule, QuoteNode(polarity), Expr(:tuple, map(QuoteNode, w.names)...),
                 lambda, text, reason)
-    bindings = [Expr(:(=), g, x) for (g, x) in interpolated]
+    bindings = [Expr(:(=), g, x) for (g, x) in w.interpolated]
     return esc(Expr(:let, Expr(:block, bindings...), call))
 end
 
-# Walk a macro rule's expression. Parameter identifiers are replaced by the
-# lambda arguments standing for them, so a parameter that shares a name with a
-# function called in the same rule (`size(x) > size`) still calls the function.
-# `$x` is replaced by a gensym bound to the caller's `x` when the rule is built.
-function _rule_walk(ex, names, renamed, interpolated, bound)
-    if ex isa Symbol
-        (ex in bound || ex in (:nothing, :missing, :true, :false, :end, :begin) ||
-            Base.isoperator(ex)) && return ex
-        if !haskey(renamed, ex)
-            push!(names, ex)
-            renamed[ex] = gensym(ex)
-        end
-        return renamed[ex]
-    end
+# The walk of one macro rule's expression. Parameter identifiers are replaced
+# by the lambda arguments standing for them, so a parameter that shares a
+# name with a function called in the same rule (`size(x) > size`) still calls
+# the function. `$x` is replaced by a gensym bound to the caller's `x` when the
+# rule is built. Names bound inside the expression (the `bound` set passed down
+# the walk) are left alone. Subexpressions are walked in source order, so
+# `names` lists the parameters in order of first appearance (§12.6).
+struct _RuleWalk
+    polarity::Symbol
+    text::String                           # the label's source text, for errors
+    names::Vector{Symbol}                  # parameter names, in order of first appearance
+    renamed::Dict{Symbol,Symbol}           # parameter name => the lambda argument standing for it
+    interpolated::Vector{Pair{Symbol,Any}} # gensym => the caller's expression
+end
+
+_RuleWalk(polarity::Symbol, text::String) =
+    _RuleWalk(polarity, text, Symbol[], Dict{Symbol,Symbol}(), Pair{Symbol,Any}[])
+
+# Identifiers that are values, never parameters (§12.7); `end` and `begin`
+# appear inside indexing.
+const _RULE_VALUE_NAMES = (:nothing, :missing, :true, :false, :end, :begin)
+
+# Heads whose arguments are all ordinary subexpressions, walked in order.
+const _RULE_PLAIN_HEADS = (:block, :if, :elseif, :&&, :||, :.&&, :.||, :vect, :vcat, :hcat,
+    :row, :nrow, :ncat, :ref, :typed_vcat, :typed_hcat, :typed_ncat, :braces, :bracescat,
+    :..., :string, Symbol("'"), :return, :comprehension)
+
+function _walk(w::_RuleWalk, ex, bound::Set{Symbol})
+    ex isa Symbol && return _walk_name(w, ex, bound)
     ex isa Expr || return ex  # literals, QuoteNode (:fast), LineNumberNode, GlobalRef
-    walk(x) = _rule_walk(x, names, renamed, interpolated, bound)
     head, args = ex.head, ex.args
     if head === :$
-        g = gensym(:interpolated)
-        push!(interpolated, g => args[1])
-        return g
+        return _interpolate(w, ex)
     elseif head === :call
-        # The callee is an ordinary function in the caller's scope.
-        return Expr(:call, _rule_callee(args[1], walk), map(walk, args[2:end])...)
+        return _walk_call(w, ex, bound)
     elseif head === :. && length(args) == 2 && args[2] isa Expr && args[2].head === :tuple
         # A broadcast call, f.(x).
-        return Expr(:., _rule_callee(args[1], walk), walk(args[2]))
+        return Expr(:., _walk_callee(w, args[1], bound), _walk(w, args[2], bound))
+    elseif (head === :. && _is_dotted_name(ex)) || head === :curly
+        # A dotted name (Base.isodd, M.x) or a type (Vector{Int}): the caller's.
+        return _caller_expr(w, ex)
     elseif head === :.
-        # A dotted name (Base.isodd, M.x) refers to the caller's scope.
-        return _rule_callee(ex, walk)
-    elseif head === :curly || head === :quote || head === :inert
-        # A type (Vector{Int}) or a quotation.
-        return ex
+        # A field of a computed value, f(x).re or (; a = n).a: walk the value.
+        return Expr(:., _walk(w, args[1], bound), _caller_expr(w, args[2]))
     elseif head === :comparison
         # a < b <= c: operands at odd positions, operators at even ones.
-        return Expr(:comparison, (isodd(k) ? walk(a) : a for (k, a) in enumerate(args))...)
-    elseif head === :kw
-        return Expr(:kw, args[1], walk(args[2]))
+        return Expr(:comparison, (isodd(k) ? _walk(w, a, bound) : a for (k, a) in enumerate(args))...)
     elseif head === :(::)
-        return length(args) == 1 ? ex : Expr(:(::), walk(args[1]), args[2])
-    elseif head === :->
-        inner = union(bound, _bound_names(args[1]))
-        return Expr(:->, args[1], _rule_walk(args[2], names, renamed, interpolated, inner))
+        # x::T asserts a type, which is the caller's.
+        length(args) == 1 && return _caller_expr(w, ex)
+        return Expr(:(::), _walk(w, args[1], bound), _caller_expr(w, args[2]))
+    elseif head === :tuple || head === :parameters
+        return _walk_fields(w, ex, bound)
+    elseif head === :kw
+        return Expr(:kw, args[1], _walk(w, args[2], bound))
+    elseif head === :-> || head === :function
+        return _walk_function(w, ex, bound)
+    elseif head === :let
+        return _walk_let(w, ex, bound)
+    elseif head === :do
+        # f(x) do y ... end: the call, then the block, an anonymous function of y.
+        return Expr(:do, _walk(w, args[1], bound), _walk(w, args[2], bound))
     elseif head === :generator || head === :flatten
-        return _rule_generator(ex, names, renamed, interpolated, bound)
-    elseif head === :macrocall
-        return Expr(:macrocall, args[1], args[2], map(walk, args[3:end])...)
+        return _walk_generator(w, ex, bound)
+    elseif head === :typed_comprehension
+        return Expr(head, _caller_expr(w, args[1]), _walk(w, args[2], bound))
+    elseif head === :macrocall && _is_string_literal(ex)
+        return ex  # r"...", v"...": a literal
+    elseif head in _RULE_PLAIN_HEADS
+        return Expr(head, (_walk(w, a, bound) for a in args)...)
     else
-        return Expr(head, map(walk, args)...)
+        _rule_unsupported(w, _describe_form(ex))
     end
 end
 
-# A callee or dotted name belongs to the caller's scope; only `$x` inside it
-# is rewritten.
-function _rule_callee(f, walk)
+function _walk_name(w::_RuleWalk, name::Symbol, bound::Set{Symbol})
+    (name in bound || name in _RULE_VALUE_NAMES || Base.isoperator(name)) && return name
+    if !haskey(w.renamed, name)
+        push!(w.names, name)
+        w.renamed[name] = gensym(name)
+    end
+    return w.renamed[name]
+end
+
+function _interpolate(w::_RuleWalk, ex::Expr)
+    g = gensym(:interpolated)
+    push!(w.interpolated, g => ex.args[1])
+    return g
+end
+
+# A dotted name, `M.x` or `Base.Math.pi`: an identifier, or `$x`, followed by
+# field names.
+_is_dotted_name(ex) = ex isa Symbol || (ex isa Expr && ex.head === :$) ||
+    (ex isa Expr && ex.head === :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode &&
+     _is_dotted_name(ex.args[1]))
+
+# An expression in the caller's scope (a dotted name, a type): only `$x`
+# inside it is rewritten.
+function _caller_expr(w::_RuleWalk, ex)
+    ex isa Expr || return ex
+    ex.head === :$ && return _interpolate(w, ex)
+    return Expr(ex.head, (_caller_expr(w, a) for a in ex.args)...)
+end
+
+# The function a call calls. An identifier is the caller's function, or a
+# local one; a dotted name or a type is the caller's. Any other expression
+# computes the function, `(x -> x > n)(1)` or `$f(x)`, and is walked.
+function _walk_callee(w::_RuleWalk, f, bound::Set{Symbol})
+    f isa Symbol && return f
     f isa Expr || return f
-    f.head === :$ && return walk(f)
-    f.head === :. && return Expr(:., _rule_callee(f.args[1], walk), f.args[2:end]...)
-    return f
+    ((f.head === :. && _is_dotted_name(f)) || f.head === :curly) && return _caller_expr(w, f)
+    return _walk(w, f, bound)
 end
 
-# The names a lambda's argument list or a generator's iteration variable binds.
-_bound_names(x::Symbol) = Set([x])
-function _bound_names(x::Expr)
-    x.head === :(::) && return length(x.args) == 2 ? _bound_names(x.args[1]) : Set{Symbol}()
-    x.head === :kw && return _bound_names(x.args[1])
-    return union(Set{Symbol}(), (_bound_names(a) for a in x.args)...)
+# f(x, k = v; kw = u): the positional arguments come before the keywords in
+# the source, although the parser stores `; kw = u` first.
+function _walk_call(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
+    f = _walk_callee(w, ex.args[1], bound)
+    rest = ex.args[2:end]
+    lowered = Vector{Any}(undef, length(rest))
+    for keywords in (false, true), (k, a) in enumerate(rest)
+        (a isa Expr && a.head === :parameters) == keywords || continue
+        lowered[k] = _walk(w, a, bound)
+    end
+    return Expr(:call, f, lowered...)
 end
-_bound_names(x) = Set{Symbol}()
 
-# (body for x in iter if cond): iterators see the outer scope, while the body
-# and filters also see the iteration variables.
-function _rule_generator(ex, names, renamed, interpolated, bound)
-    ex.head === :flatten &&
-        return Expr(:flatten, _rule_generator(ex.args[1], names, renamed, interpolated, bound))
-    specs = ex.args[2:end]
-    inner = copy(bound)
-    lowered_specs = map(specs) do spec
-        if spec isa Expr && spec.head === :filter
-            ranges = map(spec.args[2:end]) do r
-                union!(inner, _bound_names(r.args[1]))
-                Expr(:(=), r.args[1], _rule_walk(r.args[2], names, renamed, interpolated, bound))
-            end
-            return (spec, ranges)
+# A tuple, or the keyword part of a call or a named tuple. In `(a = v, b = u)`
+# the names are field names, so only the values are walked. A bare name among
+# keywords, `f(x; tol)` or `(; tol)`, means `tol = tol`, which stays true when
+# `tol` is a parameter and is renamed.
+function _walk_fields(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
+    lowered = map(ex.args) do a
+        if ex.head === :tuple && a isa Expr && a.head === :(=) && a.args[1] isa Symbol
+            return Expr(:(=), a.args[1], _walk(w, a.args[2], bound))
+        elseif ex.head === :parameters && a isa Symbol
+            value = _walk(w, a, bound)
+            return value === a ? a : Expr(:kw, a, value)
         else
-            union!(inner, _bound_names(spec.args[1]))
-            return (spec, Expr(:(=), spec.args[1],
-                               _rule_walk(spec.args[2], names, renamed, interpolated, bound)))
+            return _walk(w, a, bound)
         end
     end
-    body = _rule_walk(ex.args[1], names, renamed, interpolated, inner)
-    out = map(lowered_specs) do (spec, lowered)
-        spec isa Expr && spec.head === :filter || return lowered
-        Expr(:filter, _rule_walk(spec.args[1], names, renamed, interpolated, inner), lowered...)
+    return Expr(ex.head, lowered...)
+end
+
+# `args -> body`, `function (args) body end`, and a do block's function. The
+# arguments are local to the body. A default value sees the arguments before
+# it, keywords see every positional argument, and a type annotation is the
+# caller's.
+function _walk_function(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
+    arglist, body = ex.args[1], ex.args[2]
+    ex.head === :function && !(arglist isa Expr && arglist.head === :tuple) &&
+        _rule_unsupported(w, "the function definition `function $(_source_text(arglist)) ... end`")
+    inner = copy(bound)
+    if arglist isa Expr && arglist.head in (:tuple, :block)
+        # (x, y = d; k = e) is a tuple with a :parameters part; (x; k) is a block
+        # whose first entry is positional and the rest keywords.
+        items = arglist.args
+        first_positional = findfirst(a -> !(a isa LineNumberNode), items)
+        is_keyword(k, a) = arglist.head === :tuple ? (a isa Expr && a.head === :parameters) :
+                                                     k != first_positional
+        lowered = Vector{Any}(undef, length(items))
+        for keywords in (false, true), (k, a) in enumerate(items)
+            is_keyword(k, a) == keywords || continue
+            lowered[k] = a isa Expr && a.head === :parameters ?
+                Expr(:parameters, (_bind_argument!(w, b, inner) for b in a.args)...) :
+                _bind_argument!(w, a, inner)
+        end
+        arglist = Expr(arglist.head, lowered...)
+    else
+        arglist = _bind_argument!(w, arglist, inner)
     end
-    return Expr(ex.head, body, out...)
+    return Expr(ex.head, arglist, _walk(w, body, inner))
+end
+
+# Bind the names of one argument, `let` left side, or generator variable in
+# `inner`: a name, `x::T`, `xs...`, a destructuring tuple, or an argument with
+# a default, `y = d`, whose default is walked before `y` is bound. Returns it
+# with its types and defaults rewritten.
+function _bind_argument!(w::_RuleWalk, a, inner::Set{Symbol})
+    a isa LineNumberNode && return a
+    if a isa Symbol
+        push!(inner, a)
+        return a
+    elseif a isa Expr && a.head === :(::)
+        length(a.args) == 1 && return _caller_expr(w, a)
+        return Expr(:(::), _bind_argument!(w, a.args[1], inner), _caller_expr(w, a.args[2]))
+    elseif a isa Expr && a.head === :...
+        return Expr(:..., _bind_argument!(w, a.args[1], inner))
+    elseif a isa Expr && a.head in (:tuple, :parameters)
+        return Expr(a.head, (_bind_argument!(w, b, inner) for b in a.args)...)
+    elseif a isa Expr && a.head in (:(=), :kw) && length(a.args) == 2
+        default = _walk(w, a.args[2], inner)
+        return Expr(a.head, _bind_argument!(w, a.args[1], inner), default)
+    else
+        _rule_unsupported(w, "the binding `$(_source_text(a))`")
+    end
+end
+
+# let a = x, b = y; body end. Each right side sees the enclosing scope and the
+# bindings before it (so `let x = x` reads the outer `x`), and the body sees
+# them all. A `let` binding cannot define a function.
+function _walk_let(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
+    bindings, body = ex.args
+    inner = copy(bound)
+    items = bindings isa Expr && bindings.head === :block ? bindings.args : Any[bindings]
+    lowered = map(items) do b
+        if b isa Expr && b.head === :(=)
+            lhs = b.args[1]
+            lhs isa Expr && lhs.head in (:call, :where) &&
+                _rule_unsupported(w, "the function definition `$(_source_text(b))` in a `let`")
+            rhs = _walk(w, b.args[2], inner)
+            return Expr(:(=), _bind_argument!(w, lhs, inner), rhs)
+        elseif b isa Symbol || b isa LineNumberNode
+            return _bind_argument!(w, b, inner)
+        else
+            _rule_unsupported(w, "the `let` binding `$(_source_text(b))`")
+        end
+    end
+    bindings = bindings isa Expr && bindings.head === :block ? Expr(:block, lowered...) : only(lowered)
+    return Expr(:let, bindings, _walk(w, body, inner))
+end
+
+# (body for x in xs if p for y in ys if q). A generator has one or more `for`
+# levels, outermost first; `:flatten` marks more than one. Each level's
+# iterators see the enclosing scope and the variables of the levels before
+# it; its filter, the later levels, and the body see its own variables too.
+# A level `for x in xs, y in ys` binds x and y together, and neither is
+# visible to the other's iterator. Walked in source order: the body, then
+# each level's iterators and filter.
+function _walk_generator(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
+    body, levels = _generator_parts(ex)
+    conditions = Any[]
+    ranges = Vector{Any}[]
+    for specs in levels
+        filtered = length(specs) == 1 && specs[1] isa Expr && specs[1].head === :filter
+        push!(conditions, filtered ? specs[1].args[1] : nothing)
+        push!(ranges, filtered ? specs[1].args[2:end] : specs)
+    end
+    inner = copy(bound)
+    outer_scope = Set{Symbol}[]   # what level k's iterators see
+    level_scope = Set{Symbol}[]   # what level k's filter sees
+    variables = Vector{Any}[]
+    for level_ranges in ranges
+        push!(outer_scope, copy(inner))
+        vars = map(level_ranges) do r
+            (r isa Expr && r.head === :(=)) ||
+                _rule_unsupported(w, "the generator clause `$(_source_text(r))`")
+            _bind_argument!(w, r.args[1], inner)
+        end
+        push!(variables, vars)
+        push!(level_scope, copy(inner))
+    end
+    lowered_body = _walk(w, body, inner)
+    lowered_levels = Vector{Any}[]
+    for (k, level_ranges) in enumerate(ranges)
+        iterators = Any[Expr(:(=), variables[k][j], _walk(w, r.args[2], outer_scope[k]))
+                        for (j, r) in enumerate(level_ranges)]
+        condition = conditions[k]
+        push!(lowered_levels, condition === nothing ? iterators :
+              Any[Expr(:filter, _walk(w, condition, level_scope[k]), iterators...)])
+    end
+    return _generator_build(ex, lowered_body, lowered_levels, 1)
+end
+
+"The body of a generator and its levels' specifications, outermost first."
+function _generator_parts(ex::Expr)
+    if ex.head === :flatten
+        g = ex.args[1]
+        body, inner = _generator_parts(g.args[1])
+        return body, Vector{Any}[g.args[2:end], inner...]
+    end
+    return ex.args[1], Vector{Any}[ex.args[2:end]]
+end
+
+"Reassemble `_generator_parts(ex)` with a new body and specifications."
+function _generator_build(ex::Expr, body, levels, k::Int)
+    if ex.head === :flatten
+        g = ex.args[1]
+        return Expr(:flatten, Expr(:generator, _generator_build(g.args[1], body, levels, k + 1), levels[k]...))
+    end
+    return Expr(:generator, body, levels[k]...)
+end
+
+# How an expression prints in labels and messages: Julia's printing, without
+# `#= file:line =#` comments, including those a macro call carries.
+_source_text(ex) = string(_strip_lines(ex))
+_strip_lines(ex) = ex
+function _strip_lines(ex::Expr)
+    args = Any[a for a in ex.args if !(a isa LineNumberNode)]
+    if ex.head === :macrocall
+        args = Any[ex.args[1], nothing, (_strip_lines(a) for a in ex.args[3:end])...]
+    else
+        args = Any[_strip_lines(a) for a in args]
+    end
+    return Expr(ex.head, args...)
+end
+
+# A nonstandard string literal such as r"a+" or v"1.2": a macro call whose
+# arguments are literal strings, so it reads no name.
+_is_string_literal(ex::Expr) =
+    ex.args[1] isa Symbol && endswith(string(ex.args[1]), "_str") &&
+    all(a -> a isa Union{AbstractString, LineNumberNode, Nothing}, ex.args[2:end])
+
+function _describe_form(ex::Expr)
+    head = ex.head
+    shown() = "`" * _source_text(ex) * "`"
+    head in (:for, :while) && return "a `$head` loop"
+    head === :try && return "a `try` block"
+    head === :quote && return "the quoted expression $(shown())"
+    head in (:global, :local, :const) && return "the `$head` declaration $(shown())"
+    head === :macrocall && return "the macro call `$(ex.args[1])`"
+    head === :where && return "a `where` clause"
+    endswith(string(head), "=") && return "the assignment $(shown())"
+    return "the `$head` expression $(shown())"
+end
+
+function _rule_unsupported(w::_RuleWalk, what::AbstractString)
+    throw(ArgumentError(
+        "$(w.text) contains $what, which a macro rule does not support. Inside " *
+        "@$(w.polarity), only `->` and anonymous `function` arguments, `let` bindings, " *
+        "generators, comprehensions and `do` blocks bind names (contract §12.6). For " *
+        "anything else, use the function form $(w.polarity)(f, names...)."))
 end
 
 # What the macros expand to: the same Constraint as the listed-names form.
@@ -547,6 +782,12 @@ end
 The lazy form of a rule (contract §12.19, §12.20): a function from a tuple of
 value indices, in scope order, to `true` when forbidden, memoized per tuple.
 An evaluation that throws stores nothing.
+
+The memo belongs to the `TestSpace`, as part of its tabulation: it lives as
+long as the space and is shared by every call on it, unlike the per-call
+search caches of feasibility.jl (§3.5). Keyed by value indices, it holds at
+most one entry per combination of the scope's ordinary values. `memo_size`
+reports its total size.
 """
 struct _LazyRule{N} <: Function
     rule::Constraint

@@ -179,6 +179,25 @@ function generate_tuples(engine::Excursion, n_way, parameters, disallow, seeds, 
 end
 
 
+# Remove in Phase 6. The positional generators treat every value as an
+# ordinary one, so they would return rows with several `Invalid` values and
+# partitions that are never drawn. Until negative generation arrives, they
+# refuse wrapper values instead of applying different semantics (contract
+# §0.2; plan Phase 2 step 2).
+function _reject_wrappers(parameters)
+    for (position, domain) in enumerate(parameters)
+        for value in domain
+            (value isa Invalid || value isa Partition) || continue
+            throw(ArgumentError(
+                "parameter $position lists $(repr(value)), but generation with Invalid or " *
+                "Partition values is not supported yet; it arrives in a later release phase " *
+                "(contract §0.2). A TestSpace accepts these values for isallowed and explain."))
+        end
+    end
+    return nothing
+end
+
+
 """
     all_tuples(parameters...; n_way, engine, disallow, seeds, wayness, Counter)
 
@@ -220,6 +239,7 @@ function all_tuples(
             throw(DomainError(param, "Each argument should be a list of parameter values"))
         end
     end
+    _reject_wrappers(parameters)
     if disallow !== nothing && !isa(disallow, Function)
         throw(DomainError(disallow, "The disallow argument should be a function that
         returns true or false to exclude or include a test case."))
@@ -359,6 +379,7 @@ If you specify a filter function, it will remove combinations
 that are disallowed.
 """
 function full_factorial(parameters...; disallow = nothing)
+    _reject_wrappers(parameters)
     arity = [length(p) for p in parameters]
     param_cnt = length(arity)
     if disallow !== nothing

@@ -255,7 +255,22 @@ feasible or infeasible.
 **3.3** The keyword `feasibility_limit`, a positive `Int`, bounds each search.
 Its default is `1_000_000` nodes. A node is one tentative assignment of one value to one
 parameter in the backtracking search, counting assignments that are later
-undone.
+undone. Nothing else is a node. In particular, rule evaluations are not
+counted against the limit: neither those of tabulation when the space is
+built (§12.18) nor the rule checks a search makes, where a check is one
+consultation of one rule on one assignment of its scope (a table lookup, or
+a memoized evaluation for a lazily evaluated rule, §12.19). A search checks
+rules in two places: the direct check, once per applicable rule whose scope
+the queried assignment completes, and forward checking, which after each
+node checks every rule that reads the assigned parameter and has exactly one
+unassigned parameter left, once per surviving value of that parameter (an
+initial prune does the same for every rule before the first node). So the
+checks one node causes are at most the sum, over the rules it touches, of
+the domain size of the parameter each has left, and a query's checks before
+its first node are at most one per applicable rule plus that sum over every
+applicable rule. `explain` and `classify` report the nodes and checks each
+answer took. A separate budget for rule evaluations is deferred until the
+Phase 3 benchmarks show a need for one.
 
 **3.4** The budget belongs to one query: one completability question about one
 assignment under one active rule set. Every connected component solved for
@@ -263,8 +278,10 @@ that query, including components with no assigned parameter, draws on the
 same budget. An answer found in the run-local cache costs no nodes. There is
 no run-wide total.
 
-**3.5** Cache keys include the assignment and the active rule set. Caches are
-local to one call. An exhausted search is never cached as infeasible.
+**3.5** Cache keys include the assignment and the active rule set. Search
+caches are local to one call. An exhausted search is never cached as
+infeasible. A lazily evaluated rule's memo is not a search cache: it belongs
+to the space (§12.19).
 
 **3.6** Generation resolves every target classification, the whole-space
 feasibility check, every must-include completion, and every placement decision.
@@ -633,7 +650,15 @@ the listed order. The names are distinct and there is at least one.
 
 **12.6** In `@forbid` and `@require`, every free identifier not in call position
 names a parameter. The scope lists them in order of first appearance.
-`$x` interpolates the caller's `x` when the rule is built.
+`$x` interpolates the caller's `x` when the rule is built. Names bound inside
+the expression are local, with Julia's scoping, when they are bound by one
+of these forms: the arguments of `->` and of an anonymous `function`
+(including keyword arguments and `do`-block arguments), `let` bindings, and
+the variables of generators and comprehensions. Any other form that binds or
+assigns a name or runs statements (an assignment outside a `let` binding,
+`for`, `while`, `try`, `global`, `local`, a quoted expression, a macro call)
+is an error when the macro expands, and the message points to the function
+form `forbid(f, names...)`.
 
 **12.7** In a macro rule, `nothing` and `missing` denote those values, not
 parameter names. A parameter may not be named `nothing` or `missing`.
@@ -685,7 +710,12 @@ order.
 
 **12.19** A rule whose scope product exceeds `tabulation_limit` (a `TestSpace`
 keyword, default `10^5` evaluations) is evaluated lazily with a memo. The
-package warns once per rule and suggests a narrower scope.
+package warns once per rule and suggests a narrower scope. A lazy rule's memo
+is part of the space's tabulation, a table built on demand: it lives as long
+as the space, is keyed by value indices so that every call on the space
+shares it, and holds at most one entry per combination of its scope's
+ordinary values (the full product of the ordinary domains for a whole-case
+rule). It is not a search cache (§3.5).
 
 **12.20** Whole-case rules are always evaluated lazily, memoized per row.
 

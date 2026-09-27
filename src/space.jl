@@ -321,6 +321,21 @@ function Base.length(space::TestSpace)
 end
 
 """
+    memo_size(space::TestSpace) -> Int
+
+The number of memoized verdicts held by the space's lazily evaluated rules,
+summed over their tables: `0` for a fully tabulated space. A lazy rule's memo
+is part of the space's tabulation, built on demand (contract §12.19): it is
+keyed by value indices, shared by every call on the space, kept as long as
+the space, and bounded by the number of combinations of the rule's scope's
+ordinary values (the full product for a whole-case rule). It is not one of
+the per-call search caches of §3.5. Not exported; Phase 3's benchmarks
+record it.
+"""
+memo_size(space::TestSpace) =
+    sum((length(t.lazy.memo) for t in space.tables if t.lazy isa _LazyRule); init = 0)
+
+"""
     ordinary_indices(space, i) -> Vector{Int}
 
 The value indices of parameter `i` that are not `Invalid`, in domain order. The

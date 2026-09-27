@@ -1,5 +1,7 @@
 
-function full_factorial(arity, disallow)
+# Typed so that the public `full_factorial(domain1, domain2)` with two domains
+# reaches the method of factorial_interface.jl rather than this one.
+function full_factorial(arity::AbstractVector{<:Integer}, disallow::Function)
     param_cnt = length(arity)
     test_cnt = prod(arity)
     test_set = zeros(Int, param_cnt, test_cnt)

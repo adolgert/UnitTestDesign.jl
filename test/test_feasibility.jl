@@ -57,6 +57,9 @@ using TestItemRunner
 
     "Every result field, so two results compare by value."
     fields(x) = ntuple(k -> getfield(x, k), fieldcount(typeof(x)))
+
+    "Every field but the cost (`nodes`, `evaluations`), which depends on what was cached before."
+    verdict(x) = Tuple(getfield(x, k) for k in fieldnames(typeof(x)) if !(k in (:nodes, :evaluations)))
 end
 
 
@@ -447,12 +450,13 @@ end
     @test map(fields, a) == map(fields, b)
 
     # A witness depends only on the question, never on which questions came
-    # first (cache state) or on the order of the targets.
+    # first (cache state) or on the order of the targets. The cost does: a
+    # cached answer costs nothing, so it is left out of the comparison.
     shuffled = shuffle(Xoshiro(20260926), targets)
     c = classify(Feasibility(cands, tables), shuffled)
     for (t, r) in zip(shuffled, c)
         k = findfirst(==(t), targets)
-        @test fields(r) == fields(a[k])
+        @test verdict(r) == verdict(a[k])
     end
 
     # The same random problem built twice gives identical answers.
@@ -554,6 +558,66 @@ end
     end
     # The problems exercised every branch.
     @test all(>(0), values(tally))
+end
+
+
+@testitem "feasibility: rule checks are counted, not budgeted, §3.3" setup=[FeasibilitySetup] begin
+    # Astra by hand; a check is one `forbids` call.
+    astra = () -> Feasibility([[1, 2], [1, 2], [1, 2]],
+        [table([1, 2], (1, 2), (2, 1)), table([2, 3], (1, 2), (2, 1))])
+    # From nothing: no table is assigned, so the direct check and the initial
+    # prune check nothing. Node 1, A = 1, prunes B through rule 1 (2 checks);
+    # node 2, B = 1, completes rule 1 (no check) and prunes C through rule 2
+    # (2 checks); node 3, C = 1, completes rule 2 (no check).
+    f = astra()
+    @test first(completable(f, [0, 0, 0])) == :feasible
+    @test (f.stats.last_nodes, f.stats.evaluations) == (3, 4)
+    # A memo hit costs neither.
+    @test first(completable(f, [0, 0, 0])) == :feasible
+    @test (f.stats.last_nodes, f.stats.total_nodes, f.stats.evaluations) == (0, 3, 4)
+    # `violates` checks each fully assigned table once.
+    f = astra()
+    @test violates(f, [1, 2, 0])
+    @test f.stats.evaluations == 1
+    @test !violates(f, [1, 1, 1])
+    @test f.stats.evaluations == 3
+
+    # The explanation carries its own cost.
+    e = explain_partial(astra(), [0, 0, 0])
+    @test (e.outcome, e.nodes, e.evaluations) == (:completable, 3, 4)
+    e = explain_partial(astra(), [1, 2, 0])  # the direct check, one table
+    @test (e.outcome, e.nodes, e.evaluations) == (:forbidden, 0, 1)
+    e = explain_partial(astra(), [1, 1, 1])  # both tables, both allow it
+    @test (e.outcome, e.nodes, e.evaluations) == (:allowed, 0, 2)
+    # (A = 1, C = 2): the initial prune checks B through rule 1 (2 checks, B = 2
+    # removed) and rule 2 (1 check, B = 1 removed): infeasible with 0 nodes.
+    # Each deletion trial keeps one rule, prunes B (2 checks) and assigns it
+    # (1 node): 2 nodes and 4 checks in all.
+    f = astra()
+    e = explain_partial(f, [1, 0, 2])
+    @test (e.outcome, e.rules, e.minimal) == (:infeasible, [1, 2], :verified)
+    @test (e.nodes, e.evaluations) == (2, 7)
+    @test (f.stats.total_nodes, f.stats.evaluations) == (0, 3)  # the trials have their own
+    c = only(classify(astra(), [[1, 0, 2]]))
+    @test (c.status, c.nodes, c.evaluations) == (:implied, 2, 7)
+
+    # The budget counts nodes only: a unary lazy rule over 2,000 values is
+    # checked 2,000 times by the initial prune, before the first node, so one
+    # node suffices at limit 1 (§3.3).
+    calls = Ref(0)
+    last_only = key -> (calls[] += 1; key[1] < 2000)
+    f = Feasibility([collect(1:2000)], [RuleTable([1], last_only)]; limit = 1)
+    @test completable(f, [0]) == (:feasible, [2000])
+    @test (f.stats.last_nodes, f.stats.evaluations, calls[]) == (1, 2000, 2000)
+    # With a two-parameter scope the checks follow a node: a = 1 is node 1 and
+    # prunes x (2,000 checks); x is node 2, beyond limit 1. Each node's checks
+    # are at most the candidates of the parameters it prunes.
+    pair = RuleTable([1, 2], key -> key[2] < 2000)
+    f = Feasibility([[1, 2], collect(1:2000)], [pair]; limit = 1)
+    @test completable(f, [0, 0]) == (:unknown, nothing)
+    @test (f.stats.last_nodes, f.stats.evaluations) == (1, 2000)
+    @test completable(f, [0, 0]; limit = 2) == (:feasible, [1, 2000])
+    @test (f.stats.last_nodes, f.stats.evaluations) == (2, 4000)
 end
 
 

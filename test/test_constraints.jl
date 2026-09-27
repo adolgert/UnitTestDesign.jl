@@ -161,6 +161,112 @@ end
 end
 
 
+@testitem "constraints: macro binding forms follow Julia's scoping (§12.6)" begin
+    # Each macro rule gives the table of the explicit listed-names rule, with
+    # the same scope, in order of first appearance. Regressions from the
+    # Phase 2 review: `(x -> x > n)(1)` read no parameter, and a `let` name
+    # was taken for a parameter.
+    domains = (n = 0:3, m = 0:3, k = [1, 4], vs = [[1, 2], [3], [0, 5]], xs = [[1], [2, 3]], ys = [[0], [2]])
+    t = 2
+    cases = [
+        # (x -> x > n)(1): only x is local; n is the parameter.
+        (@forbid((x -> x > n)(1)), (:n,), forbid(n -> 1 > n, :n)),
+        # A let-bound name is local; its right side reads the parameter.
+        (@forbid(let x = n; x > 1 end), (:n,), forbid(n -> n > 1, :n)),
+        # Right sides see the enclosing scope and earlier bindings: `n = n + 1`
+        # reads the parameter, and `y = n * m` the new local n.
+        (@forbid(let n = n + 1, y = n * m; y > k end), (:n, :m, :k),
+            forbid((n, m, k) -> (n + 1) * m > k, :n, :m, :k)),
+        # A generator over a literal.
+        (@forbid(any(v > n for v in (1, 2))), (:n,), forbid(n -> any(v > n for v in (1, 2)), :n)),
+        # A comprehension with a filter: vs outside, v local in the body and filter.
+        (@forbid(sum([v * m for v in vs if v > n]) > k), (:m, :vs, :n, :k),
+            forbid((m, vs, n, k) -> sum([v * m for v in vs if v > n]) > k, :m, :vs, :n, :k)),
+        # A product `x in xs, y in ys`.
+        (@forbid(any(sum(x) + sum(y) > n for x in (xs, ys), y in (ys,))), (:n, :xs, :ys),
+            forbid((n, xs, ys) -> any(sum(x) + sum(y) > n for x in (xs, ys), y in (ys,)), :n, :xs, :ys)),
+        # Nested levels: the inner iterator sees the outer variable.
+        (@forbid(sum(b for v in vs if v > n for b in v:k if b > m; init = 0) > 5), (:vs, :n, :k, :m),
+            forbid((vs, n, k, m) -> sum(b for v in vs if v > n for b in v:k if b > m; init = 0) > 5, :vs, :n, :k, :m)),
+        # A nested lambda shadowing a parameter: the inner n is local, the outer n the parameter.
+        (@forbid((n -> n)(m) > n), (:m, :n), forbid((m, n) -> m > n, :m, :n)),
+        # `$t` inside a lambda is the caller's t, captured when the rule is built.
+        (@forbid(any(v -> v > $t && v > n, vs)), (:n, :vs), forbid((n, vs) -> any(v -> v > 2 && v > n, vs), :n, :vs)),
+        # An anonymous `function` is read like `->`.
+        (@forbid(any(function (v) v > n end, vs)), (:n, :vs), forbid((n, vs) -> any(v -> v > n, vs), :n, :vs)),
+        # A do block's argument is local.
+        (@forbid(any(vs) do v; v > n end), (:vs, :n), forbid((vs, n) -> any(v -> v > n, vs), :vs, :n)),
+        # Default values of arguments and keywords read parameters; the arguments stay local.
+        (@forbid(((x, y = n; z = m) -> x + y + z)(1) > 3), (:n, :m), forbid((n, m) -> 1 + n + m > 3, :n, :m)),
+        (@forbid(((x; w = m) -> x + w)(n) > 3), (:m, :n), forbid((m, n) -> n + m > 3, :m, :n)),
+        # Named-tuple fields are names, not parameters; `(; m)` means `(; m = m)`,
+        # and a field of a computed value reads the value's parameters.
+        (@forbid((; a = n, m).m > k), (:n, :m, :k), forbid((n, m, k) -> m > k, :n, :m, :k)),
+    ]
+    t = 100  # `$t` was captured when its rule was built
+    for (rule, scope, explicit) in cases
+        @test rule.scope == scope
+        @test explicit.scope == scope
+        d = NamedTuple{scope}(Tuple(domains[s] for s in scope))
+        a = only(TestSpace(d; constraints = [rule]).tables)
+        b = only(TestSpace(d; constraints = [explicit]).tables)
+        @test a.scope == b.scope
+        @test a.forbidden == b.forbidden
+        # Every case has both allowed and forbidden combinations, so agreement means something.
+        @test 0 < length(a.forbidden) < prod(length(domains[s]) for s in scope)
+    end
+    # A shadowed name reads the local value inside and the parameter outside.
+    rule = @forbid((n -> n)(m) > n)
+    @test rule.predicate(3, 1) && !rule.predicate(1, 3)
+    # A nonstandard string literal is a value, not a macro to reject.
+    @test (@forbid(occursin(r"a+", s))).scope == (:s,)
+    # $Inf stays explicit: a free global that is not called is a name (§12.6).
+    @test (@forbid(let y = x; y < Inf end)).scope == (:x, :Inf)
+end
+
+
+@testitem "constraints: unsupported macro forms point to the function form (§12.6)" begin
+    function expansion_error(ex)
+        try
+            macroexpand(@__MODULE__, ex)
+            return "no error"
+        catch e
+            return e isa ArgumentError ? e.msg : "not an ArgumentError: $(typeof(e))"
+        end
+    end
+    rejected = [
+        (:(@forbid(begin y = n; y > 1 end)), "the assignment `y = n`"),
+        (:(@forbid(x -> (y = x; y > n))), "the assignment `y = x`"),
+        (:(@forbid(n += 1)), "the assignment `n += 1`"),
+        (:(@forbid(any(for v in vs; end))), "a `for` loop"),
+        (:(@require(while n > 1 end)), "a `while` loop"),
+        (:(@forbid(try n > 1 catch; false end)), "a `try` block"),
+        (:(@forbid(n == :(a + b))), "the quoted expression `:(a + b)`"),
+        (:(@forbid(n == quote a end)), "the quoted expression"),
+        (:(@forbid(begin global g = n; g end)), "the `global` declaration"),
+        (:(@forbid(begin local g = n; g end)), "the `local` declaration"),
+        (:(@forbid(@show(n) > 1)), "the macro call `@show`"),
+        (:(@forbid(any(function g(x) x > n end, vs))), "the function definition"),
+        (:(@forbid(let f(x) = x + n; f(1) > 2 end)), "the function definition"),
+    ]
+    for (ex, what) in rejected
+        msg = expansion_error(ex)
+        @test occursin(what, msg)
+        polarity = ex.args[1] === Symbol("@require") ? "require" : "forbid"
+        @test occursin("use the function form $(polarity)(f, names...)", msg)
+        @test occursin("§12.6", msg)
+    end
+    # The message quotes the rule without file and line comments.
+    @test startswith(expansion_error(:(@forbid(@show(n) > 1))), "@forbid(@show(n) > 1) contains")
+    # The function form expresses the rejected rules.
+    rule = forbid(:n) do n
+        y = n
+        y > 1
+    end
+    @test only(TestSpace((n = 0:3,); constraints = [rule]).tables).forbidden == Set([(3,), (4,)])
+end
+
+
 @testitem "constraints: labels, reasons and polarity (§12.2, §12.3)" begin
     using UnitTestDesign: rule_label
     a = @forbid(mode == :fast && solver != :none)
