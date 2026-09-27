@@ -69,16 +69,20 @@ end
 _is_row(x) = x isa Union{Tuple, NamedTuple, AbstractVector}
 
 """
-    _must_include_rows(must_include, space, positional)
+    _must_include_rows(must_include, space, positional) -> Vector
 
-The rows to hand the `Request`, which validates them (contract §10.1–§10.4).
-A `TestCases` gives its rows; its parameter names must all belong to the
-space, and a subset gives partial rows (§10.1). A positional call takes each
-row as a tuple or vector with one value per parameter. The caller's
-collection is never mutated (§10.7).
+The rows to hand the `Request`, which validates them (contract §10.1–§10.4),
+as a `Vector`. This is the one place the caller's `must_include` is read: it
+is materialized once with `collect`, so an iterator that can be read only
+once, such as an `Iterators.Stateful`, gives all its rows, and every check
+here and in the `Request` reads that collection. A `TestCases` gives its
+rows; its parameter names must all belong to the space, and a subset gives
+partial rows (§10.1). A positional call takes each row as a tuple or vector
+with one value per parameter. The caller's collection is never mutated
+(§10.7). `nothing`, the omitted keyword, gives no rows.
 """
 function _must_include_rows(must_include, space::TestSpace, positional::Bool)
-    must_include === nothing && return ()
+    must_include === nothing && return Any[]
     if must_include isa TestCases
         given = parameters(must_include.space)
         unknown = [name for name in given if !(name in space.names)]
@@ -96,20 +100,27 @@ function _must_include_rows(must_include, space::TestSpace, positional::Bool)
         return must_include.positional ?
             [NamedTuple{Tuple(given)}(row) for row in must_include] : collect(must_include)
     end
-    if must_include isa NamedTuple || (must_include isa Union{Tuple, AbstractVector} &&
-                                       !isempty(must_include) && !any(_is_row, must_include))
+    must_include isa NamedTuple && throw(ArgumentError(
+        "must_include is a list of rows; wrap a single row in a vector: " *
+        "must_include = [$(repr(must_include))]"))
+    rows = applicable(iterate, must_include) ? collect(must_include) : nothing
+    rows isa AbstractVector || throw(ArgumentError(
+        "must_include is a list of rows, such as a vector of NamedTuples or tuples; " *
+        "got $(repr(must_include)) (contract §10.1)"))
+    if !isempty(rows) && !any(_is_row, rows)
+        single = must_include isa Union{Tuple, AbstractVector} ? must_include : Tuple(rows)
         throw(ArgumentError(
             "must_include is a list of rows; wrap a single row in a vector: " *
-            "must_include = [$(repr(must_include))]"))
+            "must_include = [$(repr(single))]"))
     end
     if positional
-        for (r, row) in enumerate(must_include)
+        for (r, row) in enumerate(rows)
             row isa NamedTuple && throw(ArgumentError(
                 "must_include row $r is a NamedTuple; a positional call takes each row as a " *
                 "tuple or vector with one value per parameter (contract §10.1)"))
         end
     end
-    return must_include
+    return rows
 end
 
 """
@@ -151,23 +162,27 @@ _stronger_text(stronger) = "[" * join(("$(repr(Tuple(g))) => $s" for (g, s) in s
         -> (must_include, stronger)
 
 Resolve the 0.4 keywords `seeds` and `wayness`, warning once per call site
-through `Base.depwarn` (contract §10.8, §11.10, §13.2). Passing both a
-keyword and its deprecated alias is an error.
+through `Base.depwarn` (contract §10.8, §11.10, §13.2). `must_include` and
+`stronger` arrive as `nothing` when the caller omitted them, so that a
+keyword and its deprecated alias given together is an error whatever their
+values, even an empty `must_include = []` beside `seeds` (§13.2). Returns
+`must_include` as given (`nothing` when omitted, read later by
+`_must_include_rows`) and `stronger` as a vector.
 """
 function _deprecated_keywords(fname::Symbol; must_include, seeds, stronger, wayness)
     if seeds !== nothing
-        isempty(must_include) || throw(ArgumentError(
+        must_include === nothing || throw(ArgumentError(
             "pass must_include only; seeds is its deprecated alias (contract §10.8)"))
         Base.depwarn("the keyword `seeds` is deprecated; use `must_include`, which takes the same rows", fname)
         must_include = seeds
     end
     if wayness !== nothing
-        isempty(stronger) || throw(ArgumentError(
+        stronger === nothing || throw(ArgumentError(
             "pass stronger only; wayness is its deprecated form (contract §11.10)"))
         stronger = _stronger_from_wayness(wayness)
         Base.depwarn("the keyword `wayness` is deprecated; use `stronger = $(_stronger_text(stronger))`", fname)
     end
-    return must_include, stronger
+    return must_include, something(stronger, Pair{Vector{Int}, Int}[])
 end
 
 function _check_engine(engine)
@@ -184,17 +199,23 @@ end
 
 The covering pipeline behind `covering`, `all_values`, `all_pairs`,
 `all_triples` and `all_tuples`. `fname` is the function the caller used,
-for messages and for `Base.depwarn`'s call site.
+for messages and for `Base.depwarn`'s call site. `strength`, `stronger` and
+`must_include` default to `nothing`, meaning omitted: strength 2, no
+`stronger` groups, no must-include rows.
 """
-function _covering(fname::Symbol, input::Tuple; strength = 2, stronger = [], must_include = [],
-                   engine = IPOG(), constraints = nothing, feasibility_limit = 1_000_000,
-                   explanation_limit = 1_000_000, n_way = nothing, seeds = nothing, wayness = nothing)
+function _covering(fname::Symbol, input::Tuple; strength = nothing, stronger = nothing,
+                   must_include = nothing, engine = IPOG(), constraints = nothing,
+                   feasibility_limit = 1_000_000, explanation_limit = 1_000_000, n_way = nothing,
+                   seeds = nothing, wayness = nothing)
+    # `nothing` marks an omitted keyword, so an explicit `strength = 2` beside
+    # `n_way` is seen and refused rather than overridden (§13.2).
     if n_way !== nothing
-        strength == 2 || strength == n_way || throw(ArgumentError(
+        strength === nothing || throw(ArgumentError(
             "pass strength only; n_way is its deprecated alias (contract §11.10)"))
         Base.depwarn("the keyword `n_way` is deprecated; use `strength = $n_way`", fname)
         strength = n_way
     end
+    strength = something(strength, 2)
     must_include, stronger = _deprecated_keywords(fname; must_include, seeds, stronger, wayness)
     strength isa Integer || throw(ArgumentError(
         "strength is an integer of at least 1; got $(repr(strength)) (contract §11.1)"))
@@ -252,16 +273,31 @@ Values are kept as given, with their types: `Any[1, 1.0]` is two values, and
   completion, is an error naming the row and the rules (§10.2–§10.4).
 - `engine = IPOG()`: [`IPOG`](@ref) or [`GND`](@ref). Both are deterministic
   for the same inputs (§9.1). Neither promises the fewest cases (§8.1).
-- `feasibility_limit = 1_000_000`, `explanation_limit = 1_000_000`: budgets for
-  the searches that decide which combinations some valid row contains, and
-  why the others are excluded. A search that runs out throws a
-  [`ResourceLimitError`](@ref) naming the keyword; retry with a larger value
-  (§3). Generation never returns a design with an undecided combination
-  (§1.20).
+- `feasibility_limit = 1_000_000`: the node budget of each search that
+  decides whether a combination, a partial must-include row or a placement
+  has a valid completion (§3.3, §3.4). Generation resolves every one of them
+  or fails: a search that runs out throws a
+  [`ResourceLimitError`](@ref) naming `feasibility_limit`, and no design is
+  returned with an undecided combination (§1.20, §3.6, §3.7). Raise it when
+  generation cannot finish, as in `all_pairs(space; feasibility_limit =
+  10_000_000)`; a larger value never changes a result that already
+  succeeded (§3.8).
+- `explanation_limit = 1_000_000`: the node budget of the search that finds
+  which rules cause each implied exclusion, starting from a set of rules
+  already proven to exclude it (§3.13, §3.14). Running out never throws and
+  never changes the cases: the design is complete and certified as usual,
+  and the exclusion keeps its proven set of rules with
+  `minimal = :unresolved` and `limit = :explanation_limit => N`, which `show`
+  counts as "with an unresolved explanation" (§3.15, §3.16). Raise it only
+  when you want each implied exclusion attributed to the fewest rules; only
+  the attribution becomes more precise. It also bounds the explanation in
+  the error for a partial must-include row with no valid completion.
 
 The 0.4 keywords `n_way` (now `strength`), `seeds` (now `must_include`) and
 `wayness` (now `stronger`, translated from its `Dict` of positions) are
-accepted with a deprecation warning (§13.1).
+accepted with a deprecation warning (§13.1). Passing one together with its
+new keyword is an `ArgumentError`, even when the new keyword is at its
+default value, as in `strength = 2, n_way = 1` (§13.2).
 
 # Examples
 
@@ -278,8 +314,8 @@ all_pairs(space; must_include = previous_cases)   # keep them; add what they mis
 See also [`all_values`](@ref), [`all_pairs`](@ref), [`all_triples`](@ref),
 [`excursions`](@ref), [`full_factorial`](@ref).
 """
-function covering(input...; strength = 2, stronger = [], must_include = [], engine = IPOG(),
-                  constraints = nothing, feasibility_limit = 1_000_000,
+function covering(input...; strength = nothing, stronger = nothing, must_include = nothing,
+                  engine = IPOG(), constraints = nothing, feasibility_limit = 1_000_000,
                   explanation_limit = 1_000_000, n_way = nothing, seeds = nothing, wayness = nothing)
     return _covering(:covering, input; strength, stronger, must_include, engine, constraints,
                      feasibility_limit, explanation_limit, n_way, seeds, wayness)
@@ -305,7 +341,7 @@ of `covering` except `strength`.
 all_values([1, 2, 3], ["a", "b"], [true, false])   # 3 tuples
 ```
 """
-function all_values(input...; stronger = [], must_include = [], engine = IPOG(),
+function all_values(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
                     constraints = nothing, feasibility_limit = 1_000_000,
                     explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                     seeds = nothing, wayness = nothing)
@@ -331,7 +367,7 @@ all_pairs((mode = [:fast, :exact], solver = [:none, :lu, :qr]);
 all_pairs(space; must_include = existing_cases)
 ```
 """
-function all_pairs(input...; stronger = [], must_include = [], engine = IPOG(),
+function all_pairs(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
                    constraints = nothing, feasibility_limit = 1_000_000,
                    explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                    seeds = nothing, wayness = nothing)
@@ -354,7 +390,7 @@ of `covering` except `strength`.
 all_triples([1, 2], [3, 4], [5, 6], [7, 8])
 ```
 """
-function all_triples(input...; stronger = [], must_include = [], engine = IPOG(),
+function all_triples(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
                      constraints = nothing, feasibility_limit = 1_000_000,
                      explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                      seeds = nothing, wayness = nothing)
@@ -368,24 +404,30 @@ end
 ## Excursions
 
 """
-    _excursions(fname, input; from, distance, ...) -> TestCases
+    _excursions(fname, input, default_distance; from, distance, ...) -> TestCases
 
 The excursion pipeline behind `excursions` and its deprecated aliases. The
 aliases forward the 0.4 `n_way`, which for an excursion was its distance
-(contract §7.5).
+(contract §7.5), and give their own `default_distance` for when neither
+`distance` nor `n_way` is passed. `distance = nothing` marks it omitted, so
+that `distance` and `n_way` together is an error whatever their values
+(§13.2).
 """
-function _excursions(fname::Symbol, input::Tuple; from = nothing, distance = 1, must_include = [],
-                     constraints = nothing, feasibility_limit = 1_000_000,
-                     explanation_limit = 1_000_000, seeds = nothing, stronger = nothing,
-                     wayness = nothing, n_way = nothing)
+function _excursions(fname::Symbol, input::Tuple, default_distance::Integer; from = nothing,
+                     distance = nothing, must_include = nothing, constraints = nothing,
+                     feasibility_limit = 1_000_000, explanation_limit = 1_000_000, seeds = nothing,
+                     stronger = nothing, wayness = nothing, n_way = nothing)
     (stronger === nothing || isempty(stronger)) && wayness === nothing || throw(ArgumentError(
         "excursions take a single distance; stronger groups apply to covering designs"))
     if n_way !== nothing
+        distance === nothing || throw(ArgumentError(
+            "pass distance only; n_way is its deprecated alias for an excursion (contract §7.5)"))
         Base.depwarn("the keyword `n_way` is deprecated; an excursion's `n_way` is its distance: " *
                      "use excursions(...; distance = $n_way)", fname)
         distance = n_way
     end
-    must_include, _ = _deprecated_keywords(fname; must_include, seeds, stronger = [], wayness = nothing)
+    distance = something(distance, default_distance)
+    must_include, _ = _deprecated_keywords(fname; must_include, seeds, stronger = nothing, wayness = nothing)
     distance isa Integer || throw(ArgumentError(
         "the excursion distance is an integer of at least 0; got $(repr(distance)) (contract §7.5)"))
     space, positional = _space(fname, input, constraints)
@@ -434,16 +476,19 @@ Rows within the distance that break a rule are left out. The result reports
 how many in `cases.notes.dropped`, and `cases.notes.never_appear` lists the
 values that appear in no returned row (§7.7).
 
+`feasibility_limit` and `explanation_limit` bound only the searches for
+must-include rows, as for [`full_factorial`](@ref).
+
 ```julia
 excursions([1, 2, 3], [:x, :y], [true, false])            # 1 + 2 + 1 + 1 rows
 excursions(space; from = (mode = :exact, solver = :lu, tol = 1e-6), distance = 2)
 ```
 """
-function excursions(input...; from = nothing, distance = 1, must_include = [],
+function excursions(input...; from = nothing, distance = 1, must_include = nothing,
                     constraints = nothing, feasibility_limit = 1_000_000,
                     explanation_limit = 1_000_000, seeds = nothing, stronger = nothing,
                     wayness = nothing)
-    return _excursions(:excursions, input; from, distance, must_include, constraints,
+    return _excursions(:excursions, input, 1; from, distance, must_include, constraints,
                        feasibility_limit, explanation_limit, seeds, stronger, wayness)
 end
 
@@ -469,9 +514,15 @@ use [`covering`](@ref) for a smaller design. Candidates are then enumerated
 one at a time and only valid rows are kept (§7.4). `cases.notes` reports
 `candidates` and `accepted` separately.
 
-`feasibility_limit` bounds the search that completes a partial must-include
-row, and `explanation_limit` the search that explains one with no completion,
-as for [`covering`](@ref).
+The enumeration checks complete rows and does not search, so
+`feasibility_limit` and `explanation_limit` matter only for a partial
+must-include row. `feasibility_limit` bounds the search that completes it:
+running out throws a [`ResourceLimitError`](@ref) naming the keyword, and
+raising it is how to let the call finish. `explanation_limit` bounds the
+search that explains a row with no valid completion: running out still
+throws the `ArgumentError` for that row, naming rules proven to exclude it,
+with the explanation marked unresolved; raising it only narrows that list of
+rules.
 
 ```julia
 full_factorial([0.1, 0.2, 0.3], ["low", "high"], [false, true])   # 12 tuples
@@ -479,12 +530,13 @@ full_factorial((a = 1:3, b = [7, 8], c = [true, false]);
                constraints = [forbid((b = 7, c = false))])        # 9 rows
 ```
 """
-function full_factorial(input...; limit = 10^6, must_include = [], constraints = nothing,
+function full_factorial(input...; limit = 10^6, must_include = nothing, constraints = nothing,
                         feasibility_limit = 1_000_000, explanation_limit = 1_000_000,
                         seeds = nothing, stronger = nothing, wayness = nothing)
     (stronger === nothing || isempty(stronger)) && wayness === nothing || throw(ArgumentError(
         "full_factorial returns every valid row; stronger groups apply to covering designs"))
-    must_include, _ = _deprecated_keywords(:full_factorial; must_include, seeds, stronger = [], wayness = nothing)
+    must_include, _ = _deprecated_keywords(:full_factorial; must_include, seeds, stronger = nothing,
+                                           wayness = nothing)
     limit isa Integer || throw(ArgumentError(
         "limit is a positive integer, the most candidate rows to enumerate; got $(repr(limit))"))
     space, positional = _space(:full_factorial, input, constraints)
@@ -516,7 +568,7 @@ keywords of `excursions`, and the 0.4 `n_way` as the distance.
 """
 function values_excursion(input...; kwargs...)
     Base.depwarn("values_excursion is deprecated; use excursions(...; distance = 1)", :values_excursion)
-    return _excursions(:values_excursion, input; distance = 1, kwargs...)
+    return _excursions(:values_excursion, input, 1; kwargs...)
 end
 
 """
@@ -527,7 +579,7 @@ keywords of `excursions`, and the 0.4 `n_way` as the distance.
 """
 function pairs_excursion(input...; kwargs...)
     Base.depwarn("pairs_excursion is deprecated; use excursions(...; distance = 2)", :pairs_excursion)
-    return _excursions(:pairs_excursion, input; distance = 2, kwargs...)
+    return _excursions(:pairs_excursion, input, 2; kwargs...)
 end
 
 """
@@ -538,5 +590,5 @@ keywords of `excursions`, and the 0.4 `n_way` as the distance.
 """
 function triples_excursion(input...; kwargs...)
     Base.depwarn("triples_excursion is deprecated; use excursions(...; distance = 3)", :triples_excursion)
-    return _excursions(:triples_excursion, input; distance = 3, kwargs...)
+    return _excursions(:triples_excursion, input, 3; kwargs...)
 end

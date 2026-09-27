@@ -22,7 +22,7 @@ Date: 2026-09-27. Branch `feature/phase4-interface`, stacked on
 
 ```
 5 cases · strength 2 · IPOG · 3 parameters · 12 combinations
-excluded: 3 pairs forbidden, 2 impossible because constraints combine; see report(cases)
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
  1  :exact  :qr     1.0e-6
  2  :exact  :lu     1.0e-6
@@ -32,7 +32,7 @@ excluded: 3 pairs forbidden, 2 impossible because constraints combine; see repor
 
 infeasible: no valid case contains (solver = :lu, tol = 0.001); rules 1 and 2 together exclude it (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
 5 cases (2 must-include) · strength 2 · IPOG · 3 parameters · 12 combinations
-excluded: 3 pairs forbidden, 2 impossible because constraints combine; see report(cases)
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
  1  :fast   :none   0.001
  2  :exact  :qr     1.0e-6
@@ -75,7 +75,7 @@ excluded: 3 pairs forbidden, 2 impossible because constraints combine; see repor
  5  :exact  :qr     1.0e-6
 
 5 cases · strength 2 · GND seed 3 · 3 parameters · 12 combinations
-excluded: 3 pairs forbidden, 2 impossible because constraints combine; see report(cases)
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
  1  :exact  :none   1.0e-6
  2  :fast   :none   0.001
@@ -128,7 +128,8 @@ has DataFrames; the demo's own environment does not.)
 2. **`copy(cases)` and slices return a plain `Vector{T}`** (Base's default
    for a read-only `AbstractVector`); writing into a result throws.
 3. **`TestCases.strength` is 0** for excursions and full factorials, which
-   have no strength; `show` never prints it for them.
+   have no strength; `show` never prints it for them. Review round 1 fixed
+   what Phase 5 does with it (contract §1.12).
 4. **Excursion notes** are translated to values in the constructor:
    `notes.base` is a row of type `T`, `notes.never_appear` is
    `name => value` pairs.
@@ -138,10 +139,11 @@ has DataFrames; the demo's own environment does not.)
 6. **`excursions` and `full_factorial` accept `constraints =`** on named
    input, read as "generation calls" in §12.12; passing `stronger` to
    either is an `ArgumentError` per §7.5 rather than a `MethodError`.
-7. **The excluded line** says "impossible because constraints combine"
+7. **The excluded line** said "impossible because constraints combine"
    even when a single wider-scope rule causes an implied exclusion; the
    per-exclusion line says "impossible because of rule k". Wording
-   question for the review.
+   question for the review. Resolved in review round 1: the summary now
+   says "impossible under the constraints".
 8. **`show` adds** a row-number column, "(2 must-include)" after the
    count, and "strength 2, 3 within (a, b, c)" for stronger groups.
 9. **CSV and `nothing`:** CSV.jl refuses `nothing`; the docstring gives the
@@ -155,3 +157,88 @@ has DataFrames; the demo's own environment does not.)
 |:--|--:|:--|
 | 5 | 3 | coverage/report |
 | 6 | 5 | negative generation, partitions kept, negative must-include |
+
+## Review round 1
+
+Five findings, all applied.
+
+1. **A deprecated keyword never weakens an explicit request.**
+   `covering(...; strength = 2, n_way = 1)` gave strength 1, because the
+   default `strength = 2` could not be told from an explicit 2. `strength`,
+   `stronger` and `must_include` now default to `nothing` (omitted) in
+   `covering`, `all_values`/`all_pairs`/`all_triples` and the shared
+   pipeline; an omitted strength is 2. A keyword with its alias is an
+   `ArgumentError` whatever the values, including an empty
+   `must_include = []` beside `seeds`:
+   - "pass strength only; n_way is its deprecated alias (contract §11.10)"
+   - "pass must_include only; seeds is its deprecated alias (contract §10.8)"
+   - "pass stronger only; wayness is its deprecated form (contract §11.10)"
+   - "pass candidates only; M is its deprecated alias (contract §13.1)",
+     from `GND(candidates = 50, M = 70)`, now that `candidates` defaults to
+     `nothing` (50)
+   - "pass distance only; n_way is its deprecated alias for an excursion
+     (contract §7.5)": found in the same audit. `values_excursion(...;
+     distance = 1, n_way = 2)` silently gave distance 2. `_excursions` now
+     takes the alias's default distance as an argument and `distance =
+     nothing` as omitted.
+
+   Contract §13.2 now states the rule and lists the five pairs. The
+   `covering` docstring says so. An explicit `strength = nothing` is read
+   as omitted.
+2. **`must_include` is read once.** `_must_include_rows` collects the
+   caller's rows once, validates that `Vector` and hands it to `Request`.
+   Before, a positional call iterated the rows to check them and then
+   passed the same iterator on, so `Iterators.Stateful([(2, 2, 2)])` gave
+   `n_must_include == 0` and lost the row. A `TestCases` is unwrapped to a
+   `Vector` there too. A non-iterable or a non-vector collection
+   (`must_include = 5`, `= :a`) is now "must_include is a list of rows,
+   such as a vector of NamedTuples or tuples; got 5 (contract §10.1)"
+   rather than a row-1 error.
+3. **Implied-exclusion wording.** The excluded line now reads "2
+   impossible under the constraints" because one wider-scope rule can
+   imply an exclusion alone. Direct ones stay "3 pairs forbidden". The
+   per-`Exclusion` line still names the cause ("impossible because rules 1
+   and 2 combine", "impossible because of rule 2"). The changes are in the
+   `TestCases` docstring, the exact-text tests, the transcript above and
+   the plan's Phase 4 step 6. The contract never had the phrase. A new
+   test shows one three-parameter rule giving "excluded: 1 pair impossible
+   under the constraints".
+4. **Search budgets.** The `covering` docstring now gives the two
+   outcomes separately. `feasibility_limit` exhaustion throws
+   `ResourceLimitError`: raise it when generation cannot finish.
+   `explanation_limit` exhaustion returns the same certified rows, with
+   implied exclusions at `minimal = :unresolved` and `limit =
+   :explanation_limit => N` (§3.15–§3.16): raising it only makes the
+   attribution more precise. `full_factorial` said "as for covering"; it
+   now says that both budgets apply only to partial must-include rows, and
+   that an exhausted explanation still gives the no-completion
+   `ArgumentError`, marked unresolved. `excursions` points to it.
+5. **Strength 0 and Phase 5.** The `TestCases` docstring says `strength`
+   is 0 for excursions and full factorials and that measuring such a
+   result needs an explicit strength. Plan Phase 5 step 1 and contract
+   §1.12 now say `coverage(cases::TestCases)` measures at `cases.strength`
+   and `cases.stronger`. For strength 0 it is an `ArgumentError` asking for
+   `strength =`, and `report(cases)` measures at strength 2 and says so.
+   §1.19 says the recorded strength is 0 for a strategy that has none.
+
+New tests (`test/test_interface.jl` unless noted):
+- every alias pair, with `strength = 2, n_way = 1`,
+  `all_pairs(...; seeds = [...], must_include = [...])`, an empty side on
+  every entry point, `GND(candidates, M)`, and an excursion's `distance`
+  with `n_way`. Each alias alone still works.
+- `Iterators.Stateful` and a generator, named and positional, for
+  `all_pairs` (both engines), `excursions` and `full_factorial`. The row
+  comes first and `n_must_include == 1`.
+- `all_pairs(space; explanation_limit = 1)` on the solver space, both
+  engines. The design is complete by the checker and has the same rows as
+  the default. Both implied exclusions are unresolved at
+  `:explanation_limit => 1`, and the excluded line adds "2 with an
+  unresolved explanation". For a must-include row with no completion,
+  `all_pairs`, `excursions` and `full_factorial` still throw and say the
+  explanation is unresolved.
+- the one-rule implied exclusion (`test/test_testcases.jl`).
+
+Suite: the interface and `TestCases` items pass, 853 of 853, or 864 with
+the Aqua item. The full `Pkg.test()` on Julia 1.13 gives 272,474 passed, 8
+broken and 0 failed in 5 min 22 s. The 8 broken are the pending Phase 5 and 6
+tests above.

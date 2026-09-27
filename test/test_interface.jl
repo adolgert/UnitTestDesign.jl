@@ -55,6 +55,10 @@ end
     # The 0.4 keyword M is deprecated and means candidates.
     gnd5 = @test_deprecated GND(rng = Xoshiro(23423523), M = 70)
     @test gnd5.candidates == 70
+    # candidates and its alias M together is an error, whatever the values (§13.2).
+    @test message(() -> GND(candidates = 50, M = 70)) ==
+          "pass candidates only; M is its deprecated alias (contract §13.1)"
+    @test occursin("pass candidates only", message(() -> GND(candidates = 20, M = 20)))
 end
 
 
@@ -264,6 +268,36 @@ end
                    message(() -> all_pairs(fable_domains(); must_include = [(speed = 1,)])))
     @test occursin("must_include row 1: 1 is not a value of `tol`",
                    message(() -> all_pairs(fable_domains(); must_include = [(tol = 1,)])))
+    @test occursin("must_include is a list of rows", message(() -> all_pairs(positional...; must_include = 5)))
+    @test occursin("must_include is a list of rows", message(() -> all_pairs(fable_domains(); must_include = :a)))
+end
+
+
+@testitem "must_include: an iterator is read once, so a Stateful or a generator keeps its rows (§10.5)" setup=[Checker, InterfaceSetup] begin
+    # The rows are collected once, and that collection is validated and handed
+    # on: a Stateful that validation had already consumed would give no rows.
+    domains = fill(1:2, 3)
+    checker = positional_checker(domains...)
+    for rows in (() -> Iterators.Stateful([(2, 2, 2)]), () -> (Tuple(r) for r in [[2, 2, 2]]))
+        for engine in (IPOG(), GND())
+            cases = all_pairs(domains...; must_include = rows(), engine)
+            @test cases[1] == (2, 2, 2) && cases.n_must_include == 1
+            @test complete(check_design(collect(cases), checker))
+        end
+        for f in (excursions, full_factorial)
+            cases = f(domains...; must_include = rows())
+            @test cases[1] == (2, 2, 2) && cases.n_must_include == 1
+        end
+    end
+    nt = (a = 1:2, b = 1:2, c = 1:2)
+    for rows in (() -> Iterators.Stateful([(a = 2, b = 2, c = 2)]), () -> ((a = v, b = v, c = v) for v in [2]))
+        cases = all_pairs(nt; must_include = rows())
+        @test cases[1] == (a = 2, b = 2, c = 2) && cases.n_must_include == 1
+        @test complete(check_design(collect(cases), CheckSpace(nt, [])))
+    end
+    # A partial named row from a Stateful is completed in place, first.
+    cases = all_pairs(fable_domains(); constraints = fable_rules(), must_include = Iterators.Stateful([(solver = :lu,)]))
+    @test cases[1] == (mode = :exact, solver = :lu, tol = 1e-6) && cases.n_must_include == 1
 end
 
 
@@ -434,6 +468,35 @@ end
 end
 
 
+@testitem "explanation_limit: running out leaves a complete design with an unresolved attribution (§3.13–§3.16)" setup=[Checker, InterfaceSetup] begin
+    space = TestSpace(fable_domains(); constraints = fable_rules())
+    for engine in (IPOG(), GND())
+        cases = all_pairs(space; explanation_limit = 1, engine)
+        full = all_pairs(space; engine)
+        # Certified and complete, and the same rows: only the attribution changes.
+        @test complete(check_design(collect(cases), fable_solver.space))
+        @test collect(cases) == collect(full)
+        implied = [e for e in cases.excluded if e.status === :implied]
+        @test [e.target for e in implied] == [(solver = :lu, tol = 1e-3), (solver = :qr, tol = 1e-3)]
+        @test all(e -> e.minimal === :unresolved && e.limit == (:explanation_limit => 1), implied)
+        @test all(e -> e.minimal === :verified && e.limit === nothing,
+                  [e for e in full.excluded if e.status === :implied])
+        text = split(sprint(show, MIME"text/plain"(), cases), '\n')
+        @test text[2] == "excluded: 3 pairs forbidden, 2 impossible under the constraints, " *
+                         "2 with an unresolved explanation; see report(cases)"
+        @test !occursin("unresolved", sprint(show, MIME"text/plain"(), full))
+    end
+    # A must-include row with no completion is still an error; the budget only
+    # leaves its explanation unresolved. feasibility_limit is what throws.
+    row = [(solver = :lu, tol = 1e-3)]
+    for f in (all_pairs, excursions, full_factorial)
+        msg = message(() -> f(space; must_include = row, explanation_limit = 1))
+        @test occursin("has no valid completion: rules 1 and 2 together exclude it", msg)
+        @test occursin("unresolved: explanation_limit = 1 reached", msg)
+    end
+end
+
+
 @testitem "strength equal to the parameter count is the full factorial, as a set (§7.8, §11.2)" setup=[Checker, InterfaceSetup] begin
     space = TestSpace(fable_domains(); constraints = fable_rules())
     for engine in (IPOG(), GND())
@@ -523,10 +586,34 @@ end
     @test length(@test_deprecated(values_excursion([1:3, 1:2, 1:4, 1:2, 1:2]...))) == 1 + 2 + 1 + 3 + 1 + 1
     @test length(excursions(fill(1:2, 20)...; distance = 2)) == 1 + 20 + 190
 
-    # A keyword and its deprecated alias together is an error.
-    @test occursin("pass strength only", message(() -> covering(d...; strength = 3, n_way = 1)))
+    # A keyword and its deprecated alias together is an error, whatever their
+    # values (§13.2): an explicit default is not taken for an omitted keyword,
+    # so `strength = 2, n_way = 1` cannot quietly give strength 1.
+    @test message(() -> covering(d...; strength = 2, n_way = 1)) ==
+          "pass strength only; n_way is its deprecated alias (contract §11.10)"
+    for (s, n) in ((3, 1), (2, 2), (1, 3))
+        @test occursin("pass strength only", message(() -> covering(d...; strength = s, n_way = n)))
+    end
+    @test occursin("pass strength only", @test_deprecated(message(() -> all_tuples(d...; strength = 2, n_way = 3))))
+    @test message(() -> all_pairs(d...; seeds = [(2, 5, :b)], must_include = [(1, 3, :a)])) ==
+          "pass must_include only; seeds is its deprecated alias (contract §10.8)"
     @test occursin("pass must_include only", message(() -> covering(d...; must_include = [(1, 3, :a)], seeds = [(1, 3, :a)])))
+    for f in (covering, all_values, all_pairs, excursions, full_factorial)   # even when one is empty
+        @test occursin("pass must_include only", message(() -> f(d...; seeds = [(2, 5, :b)], must_include = [])))
+        @test occursin("pass must_include only", message(() -> f(d...; seeds = [], must_include = [(2, 5, :b)])))
+    end
+    @test message(() -> covering(fill(1:2, 4)...; stronger = [], wayness)) ==
+          "pass stronger only; wayness is its deprecated form (contract §11.10)"
     @test occursin("pass stronger only", message(() -> covering(fill(1:2, 4)...; stronger = [(1, 2, 3) => 3], wayness)))
+    @test @test_deprecated(message(() -> values_excursion(d...; distance = 1, n_way = 2))) ==
+          "pass distance only; n_way is its deprecated alias for an excursion (contract §7.5)"
+    @test occursin("pass distance only", @test_deprecated(message(() -> pairs_excursion(d...; distance = 2, n_way = 2))))
+    # Each alias alone still means the new keyword; omitted, the defaults hold.
+    @test @test_deprecated(covering(d...; n_way = 1)).strength == 1
+    @test covering(d...).strength == 2 && covering(d...; strength = nothing).strength == 2
+    @test @test_deprecated(all_tuples(d...)).strength == 2
+    @test excursions(d...).notes.distance == 1
+    @test @test_deprecated(values_excursion(d...; distance = 2)).notes.distance == 2
     # wayness excursions: one distance only (§7.5).
     @test @test_deprecated(message(() -> pairs_excursion(fill(1:2, 6)...; wayness))) ==
           "excursions take a single distance; stronger groups apply to covering designs"

@@ -449,7 +449,7 @@ Steps:
 6. **`show(io, ::TestCases)`.** One summary line ("5 cases · strength 2 ·
    IPOG · 3 parameters · 12 combinations, 5 valid" when the valid count
    is cheap, otherwise just the product), then "excluded: 3 pairs
-   forbidden, 2 impossible because constraints combine; see
+   forbidden, 2 impossible under the constraints; see
    report(cases)", then an aligned table truncated like a `DataFrame`.
    Nothing is computed at display time that generation did not already know.
 7. **Tables.** A vector of `NamedTuple`s already satisfies Tables.jl's
@@ -490,9 +490,14 @@ Steps:
    once. Negative rows never increase ordinary coverage. Implement the
    result structure now and activate wrapper inputs in Phase 6.
    `coverage(cases::TestCases)` reads the space and request from the
-   result. Prints "covers 11 of 11 feasible pairs" or the missing list when
-   classification is resolved. With unknown targets, report known counts
-   and unresolved targets without an exact percentage or completeness claim.
+   result. `coverage(cases::TestCases)` measures at `cases.strength` and
+   `cases.stronger`; for a result whose strength is 0 (an excursion or a
+   full factorial) it is an `ArgumentError` asking for `strength =`, and
+   `report(cases)` on such a result measures at strength 2 and says so in
+   its guarantee line. Prints "covers 11 of 11 feasible pairs" or the
+   missing list when classification is resolved. With unknown targets,
+   report known counts and unresolved targets without an exact percentage
+   or completeness claim.
 2. **`missing_interactions(cases, space; ...)`** returns
    `coverage(...).missing` when classification is resolved; otherwise raise
    a resource-limit error directing the caller to `coverage` for the known

@@ -98,7 +98,11 @@ Measurement never needs a search to classify a covered target.
 
 **1.12** `coverage(cases, space; strength, stronger)` measures the supplied
 rows against the space, independent of any generator bookkeeping.
-`coverage(cases::TestCases)` uses the space and request stored in the result.
+`coverage(cases::TestCases)` uses the space and request stored in the result:
+it measures at `cases.strength` and `cases.stronger`. For a result whose
+strength is 0 (an excursion or a full factorial, §1.19),
+`coverage(cases::TestCases)` is an `ArgumentError` asking for `strength =`,
+and `report(cases)` measures at strength 2 and says so in its guarantee line.
 
 **1.13** Rows given to `coverage` must be complete, use only the space's
 parameter names, and use only domain values (§2.11). Anything else is an
@@ -126,10 +130,10 @@ rows.
 `collect(cases)` returns a plain `Vector{T}`.
 
 **1.19** A `TestCases` records its space, strategy (`:covering`, `:excursion`,
-`:full_factorial`), strength, `stronger` groups, engine name and seed, the
-number of must-include rows, the excluded targets with attribution and
-explanation status, and covered-target counts, with ordinary and negative
-bookkeeping kept separate.
+`:full_factorial`), strength (0 for a strategy that has none), `stronger`
+groups, engine name and seed, the number of must-include rows, the excluded
+targets with attribution and explanation status, and covered-target counts,
+with ordinary and negative bookkeeping kept separate.
 
 **1.20** A generated `TestCases` contains no target whose status is unknown
 (§3.6).
@@ -786,7 +790,12 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `GND(M = ...)` | keyword | deprecated | Alias for `candidates`. |
 
 **13.2** Deprecated names warn through `Base.depwarn` and are scheduled for
-removal in the next breaking release.
+removal in the next breaking release. A keyword given together with its
+deprecated alias (`strength` and `n_way`, `must_include` and `seeds`,
+`stronger` and `wayness`, an excursion's `distance` and `n_way`, GND's
+`candidates` and `M`) is an `ArgumentError`, whatever their values: a keyword
+passed at its default value counts as passed, and neither one overrides the
+other.
 
 **13.3** Removed outright, with no alias: `disallow`, `generate_tuples`,
 `Excursion`, and the `Counter` keyword.

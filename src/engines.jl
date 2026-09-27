@@ -26,18 +26,24 @@ combinations. Deterministic for a given `seed` (contract §9.5): each call
 seeds a fresh generator from `seed`. Pass `rng` to draw from a caller's
 generator instead; it is copied at the start of each call and never
 advanced (§9.6), and the recorded seed is then `nothing`. The 0.4 keyword
-`M` is accepted with a deprecation warning and means `candidates`.
+`M` is accepted with a deprecation warning and means `candidates`; passing
+both is an error (§13.2).
 """
 struct GND
     seed::Union{Nothing, Int}
     candidates::Int
     rng::Union{Nothing, AbstractRNG}
 
-    function GND(; seed = 0, candidates = 50, rng = nothing, M = nothing)
+    # `candidates = nothing` marks it omitted (50), so an explicit value beside
+    # `M` is refused rather than overridden.
+    function GND(; seed = 0, candidates = nothing, rng = nothing, M = nothing)
         if M !== nothing
+            candidates === nothing || throw(ArgumentError(
+                "pass candidates only; M is its deprecated alias (contract §13.1)"))
             Base.depwarn("GND(M = n) is deprecated; use GND(candidates = n)", :GND)
             candidates = M
         end
+        candidates = something(candidates, 50)
         candidates >= 1 || throw(ArgumentError("GND needs at least one candidate per case, got $candidates"))
         if rng !== nothing
             new(nothing, Int(candidates), rng)

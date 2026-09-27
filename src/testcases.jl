@@ -57,8 +57,8 @@ and `copy(cases)` are plain, mutable `Vector{T}`s, and so is a slice such as
 
 All recorded at generation and never recomputed (§1.19, §1.22):
 `cases`, `space`, `strategy` (`:covering`, `:excursion`, `:full_factorial`),
-`strength` (the covering strength; 0 when the strategy has no strength),
-`stronger` (as `names => strength` pairs, base group excluded),
+`strength` (the covering strength, see below), `stronger` (as
+`names => strength` pairs, base group excluded),
 `engine::Symbol`, `seed`, `n_must_include`, `required` and `covered`
 (ordinary target counts; zero for non-covering strategies), `excluded`
 ([`Exclusion`](@ref)s, in target order, §9.7), `positional::Bool`, and
@@ -74,6 +74,8 @@ All recorded at generation and never recomputed (§1.19, §1.22):
   rows);
 - nothing for a covering design.
 
+`strength` is 0 when the strategy has no strength (excursions and full
+factorials); measurement of such a result needs an explicit strength.
 Negative bookkeeping arrives in Phase 6 and is kept separate.
 
 # Display
@@ -83,7 +85,7 @@ a table (§1.22):
 
 ```
 5 cases · strength 2 · IPOG · 3 parameters · 12 combinations
-excluded: 3 pairs forbidden, 2 impossible because constraints combine; see report(cases)
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
  1  :exact  :qr     1.0e-6
  2  :exact  :lu     1.0e-6
@@ -319,9 +321,12 @@ function _print_summary(io::IO, tc::TestCases)
     return nothing
 end
 
-# "excluded: 3 pairs forbidden, 2 impossible because constraints combine;
-# see report(cases)". The noun follows the targets' size: pairs, triples, or
-# combinations when the size is another or the sizes differ (stronger groups).
+# "excluded: 3 pairs forbidden, 2 impossible under the constraints; see
+# report(cases)". An implied exclusion may come from rules that combine or
+# from a single rule over a wider scope, so the summary names no cause; each
+# `Exclusion` names its rules. The noun follows the targets' size: pairs,
+# triples, or combinations when the size is another or the sizes differ
+# (stronger groups).
 function _print_excluded(io::IO, tc::TestCases)
     forbidden = count(e -> e.status === :forbidden, tc.excluded)
     implied = count(e -> e.status === :implied, tc.excluded)
@@ -330,7 +335,7 @@ function _print_excluded(io::IO, tc::TestCases)
     noun = sizes == [2] ? "pair" : sizes == [3] ? "triple" : "combination"
     clauses = Pair{String, Int}[]
     forbidden > 0 && push!(clauses, "forbidden" => forbidden)
-    implied > 0 && push!(clauses, "impossible because constraints combine" => implied)
+    implied > 0 && push!(clauses, "impossible under the constraints" => implied)
     parts = String[]
     for (k, (what, n)) in enumerate(clauses)
         push!(parts, k == 1 ? string(_plural(n, noun), " ", what) : string(n, " ", what))

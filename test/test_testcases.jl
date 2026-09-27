@@ -52,7 +52,7 @@ using TestItemRunner
     cells(line) = split(strip(line))
 
     const SOLVER_SUMMARY = "5 cases · strength 2 · IPOG · 3 parameters · 12 combinations"
-    const SOLVER_EXCLUDED = "excluded: 3 pairs forbidden, 2 impossible because constraints combine; see report(cases)"
+    const SOLVER_EXCLUDED = "excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)"
 end
 
 
@@ -124,7 +124,7 @@ end
           "(solver = :lu, tol = 0.001): impossible because rules 1 and 2 combine " *
           "(rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance) " *
           "(explanation unresolved: explanation_limit = 1 reached)"
-    @test lines(limited)[2] == "excluded: 3 pairs forbidden, 2 impossible because constraints combine, " *
+    @test lines(limited)[2] == "excluded: 3 pairs forbidden, 2 impossible under the constraints, " *
                                "2 with an unresolved explanation; see report(cases)"
 
     # Other shapes: several direct rules, one rule behind an implied target.
@@ -132,6 +132,12 @@ end
     @test repr(two) == "(a = 1, b = 2): forbidden by rules 1 and 3 (rule 1: a is odd; rule 3 on (a, b))"
     wide = Exclusion((a = 1,), :implied, [2], ["no a without c"], :verified, nothing)
     @test repr(wide) == "(a = 1,): impossible because of rule 2 (no a without c)"
+    # One rule over a wider scope implies an exclusion by itself, so the
+    # excluded line names no cause; the Exclusion names its one rule.
+    one_rule = covering_cases(TestSpace((a = [1, 2], b = [1, 2], c = [1, 2]); constraints = [
+        forbid((a, b, c) -> a == 1 && b == 1, :a, :b, :c; reason = "no a = b = 1")]))
+    @test lines(one_rule)[2] == "excluded: 1 pair impossible under the constraints; see report(cases)"
+    @test repr(only(one_rule.excluded)) == "(a = 1, b = 1): impossible because of rule 1 (no a = b = 1)"
     big = Exclusion((a = 1,), :implied, [1, 2], ["x", "y"], :unresolved, :explanation_limit => 1_000_000)
     @test endswith(repr(big), "(explanation unresolved: explanation_limit = 1_000_000 reached)")
 end
@@ -295,7 +301,7 @@ end
     cases = covering_cases(test_space(opus_gpu))
     text = lines(cases)
     @test text[1] == "$(length(cases)) cases · strength 2 · IPOG · 3 parameters · 12 combinations"
-    @test text[2] == "excluded: 2 pairs forbidden, 1 impossible because constraints combine; see report(cases)"
+    @test text[2] == "excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)"
     @test text[3] == "    os        gpu    driver"
     @test length(text) == 3 + length(cases)
     @test cases.required == cases.covered == 13
@@ -320,7 +326,7 @@ end
         @test length(cases.excluded) == 16
         name = engine isa IPOG ? "IPOG" : "GND seed 0"
         @test lines(cases) == ["0 cases · strength 2 · $name · 3 parameters · 12 combinations",
-                               "excluded: 4 pairs forbidden, 12 impossible because constraints combine; see report(cases)",
+                               "excluded: 4 pairs forbidden, 12 impossible under the constraints; see report(cases)",
                                "    free  x  y"]
         @test plain(cases; limit = true, size = (5, 20)) == plain(cases)
         @test repr(cases) == "0 cases · strength 2 · $name · 3 parameters · 12 combinations"
