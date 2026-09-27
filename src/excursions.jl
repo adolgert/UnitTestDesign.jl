@@ -85,7 +85,12 @@ function excursion_base(request::Request, from)
         end
         return collect(Int, from)
     elseif from isa NamedTuple || from isa Tuple
-        idx = case_indices(request.space, from)
+        idx = try
+            case_indices(request.space, from)
+        catch err
+            err isa ArgumentError || rethrow()
+            throw(ArgumentError("the excursion base `from`: " * err.msg))   # names the keyword (§7.6)
+        end
         unset = request.space.names[idx .== 0]
         isempty(unset) || throw(ArgumentError(
             "the excursion base `from` must be a complete row (contract §7.6); it has no value for " *
@@ -155,7 +160,7 @@ function generate_excursion(request::Request; distance::Integer = 1, from = noth
     length(request.groups) == 1 || throw(ArgumentError(
         "excursions take a single distance; stronger groups apply to covering designs"))
     space = request.space
-    distance = min(Int(distance), length(request.arity))
+    distance = Int(min(distance, length(request.arity)))
     base = excursion_base(request, from)
     if violates(request.feasibility, _space_indices(request, base))
         throw(ArgumentError(

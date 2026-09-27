@@ -74,24 +74,43 @@ function _accept_rows!(kept::Vector{Int}, request::Request, seen::Set{Vector{Int
 end
 
 """
+    check_full_factorial_limit(arity, limit) -> BigInt
+
+The number of candidate rows of a full factorial over parameters with
+`arity[i]` ordinary values, their product, counted as a `BigInt` so that it
+never overflows. A count above `limit` throws the `ResourceLimitError` that
+gives the count and the keyword `limit` (contract §7.3). `limit` is checked
+first: a positive integer within `Int`. `full_factorial` calls this with the
+space's ordinary arities before it builds the request, so the refusal comes
+before any must-include search; `generate_full_factorial` calls it again
+for callers that build the request themselves. Phase 6 adds the
+single-invalid products to the count.
+"""
+function check_full_factorial_limit(arity::AbstractVector{<:Integer}, limit)
+    limit = _check_integer(:limit, limit, 1, "§7.3")
+    candidates = prod(BigInt, arity; init = big(1))
+    candidates > limit && throw(ResourceLimitError(
+        "enumerating a full factorial of $(_grouped(candidates)) candidate rows", limit, :limit))
+    return candidates
+end
+
+"""
     generate_full_factorial(request; limit = 10^6) -> Design
 
-Every valid row of the request's space, once, after the must-include rows
-(contract §7.2, §10.5); a valid row equal to a must-include row is not
-repeated. Before enumerating, a candidate product above `limit` throws
-`ResourceLimitError` giving the count and the keyword `limit` (§7.3).
+The must-include rows, in the order given with duplicates kept (contract
+§10.5), then every other valid row of the request's space once (§7.2): a
+valid row equal to a must-include row is not repeated. Before enumerating,
+a candidate product above `limit` throws `ResourceLimitError` giving the
+count and the keyword `limit` (§7.3, `check_full_factorial_limit`).
 Candidates are enumerated one at a time, the last parameter fastest, and
 only valid rows are kept (§7.4). `notes` reports `candidates` (the product)
 and `accepted` (the valid rows found) separately. A partial must-include
 row is completed by its feasibility witness.
 """
-function generate_full_factorial(request::Request; limit::Integer = 10^6)
-    limit >= 1 || throw(ArgumentError("limit must be a positive Int, got $limit"))
+function generate_full_factorial(request::Request; limit = 10^6)
     arity = request.arity
     n = length(arity)
-    candidates = prod(BigInt, arity)
-    candidates > limit && throw(ResourceLimitError(
-        "enumerating a full factorial of $(_grouped(candidates)) candidate rows", Int(limit), :limit))
+    candidates = check_full_factorial_limit(arity, limit)
     must = Vector{Int}[]
     for s in axes(request.must_include, 2)
         row = request.must_include[:, s]

@@ -102,7 +102,8 @@ rows against the space, independent of any generator bookkeeping.
 it measures at `cases.strength` and `cases.stronger`. For a result whose
 strength is 0 (an excursion or a full factorial, §1.19),
 `coverage(cases::TestCases)` is an `ArgumentError` asking for `strength =`,
-and `report(cases)` measures at strength 2 and says so in its guarantee line.
+and `report(cases)` measures at strength `min(2, parameter count)`, so at
+strength 1 for a one-parameter space, and says so in its guarantee line.
 
 **1.13** Rows given to `coverage` must be complete, use only the space's
 parameter names, and use only domain values (§2.11). Anything else is an
@@ -210,7 +211,9 @@ remain two choices even though `github_matrix` writes both as `"x"`.
 **2.4** A value read from a returned row has the same concrete type as the
 domain value and is `isequal` to it. Result element types are chosen so that
 storing a value never converts it: a parameter whose values share one concrete
-type gets that type; otherwise a `Union` or abstract field type.
+type gets that type, whatever the domain's element type (`Any[1, 2]` gives
+`Int`); otherwise a `Union` of the values' concrete types (`Any[1, 1.0]` gives
+`Union{Int64, Float64}`) or an abstract field type.
 
 **2.5** A domain that lists the same choice twice is an error naming the
 parameter and the value ("parameter `tol` lists `1.0` twice"). The same value
@@ -466,7 +469,9 @@ The covering guarantee (§1.3) belongs to covering alone.
 
 **7.2** `full_factorial` returns every valid ordinary row and every valid
 negative row, each once, ordinary rows first. It never returns a
-multiple-invalid row.
+multiple-invalid row. Must-include rows precede them, in the order given with
+duplicates kept (§10.5); a valid row equal to a must-include row is not
+repeated.
 
 **7.3** `full_factorial(space; limit = 10^6)` counts candidate rows before
 enumerating: the ordinary product plus, for each parameter, its invalid
@@ -554,7 +559,9 @@ scheduling, the global random number generator, or the clock.
 **9.5** `GND(; seed = 0, candidates = 50, rng = nothing)` seeds a fresh
 generator from `seed` at the start of every call, so repeated calls with the
 same engine agree. The seed is recorded in the result and printed by
-`report`.
+`report`. `seed` is an integer of at least 0 and `candidates` a positive
+integer, each within `Int`; another value is an `ArgumentError` naming the
+keyword.
 
 **9.6** If `rng` is given, GND uses a copy of it at the start of every call,
 leaves the caller's generator unadvanced, and records the seed as `nothing`.

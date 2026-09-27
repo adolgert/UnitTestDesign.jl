@@ -28,6 +28,11 @@ generator instead; it is copied at the start of each call and never
 advanced (§9.6), and the recorded seed is then `nothing`. The 0.4 keyword
 `M` is accepted with a deprecation warning and means `candidates`; passing
 both is an error (§13.2).
+
+`candidates` is a positive integer and `seed` an integer of at least 0
+(Julia 1.10's `Xoshiro` refuses a negative seed), each within `Int`; `rng`
+is an `AbstractRNG`. Any other value is an `ArgumentError` naming the
+keyword, such as "candidates must be a positive integer, got 1.5".
 """
 struct GND
     seed::Union{Nothing, Int}
@@ -35,21 +40,26 @@ struct GND
     rng::Union{Nothing, AbstractRNG}
 
     # `candidates = nothing` marks it omitted (50), so an explicit value beside
-    # `M` is refused rather than overridden.
+    # `M` is refused rather than overridden. Every value is checked before it
+    # is converted to the field's type.
     function GND(; seed = 0, candidates = nothing, rng = nothing, M = nothing)
         if M !== nothing
             candidates === nothing || throw(ArgumentError(
                 "pass candidates only; M is its deprecated alias (contract §13.1)"))
+            _check_integer(:M, M, 1, "§9.5")
             Base.depwarn("GND(M = n) is deprecated; use GND(candidates = n)", :GND)
             candidates = M
         end
-        candidates = something(candidates, 50)
-        candidates >= 1 || throw(ArgumentError("GND needs at least one candidate per case, got $candidates"))
-        if rng !== nothing
-            new(nothing, Int(candidates), rng)
-        else
-            new(Int(seed), Int(candidates), nothing)
+        candidates = _check_integer(:candidates, something(candidates, 50), 1, "§9.5")
+        if rng === nothing
+            return new(_check_integer(:seed, seed, 0, "§9.5"), candidates, nothing)
         end
+        rng isa AbstractRNG || throw(ArgumentError(
+            "rng must be a random number generator, an AbstractRNG such as Xoshiro(1), " *
+            "got $(repr(rng)) (contract §9.6)"))
+        # The caller's generator replaces the seed, which may then be omitted.
+        seed === nothing || _check_integer(:seed, seed, 0, "§9.5")
+        return new(nothing, candidates, rng)
     end
 end
 

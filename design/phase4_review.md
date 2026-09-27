@@ -110,8 +110,8 @@ has DataFrames; the demo's own environment does not.)
 
 - Every input form of `covering`/`all_pairs` gives a design the oracle
   accepts; heterogeneous domains keep their values and types through
-  generation (`Any[1, 1.0]` gives an `Any` field with both values distinct
-  by `===`).
+  generation (`Any[1, 1.0]` gives a `Union{Int64, Float64}` field, since
+  review round 2, with both values distinct by `===`).
 - `show` performs no search: a test wraps a lazy rule in a counter and
   swaps every rule table for one that throws, for all five result kinds.
 - Each deprecation warns once per call site under `--depwarn=yes`, checked
@@ -121,10 +121,15 @@ has DataFrames; the demo's own environment does not.)
 
 ## Decisions for review
 
-1. **Field types** follow the stored domain's element type: `Vector{Int}`
-   gives `Int`, `[nothing, :x]` gives `Union{Nothing, Symbol}`, `Any[...]`
-   gives `Any`. Deterministic and simple; a narrower union is possible but
-   would depend on the values drawn.
+1. **Field types** come from the parameter's values, not the domain's
+   element type: `Union{unique(typeof.(domain))...}`, which is one concrete
+   type when the values share it. `[1, 2, 3]` and `Any[1, 2]` give `Int`,
+   `Any[1, 1.0]` gives `Union{Int64, Float64}`, `[nothing, :x]` gives
+   `Union{Nothing, Symbol}`, and `[1, Invalid(1)]` gives
+   `Union{Int64, Invalid{Int64}}`. The type depends on the whole domain,
+   never on the values drawn, so it stays deterministic. Changed in review
+   round 2; the first version used the domain's `eltype`, so `Any[1, 2]`
+   gave an `Any` field, against §2.4.
 2. **`copy(cases)` and slices return a plain `Vector{T}`** (Base's default
    for a read-only `AbstractVector`); writing into a result throws.
 3. **`TestCases.strength` is 0** for excursions and full factorials, which
@@ -242,3 +247,169 @@ Suite: the interface and `TestCases` items pass, 853 of 853, or 864 with
 the Aqua item. The full `Pkg.test()` on Julia 1.13 gives 272,474 passed, 8
 broken and 0 failed in 5 min 22 s. The 8 broken are the pending Phase 5 and 6
 tests above.
+
+## Review round 2
+
+Five findings, all applied.
+
+1. **The full-factorial limit comes before any search.** `full_factorial`
+   built the `Request` before `generate_full_factorial` compared the
+   candidate count with `limit`, and the `Request` checks a partial
+   must-include row with a feasibility search. With eight candidates,
+   `limit = 1` and a partial row under a rule, the caller got a
+   `feasibility_limit` error and advice to raise it, for an enumeration that
+   was refused anyway. `check_full_factorial_limit(arity, limit)` now holds
+   the check. It validates `limit`, counts the product as a `BigInt`, and
+   throws the `ResourceLimitError` that names the count and `:limit`.
+   `full_factorial` calls it with the space's ordinary arities before it
+   builds the `Request`. `generate_full_factorial` calls it again for
+   callers that build their own request. The docstring now says the count
+   comes before any row is looked at, must-include rows included.
+2. **Keyword values are checked before they are sorted or converted.** One
+   check, `_check_integer(keyword, value, least, section)`, reads every
+   integer keyword. It accepts an `Integer` other than `Bool` that is at
+   least `least` and fits in an `Int`, and returns it as an `Int`. Anything
+   else is an `ArgumentError` of the form "KEYWORD must be ACCEPTED, got
+   VALUE (contract §N)". `_check_limit` is that check with a least value
+   of 1. Every generation pipeline checks its keywords before it builds the
+   space. `Request` also dropped the `::Integer` annotations on its limits,
+   which had turned `feasibility_limit = 1.5` into a `TypeError` before
+   `_check_limit` could run. The audit found these problems:
+
+   | Keyword | Malformed value | Before | Now |
+   |:--|:--|:--|:--|
+   | `wayness` | `Dict(3 => …, :a => …)` | `MethodError` from `isless` in `sort` | keys checked before sorting |
+   | `GND(candidates)` | `1.5`, `big(2)^70` / `:a` / `2.0`, `true` | `InexactError` / `MethodError` / read as 2, 1 | `ArgumentError` |
+   | `GND(seed)` | `1.5`, `typemax(UInt64)` / `:a`, `nothing` / `-1` | `InexactError` / `MethodError` / a `DomainError` from `Xoshiro` at generation on Julia 1.10 | `ArgumentError`; a seed is at least 0 |
+   | `GND(M)` | `1.5` | `InexactError` | `ArgumentError` naming `M` |
+   | `GND(rng)` | `:a` | `MethodError` from `convert` | `ArgumentError` |
+   | `strength` | `true` | read as 1 | `ArgumentError` |
+   | `n_way` | `1.5` | the message named `strength` | names `n_way` |
+   | `distance` | `true` / `big(10)^30` | read as 1 / `InexactError` | `ArgumentError` / the parameter count (§7.5) |
+   | `limit` | `true` / `big(10)^30` | read as 1 / `InexactError` once exceeded | `ArgumentError` |
+   | `feasibility_limit`, `explanation_limit` | `1.5`, `:a` / `big(10)^30` / `true` | `TypeError` / `InexactError` / read as 1 | `ArgumentError` |
+   | `from` | a wrong length; an unknown name or value | messages that did not name `from` | name `from` |
+   | `from` | a `NamedTuple` on a positional call | accepted | `ArgumentError`, as for `must_include` rows |
+   | `stronger` | `:a`, `[:a => 3]` | `MethodError` from `iterate` | `ArgumentError` |
+   | `stronger` | `(1, 2, 3) => 3`, unwrapped | "each entry … got (1, 2, 3)" | "wrap a single group in a vector" |
+   | `stronger` | `[5 => 3]` | a bare index read as a group | a group is a tuple or vector |
+
+   The new messages:
+   - "`wayness` is a Dict{Int, Vector{Vector{Int}}} from a strength to
+     parameter index groups, such as Dict(3 => [[3, 4, 5, 6]]); got the key
+     :a, which is not an integer strength (contract §11.10)"
+   - "candidates must be a positive integer, got 1.5 (contract §9.5)", and
+     "… that fits in an Int, got 1180591620717411303424 …" for `big(2)^70`
+   - "M must be a positive integer, got 1.5 (contract §9.5)"
+   - "seed must be an integer of at least 0, got -1 (contract §9.5)"
+   - "rng must be a random number generator, an AbstractRNG such as
+     Xoshiro(1), got :a (contract §9.6)"
+   - "strength must be a positive integer, got 0 (contract §11.1)", which
+     replaces "strength is an integer of at least 1" and the `Request`'s
+     "strength must be at least 1"
+   - "n_way must be a positive integer, got 1.5 (contract §11.1)"
+   - "distance must be an integer of at least 0, got 1.5 (contract §7.5)",
+     and for the aliases "n_way, an excursion's distance, must be an
+     integer of at least 0, got 1.5 (contract §7.5)"
+   - "limit must be a positive integer, got 1.5 (contract §7.3)"
+   - "feasibility_limit must be a positive integer, got 1.5 (contract §3.3,
+     §3.13)", which replaces "must be a positive Int;"
+   - "`from` has 2 values; the space has 3 parameters, p1, p2, p3, and the
+     base is a complete row (contract §7.6)"
+   - "`from` is a NamedTuple; a positional call takes the base as a tuple or
+     vector of values in argument order, one for each of p1, p2, p3
+     (contract §7.6)"
+   - "the excursion base `from`: `d` is not a parameter of this space; the
+     parameters are a, b, c", with the same prefix for a value outside the
+     domain
+   - "stronger is a vector of `group => strength` pairs, such as [(:a, :b,
+     :c) => 3]; got :a (contract §11.3)"; "… wrap a single group in a
+     vector: stronger = [(1, 2, 3) => 3] (contract §11.3)"; "each
+     `stronger` group is a tuple or vector of parameter names or indices,
+     such as (:a, :b, :c) => 3; got :a => 3 (contract §11.3)"
+
+   Integer types other than `Int` still work: `GND(seed = UInt8(3))`,
+   `strength = Int32(3)` and `limit = Int32(8)` are read as `Int`s. The
+   contract now says what GND accepts (§9.5). `TestSpace`'s
+   `tabulation_limit` was not changed. It already rejects a non-integer
+   with its own `ArgumentError`, and only `true` or an integer beyond `Int`
+   gets through it.
+3. **Field types come from the values (§2.4).** `row_type` used each stored
+   domain's `eltype`, so `Any[1, 2]` gave an `Any` field. `field_type(domain)
+   = Union{unique(typeof(v) for v in domain)...}` now gives the fields
+   below. Rows are still built with `convert(T, …)`. Every value already
+   has its field's type, so nothing is converted: `1` stays an `Int` and
+   `1.0` a `Float64`.
+
+   | Domain | Field type |
+   |:--|:--|
+   | `[1, 2, 3]` | `Int64` |
+   | `Any[1, 2]` | `Int64` |
+   | `Any[1, 1.0]` | `Union{Float64, Int64}` |
+   | `[nothing, :x]` | `Union{Nothing, Symbol}` |
+   | `[1, Invalid(1)]` | `Union{Int64, Invalid{Int64}}` |
+
+   `DataFrame(cases)` columns follow. A space of `Any[1, 2]`,
+   `Any[1, 1.0]` and `[nothing, :x]` gives columns of `Int64`,
+   `Union{Int64, Float64}` and `Union{Nothing, Symbol}`, and the union
+   column holds both `Int64` and `Float64` cells. The `TestCases`
+   docstring, decision 1 above and the tests that asserted `Any` are
+   updated. §2.4 already allowed a `Union`. It now also says that a shared
+   concrete type is used whatever the domain's element type (`Any[1, 2]`
+   gives `Int`), and names the union of the values' concrete types.
+4. **One-parameter results in Phase 5's default.** An excursion or a full
+   factorial may have one parameter, where strength 2 does not exist.
+   Contract §1.12 and plan Phase 5 step 1 now say `report(cases)` measures
+   such a result at strength `min(2, parameter count)`. Plan Phase 5 step 6
+   adds `report` on one-parameter excursions and full factorials: "cover
+   this boundary in Phase 5 tests".
+5. **Full-factorial docstring and duplicates.** The docstring said "each
+   once", but duplicate must-include rows are kept (§10.5). It now says:
+   the must-include rows first, in the order given with duplicates kept,
+   then each remaining valid row once, and a valid row equal to a
+   must-include row is not repeated. The `excursions` docstring had the same
+   "each once" and now says the same. Its `must_include` item adds that the
+   rows are kept as given, duplicates included (§7.11). The
+   `generate_full_factorial` docstring changed to match. Contract §7.2 had
+   "each once" too, and now places the must-include rows first with their
+   duplicates.
+
+Contract edits: §1.12 (`min(2, parameter count)`), §2.4 (values, not the
+domain's element type), §7.2 (must-include duplicates), §9.5 (the accepted
+`seed` and `candidates`).
+
+New tests:
+- `test/test_interface.jl`, a new item, "keyword values are checked before
+  they are sorted or converted". It asserts the exact message for every
+  row of the table above: `wayness` with mixed and `Float64` keys and a
+  mixed `Integer` key type; `candidates`, `M`, `seed` and `rng`, including
+  a seed beside `rng` and `seed = nothing` with `rng`; `strength` and
+  `n_way`; `distance` and an excursion alias's `n_way`, with a `BigInt`
+  distance clamped to the parameter count; `limit`; both search budgets on
+  all six entry points; `from` by length, positional `NamedTuple`,
+  unknown name, value outside the domain and wrong type; and `stronger` by
+  shape, group and strength. Other integer types are accepted.
+- `full_factorial`, in the same file. A space with a lazy rule
+  (`tabulation_limit = 1`), a partial must-include row, `limit = 1` and
+  `feasibility_limit = 1` throws the `:limit` error naming "8 candidate
+  rows", and the rule is never evaluated. With `limit = 8` the same call
+  searches and throws `:feasibility_limit`.
+- `full_factorial` and `excursions` with a duplicated must-include row. Both
+  copies come first, and the remaining rows appear once each, never a third
+  copy. There are named and positional cases.
+- `test/test_testcases.jl`, a new item, "field types come from the values".
+  It checks `field_type` and `row_type` (named and positional) for the five
+  domains. It checks that generated covering, full-factorial and
+  excursion-base values keep `===` in `Union` fields. It checks the
+  `Invalid`, `Partition` and mixed-type fields of the display test. The
+  Tables item adds the mixed `DataFrame` columns.
+
+Suite: the interface, `TestCases` and full-factorial items pass, 1,063 of
+1,063, or 1,074 with the Aqua item. The full `Pkg.test()` on Julia 1.13
+gives 273,137 passed, 8 broken and 0 failed in 5 min 30 s. The 8 broken are
+the pending Phase 5 and 6 tests. One change came after that run started: a
+fast path in `field_type` that returns a domain's concrete `eltype` without
+scanning its values. The same answer comes either way, and the targeted run
+above, which came after it, covers it. Julia 1.10 gives the same field types,
+the same `BigInt` count, and the same `wayness` and `seed` messages, checked
+by a script rather than the suite.

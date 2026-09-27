@@ -38,11 +38,14 @@ end
     TestCases{T} <: AbstractVector{T}
 
 The cases a generation call returns. `T` is a `NamedTuple` type for named
-spaces and a `Tuple` type for positional calls (§1.18); each field's type is
-the element type of the stored domain, so a `Vector{Int}` domain gives an
-`Int` field, `[nothing, :x]` a `Union{Nothing, Symbol}` field, and an
-`Any[1, 1.0]` domain an `Any` field whose values stay `1` and `1.0` (§2.4).
-Rows are immutable.
+spaces and a `Tuple` type for positional calls (§1.18). Each field's type
+comes from the parameter's values, not from the domain's element type: the
+one concrete type they share, or else the `Union` of their concrete types
+(§2.4). So `[1, 2, 3]` and `Any[1, 2]` give an `Int` field, `Any[1, 1.0]` a
+`Union{Int64, Float64}` field, `[nothing, :x]` a `Union{Nothing, Symbol}`
+field, and `[1, Invalid(1)]` a `Union{Int64, Invalid{Int64}}` field. No
+value is converted to fit its field: `1` stays an `Int` and `1.0` a
+`Float64`. Rows are immutable.
 
 # A vector of rows
 
@@ -115,10 +118,10 @@ reads as a row table: `DataFrame(cases)` has one column per parameter, with
 the field types above, and `CSV.write(path, cases)` writes a header of
 parameter names and one line per case. CSV is text: a `Symbol` is written
 as its name and reads back as a string (`:fast` becomes `"fast"`), and `1`
-and `1.0` in an `Any` column are written as `1` and `1.0`. CSV.jl refuses a
-`nothing` value; write `CSV.write(path, cases; transform = (column, value) ->
-something(value, missing))` to write it as an empty field, which reads back
-as `missing`.
+and `1.0` in a `Union{Int64, Float64}` column are written as `1` and `1.0`.
+CSV.jl refuses a `nothing` value; write `CSV.write(path, cases; transform =
+(column, value) -> something(value, missing))` to write it as an empty
+field, which reads back as `missing`.
 
 A positional result is a vector of `Tuple`s, which Tables.jl does not
 recognize as a table (`Tables.istable(cases)` is `false`): `DataFrame(cases)`
@@ -151,9 +154,23 @@ Base.getindex(tc::TestCases, i::Int) = tc.cases[i]
 Base.IndexStyle(::Type{<:TestCases}) = IndexLinear()
 Base.collect(tc::TestCases) = copy(tc.cases)
 
+"""
+    field_type(domain) -> Type
+
+The type of a result field whose values are `domain`: the `Union` of the
+values' concrete types, which is that type itself when they share one
+(contract §2.4). It is computed from the values, so `Any[1, 2]` gives
+`Int64`, and every value already has the field's type: storing it converts
+nothing.
+"""
+function field_type(domain)
+    isconcretetype(eltype(domain)) && return eltype(domain)   # every value has that type
+    return Union{unique(typeof(v) for v in domain)...}
+end
+
 "The element type for rows of `space`: a NamedTuple type, or a Tuple type when positional."
 function row_type(space::TestSpace, positional::Bool)
-    types = Tuple{(eltype(v) for v in space.values)...}
+    types = Tuple{(field_type(v) for v in space.values)...}
     return positional ? types : NamedTuple{Tuple(space.names), types}
 end
 

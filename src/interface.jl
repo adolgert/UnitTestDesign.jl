@@ -123,23 +123,29 @@ function _must_include_rows(must_include, space::TestSpace, positional::Bool)
     return rows
 end
 
+const _WAYNESS_FORM = "a Dict{Int, Vector{Vector{Int}}} from a strength to parameter index groups, " *
+                      "such as Dict(3 => [[3, 4, 5, 6]])"
+
 """
     _stronger_from_wayness(wayness) -> Vector{Pair}
 
 The 0.4 `wayness`, a `Dict` from a strength to a list of parameter index
 groups, as `stronger` pairs: `Dict(3 => [[3, 4, 5, 6]])` becomes
 `[[3, 4, 5, 6] => 3]` (contract §11.10). The caller's `Dict` and its groups
-are copied, never mutated (§11.9).
+are copied, never mutated (§11.9). Every key is checked to be an integer
+before the keys are sorted, since `sort` cannot order `3` and `:a`.
 """
 function _stronger_from_wayness(wayness)
     wayness === nothing && return Pair{Vector{Int}, Int}[]
     wayness isa AbstractDict || throw(ArgumentError(
-        "`wayness` is a Dict from a strength to a list of parameter index groups, " *
-        "for example Dict(3 => [[3, 4, 5, 6]]); got $(repr(wayness))"))
+        "`wayness` is $_WAYNESS_FORM; got $(repr(wayness)) (contract §11.10)"))
+    for s in keys(wayness)
+        s isa Integer && !(s isa Bool) && typemin(Int) <= s <= typemax(Int) || throw(ArgumentError(
+            "`wayness` is $_WAYNESS_FORM; got the key $(repr(s)), which is not an integer strength " *
+            "(contract §11.10)"))
+    end
     stronger = Pair{Vector{Int}, Int}[]
     for s in sort!(collect(keys(wayness)))
-        s isa Integer || throw(ArgumentError(
-            "`wayness` keys are strengths, integers; got $(repr(s))"))
         groups = wayness[s]
         (groups isa AbstractVector || groups isa Tuple) && all(g -> g isa Union{AbstractVector, Tuple}, groups) ||
             throw(ArgumentError(
@@ -185,6 +191,53 @@ function _deprecated_keywords(fname::Symbol; must_include, seeds, stronger, wayn
     return must_include, something(stronger, Pair{Vector{Int}, Int}[])
 end
 
+"Both search budgets, before any work (contract §3.3, §3.13)."
+function _check_limits(feasibility_limit, explanation_limit)
+    _check_limit(:feasibility_limit, feasibility_limit)
+    _check_limit(:explanation_limit, explanation_limit)
+    return nothing
+end
+
+"""
+    _check_distance(keyword, distance) -> Int
+
+An excursion distance: an integer of at least 0 (contract §7.5). A distance
+above the parameter count is the parameter count, however large, so an
+integer beyond `Int` is read as `typemax(Int)` rather than refused.
+"""
+function _check_distance(keyword, distance)
+    distance isa Integer && !(distance isa Bool) && distance > typemax(Int) && return typemax(Int)
+    return _check_integer(keyword, distance, 0, "§7.5")
+end
+
+"""
+    _from_row(from, space, positional) -> Union{Nothing, NamedTuple, Tuple}
+
+The caller's `from` as a row of values, its shape checked (contract §7.6): a
+`NamedTuple` (named calls), or a tuple or vector of values in parameter
+order with one value per parameter. A vector is read as values, never as
+the engine positions `generate_excursion` also accepts. Names and values are
+checked by `excursion_base`, whose errors name `from`.
+"""
+function _from_row(from, space::TestSpace, positional::Bool)
+    from === nothing && return nothing
+    n = length(space.names)
+    if from isa NamedTuple
+        positional && throw(ArgumentError(
+            "`from` is a NamedTuple; a positional call takes the base as a tuple or vector of " *
+            "values in argument order, one for each of $(join(space.names, ", ")) (contract §7.6)"))
+        return from
+    elseif from isa Union{Tuple, AbstractVector}
+        length(from) == n || throw(ArgumentError(
+            "`from` has $(length(from)) values; the space has $n parameters, " *
+            "$(join(space.names, ", ")), and the base is a complete row (contract §7.6)"))
+        return Tuple(from)
+    end
+    throw(ArgumentError(
+        "`from` is the base row: a complete NamedTuple, or a tuple of values in parameter " *
+        "order; got a $(typeof(from)) (contract §7.6)"))
+end
+
 function _check_engine(engine)
     engine isa Union{IPOG, GND} || throw(ArgumentError(
         "`engine` is IPOG() or GND(); got $(repr(engine))"))
@@ -212,13 +265,14 @@ function _covering(fname::Symbol, input::Tuple; strength = nothing, stronger = n
     if n_way !== nothing
         strength === nothing || throw(ArgumentError(
             "pass strength only; n_way is its deprecated alias (contract §11.10)"))
+        _check_integer(:n_way, n_way, 1, "§11.1")
         Base.depwarn("the keyword `n_way` is deprecated; use `strength = $n_way`", fname)
         strength = n_way
     end
-    strength = something(strength, 2)
+    # Keyword values are checked before the space is built or anything searched.
+    strength = _check_integer(:strength, something(strength, 2), 1, "§11.1")
+    _check_limits(feasibility_limit, explanation_limit)
     must_include, stronger = _deprecated_keywords(fname; must_include, seeds, stronger, wayness)
-    strength isa Integer || throw(ArgumentError(
-        "strength is an integer of at least 1; got $(repr(strength)) (contract §11.1)"))
     _check_engine(engine)
     space, positional = _space(fname, input, constraints)
     request = Request(space; strength, stronger, feasibility_limit, explanation_limit,
@@ -422,20 +476,17 @@ function _excursions(fname::Symbol, input::Tuple, default_distance::Integer; fro
     if n_way !== nothing
         distance === nothing || throw(ArgumentError(
             "pass distance only; n_way is its deprecated alias for an excursion (contract §7.5)"))
+        _check_distance("n_way, an excursion's distance,", n_way)
         Base.depwarn("the keyword `n_way` is deprecated; an excursion's `n_way` is its distance: " *
                      "use excursions(...; distance = $n_way)", fname)
         distance = n_way
     end
-    distance = something(distance, default_distance)
+    # Keyword values are checked before the space is built or anything searched.
+    distance = _check_distance(:distance, something(distance, default_distance))
+    _check_limits(feasibility_limit, explanation_limit)
     must_include, _ = _deprecated_keywords(fname; must_include, seeds, stronger = nothing, wayness = nothing)
-    distance isa Integer || throw(ArgumentError(
-        "the excursion distance is an integer of at least 0; got $(repr(distance)) (contract §7.5)"))
     space, positional = _space(fname, input, constraints)
-    # A vector is a row of values, never the engine positions `generate_excursion` also reads.
-    base = from isa AbstractVector ? Tuple(from) : from
-    (base === nothing || base isa Union{NamedTuple, Tuple}) || throw(ArgumentError(
-        "`from` is the base row: a complete NamedTuple, or a tuple of values in parameter " *
-        "order; got a $(typeof(from)) (contract §7.6)"))
+    base = _from_row(from, space, positional)
     # Strength 1 is accepted by every space and is not read (§7.5).
     request = Request(space; strength = 1, feasibility_limit, explanation_limit,
                       must_include = _must_include_rows(must_include, space, positional))
@@ -449,9 +500,11 @@ end
     excursions(name => domain, ...; constraints = [], kwargs...)
     excursions(domain, domain, ...; kwargs...)
 
-Variations around one base row: the must-include rows, then the base, then
-every valid row that differs from the base in at most `distance` parameters,
-each once (contract §7.5). Returns a [`TestCases`](@ref) with strategy
+Variations around one base row: the must-include rows, in the order given
+with duplicates kept (§10.5), then the base, then every other valid row that
+differs from the base in at most `distance` parameters (contract §7.5). The
+base and each of those rows appear once, and a row equal to a must-include
+row is not repeated (§7.11). Returns a [`TestCases`](@ref) with strategy
 `:excursion`. The inputs are the four forms [`covering`](@ref) takes.
 
 The promise is only this: every returned row other than a must-include row is
@@ -468,9 +521,10 @@ row (§7.7).
   the base alone; a distance above the number of parameters is the number of
   parameters. Excursion distance is not covering strength, and there are no
   `stronger` groups (§7.5).
-- `must_include`: rows placed first, as for [`covering`](@ref) (§10). A
-  partial row is completed toward the base. An excursion row equal to a
-  must-include row is not repeated (§7.11).
+- `must_include`: rows placed first, as for [`covering`](@ref) (§10), and
+  kept as given, duplicates included. A partial row is completed toward the
+  base. An excursion row equal to a must-include row is not repeated
+  (§7.11).
 
 Rows within the distance that break a rule are left out. The result reports
 how many in `cases.notes.dropped`, and `cases.notes.never_appear` lists the
@@ -501,17 +555,20 @@ end
     full_factorial(name => domain, ...; constraints = [], kwargs...)
     full_factorial(domain, domain, ...; kwargs...)
 
-Every valid row, each once: the full product of the domains, less the rows
-the rules exclude (contract §7.2). Must-include rows come first and are not
-repeated. Returns a [`TestCases`](@ref) with strategy `:full_factorial`; the
-inputs are the four forms [`covering`](@ref) takes.
+Every valid row: the full product of the domains, less the rows the rules
+exclude (contract §7.2). The must-include rows come first, in the order
+given with duplicates kept (§10.5); then each remaining valid row appears
+once, and a valid row equal to a must-include row is not repeated. Returns a
+[`TestCases`](@ref) with strategy `:full_factorial`; the inputs are the four
+forms [`covering`](@ref) takes.
 
 `limit` guards against a product too large to enumerate. Before looking at
-any row, the call counts the candidate rows, the product of the domain
-sizes, and if that exceeds `limit` it throws a [`ResourceLimitError`](@ref)
-that gives the count and the keyword (§7.3). Raise `limit` to go ahead, or
-use [`covering`](@ref) for a smaller design. Candidates are then enumerated
-one at a time and only valid rows are kept (§7.4). `cases.notes` reports
+any row, must-include rows included, the call counts the candidate rows, the
+product of the domain sizes, and if that exceeds `limit` it throws a
+[`ResourceLimitError`](@ref) that gives the count and the keyword (§7.3), so
+no search runs for a refused enumeration. Raise `limit` to go ahead, or use
+[`covering`](@ref) for a smaller design. Candidates are then enumerated one
+at a time and only valid rows are kept (§7.4). `cases.notes` reports
 `candidates` and `accepted` separately.
 
 The enumeration checks complete rows and does not search, so
@@ -537,9 +594,12 @@ function full_factorial(input...; limit = 10^6, must_include = nothing, constrai
         "full_factorial returns every valid row; stronger groups apply to covering designs"))
     must_include, _ = _deprecated_keywords(:full_factorial; must_include, seeds, stronger = nothing,
                                            wayness = nothing)
-    limit isa Integer || throw(ArgumentError(
-        "limit is a positive integer, the most candidate rows to enumerate; got $(repr(limit))"))
+    limit = _check_integer(:limit, limit, 1, "§7.3")
+    _check_limits(feasibility_limit, explanation_limit)
     space, positional = _space(:full_factorial, input, constraints)
+    # The count comes before the Request, whose must-include checks may search
+    # (§7.3): an enumeration that is refused never runs a feasibility search.
+    check_full_factorial_limit([length(ordinary_indices(space, i)) for i in eachindex(space.names)], limit)
     request = Request(space; strength = 1, feasibility_limit, explanation_limit,
                       must_include = _must_include_rows(must_include, space, positional))
     return TestCases(request, generate_full_factorial(request; limit); positional)

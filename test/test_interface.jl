@@ -188,8 +188,10 @@ end
     end
     # A strength above the parameter count (§11.2), and below 1 (§11.1).
     @test occursin("larger than the number of parameters, 2", message(() -> all_triples([1, 2], [3, 4])))
-    @test occursin("at least 1", message(() -> covering([1, 2], [3, 4]; strength = 0)))
-    @test occursin("strength is an integer", message(() -> covering([1, 2], [3, 4]; strength = 1.5)))
+    @test message(() -> covering([1, 2], [3, 4]; strength = 0)) ==
+          "strength must be a positive integer, got 0 (contract §11.1)"
+    @test message(() -> covering([1, 2], [3, 4]; strength = 1.5)) ==
+          "strength must be a positive integer, got 1.5 (contract §11.1)"
 end
 
 
@@ -197,7 +199,7 @@ end
     # Positional: 1 and 1.0 are two values, nothing and missing are values.
     domains = (Any[1, 1.0], [nothing, :x], [missing, 2])
     cases = covering(domains...)
-    @test cases isa TestCases{Tuple{Any, Union{Nothing, Symbol}, Union{Missing, Int}}}
+    @test cases isa TestCases{Tuple{Union{Int, Float64}, Union{Nothing, Symbol}, Union{Missing, Int}}}
     @test any(r -> r[1] === 1, cases) && any(r -> r[1] === 1.0, cases)
     @test any(r -> r[2] === nothing, cases) && any(r -> r[3] === missing, cases)
     @test complete(check_design(collect(cases), positional_checker(domains...)))
@@ -205,10 +207,12 @@ end
         @test any(r -> r[1] === x && r[2] === y, cases)   # each pair by identity
     end
 
-    # Named: field types are the domains' element types, and rules see the values.
-    nt = (x = Any[1, 1.0], y = [nothing, :a], z = [:s, :t])
+    # Named: field types come from the values, a Union when they differ in type
+    # and one concrete type when they share it, whatever the domain's element
+    # type (§2.4). Rules see the values.
+    nt = (x = Any[1, 1.0], y = [nothing, :a], z = Any[:s, :t])
     cases = all_pairs(nt; constraints = [@forbid(x === 1.0 && y === nothing)])
-    @test cases isa TestCases{NamedTuple{(:x, :y, :z), Tuple{Any, Union{Nothing, Symbol}, Symbol}}}
+    @test cases isa TestCases{NamedTuple{(:x, :y, :z), Tuple{Union{Int, Float64}, Union{Nothing, Symbol}, Symbol}}}
     @test !any(r -> r.x === 1.0 && r.y === nothing, cases)
     @test any(r -> r.x === 1 && r.y === nothing, cases)
     @test Set(typeof(r.x) for r in cases) == Set([Int, Float64])
@@ -416,13 +420,19 @@ end
     @test cases[1:3] == [seeds[1], seeds[2], (a = 1, b = :x, c = false)]  # completed toward the base
     @test collect(cases[4:end]) == [(a = 1, b = :x, c = true), (a = 3, b = :x, c = true)]
     @test cases.n_must_include == 3
+    # A duplicated must-include row keeps both copies, first (§10.5); the base
+    # and the other excursion rows follow once each, without a third copy (§7.11).
+    twice = [(a = 2, b = :x, c = true), (a = 2, b = :x, c = true)]
+    cases = excursions(nt; must_include = twice, constraints = rules)
+    @test collect(cases) == [twice; (a = 1, b = :x, c = true); (a = 3, b = :x, c = true); (a = 1, b = :x, c = false)]
+    @test cases.n_must_include == 2 && allunique(cases[2:end])
 
     # Errors: a base that breaks a rule, a partial base, a negative distance, stronger (§7.5, §7.6).
     msg = message(() -> excursions(nt; from = (a = 1, b = :y, c = true), constraints = rules))
     @test occursin("breaks rule 1 (y needs c off)", msg) && occursin("§7.6", msg)
     @test occursin("complete row", message(() -> excursions(nt; from = (a = 1,))))
-    @test occursin("at least 0", message(() -> excursions(nt; distance = -1)))
-    @test occursin("integer", message(() -> excursions(nt; distance = 1.5)))
+    @test message(() -> excursions(nt; distance = -1)) == "distance must be an integer of at least 0, got -1 (contract §7.5)"
+    @test message(() -> excursions(nt; distance = 1.5)) == "distance must be an integer of at least 0, got 1.5 (contract §7.5)"
     @test occursin("`from` is the base row", message(() -> excursions(nt; from = :a)))
     @test message(() -> excursions(nt; stronger = [(:a, :b, :c) => 3])) ==
           "excursions take a single distance; stronger groups apply to covering designs"
@@ -455,6 +465,18 @@ end
     @test cases[1:2] == [seeds[1], (mode = :exact, solver = :lu, tol = 1e-6)]
     @test length(cases) == 5 && Set(cases) == Set(valid_rows(fable_solver.space))
 
+    # A duplicated must-include row keeps both copies, first (§10.5); then each
+    # remaining valid row once, and never a third copy (§7.2).
+    twice = [(mode = :fast, solver = :none, tol = 1e-6), (mode = :fast, solver = :none, tol = 1e-6), (solver = :qr,)]
+    cases = full_factorial(fable_domains(); constraints = fable_rules(), must_include = twice)
+    @test cases[1:3] == [twice[1], twice[1], (mode = :exact, solver = :qr, tol = 1e-6)]
+    @test cases.n_must_include == 3 && length(cases) == 3 + 3
+    rest = collect(cases[4:end])
+    @test allunique(rest) && isempty(intersect(rest, cases[1:3]))
+    @test Set(cases) == Set(valid_rows(fable_solver.space))
+    @test collect(full_factorial([1, 2], [:a, :b]; must_include = [(2, :b), (2, :b)])) ==
+          [(2, :b), (2, :b), (1, :a), (1, :b), (2, :a)]
+
     # The limit refuses before enumerating (§7.3).
     err = try full_factorial(fill(1:2, 21)...) catch e; e end
     @test err isa ResourceLimitError && err.keyword == :limit && err.limit == 10^6
@@ -463,6 +485,22 @@ end
     err = try full_factorial([1, 2], [3, 4], [5, 6]; limit = 7) catch e; e end
     @test err isa ResourceLimitError && occursin("8 candidate rows", sprint(showerror, err))
     @test length(full_factorial([1, 2], [3, 4], [5, 6]; limit = 8)) == 8
+    # The count comes before any must-include search: with eight candidates and
+    # limit = 1, a partial row under a lazy rule gives the limit error, not a
+    # feasibility_limit error for a search that would have been wasted.
+    seen = Ref(0)
+    lazy = TestSpace((a = [1, 2], b = [3, 4], c = [5, 6]); tabulation_limit = 1,
+                     constraints = [forbid(case -> (seen[] += 1; case.a == 1 && case.c == 6); reason = "lazy")])
+    partial = [(a = 1,)]
+    seen[] = 0
+    err = try full_factorial(lazy; must_include = partial, limit = 1, feasibility_limit = 1) catch e; e end
+    @test err isa ResourceLimitError && err.keyword == :limit && err.limit == 1
+    @test occursin("8 candidate rows", sprint(showerror, err))
+    @test seen[] == 0
+    # Within the limit, the same call searches, and its budget is what runs out.
+    err = try full_factorial(lazy; must_include = partial, limit = 8, feasibility_limit = 1) catch e; e end
+    @test err isa ResourceLimitError && err.keyword == :feasibility_limit
+    @test seen[] > 0
     @test occursin("full_factorial returns every valid row",
                    message(() -> full_factorial([1, 2], [3, 4]; stronger = [(1, 2) => 2])))
 end
@@ -529,6 +567,120 @@ end
     @test occursin("parameter names are Symbols", message(() -> covering("a" => [1, 2], "b" => [3, 4])))
     @test occursin("`engine` is IPOG() or GND(); got :ipog", message(() -> covering([1, 2], [3, 4]; engine = :ipog)))
     @test occursin("`engine` is IPOG() or GND()", message(() -> all_pairs((a = [1, 2], b = [3, 4]); engine = "GND")))
+end
+
+
+@testitem "keyword values are checked before they are sorted or converted (§3.3, §7.3, §7.5, §7.6, §9.5, §11.1, §11.3, §11.10)" setup=[InterfaceSetup] begin
+    using Random: Xoshiro
+    d = ([1, 2], [3, 4], [5, 6])
+    nt = (a = [1, 2], b = [3, 4], c = [5, 6])
+
+    # wayness: every key is checked before the keys are sorted, so an Int beside
+    # a Symbol is not a MethodError from isless.
+    mixed = Dict{Any, Any}(3 => [[1, 2, 3]], :a => [[1, 2]])
+    form = "`wayness` is a Dict{Int, Vector{Vector{Int}}} from a strength to parameter index groups, " *
+           "such as Dict(3 => [[3, 4, 5, 6]])"
+    @test message(() -> covering(fill(1:2, 4)...; wayness = mixed)) ==
+          form * "; got the key :a, which is not an integer strength (contract §11.10)"
+    @test message(() -> _stronger_from_wayness(mixed)) ==
+          form * "; got the key :a, which is not an integer strength (contract §11.10)"
+    @test occursin("got the key 3.0", message(() -> _stronger_from_wayness(Dict(3.0 => [[1, 2, 3]]))))
+    @test message(() -> _stronger_from_wayness([[1, 2, 3]])) == form * "; got [[1, 2, 3]] (contract §11.10)"
+    @test _stronger_from_wayness(Dict{Integer, Any}(Int32(3) => [[1, 2, 3]], 4 => [1:4])) ==
+          [[1, 2, 3] => 3, [1, 2, 3, 4] => 4]
+
+    # GND: candidates, M and seed are integers, checked before Int(...).
+    @test message(() -> GND(candidates = 1.5)) == "candidates must be a positive integer, got 1.5 (contract §9.5)"
+    @test message(() -> GND(candidates = 2.0)) == "candidates must be a positive integer, got 2.0 (contract §9.5)"
+    @test message(() -> GND(candidates = :a)) == "candidates must be a positive integer, got :a (contract §9.5)"
+    @test message(() -> GND(candidates = true)) == "candidates must be a positive integer, got true (contract §9.5)"
+    @test message(() -> GND(candidates = 0)) == "candidates must be a positive integer, got 0 (contract §9.5)"
+    @test message(() -> GND(candidates = big(2)^70)) ==
+          "candidates must be a positive integer that fits in an Int, got 1180591620717411303424 (contract §9.5)"
+    @test message(() -> GND(M = 1.5)) == "M must be a positive integer, got 1.5 (contract §9.5)"
+    @test message(() -> GND(seed = 1.5)) == "seed must be an integer of at least 0, got 1.5 (contract §9.5)"
+    @test message(() -> GND(seed = :a)) == "seed must be an integer of at least 0, got :a (contract §9.5)"
+    @test message(() -> GND(seed = nothing)) == "seed must be an integer of at least 0, got nothing (contract §9.5)"
+    # Julia 1.10's Xoshiro refuses a negative seed, so GND does on every version.
+    @test message(() -> GND(seed = -1)) == "seed must be an integer of at least 0, got -1 (contract §9.5)"
+    @test message(() -> GND(seed = typemax(UInt64))) ==
+          "seed must be an integer of at least 0 that fits in an Int, got 0xffffffffffffffff (contract §9.5)"
+    @test message(() -> GND(seed = 1.5, rng = Xoshiro(1))) == "seed must be an integer of at least 0, got 1.5 (contract §9.5)"
+    @test GND(seed = nothing, rng = Xoshiro(1)).seed === nothing
+    @test message(() -> GND(rng = :a)) ==
+          "rng must be a random number generator, an AbstractRNG such as Xoshiro(1), got :a (contract §9.6)"
+    gnd = GND(seed = UInt8(3), candidates = Int32(7))       # any integer type is read as an Int
+    @test (gnd.seed, gnd.candidates) === (3, 7)
+
+    # strength and its alias n_way.
+    @test message(() -> covering(d...; strength = 2.0)) == "strength must be a positive integer, got 2.0 (contract §11.1)"
+    @test message(() -> covering(d...; strength = :a)) == "strength must be a positive integer, got :a (contract §11.1)"
+    @test message(() -> covering(d...; strength = true)) == "strength must be a positive integer, got true (contract §11.1)"
+    @test message(() -> covering(d...; n_way = 1.5)) == "n_way must be a positive integer, got 1.5 (contract §11.1)"
+    @test message(() -> covering(d...; n_way = 0)) == "n_way must be a positive integer, got 0 (contract §11.1)"
+    @test covering(d...; strength = Int32(3)).strength == 3
+
+    # distance, and n_way as an excursion's distance. A distance beyond Int is
+    # above the parameter count, so it is the parameter count (§7.5).
+    @test message(() -> excursions(d...; distance = :a)) == "distance must be an integer of at least 0, got :a (contract §7.5)"
+    @test message(() -> excursions(d...; distance = true)) == "distance must be an integer of at least 0, got true (contract §7.5)"
+    @test @test_deprecated(message(() -> values_excursion(d...; n_way = 1.5))) ==
+          "n_way, an excursion's distance, must be an integer of at least 0, got 1.5 (contract §7.5)"
+    @test excursions(d...; distance = big(10)^30).notes.distance == 3
+    @test length(excursions(d...; distance = UInt8(1))) == 4
+
+    # full_factorial's limit.
+    @test message(() -> full_factorial(d...; limit = 1.5)) == "limit must be a positive integer, got 1.5 (contract §7.3)"
+    @test message(() -> full_factorial(d...; limit = true)) == "limit must be a positive integer, got true (contract §7.3)"
+    @test message(() -> full_factorial(d...; limit = big(10)^30)) ==
+          "limit must be a positive integer that fits in an Int, got 1000000000000000000000000000000 (contract §7.3)"
+    @test length(full_factorial(d...; limit = Int32(8))) == 8
+
+    # The search budgets, on every entry point: an ArgumentError naming the
+    # keyword, never a TypeError from a keyword's type or an InexactError.
+    for f in (covering, all_values, all_pairs, all_triples, excursions, full_factorial),
+            keyword in (:feasibility_limit, :explanation_limit)
+        @test message(() -> f(d...; (keyword => 1.5,)...)) ==
+              "$keyword must be a positive integer, got 1.5 (contract §3.3, §3.13)"
+        @test message(() -> f(d...; (keyword => true,)...)) ==
+              "$keyword must be a positive integer, got true (contract §3.3, §3.13)"
+        @test message(() -> f(d...; (keyword => big(10)^30,)...)) ==
+              "$keyword must be a positive integer that fits in an Int, got 1000000000000000000000000000000 " *
+              "(contract §3.3, §3.13)"
+    end
+
+    # from: its shape, then its names and values, each error naming `from`.
+    @test message(() -> excursions(d...; from = (1, 3))) ==
+          "`from` has 2 values; the space has 3 parameters, p1, p2, p3, and the base is a complete row (contract §7.6)"
+    @test message(() -> excursions(d...; from = [1, 3, 5, 7])) ==
+          "`from` has 4 values; the space has 3 parameters, p1, p2, p3, and the base is a complete row (contract §7.6)"
+    @test message(() -> excursions(d...; from = (p1 = 1, p2 = 3, p3 = 5))) ==
+          "`from` is a NamedTuple; a positional call takes the base as a tuple or vector of values in " *
+          "argument order, one for each of p1, p2, p3 (contract §7.6)"
+    @test message(() -> excursions(nt; from = (a = 1, b = 3, c = 5, d = 1))) ==
+          "the excursion base `from`: `d` is not a parameter of this space; the parameters are a, b, c"
+    @test startswith(message(() -> excursions(nt; from = (a = 9, b = 3, c = 5))),
+                     "the excursion base `from`: 9 is not a value of `a`")
+    @test message(() -> excursions(nt; from = Dict(:a => 1))) ==
+          "`from` is the base row: a complete NamedTuple, or a tuple of values in parameter order; " *
+          "got a Dict{Symbol, Int64} (contract §7.6)"
+    @test excursions(nt; from = (1, 4, 6), distance = 0)[1] == (a = 1, b = 4, c = 6)   # values in parameter order
+
+    # stronger: a vector of group => strength pairs, each group a tuple or vector.
+    @test message(() -> covering(d...; stronger = :a)) ==
+          "stronger is a vector of `group => strength` pairs, such as [(:a, :b, :c) => 3]; got :a (contract §11.3)"
+    @test message(() -> covering(d...; stronger = 5)) ==
+          "stronger is a vector of `group => strength` pairs, such as [(:a, :b, :c) => 3]; got 5 (contract §11.3)"
+    @test message(() -> covering(d...; stronger = (1, 2, 3) => 3)) ==
+          "stronger is a vector of `group => strength` pairs; wrap a single group in a vector: " *
+          "stronger = [(1, 2, 3) => 3] (contract §11.3)"
+    @test message(() -> covering(nt; stronger = [:a => 3])) ==
+          "each `stronger` group is a tuple or vector of parameter names or indices, such as " *
+          "(:a, :b, :c) => 3; got :a => 3 (contract §11.3)"
+    @test message(() -> covering(d...; stronger = [(1, 2, 3) => 2.5])) ==
+          "`stronger` strength for (1, 2, 3) must be an integer, got 2.5 (contract §11.6)"
+    @test message(() -> covering(d...; stronger = [(1, true) => 2])) ==
+          "`stronger` group members are names or indices; got true"
 end
 
 

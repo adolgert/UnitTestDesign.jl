@@ -34,11 +34,27 @@ end
 memo_size(context::FeasibilityContext) =
     sum((length(m) for m in context.memos if m !== nothing); init = 0)
 
-function _check_limit(keyword::Symbol, limit)
-    (limit isa Integer && limit >= 1) || throw(ArgumentError(
-        "$keyword must be a positive Int; got $(repr(limit)) (contract §3.3, §3.13)"))
-    return nothing
+"""
+    _check_integer(keyword, value, least, section) -> Int
+
+`value` as an `Int` when it is an integer of at least `least` that an `Int`
+holds; otherwise an `ArgumentError` naming `keyword`, the values it accepts
+and `value`, such as "candidates must be a positive integer, got 1.5
+(contract §9.5)". `true` and `false` are not integers here. Every integer
+keyword of the public interface is read through this check before it is
+compared, sorted or converted, so a malformed value never surfaces as a
+`MethodError`, `InexactError` or `TypeError`.
+"""
+function _check_integer(keyword, value, least::Integer, section::AbstractString)
+    integer = value isa Integer && !(value isa Bool)
+    integer && least <= value <= typemax(Int) && return Int(value)
+    accepted = least == 1 ? "a positive integer" : "an integer of at least $least"
+    integer && value > typemax(Int) && (accepted *= " that fits in an Int")
+    throw(ArgumentError("$keyword must be $accepted, got $(repr(value)) (contract $section)"))
 end
+
+"A search budget, `feasibility_limit` or `explanation_limit`: a positive `Int` (§3.3, §3.13)."
+_check_limit(keyword::Symbol, limit) = _check_integer(keyword, limit, 1, "§3.3, §3.13")
 
 "The parameters whose value in `idx` is an `Invalid`, in parameter order."
 _invalid_parameters(space::TestSpace, idx::AbstractVector{<:Integer}) =

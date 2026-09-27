@@ -8,7 +8,7 @@ using TestItemRunner
 # generate_excursion, generate_full_factorial), then TestCases.
 
 @testsnippet CasesSetup begin
-    using UnitTestDesign: Request, generate, generate_excursion, generate_full_factorial, row_type
+    using UnitTestDesign: Request, generate, generate_excursion, generate_full_factorial, row_type, field_type
     using Random: Xoshiro
 
     "Fable's solver space, typed and labeled: 5 valid rows of 12, 3 forbidden and 2 implied pairs."
@@ -238,7 +238,7 @@ end
     @test positional.notes.base === (2, :y)
     # Value identity survives the translation (§2.3): 1 and 1.0 stay apart.
     mixed = excursion_cases(TestSpace((a = Any[1, 1.0], b = [nothing, :x])); distance = 0)
-    @test mixed.notes.base isa @NamedTuple{a::Any, b::Union{Nothing, Symbol}}
+    @test mixed.notes.base isa @NamedTuple{a::Union{Int, Float64}, b::Union{Nothing, Symbol}}
     @test mixed.notes.base.a === 1 && mixed.notes.base.b === nothing
     @test mixed.notes.never_appear == [:a => 1.0, :b => :x]
     @test last(mixed.notes.never_appear[1]) === 1.0
@@ -383,11 +383,46 @@ end
 end
 
 
+@testitem "testcases: field types come from the values, and no value is converted (§2.4)" setup=[CasesSetup] begin
+    # One concrete type when the values share it, whatever the domain's
+    # element type; otherwise the Union of the values' concrete types.
+    @test field_type([1, 2, 3]) === Int
+    @test field_type(Any[1, 2]) === Int
+    @test field_type(Any[1, 1.0]) === Union{Int, Float64}
+    @test field_type([nothing, :x]) === Union{Nothing, Symbol}
+    @test field_type(Any[1, Invalid(1)]) === Union{Int, Invalid{Int}}
+    @test field_type(1:3) === Int
+    space = TestSpace((a = [1, 2, 3], b = Any[1, 2], c = Any[1, 1.0], d = [nothing, :x], e = [1, Invalid(1)]))
+    @test row_type(space, false) === NamedTuple{(:a, :b, :c, :d, :e),
+        Tuple{Int, Int, Union{Int, Float64}, Union{Nothing, Symbol}, Union{Int, Invalid{Int}}}}
+    @test row_type(space, true) ===
+          Tuple{Int, Int, Union{Int, Float64}, Union{Nothing, Symbol}, Union{Int, Invalid{Int}}}
+
+    # Generated rows keep every value as stored: an `Any[1, 2]` domain gives an
+    # Int field, and in a Union field 1 stays an Int and 1.0 a Float64.
+    plain_space = TestSpace((b = Any[1, 2], c = Any[1, 1.0], d = [nothing, :x]))
+    for positional in (false, true)
+        cases = covering_cases(plain_space; positional)
+        @test eltype(cases) === row_type(plain_space, positional)
+        @test all(row -> row[1] isa Int, cases)
+        @test Set(typeof(row[2]) for row in cases) == Set([Int, Float64])
+        @test any(row -> row[2] === 1, cases) && any(row -> row[2] === 1.0, cases)
+        @test all(row -> row[2] === 1 || row[2] === 1.0, cases)
+    end
+    # The same holds for an excursion's base, a full factorial and must-include rows.
+    full = factorial_cases(plain_space; must_include = [(c = 1.0, d = :x)])
+    @test eltype(full) === row_type(plain_space, false)
+    @test full[1].c === 1.0 && full[1].b === 1
+    @test length(full) == 8 && count(row -> row.c === 1, full) == 4 && count(row -> row.c === 1.0, full) == 4
+    @test excursion_cases(plain_space; from = (b = 2, c = 1.0, d = nothing), distance = 0).notes.base.c === 1.0
+end
+
+
 @testitem "testcases: rows keep their values' types (§2.1, §2.4, §13.4)" setup=[CasesSetup] begin
     space = TestSpace((n = [1, 2, 3], x = Any[1, 1.0], z = [nothing, :x], s = ["fast", "slow"]))
     cases = covering_cases(space)
     T = eltype(cases)
-    @test T === NamedTuple{(:n, :x, :z, :s), Tuple{Int, Any, Union{Nothing, Symbol}, String}}
+    @test T === NamedTuple{(:n, :x, :z, :s), Tuple{Int, Union{Int, Float64}, Union{Nothing, Symbol}, String}}
     @test eltype(collect(cases)) === T
     @test all(row -> row.n isa Int && row.s isa String, cases)
     # 1 and 1.0 are two choices, kept apart through generation: each pairs with
@@ -403,8 +438,8 @@ end
     pspace = TestSpace(:p1 => [1, 2, 3], :p2 => Any[1, 1.0], :p3 => [nothing, :x], :p4 => ["fast", "slow"])
     positional = covering_cases(pspace; positional = true)
     @test positional.positional && !cases.positional
-    @test eltype(positional) === Tuple{Int, Any, Union{Nothing, Symbol}, String}
-    @test collect(positional) isa Vector{Tuple{Int, Any, Union{Nothing, Symbol}, String}}
+    @test eltype(positional) === Tuple{Int, Union{Int, Float64}, Union{Nothing, Symbol}, String}
+    @test collect(positional) isa Vector{Tuple{Int, Union{Int, Float64}, Union{Nothing, Symbol}, String}}
     @test all(((a, b),) -> Tuple(a) === b, zip(cases, positional))
     for (n, x, z, s) in positional
         @test n isa Int && (x === 1 || x === 1.0) && s isa String
@@ -433,6 +468,10 @@ end
     @test eltype(positional) <: Tuple
     @test lines(positional)[3:end] == lines(cases)[3:end]
     @test lines(positional)[2] == "    p1           p2                p3"
+    # Wrapped values keep their own types in a Union field (§2.4).
+    @test fieldtype(eltype(cases), :n) === Union{Int, Invalid{Int}}
+    @test fieldtype(eltype(cases), :mode) === Union{Symbol, String, Nothing}
+    @test cases[2].n === Invalid(-1) && cases[1].size === tiny
 end
 
 
@@ -509,6 +548,14 @@ end
     typed = covering_cases(TestSpace((n = [1, 2, 3], z = [nothing, :x], s = ["fast", "slow"])))
     df = DataFrame(typed)
     @test eltype.(eachcol(df)) == [Int, Union{Nothing, Symbol}, String]
+    # Columns follow the field types, which come from the values (§2.4):
+    # `Any[1, 2]` is an Int column, `Any[1, 1.0]` a Union column that keeps
+    # 1 and 1.0 apart.
+    mixed = covering_cases(TestSpace((b = Any[1, 2], c = Any[1, 1.0], d = [nothing, :x])))
+    mixed_df = DataFrame(mixed)
+    @test eltype.(eachcol(mixed_df)) == [Int, Union{Int, Float64}, Union{Nothing, Symbol}]
+    @test Set(typeof.(mixed_df.c)) == Set([Int, Float64])
+    @test Tables.rowtable(mixed_df) == collect(mixed)
     @test Tables.rowtable(df) == collect(typed)
     @test_throws ArgumentError CSV.write(IOBuffer(), typed)
     io = IOBuffer()

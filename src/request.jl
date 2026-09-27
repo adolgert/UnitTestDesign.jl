@@ -48,12 +48,13 @@ struct Request
     explanation_limit::Int
 end
 
-function Request(space::TestSpace; strength::Integer = 2, stronger = [], must_include = [],
-                 feasibility_limit::Integer = 1_000_000, explanation_limit::Integer = 1_000_000)
-    _check_limit(:feasibility_limit, feasibility_limit)
-    _check_limit(:explanation_limit, explanation_limit)
+function Request(space::TestSpace; strength = 2, stronger = [], must_include = [],
+                 feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
+    # Keyword values are checked before they are compared or converted.
+    feasibility_limit = _check_limit(:feasibility_limit, feasibility_limit)
+    explanation_limit = _check_limit(:explanation_limit, explanation_limit)
     n = length(space.names)
-    strength >= 1 || throw(ArgumentError("strength must be at least 1, got $strength (contract §11.1)"))
+    strength = _check_integer(:strength, strength, 1, "§11.1")
     strength <= n || throw(ArgumentError(
         "strength $strength is larger than the number of parameters, $n (contract §11.2)"))
     for (i, name) in enumerate(space.names)
@@ -69,10 +70,10 @@ function Request(space::TestSpace; strength::Integer = 2, stronger = [], must_in
     groups = _groups(space, strength, stronger)
     feasibility = Feasibility(candidates, space.tables; limit = feasibility_limit)
     request = Request(space, candidates, arity, strength, groups, zeros(Int, n, 0), feasibility,
-                      Int(feasibility_limit), Int(explanation_limit))
+                      feasibility_limit, explanation_limit)
     seeds = _must_include_matrix(request, must_include)
     return Request(space, candidates, arity, strength, groups, seeds, feasibility,
-                   Int(feasibility_limit), Int(explanation_limit))
+                   feasibility_limit, explanation_limit)
 end
 
 n_must_include(request::Request) = size(request.must_include, 2)
@@ -84,31 +85,44 @@ memo_size(request::Request) = memo_size(request.feasibility)
     _groups(space, strength, stronger)
 
 Validate `stronger` (contract §11.3–§11.9) and return the group list, base
-group first. Names or 1-based indices; each entry `names => s`.
+group first. `stronger` is a vector (or tuple) of entries `group => s`, each
+group a tuple, vector or range of names or 1-based indices. Shapes are
+checked before anything is iterated or converted, so a malformed value is an
+`ArgumentError` naming `stronger`.
 """
 function _groups(space::TestSpace, strength::Integer, stronger)
     n = length(space.names)
+    stronger isa Pair && throw(ArgumentError(
+        "stronger is a vector of `group => strength` pairs; wrap a single group in a vector: " *
+        "stronger = [$(repr(stronger))] (contract §11.3)"))
+    stronger isa Union{AbstractVector, Tuple} || throw(ArgumentError(
+        "stronger is a vector of `group => strength` pairs, such as [(:a, :b, :c) => 3]; " *
+        "got $(repr(stronger)) (contract §11.3)"))
     groups = Pair{Vector{Int}, Int}[collect(1:n) => Int(strength)]
     seen = Dict{Vector{Int}, Int}()
     for entry in stronger
         entry isa Pair || throw(ArgumentError(
             "each `stronger` entry is `names => strength`, for example `(:a, :b, :c) => 3`; got $entry"))
         members, s = entry
+        members isa Union{AbstractVector, Tuple} || throw(ArgumentError(
+            "each `stronger` group is a tuple or vector of parameter names or indices, such as " *
+            "(:a, :b, :c) => 3; got $(repr(entry)) (contract §11.3)"))
         idx = Int[]
         for m in members
             if m isa Symbol
                 push!(idx, parameter_index(space, m))
-            elseif m isa Integer
+            elseif m isa Integer && !(m isa Bool)
                 1 <= m <= n || throw(ArgumentError(
                     "`stronger` group $members names parameter $m, but the space has $n parameters"))
                 push!(idx, Int(m))
             else
-                throw(ArgumentError("`stronger` group members are names or indices; got $m"))
+                throw(ArgumentError("`stronger` group members are names or indices; got $(repr(m))"))
             end
         end
         length(unique(idx)) == length(idx) || throw(ArgumentError(
             "`stronger` group $members lists a parameter twice (contract §11.5)"))
-        s isa Integer || throw(ArgumentError("`stronger` strength for $members must be an integer"))
+        s isa Integer && !(s isa Bool) || throw(ArgumentError(
+            "`stronger` strength for $members must be an integer, got $(repr(s)) (contract §11.6)"))
         s >= strength || throw(ArgumentError(
             "`stronger` group $members has strength $s, below the base strength $strength (contract §11.6)"))
         s <= length(idx) || throw(ArgumentError(

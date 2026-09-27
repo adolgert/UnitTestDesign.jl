@@ -493,9 +493,10 @@ Steps:
    result. `coverage(cases::TestCases)` measures at `cases.strength` and
    `cases.stronger`; for a result whose strength is 0 (an excursion or a
    full factorial) it is an `ArgumentError` asking for `strength =`, and
-   `report(cases)` on such a result measures at strength 2 and says so in
-   its guarantee line. Prints "covers 11 of 11 feasible pairs" or the
-   missing list when classification is resolved. With unknown targets,
+   `report(cases)` on such a result measures at strength
+   `min(2, parameter count)` and says so in its guarantee line. Prints
+   "covers 11 of 11 feasible pairs" or the missing list when
+   classification is resolved. With unknown targets,
    report known counts and unresolved targets without an exact percentage
    or completeness claim.
 2. **`missing_interactions(cases, space; ...)`** returns
@@ -525,7 +526,9 @@ Steps:
    agree with the checker on the random problems; `design_sizes`
    reproduces Fable's 10-of-81 example. Test limit exhaustion in coverage,
    missing-interaction queries, bonus reports, and planning; verify that
-   unresolved denominators never print as exact percentages.
+   unresolved denominators never print as exact percentages. `report` on a
+   one-parameter excursion and full factorial measures at strength
+   `min(2, parameter count)` = 1: cover this boundary in Phase 5 tests.
 
 Acceptance gate: review checked outputs for the solver example, a
 hand-written suite with gaps, and a limited search with unresolved targets.
