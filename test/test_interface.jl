@@ -1,7 +1,7 @@
 using Test
 using TestItemRunner
 
-# The 1.0 public interface (plan Phase 4 steps 2–5, 8, 9): `covering` and its
+# The 0.5 public interface (plan Phase 4 steps 2–5, 8, 9): `covering` and its
 # fixed strengths, `excursions`, `full_factorial`, the four input forms, the
 # keywords, the deprecated 0.4 spellings and the removed ones. Completeness is
 # judged by the independent checker (checker.jl), never by the engines' own

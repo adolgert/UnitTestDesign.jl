@@ -65,7 +65,7 @@ the base case. It is not a covering design.
 The full-factorial test generates every possible test. If some combinations
 of parameters aren't interesting or allowed for a function, you can
 exclude them with constraints on named parameters. (In 0.4 you did that with
-a `disallow` argument, which 1.0 removes.)
+a `disallow` argument, which 0.5 removes.)
 
 ```julia
 full_factorial((a = [1, 2, 3], b = [7, 8], c = [true, false]);

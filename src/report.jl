@@ -18,8 +18,7 @@ const _PrefixPoint = NamedTuple{(:cases, :covered, :feasible, :unknown), NTuple{
 """
     Report
 
-What [`report`](@ref) found about a [`TestCases`](@ref). Its fields are
-plain data, so a report can be kept or written out:
+What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
 
 - `guarantee::String`: the claim the rows meet, checked by measuring them,
   such as "5 cases cover all 11 feasible pairs of a 12-combination space (3
@@ -32,8 +31,14 @@ plain data, so a report can be kept or written out:
 - `coverage::`[`Coverage`](@ref): the verification, at `strength` and the
   result's `stronger` groups.
 - `excluded::Vector{`[`Exclusion`](@ref)`}`: the targets no valid row can
-  hold, with the rules that exclude them: as generation recorded them for a
-  covering design, and as measured for an excursion or a full factorial.
+  hold, with the rules that exclude them, as this report's measurement
+  classified and explained them with its own `explanation_limit`: the same
+  list as `coverage.ordinary.excluded` (§1.23).
+- `recorded::Vector{Exclusion}`: exclusions generation recorded for targets
+  this measurement left unresolved (a search reached `feasibility_limit`),
+  shown as "(recorded at generation)". Empty when the measurement resolved
+  every target, and always for an excursion or a full factorial, which
+  record none.
 - `bonus`: coverage of the same rows at `strength + 1`, as `(strength,
   covered, feasible, unknown, applicable, reason)`. `applicable` is `false`,
   with a `reason`, when there are no targets at `strength + 1`: the strength
@@ -45,6 +50,13 @@ plain data, so a report can be kept or written out:
 With `unknown` targets (a search reached `feasibility_limit`), `feasible` in
 `coverage`, `bonus` and `prefix` is a lower bound, and nothing prints a
 percentage or claims completeness (§3.10, §3.12).
+
+`Report` fields are plain data except `coverage.space`, the
+[`TestSpace`](@ref), which holds the rules' predicates.
+`UnitTestDesign.plain(report)` gives a representation with no executable
+state: nested `NamedTuple`s and `Vector`s of `Int`, `Float64`, `String`,
+`Symbol`, `Bool` and `nothing`, with the space reduced to its names, its
+printed domains and its rule labels. Phase 6's JSON support will use it.
 """
 struct Report
     guarantee::String
@@ -53,6 +65,7 @@ struct Report
     strength::Int
     coverage::Coverage
     excluded::Vector{Exclusion}
+    recorded::Vector{Exclusion}
     bonus::_BonusCounts
     prefix::Vector{_PrefixPoint}
     seed::Union{Nothing, Int}
@@ -71,30 +84,56 @@ strength; the prefix curve, how much the first rows cover, for suites that
 run only part of the cases; and the seed. `show` prints only what generation
 recorded; `report` recounts.
 
-```julia
-cases = all_pairs(space)
-report(cases)
-# 5 cases cover all 11 feasible pairs of a 12-combination space (3 pairs forbidden, 2 impossible under the constraints)
-# excluded:
-#   (mode = :fast, solver = :lu): forbidden by rule 1 (@require(mode == :exact || solver == :none))
-#   …
-# bonus: 3 of 5 feasible triples covered
-# prefix curve:
-#   first 1 of 5 cover 27% (3 of 11)
-#   …
-# seed: none (IPOG uses no randomness)
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace(
+           (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+           constraints = [
+               @require(mode == :exact || solver == :none),
+               forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
+           ]);
+
+julia> report(all_pairs(space))
+5 cases cover all 11 feasible pairs of a 12-combination space (3 pairs forbidden, 2 impossible under the constraints)
+excluded:
+  (mode = :fast, solver = :lu): forbidden by rule 1 (@require(mode == :exact || solver == :none))
+  (mode = :fast, solver = :qr): forbidden by rule 1 (@require(mode == :exact || solver == :none))
+  (mode = :exact, tol = 0.001): forbidden by rule 2 (exact mode needs a tight tolerance)
+  (solver = :lu, tol = 0.001): impossible because rules 1 and 2 combine (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
+  (solver = :qr, tol = 0.001): impossible because rules 1 and 2 combine (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
+bonus: 5 of 5 feasible triples covered
+prefix curve:
+  first 1 of 5 cover 27% (3 of 11)
+  first 2 of 5 cover 45% (5 of 11)
+  first 3 of 5 cover 63% (7 of 11)
+  first 4 of 5 cover 90% (10 of 11)
+  first 5 of 5 cover 100% (11 of 11)
+seed: none (IPOG uses no randomness)
 ```
 
 A covering result is measured at its strength and `stronger` groups. An
 excursion or a full factorial has no strength, so it is measured at strength
 `min(2, number of parameters)` and the guarantee says so; an excursion is not
-a covering design, and the guarantee says that too (§1.12, §7.7).
+a covering design, and the guarantee says that too (§1.12, §7.7). An
+excursion's must-include rows are kept first and are not bound by its
+distance, so the guarantee counts them apart, as in "1 must-include row
+kept first, then 1 case within distance 0 of (…)" (§7.5, §7.9).
 
 The measurement searches, within `feasibility_limit` nodes per target, for
 the targets no row holds (§3.9). A search that runs out leaves its target
 unresolved: the counts become bounds ("8 of at least 11"), no percentage is
 printed, and nothing is called complete (§3.10, §3.12). `explanation_limit`
 bounds the search for the rules behind an implied exclusion (§3.13).
+
+The report is the verification (§1.23). The exclusions it lists, with their
+rules and whether each explanation is verified minimal, are its own, found
+with its own `feasibility_limit` and `explanation_limit`, not copied from
+generation: a result generated with `explanation_limit = 1` and reported
+with the default shows verified explanations, and one reported with
+`explanation_limit = 1` shows the explanations that limit left unresolved,
+whatever generation found. Exclusions recorded at generation are a
+fallback, used only for targets this measurement left unknown, and each is
+printed with "(recorded at generation)"; they are in the `recorded` field,
+apart from `excluded`.
 """
 function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     _check_limits(feasibility_limit, explanation_limit)
@@ -104,13 +143,29 @@ function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_lim
     stronger = covering ? cases.stronger : Pair[]
     rows = collect(cases)
     c, prefix = _measure(rows, cases.space; strength, stronger, feasibility_limit, explanation_limit)
-    excluded = covering ? copy(cases.excluded) : copy(c.ordinary.excluded)
+    recorded = covering ? _recorded_exclusions(cases, c) : Exclusion[]
     unknown = length(c.ordinary.unknown)
     points = _PrefixPoint[(cases = k, covered = prefix[k], feasible = c.ordinary.feasible, unknown = unknown)
                           for k in eachindex(prefix)]
     bonus = _bonus(rows, cases.space, strength; feasibility_limit, explanation_limit)
-    return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c, excluded, bonus,
-                  points, cases.seed, cases.engine, cases.n_must_include)
+    return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c,
+                  copy(c.ordinary.excluded), recorded, bonus, points, cases.seed, cases.engine,
+                  cases.n_must_include)
+end
+
+"""
+    _recorded_exclusions(cases, c) -> Vector{Exclusion}
+
+The exclusions generation recorded for targets the measurement `c` left
+unknown, in the recorded (target) order: the fallback `report` shows as
+"(recorded at generation)" (§1.23, §3.15). Targets match by value index, so
+by identity (§2.1).
+"""
+function _recorded_exclusions(cases::TestCases, c::Coverage)
+    isempty(c.ordinary.unknown) && return Exclusion[]
+    space = cases.space
+    unresolved = Set(case_indices(space, t) for t in c.ordinary.unknown)
+    return Exclusion[e for e in cases.excluded if case_indices(space, e.target) in unresolved]
 end
 
 "Coverage of `rows` at `strength + 1`, or why there is none (§3.12)."
@@ -182,17 +237,18 @@ end
 The guarantee line of `report`, from the measurement `c` and what the result
 recorded (§1.19): for a covering design, what the rows cover in a space of
 how many combinations, what was excluded, the must-include rows kept first,
-and GND's seed; for an excursion, its base, distance, dropped rows and
-missing values, that it is not a covering design, and what it covers at the
-measured strength; for a full factorial, that it is every valid row, and what
-it covers.
+and GND's seed; for an excursion, the must-include rows kept first, which
+the distance does not bind (§7.5, §7.9), then the rows within the distance
+of the base, the dropped rows and missing values, that it is not a covering
+design, and what it covers at the measured strength; for a full factorial,
+that it is every valid row, and what it covers.
 """
 function _guarantee(tc::TestCases, c::Coverage)
     lead = _plural(length(tc), "case")
     space = "a $(length(tc.space))-combination space"
     tail = String[]
-    tc.n_must_include > 0 &&
-        push!(tail, _plural(tc.n_must_include, "must-include row") * " kept first")
+    must = _plural(tc.n_must_include, "must-include row") * " kept first"
+    tc.n_must_include > 0 && tc.strategy !== :excursion && push!(tail, must)
     noun = _coverage_noun(c)
     if tc.strategy === :covering
         claim, rest = _covers_text(c, length(tc) == 1 ? "covers" : "cover"; with_strength = true)
@@ -204,8 +260,12 @@ function _guarantee(tc::TestCases, c::Coverage)
         return join([head * _negative_note(c); tail], "; ")
     end
     if tc.strategy === :excursion
+        # Must-include rows are exempt from the distance (§7.5, §7.9), so the
+        # claim is made of the rows after them only.
         notes = tc.notes
-        head = "$lead within distance $(notes.distance) of $(_text(notes.base))"
+        within = "within distance $(notes.distance) of $(_text(notes.base))"
+        head = tc.n_must_include == 0 ? "$lead $within" :
+               "$must, then $(_plural(length(tc) - tc.n_must_include, "case")) $within"
         notes.dropped > 0 && push!(tail, _plural(notes.dropped, "row") * " dropped")
         if !isempty(notes.never_appear)
             push!(tail, (length(notes.never_appear) == 1 ? "never appears: " : "never appear: ") *
@@ -293,14 +353,18 @@ Base.show(io::IO, r::Report) = print(io, r.guarantee)
 
 function Base.show(io::IO, ::MIME"text/plain", r::Report)
     print(io, r.guarantee)
-    if !isempty(r.excluded)
+    # This report's own exclusions, then generation's for the targets it left
+    # unresolved, marked as such (§1.23).
+    shown = [[(e, false) for e in r.excluded]; [(e, true) for e in r.recorded]]
+    if !isempty(shown)
         print(io, "\nexcluded:")
-        for e in r.excluded[1:min(end, _SHOWN_EXCLUSIONS)]
+        for (e, recorded) in shown[1:min(end, _SHOWN_EXCLUSIONS)]
             print(io, "\n  ")
             show(io, e)
+            recorded && print(io, " (recorded at generation)")
         end
-        length(r.excluded) > _SHOWN_EXCLUSIONS &&
-            print(io, "\n  and ", length(r.excluded) - _SHOWN_EXCLUSIONS, " more")
+        length(shown) > _SHOWN_EXCLUSIONS &&
+            print(io, "\n  and ", length(shown) - _SHOWN_EXCLUSIONS, " more")
     end
     print(io, "\n")
     _print_bonus(io, r)
@@ -364,14 +428,17 @@ and [`excursions`](@ref) at each of `distances` from `from` (the first value
 of each parameter when omitted), and measures each design's pairs and
 triples with [`coverage`](@ref):
 
-```julia
-design_sizes(:n => [1, 2, 3], :level => ["low", "mid", "high"],
-             :tol => [1.0, 3.7, 4.9], :kind => [:greedy, :relax, :optim])
-# strategy        cases   share  pairs  triples
-# full_factorial     81  100.0%  54/54  108/108  valid 81 of 81
-# covering(1)         3    3.7%   9/54   3/108
-# covering(2)         9   11.1%  54/54   …
-# …
+```jldoctest; setup = :(using UnitTestDesign)
+julia> design_sizes(:n => [1, 2, 3], :level => ["low", "mid", "high"],
+                    :tol => [1.0, 3.7, 4.9], :kind => [:greedy, :relax, :optim])
+strategy        cases   share  pairs  triples
+full_factorial     81  100.0%  54/54  108/108  valid 81 of 81
+covering(1)         3    3.7%  18/54   12/108
+covering(2)        10   12.3%  54/54   39/108
+covering(3)        31   38.3%  54/54  108/108
+excursions(1)       9   11.1%  30/54   28/108
+excursions(2)      33   40.7%  54/54   76/108
+case counts are the rows each strategy produced with IPOG, not lower bounds
 ```
 
 `share` is the fraction of the valid rows, known when the full product is at
@@ -490,4 +557,86 @@ function Base.show(io::IO, ::MIME"text/plain", t::DesignSizes)
     end
     print(io, "\ncase counts are the rows each strategy produced with $(t.engine), not lower bounds")
     return nothing
+end
+
+
+## Plain data (Phase 5 review round 1, item 4)
+#
+# `plain` turns a Report, Coverage or DesignSizes into nested NamedTuples and
+# Vectors whose leaves are Int, Float64, String, Symbol, Bool or nothing: no
+# TestSpace, Constraint, RuleTable or Function survives. A value from a
+# domain stays itself when it is one of those types, and becomes its `repr`
+# otherwise. `repr` of the result parses back to an equal value.
+
+const _PlainLeaf = Union{Int, Float64, String, Symbol, Bool, Nothing}
+
+"A domain value as plain data: itself when it is a plain leaf, a `String` for other text, else its `repr`."
+_plain_value(x) = x isa _PlainLeaf ? x : x isa AbstractString ? String(x) : repr(x)
+
+"A target or a named row, with its values plain."
+_plain_target(t::NamedTuple) = map(_plain_value, t)
+
+"A row as the caller gave it: a NamedTuple stays one; a tuple or vector is named by the space."
+_plain_row(space::TestSpace, row::NamedTuple) = _plain_target(row)
+_plain_row(space::TestSpace, row) = NamedTuple{Tuple(space.names)}(Tuple(_plain_value(x) for x in row))
+
+_plain_exclusion(e::Exclusion) =
+    (target = _plain_target(e.target), status = e.status, rules = copy(e.rules), labels = copy(e.labels),
+     minimal = e.minimal, limit = e.limit === nothing ? nothing : (keyword = e.limit.first, value = e.limit.second))
+
+"The space without executable state: names, each domain's values as `repr`, and the rule labels."
+_plain_space(space::TestSpace) =
+    (names = copy(space.names),
+     domains = [String[repr(v) for v in domain] for domain in space.values],
+     rules = String[rule_label(space, k) for k in eachindex(space.constraints)])
+
+function _plain_part(space::TestSpace, part::CoveragePart)
+    return (covered = part.covered, feasible = part.feasible,
+            missing = NamedTuple[_plain_target(t) for t in part.missing],
+            excluded = NamedTuple[_plain_exclusion(e) for e in part.excluded],
+            unknown = NamedTuple[_plain_target(t) for t in part.unknown],
+            groups = NamedTuple[(names = collect(g.names), strength = g.strength, covered = g.covered,
+                                 feasible = g.feasible, missing_count = g.missing_count,
+                                 excluded_count = g.excluded_count, unknown_count = g.unknown_count)
+                                for g in part.groups],
+            rows = part.rows, duplicates = part.duplicates,
+            rejected = NamedTuple[(index = r.index, row = _plain_row(space, r.row), reason = r.reason,
+                                   rules = copy(r.rules)) for r in part.rejected])
+end
+
+"""
+    plain(r::Report)
+    plain(c::Coverage)
+    plain(t::DesignSizes)
+
+The same information as nested `NamedTuple`s and `Vector`s whose values are
+`Int`, `Float64`, `String`, `Symbol`, `Bool` or `nothing`, with no executable
+state: the space becomes its parameter names, each domain as the `repr` of
+its values, and its rule labels (`coverage.space`, the one field of a
+`Report` that holds rule predicates). Targets and rows are `NamedTuple`s of
+their values where a value is one of those types and of its `repr` where it
+is not, such as `"Invalid(0)"` or `"Partition(:tiny)"`; a row given as a
+tuple or vector is named by the space. `stronger` groups become `(names,
+strength)`, an exclusion's `limit` becomes `(keyword, value)`, and a
+`DesignSizes` total above `typemax(Int)` becomes a `String` of digits.
+`repr` of the result parses back to an equal value. Not exported.
+"""
+function plain(c::Coverage)
+    return (ordinary = _plain_part(c.space, c.ordinary), negative = _plain_part(c.space, c.negative),
+            space = _plain_space(c.space), strength = c.strength,
+            stronger = NamedTuple[(names = collect(names), strength = s) for (names, s) in c.stronger],
+            limits = c.limits)
+end
+
+function plain(r::Report)
+    return (guarantee = r.guarantee, strategy = r.strategy, n_cases = r.n_cases, strength = r.strength,
+            coverage = plain(r.coverage), excluded = NamedTuple[_plain_exclusion(e) for e in r.excluded],
+            recorded = NamedTuple[_plain_exclusion(e) for e in r.recorded], bonus = r.bonus,
+            prefix = copy(r.prefix), seed = r.seed, engine = r.engine, n_must_include = r.n_must_include)
+end
+
+function plain(t::DesignSizes)
+    total = t.total isa Int ? t.total : (typemin(Int) <= t.total <= typemax(Int) ? Int(t.total) : string(t.total))
+    return (parameters = copy(t.parameters), total = total, valid = t.valid, engine = t.engine,
+            limit = t.limit, rows = NamedTuple[NamedTuple{keys(row)}(values(row)) for row in t.rows])
 end

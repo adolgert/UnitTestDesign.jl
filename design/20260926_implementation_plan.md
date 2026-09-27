@@ -1,5 +1,9 @@
 # UnitTestDesign.jl 1.0: Implementation Plan
 
+2026-09-27: the release is 0.5.0, not 1.0.0; the maintainer wants to use a
+0.x version before calling it 1.0. Read "1.0" below as "0.5". The release
+branch is `release/0.5`.
+
 Date: 2026-09-26. Prepared from `interface_synthesis.md` and the decisions
 in `20260926_answers.md`. One release, eight phases, a review at the end of
 each phase. Every phase ends with the test suite green and the package
@@ -63,7 +67,7 @@ Say so at the Phase 1 review if you want a different one:
 | `generate_tuples`, `Excursion`, `Counter` | Removed from the public surface | No user-facing purpose once the request is internal |
 
 Branching: merge `fix/gnd-match-condition` to `main` first (its commit
-message already says only what it fixes). Then one branch, `release/1.0`,
+message already says only what it fixes). Then one branch, `release/0.5`,
 with one PR per phase into it, and one PR from it to `main` in Phase 8.
 
 ## The target, in one screen
@@ -124,7 +128,7 @@ the tests in place that will fail until the engines keep it.
 
 Steps:
 
-1. **Merge the GND branch to `main`; cut `release/1.0`.** Open one issue,
+1. **Merge the GND branch to `main`; cut `release/0.5`.** Open one issue,
    "Implicit constraints crash IPOG and hang GND," with Opus's
    os/gpu/driver example, so Phase 3 has something to close.
 2. **Write `docs/src/dev/contract.md`.** The six-point semantic contract
@@ -665,17 +669,17 @@ or unconditional follow-up isolation.
 
 ---
 
-## Phase 8: Release 1.0
+## Phase 8: Release 0.5
 
 Steps:
 
 1. Full matrix green (1.10, 1.13, latest release, three OSes), Aqua,
    doctests, deterministic regressions, the full random-problem gate, and
    benchmark results within the Phase 3 tolerance on the documented runner.
-2. `CHANGELOG.md` for 1.0.0: breaking changes (return type, `disallow`
+2. `CHANGELOG.md` for 0.5.0: breaking changes (return type, `disallow`
    removed, `Counter` removed), deprecations with their replacements, new
    API, the constraint fix with the issue number.
-3. Set `version = "1.0.0"`; prepare PR `release/1.0` → `main` with the
+3. Set `version = "0.5.0"`; prepare PR `release/0.5` → `main` with the
    validation results and rendered documentation. Keep it unmerged for review.
 4. Draft a short Discourse announcement (the promise sentence, the
    decision table, the constraint fix) for you to post or not.

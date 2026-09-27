@@ -2,7 +2,7 @@
 # Guide
 
 !!! note
-    This page is being rewritten for 1.0. The examples below use the 1.0
+    This page is being rewritten for 0.5. The examples below use the 0.5
     spellings; see [`covering`](@ref) for the full set of inputs and keywords.
 
 ## Kinds of test generation
@@ -71,7 +71,7 @@ Keep the test engine from making tests that aren't allowed for
 your function. In 0.4 you passed it a filter function, one that returns `true`
 whenever a parameter combination is forbidden.
 
-0.4 syntax; the 1.0 manual replaces `disallow` with constraints on a `TestSpace`.
+0.4 syntax; the 0.5 manual replaces `disallow` with constraints on a `TestSpace`.
 
 ```julia
 disallow(n, level, value, kind) = level == "high" && kind == :optim
@@ -82,7 +82,7 @@ test_set = all_pairs(
 ```
 
 In 0.4 that function had to accept `nothing` for parameters not yet chosen,
-and a generator could fail on rules that forbid combinations. In 1.0 a rule
+and a generator could fail on rules that forbid combinations. In 0.5 a rule
 sees only complete values of the parameters it names, and generation either
 covers every combination that some allowed test contains or stops with a
 `ResourceLimitError`.

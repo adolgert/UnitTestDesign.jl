@@ -1,4 +1,4 @@
-# The 1.0 public interface (plan Phase 4 steps 2–5 and 8; contract §1.18,
+# The 0.5 public interface (plan Phase 4 steps 2–5 and 8; contract §1.18,
 # §7, §10, §11, §12.11–§12.12, §13).
 #
 # Every generation call is one pipeline: accept or build the space, build

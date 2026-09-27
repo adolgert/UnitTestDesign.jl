@@ -1,6 +1,6 @@
 # Contract
 
-This page specifies what UnitTestDesign.jl 1.0 promises. It is the reference
+This page specifies what UnitTestDesign.jl 0.5 promises. It is the reference
 for implementation, tests, documentation, and review. Clauses are numbered so
 that code, tests, and reviews can cite them ("contract §3.4"). Each clause
 states one requirement.
@@ -12,7 +12,7 @@ Invalid input throws an `ArgumentError` whose message uses the caller's
 vocabulary (parameter names, values, case positions), unless a clause names
 another exception.
 
-**0.2** Clauses describe the 1.0 release. A phase that has not yet implemented
+**0.2** Clauses describe the 0.5 release. A phase that has not yet implemented
 a clause must raise an explicit unsupported-feature error for inputs that need
 it. It must not apply different semantics in the meantime.
 
@@ -103,7 +103,13 @@ it measures at `cases.strength` and `cases.stronger`. For a result whose
 strength is 0 (an excursion or a full factorial, §1.19),
 `coverage(cases::TestCases)` is an `ArgumentError` asking for `strength =`,
 and `report(cases)` measures at strength `min(2, parameter count)`, so at
-strength 1 for a one-parameter space, and says so in its guarantee line.
+strength 1 for a one-parameter space, and says so in its guarantee line. An
+explicit `strength` replaces `cases.strength` and keeps `cases.stronger`
+unless `stronger` is passed too. A stored group whose strength is below the
+requested strength is an `ArgumentError` naming the group ("stronger group
+(a, b, c) => 3 is below the requested strength 4; pass stronger = [] to drop
+it"). An explicit `stronger` replaces the stored groups, and `stronger = []`
+drops them.
 
 **1.13** Rows given to `coverage` must be complete, use only the space's
 parameter names, and use only domain values (§2.11). Anything else is an
@@ -148,7 +154,13 @@ feasibility search, rule evaluation, or coverage recount. It shows the count
 of valid rows in the full product only when that count is already known.
 
 **1.23** Independent verification, bonus coverage at strength + 1, and the
-prefix curve belong to `report` and `coverage`, never to `show`.
+prefix curve belong to `report` and `coverage`, never to `show`. The report
+is the verification: the excluded targets it lists, with their rules and
+explanation status, come from its own measurement under its own
+`feasibility_limit` and `explanation_limit`, not from generation's
+bookkeeping. Exclusions recorded at generation are a fallback, listed only
+for targets the report's measurement left unknown, and each is identified
+as recorded at generation.
 
 **1.24** If the space is proven to have no valid ordinary row, covering
 generation returns a result with no generated ordinary rows and reports every
@@ -760,7 +772,7 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 
 ## 13. Vocabulary
 
-**13.1** The 1.0 public names:
+**13.1** The 0.5 public names:
 
 | Name | Kind | Status | Notes |
 |:--|:--|:--|:--|
@@ -816,9 +828,9 @@ distinguish it from line coverage.
 
 ## 14. Not now
 
-**14.1** The following are outside 1.0. Proposals for them need a new review.
+**14.1** The following are outside 0.5. Proposals for them need a new review.
 
-| Item | Status in 1.0 |
+| Item | Status in 0.5 |
 |:--|:--|
 | Test runner | None. Outcomes enter only through `diagnose(cases, passed)`. |
 | Outcome files | None. |
@@ -832,6 +844,6 @@ distinguish it from line coverage.
 | TOML specifications | None. |
 | `max_cases` | None. |
 | Rolling coverage across CI runs | None. |
-| Evidence track (case study, mutation analysis) | Deferred until after 1.0. |
+| Evidence track (case study, mutation analysis) | Deferred until after 0.5. |
 
 **14.2** Behavior not stated in this contract is not promised.

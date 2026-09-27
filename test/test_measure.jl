@@ -366,8 +366,36 @@ end
     grouped = covering(space; stronger = [(:mode, :solver, :tol) => 3])
     @test coverage(grouped).stronger == [(:mode, :solver, :tol) => 3]
     @test iscomplete(coverage(grouped))
-    @test isempty(coverage(grouped; strength = 2).stronger)
     @test coverage(pairs; stronger = [(:mode, :solver, :tol) => 3]).strength == 2
+    # An explicit strength keeps the stored groups (review round 1, item 3):
+    # the stored strength passed again measures the same 16 targets.
+    whole = coverage(grouped)
+    again = coverage(grouped; strength = 2)
+    @test again.stronger == [(:mode, :solver, :tol) => 3]
+    @test (again.ordinary.covered, again.ordinary.feasible, length(again.ordinary.excluded)) ==
+          (whole.ordinary.covered, whole.ordinary.feasible, length(whole.ordinary.excluded)) == (16, 16, 12)
+    @test again.ordinary.groups == whole.ordinary.groups
+    @test missing_interactions(grouped; strength = 2) == missing_interactions(grouped) == []
+    # A group at the requested strength adds nothing (§11.7); `stronger = []` drops the groups.
+    @test isempty(coverage(grouped; strength = 3).stronger) && coverage(grouped; strength = 3).ordinary.feasible == 5
+    dropped = coverage(grouped; strength = 2, stronger = [])
+    @test isempty(dropped.stronger) && dropped.ordinary.feasible == 11
+    @test coverage(grouped; stronger = []).ordinary.feasible == 11
+    # An explicit `stronger` replaces the stored groups.
+    @test coverage(grouped; stronger = [(:mode, :solver) => 2]).stronger == []
+    # A stored group below the requested strength is an error naming it.
+    low = covering(space; strength = 1, stronger = [(:mode, :solver) => 2])
+    @test low.stronger == [(:mode, :solver) => 2]
+    @test message(() -> coverage(low; strength = 3)) ==
+          "stronger group (mode, solver) => 2 is below the requested strength 3; pass stronger = [] to drop it " *
+          "(contract §1.12)"
+    @test message(() -> missing_interactions(low; strength = 3)) == message(() -> coverage(low; strength = 3))
+    @test iscomplete(coverage(low; strength = 3, stronger = [])) == false
+    @test coverage(low; strength = 2).stronger == [] && coverage(low; strength = 1).stronger == [(:mode, :solver) => 2]
+    four = covering(fill(1:2, 4)...; stronger = [(1, 2, 3) => 3])
+    @test occursin("stronger group (p1, p2, p3) => 3 is below the requested strength 4",
+                   message(() -> coverage(four; strength = 4)))
+    @test isempty(coverage(four; strength = 3).stronger) && coverage(four; strength = 2).stronger == [(:p1, :p2, :p3) => 3]
     # Strength 0: an excursion and a full factorial have none.
     ex = excursions(space; from = (mode = :exact, solver = :lu, tol = 1e-6))
     ff = full_factorial(space)

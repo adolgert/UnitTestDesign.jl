@@ -90,10 +90,25 @@ percentage (§3.10).
 
 It prints as a sentence per part (the negative part only when the space has
 `Invalid` values), then the excluded counts, duplicates and rejected rows.
-For the solver space of [`coverage`](@ref), three hand-written rows, one of
-them twice and one breaking a rule:
+For the space and rows of [`coverage`](@ref)'s example, with the second row
+given twice and a row that breaks a rule third:
 
-```
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace(
+           (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+           constraints = [
+               @require(mode == :exact || solver == :none),
+               forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
+           ]);
+
+julia> handwritten = [(mode = :fast, solver = :none, tol = 1e-3),
+                      (mode = :exact, solver = :lu, tol = 1e-6),
+                      (mode = :exact, solver = :none, tol = 1e-6)];
+
+julia> rows = [handwritten[1], handwritten[2], (mode = :fast, solver = :lu, tol = 1e-3),
+               handwritten[3], handwritten[2]];
+
+julia> coverage(rows, space)
 covers 8 of 11 feasible pairs, 3 missing: (mode = :exact, solver = :qr), (mode = :fast, tol = 1.0e-6), (solver = :qr, tol = 1.0e-6)
 excluded: 3 pairs forbidden, 2 impossible under the constraints
 1 duplicate row counted once
@@ -503,7 +518,8 @@ _coverage(rows::AbstractVector, space::TestSpace; kwargs...) = first(_measure(ro
     coverage(cases, domains::NamedTuple; constraints = [], kwargs...)
     coverage(cases, name => domain, ...; constraints = [], kwargs...)
     coverage(cases, domain, domain, ...; kwargs...)
-    coverage(cases::TestCases; feasibility_limit, explanation_limit) -> Coverage
+    coverage(cases::TestCases; strength, stronger, feasibility_limit,
+             explanation_limit) -> Coverage
 
 Which of the combinations a set of test cases should hold it does hold
 (contract §1.12–§1.17): every combination of values of every `strength`
@@ -511,25 +527,31 @@ parameters, and of every `stronger` group at its strength, that some valid
 row contains. Use it to audit a hand-written suite, to check a design built
 elsewhere, or to see what an edited space asks of an old result:
 
-```julia
-space = TestSpace(
-    (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
-    constraints = [
-        @require(mode == :exact || solver == :none),
-        forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
-    ])
-handwritten = [(mode = :fast, solver = :none, tol = 1e-3),
-               (mode = :exact, solver = :lu, tol = 1e-6),
-               (mode = :exact, solver = :none, tol = 1e-6)]
-coverage(handwritten, space)
-# covers 8 of 11 feasible pairs, 3 missing: (mode = :exact, solver = :qr),
-#   (mode = :fast, tol = 1.0e-6), (solver = :qr, tol = 1.0e-6)
-# excluded: 3 pairs forbidden, 2 impossible under the constraints
-cases = all_pairs(space; must_include = handwritten)   # keep them, add rows for the gaps
-coverage(cases)
-# covers 11 of 11 feasible pairs
-# excluded: 3 pairs forbidden, 2 impossible under the constraints
-all_triples(space; must_include = cases)               # extend the same rows to triples
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace(
+           (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+           constraints = [
+               @require(mode == :exact || solver == :none),
+               forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
+           ]);
+
+julia> handwritten = [(mode = :fast, solver = :none, tol = 1e-3),
+                      (mode = :exact, solver = :lu, tol = 1e-6),
+                      (mode = :exact, solver = :none, tol = 1e-6)];
+
+julia> coverage(handwritten, space)
+covers 8 of 11 feasible pairs, 3 missing: (mode = :exact, solver = :qr), (mode = :fast, tol = 1.0e-6), (solver = :qr, tol = 1.0e-6)
+excluded: 3 pairs forbidden, 2 impossible under the constraints
+
+julia> cases = all_pairs(space; must_include = handwritten);   # keep them, add rows for the gaps
+
+julia> coverage(cases)
+covers 11 of 11 feasible pairs
+excluded: 3 pairs forbidden, 2 impossible under the constraints
+
+julia> coverage(all_triples(space; must_include = cases))   # extend the same rows to triples
+covers 5 of 5 feasible triples
+excluded: 7 triples forbidden
 ```
 
 `cases` is any collection of rows, read once: `NamedTuple`s naming every
@@ -568,8 +590,12 @@ coverage. [`iscomplete`](@ref) says whether nothing is missing or unknown.
 
 For a `TestCases`, `coverage(cases)` measures against the result's space at
 its strength and `stronger` groups (§1.12). An excursion or a full factorial
-has no strength: pass one, as in `coverage(cases; strength = 2)`. Explicit
-`strength` and `stronger` override the result's.
+has no strength: pass one, as in `coverage(cases; strength = 2)`. An
+explicit `strength` replaces the result's and keeps its `stronger` groups; a
+stored group whose strength is below the requested strength is an
+`ArgumentError` naming the group, since a group never asks for less than the
+base (§11.6). An explicit `stronger` replaces the stored groups, and
+`stronger = []` drops them.
 
 Coverage describes the rows given. To measure the cases that ran or passed,
 pass those rows (§1.17).
@@ -601,18 +627,28 @@ end
     _measured_request(cases::TestCases, strength, stronger) -> (strength, stronger)
 
 The strength and groups at which to measure a result (contract §1.12): the
-result's own, unless the caller passes `strength`, and then `stronger`
-defaults to none. A result with strength 0 (an excursion or a full
-factorial) needs an explicit `strength`.
+result's own strength unless the caller passes `strength`, and the result's
+`stronger` groups unless the caller passes `stronger` (`[]` drops them). A
+stored group below a requested strength is an `ArgumentError` naming it. A
+result with strength 0 (an excursion or a full factorial) needs an explicit
+`strength`.
 """
 function _measured_request(cases::TestCases, strength, stronger)
     if strength === nothing
         cases.strength == 0 && throw(ArgumentError(
             "coverage(cases) measures at the result's strength, but $(_strategy_phrase(cases)) has " *
             "none; pass the strength to measure, such as coverage(cases; strength = 2) (contract §1.12)"))
-        return cases.strength, something(stronger, cases.stronger)
+        strength = cases.strength
+    else
+        strength = _check_integer(:strength, strength, 1, "§11.1")
     end
-    return _check_integer(:strength, strength, 1, "§11.1"), something(stronger, Pair[])
+    stronger === nothing || return strength, stronger
+    for (names, s) in cases.stronger
+        s >= strength || throw(ArgumentError(
+            "stronger group ($(join(names, ", "))) => $s is below the requested strength $strength; " *
+            "pass stronger = [] to drop it (contract §1.12)"))
+    end
+    return strength, cases.stronger
 end
 
 _strategy_phrase(cases::TestCases) =
@@ -635,9 +671,25 @@ some combination could be feasible and missing without anyone knowing, so
 `coverage` with the same arguments for the missing targets known so far and
 the unresolved ones, or raise the limit.
 
-```julia
-missing_interactions(handwritten, space)   # the rows of `coverage`'s example
-# [(mode = :exact, solver = :qr), (mode = :fast, tol = 1.0e-6), (solver = :qr, tol = 1.0e-6)]
+With the space and rows of [`coverage`](@ref)'s example:
+
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace(
+           (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+           constraints = [
+               @require(mode == :exact || solver == :none),
+               forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
+           ]);
+
+julia> handwritten = [(mode = :fast, solver = :none, tol = 1e-3),
+                      (mode = :exact, solver = :lu, tol = 1e-6),
+                      (mode = :exact, solver = :none, tol = 1e-6)];
+
+julia> missing_interactions(handwritten, space)
+3-element Vector{NamedTuple}:
+ (mode = :exact, solver = :qr)
+ (mode = :fast, tol = 1.0e-6)
+ (solver = :qr, tol = 1.0e-6)
 ```
 """
 function missing_interactions(cases, input...; strength = 2, stronger = [], constraints = nothing,

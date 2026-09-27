@@ -122,11 +122,15 @@ evaluates a lazy rule without a memo (§12.19). A
 partial case, an unknown name, or a value outside its parameter's domain is
 an `ArgumentError`; use [`explain`](@ref) for partial assignments.
 
-```julia
-space = TestSpace((mode = [:fast, :exact], tol = [1e-3, 1e-6]);
-    constraints = [forbid((mode = :exact, tol = 1e-3))])
-isallowed(space, (mode = :exact, tol = 1e-6))  # true
-isallowed(space, (:exact, 1e-3))               # false
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace((mode = [:fast, :exact], tol = [1e-3, 1e-6]);
+           constraints = [forbid((mode = :exact, tol = 1e-3))]);
+
+julia> isallowed(space, (mode = :exact, tol = 1e-6))
+true
+
+julia> isallowed(space, (:exact, 1e-3))
+false
 ```
 """
 function isallowed(space::TestSpace, case::Union{NamedTuple, Tuple})
@@ -202,19 +206,19 @@ when it cannot (contract §1.26). `assignment` is a `NamedTuple` naming some
 or all parameters, or a complete `Tuple` in parameter order. The result is an
 `Explanation`, which prints as a sentence:
 
-```julia
-space = TestSpace(
-    (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
-    constraints = [
-        @require(mode == :exact || solver == :none),
-        forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
-    ])
-explain(space, (solver = :lu, tol = 1e-3))
-# infeasible: no valid case contains (solver = :lu, tol = 0.001); rules 1 and 2
-# together exclude it (rule 1: @require(mode == :exact || solver == :none);
-# rule 2: exact mode needs a tight tolerance)
-explain(space, (solver = :lu,))
-# completable, e.g. (mode = :exact, solver = :lu, tol = 1.0e-6)
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace(
+           (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+           constraints = [
+               @require(mode == :exact || solver == :none),
+               forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
+           ]);
+
+julia> explain(space, (solver = :lu, tol = 1e-3))
+infeasible: no valid case contains (solver = :lu, tol = 0.001); rules 1 and 2 together exclude it (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
+
+julia> explain(space, (solver = :lu,))
+completable, e.g. (mode = :exact, solver = :lu, tol = 1.0e-6)
 ```
 
 An assignment with one [`Invalid`](@ref) value, at parameter `p`, is judged

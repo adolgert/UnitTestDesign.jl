@@ -17,7 +17,13 @@ using TestItemRunner
             forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
         ])
 
-    plain(x) = sprint(show, MIME"text/plain"(), x)
+    shown(x) = sprint(show, MIME"text/plain"(), x)
+
+    "Two lists of exclusions agree field by field, targets by identity (isequal and type)."
+    same_exclusions(a, b) = length(a) == length(b) && all(zip(a, b)) do (x, y)
+        isequal(x.target, y.target) && typeof(x.target) == typeof(y.target) && x.status == y.status &&
+            x.rules == y.rules && x.labels == y.labels && x.minimal == y.minimal && x.limit == y.limit
+    end
 
     "The ArgumentError message of `f()`, or what happened instead."
     message(f) = try
@@ -53,8 +59,10 @@ end
             cases = all_pairs(test_space(cs); engine)
             r = report(cases)
             check = check_design(cases, cs)
+            # With the same budgets, the report's own exclusions are the ones generation recorded.
             ok = iscomplete(r.coverage) && r.coverage.ordinary.covered == check.ordinary.counts.feasible &&
-                 r.excluded == cases.excluded && r.strength == 2 && r.n_cases == length(cases)
+                 same_exclusions(r.excluded, cases.excluded) && isempty(r.recorded) &&
+                 r.strength == 2 && r.n_cases == length(cases)
             # Bonus coverage at strength 3 is the checker's triple coverage of the same rows.
             triples = check_design(cases, cs; strength = 3).ordinary.counts
             ok &= r.bonus.applicable && r.bonus.strength == 3 && r.bonus.unknown == 0 &&
@@ -82,7 +90,7 @@ end
     r = report(cases)
     @test r.guarantee == "5 cases cover all 11 feasible pairs of a 12-combination space " *
                          "(3 pairs forbidden, 2 impossible under the constraints)"
-    @test plain(r) == join([r.guarantee; "excluded:"; SOLVER_EXCLUDED;
+    @test shown(r) == join([r.guarantee; "excluded:"; SOLVER_EXCLUDED;
         "bonus: 5 of 5 feasible triples covered";
         "prefix curve:";
         "  first 1 of 5 cover 27% (3 of 11)";
@@ -93,13 +101,14 @@ end
         "seed: none (IPOG uses no randomness)"], "\n")
     @test sprint(show, r) == r.guarantee
     @test (r.strategy, r.engine, r.seed, r.n_must_include, r.strength) == (:covering, :IPOG, nothing, 0, 2)
-    @test r.excluded == cases.excluded
+    @test same_exclusions(r.excluded, cases.excluded) && isempty(r.recorded)
+    @test r.excluded == r.coverage.ordinary.excluded
     @test [x.covered for x in r.prefix] == [3, 5, 7, 10, 11]
 
     # GND names its seed; must-include rows are counted; stronger groups are named.
     g = report(all_pairs(space; engine = GND(seed = 3)))
     @test endswith(g.guarantee, "; GND seed 3") && g.seed == 3
-    @test occursin("seed: 3 (GND(seed = 3) repeats these cases)", plain(g))
+    @test occursin("seed: 3 (GND(seed = 3) repeats these cases)", shown(g))
     @test occursin("GND with the caller's rng", report(all_pairs(space; engine = GND(rng = Xoshiro(1)))).guarantee)
     kept = report(all_pairs(space; must_include = [(mode = :fast, solver = :none, tol = 1e-3), (solver = :lu,)]))
     @test endswith(kept.guarantee, "; 2 must-include rows kept first") && kept.n_must_include == 2
@@ -109,7 +118,7 @@ end
     @test startswith(report(all_values(space)).guarantee,
                      "3 cases cover all 7 feasible combinations at strength 1 of a 12-combination space")
     # No percentage above 100 or rounded up to it: 2 of 3 is 66%.
-    @test occursin("first 2 of 3 cover 66% (2 of 3)", plain(report(excursions((a = [1, 2, 3],)))))
+    @test occursin("first 2 of 3 cover 66% (2 of 3)", shown(report(excursions((a = [1, 2, 3],)))))
 end
 
 
@@ -123,19 +132,19 @@ end
         "2 pairs missing"
     @test !iscomplete(ex.coverage) && length(ex.coverage.ordinary.missing) == 2
     @test [e.target for e in ex.excluded] == [e.target for e in report(all_pairs(space)).excluded]   # measured
-    @test occursin("seed: none (an excursion uses no randomness)", plain(ex))
+    @test occursin("seed: none (an excursion uses no randomness)", shown(ex))
     ff = report(full_factorial(space))
     @test ff.guarantee == "5 cases, every valid row of 12; measured at strength 2, the cases cover all " *
                           "11 feasible pairs (3 pairs forbidden, 2 impossible under the constraints)"
     @test ff.strength == 2 && iscomplete(ff.coverage) && ff.bonus.applicable && ff.bonus.covered == 5
-    @test occursin("seed: none (a full factorial uses no randomness)", plain(ff))
+    @test occursin("seed: none (a full factorial uses no randomness)", shown(ff))
     # One parameter: strength 1, the only strength (§1.12, §11.2), and no bonus.
     one = report(excursions((a = [1, 2, 3],)))
     @test one.strength == 1
     @test one.guarantee == "3 cases within distance 1 of (a = 1,); not a covering design; measured at " *
                            "strength 1, the cases cover all 3 feasible combinations"
     @test !one.bonus.applicable
-    @test occursin("bonus coverage not applicable: strength 2 exceeds the number of parameters, 1", plain(one))
+    @test occursin("bonus coverage not applicable: strength 2 exceeds the number of parameters, 1", shown(one))
     @test report(full_factorial((a = [1, 2],))).strength == 1
     # Two parameters: strength 2 is the parameter count, so no bonus either.
     two = report(full_factorial([1, 2], [:a, :b]))
@@ -149,7 +158,7 @@ end
     full = report(covering(space; strength = 3))
     @test !full.bonus.applicable && full.bonus.strength == 4
     @test (full.bonus.covered, full.bonus.feasible, full.bonus.unknown) == (0, 0, 0)
-    @test occursin("\nbonus coverage not applicable: strength 4 exceeds the number of parameters, 3\n", plain(full))
+    @test occursin("\nbonus coverage not applicable: strength 4 exceeds the number of parameters, 3\n", shown(full))
     # At strength n - 1 the bonus is the whole row: the checker's valid rows.
     pairs = all_pairs(space)
     b = report(pairs).bonus
@@ -164,7 +173,7 @@ end
     r = report(empty)
     @test r.guarantee == "0 cases: no pair of a 12-combination space is feasible " *
                          "(4 pairs forbidden, 12 impossible under the constraints)"
-    @test isempty(r.prefix) && occursin("\nprefix curve: no cases\n", plain(r))
+    @test isempty(r.prefix) && occursin("\nprefix curve: no cases\n", shown(r))
     @test r.bonus.applicable && (r.bonus.covered, r.bonus.feasible) == (0, 0)
     @test length(r.excluded) == 16
     positional = all_pairs([1, 2, 3], [:a, :b], [true, false])
@@ -180,7 +189,7 @@ end
     f = limit_exhaustion
     cases = all_pairs(test_space(f))
     r = report(cases; feasibility_limit = f.request.small_limit)
-    text = plain(r)
+    text = shown(r)
     @test !occursin('%', text) && !occursin("complete", text) && !occursin(" all ", r.guarantee)
     @test r.guarantee == "1 case covers 28 of at least 28 feasible pairs of a 65536-combination space; " *
                          "420 pairs unresolved (feasibility_limit = 1); no exact percentage"
@@ -190,27 +199,158 @@ end
                    "unresolved (feasibility_limit = 1); no exact percentage\n", text)
     @test only(r.prefix) == (cases = 1, covered = 28, feasible = 28, unknown = 420)
     @test occursin("\nprefix curve:\n  first 1 of 1 cover 28 of at least 28\n", text)
-    # The recorded exclusions stay as generation proved them (§3.15).
-    @test r.excluded == cases.excluded && length(r.excluded) == 420
+    # This measurement resolved none of the 420 exclusions, so generation's
+    # proofs are shown in their place, marked as recorded (§1.23, §3.15).
+    @test isempty(r.excluded) && r.recorded == cases.excluded && length(r.recorded) == 420
+    @test occursin("\nexcluded:\n  (x1 = 1, x2 = 1): impossible because", text)
+    @test count("(recorded at generation)", text) == 20
     @test occursin("\n  and 400 more\n", text)
     # The default limit resolves everything.
     whole = report(cases)
     @test iscomplete(whole.coverage) && whole.guarantee ==
           "1 case covers all 28 feasible pairs of a 65536-combination space (420 pairs impossible under the constraints)"
     @test whole.bonus.unknown == 0 && whole.bonus.covered == whole.bonus.feasible == 56
-    @test occursin("first 1 of 1 cover 100% (28 of 28)", plain(whole))
+    @test same_exclusions(whole.excluded, cases.excluded) && isempty(whole.recorded)
+    @test !occursin("recorded at generation", shown(whole))
+    @test occursin("first 1 of 1 cover 100% (28 of 28)", shown(whole))
 end
 
 
-@testitem "Report: its fields are plain data (§1.19)" setup=[ReportSetup] begin
-    allowed = Union{Int, String, Symbol, Vector, NamedTuple, Nothing, Coverage}
-    @test all(T -> T <: allowed, fieldtypes(Report))
-    @test !any(T -> T <: Function, fieldtypes(Coverage))
-    @test !any(T -> T <: Function, fieldtypes(UnitTestDesign.CoveragePart))
-    r = report(all_pairs(solver_space()))
-    @test all(x -> x isa allowed, (getfield(r, k) for k in fieldnames(Report)))
-    @test r.bonus isa NamedTuple && r.prefix[1] isa NamedTuple
-    @test all(T -> T <: Union{Int, String, Symbol, Vector, NamedTuple, Nothing, BigInt}, fieldtypes(DesignSizes))
+@testitem "report: must-include rows are exempt from an excursion's distance (§7.5, §7.9, review round 1)" setup=[Checker, ReportSetup] begin
+    space = solver_space()
+    far = (mode = :exact, solver = :lu, tol = 1e-6)   # three parameters from the default base
+    ex = excursions(space; distance = 0, must_include = [far])
+    @test collect(ex) == [far, (mode = :fast, solver = :none, tol = 1e-3)]
+    r = report(ex)
+    @test r.guarantee == "1 must-include row kept first, then 1 case within distance 0 of " *
+        "(mode = :fast, solver = :none, tol = 0.001); never appears: solver = :qr; not a covering design; " *
+        "measured at strength 2, the cases cover 6 of 11 feasible pairs (3 pairs forbidden, " *
+        "2 impossible under the constraints); 5 pairs missing"
+    @test !occursin("2 cases within distance 0", r.guarantee)
+    # The counts are those of every row, the must-include row included.
+    c = coverage(ex; strength = 2)
+    @test (r.n_cases, r.n_must_include) == (2, 1)
+    @test r.coverage.ordinary.covered == c.ordinary.covered == 6
+    @test r.coverage.ordinary.missing == c.ordinary.missing
+    @test r.coverage.ordinary.covered == check_design(ex, fable_solver.space).ordinary.counts.covered
+    @test r.prefix[end].covered == 6 && r.prefix[1].covered == 3
+    # A must-include row equal to the base is not repeated (§7.11).
+    same = report(excursions(space; distance = 0, must_include = [(mode = :fast, solver = :none, tol = 1e-3)]))
+    @test startswith(same.guarantee, "1 must-include row kept first, then 0 cases within distance 0 of ")
+    @test same.n_cases == 1
+    # Rows within the distance keep the plain wording when nothing is kept first.
+    @test startswith(report(excursions(space; distance = 0)).guarantee, "1 case within distance 0 of ")
+    two = report(excursions(space; distance = 1, must_include = [far, far]))
+    @test startswith(two.guarantee, "2 must-include rows kept first, then 2 cases within distance 1 of ")
+    @test two.n_cases == 4 && !occursin("; 2 must-include rows kept first", two.guarantee)
+    # Covering and full factorial results still name the must-include rows in the tail.
+    @test startswith(report(full_factorial(space; must_include = [far])).guarantee,
+                     "5 cases, every valid row of 12; 1 must-include row kept first; measured at strength 2")
+end
+
+
+@testitem "report: its exclusions are its own measurement; recorded ones only for unresolved targets (§1.23, §3.13, §3.15)" setup=[Checker, ReportSetup] begin
+    space = solver_space()
+    implied(list) = filter(e -> e.status == :implied, list)
+    # Generated with explanation_limit = 1, reported with the default: the
+    # report's search verifies both implied exclusions.
+    cut = all_pairs(space; explanation_limit = 1)
+    @test all(e -> e.minimal == :unresolved, implied(cut.excluded))
+    r = report(cut)
+    @test length(implied(r.excluded)) == 2
+    @test all(e -> e.minimal == :verified && e.limit === nothing && e.rules == [1, 2], implied(r.excluded))
+    @test isempty(r.recorded)
+    @test shown(r) == shown(report(all_pairs(space)))
+    @test !occursin("unresolved", shown(r)) && !occursin("recorded at generation", shown(r))
+    # Generated with the default, reported with explanation_limit = 1: the
+    # report shows what it verified, the unresolved explanations, with the
+    # limit that cut them short; generation's proofs are not substituted.
+    full = all_pairs(space)
+    q = report(full; explanation_limit = 1)
+    @test all(e -> e.minimal == :verified, implied(full.excluded))
+    @test all(e -> e.minimal == :unresolved && e.limit == (:explanation_limit => 1), implied(q.excluded))
+    @test isempty(q.recorded)
+    @test q.guarantee == "5 cases cover all 11 feasible pairs of a 12-combination space (3 pairs forbidden, " *
+                         "2 impossible under the constraints, 2 with an unresolved explanation)"
+    @test count("(explanation unresolved: explanation_limit = 1 reached)", shown(q)) == 2
+    @test !occursin("recorded at generation", shown(q))
+    @test q.excluded == q.coverage.ordinary.excluded
+    # An excursion records no exclusions, so it has none to fall back on.
+    ex = report(excursions(space; distance = 1); feasibility_limit = 1)
+    @test isempty(ex.recorded)
+end
+
+
+@testitem "Report: plain(report) has no executable state and round-trips through repr (§1.23, review round 1)" setup=[Checker, ReportSetup] begin
+    using UnitTestDesign: plain
+    leaf(x) = x isa Union{Int, Float64, String, Symbol, Bool, Nothing}
+    "Every value in `x`, recursively, is a NamedTuple, a Vector, or a plain leaf."
+    function plain_tree(x)
+        x isa Union{Function, TestSpace, Constraint, UnitTestDesign.RuleTable} && return false
+        x isa NamedTuple && return all(plain_tree, values(x))
+        x isa Vector && return all(plain_tree, x)
+        return leaf(x)
+    end
+    roundtrip(x) = eval(Meta.parse(repr(x)))
+
+    space = solver_space()
+    rows = [(mode = :fast, solver = :none, tol = 1e-3), (mode = :fast, solver = :qr, tol = 1e-3),
+            (:exact, :lu, 1e-6)]
+    reports = [report(all_pairs(space)),
+               report(excursions(space; distance = 0, must_include = [(mode = :exact, solver = :lu, tol = 1e-6)])),
+               report(covering(space; stronger = [(:mode, :solver, :tol) => 3]); explanation_limit = 1),
+               report(all_pairs(test_space(limit_exhaustion)); feasibility_limit = 1),
+               report(all_pairs([1, 2, 3], [:a, :b], [true, false]))]
+    for r in reports
+        x = plain(r)
+        @test plain_tree(x)
+        y = roundtrip(x)
+        @test x == y && plain_tree(y)
+        @test x.guarantee == r.guarantee && x.n_cases == r.n_cases
+        @test x.coverage.ordinary.covered == r.coverage.ordinary.covered
+        @test length(x.excluded) == length(r.excluded) && length(x.recorded) == length(r.recorded)
+    end
+    x = plain(reports[1])
+    @test x.coverage.space == (names = [:mode, :solver, :tol],
+                               domains = [[":fast", ":exact"], [":none", ":lu", ":qr"], ["0.001", "1.0e-6"]],
+                               rules = ["@require(mode == :exact || solver == :none)",
+                                        "exact mode needs a tight tolerance"])
+    @test x.excluded[4] == (target = (solver = :lu, tol = 0.001), status = :implied, rules = [1, 2],
+        labels = ["@require(mode == :exact || solver == :none)", "exact mode needs a tight tolerance"],
+        minimal = :verified, limit = nothing)
+    @test x.bonus == (strength = 3, covered = 5, feasible = 5, unknown = 0, applicable = true, reason = "")
+    @test x.prefix[end] == (cases = 5, covered = 11, feasible = 11, unknown = 0)
+    @test (x.strategy, x.engine, x.seed, x.n_must_include) == (:covering, :IPOG, nothing, 0)
+    @test plain(reports[3]).coverage.stronger == [(names = [:mode, :solver, :tol], strength = 3)]
+    @test plain(reports[3]).excluded[4].limit == (keyword = :explanation_limit, value = 1)
+    # Coverage of hand-written rows: rejected rows, tuples named by the space.
+    c = coverage(rows, space)
+    xc = plain(c)
+    @test plain_tree(xc) && roundtrip(xc) == xc
+    @test [r.row for r in xc.ordinary.rejected] == [(mode = :fast, solver = :qr, tol = 0.001)]
+    @test xc.ordinary.rejected[1].reason == :violates_rule && xc.ordinary.rejected[1].rules == [1]
+    @test xc.ordinary.groups[1].names == [:mode, :solver, :tol]
+    # Values that are not plain become their repr: Invalid, Partition, a Char, an Int32.
+    wrapped = TestSpace((a = [1, Invalid(0)], b = [Partition(:tiny, rng -> 1e-9), 'x'], c = Int32[3, 4]))
+    w = plain(coverage([(a = 1, b = 'x', c = Int32(3)), (a = Invalid(0), b = 'x', c = Int32(4))], wrapped))
+    @test plain_tree(w) && roundtrip(w) == w
+    @test w.space.domains == [["1", "Invalid(0)"], ["Partition(:tiny)", "'x'"], ["3", "4"]]
+    @test w.ordinary.missing[1] == (a = 1, b = "Partition(:tiny)")
+    @test !isempty(w.negative.missing) && all(t -> get(t, :a, nothing) == "Invalid(0)", w.negative.missing)
+    # DesignSizes.
+    d = plain(design_sizes(space))
+    @test plain_tree(d) && roundtrip(d) == d
+    @test d.total == 12 && d.valid == 5 && d.rows[2] == (strategy = "covering(1)", kind = :covering, level = 1,
+        status = :ok, message = "", cases = 3, share = 0.6, pairs = (covered = 8, feasible = 11, unknown = 0),
+        triples = (covered = 3, feasible = 5, unknown = 0))
+    # Above `limit` the valid count is unknown; above typemax(Int) the total is a string of digits.
+    wide = plain(design_sizes(fill(1:10, 5)...; strengths = Int[], distances = Int[], limit = 10))
+    @test wide.total === 100_000 && wide.valid === nothing && plain_tree(wide)
+    @test wide.rows[1].status == :resource_limit && wide.rows[1].cases === nothing
+    huge = plain(design_sizes(fill(1:100, 12)...; strengths = Int[], distances = Int[], limit = 10))
+    @test huge.total == string(big(100)^12) && plain_tree(huge) && roundtrip(huge) == huge
+    # The Report itself still prints as its guarantee, and limits are checked first.
+    r = reports[1]
     @test endswith(sprint(show, [r]), "[5 cases cover all 11 feasible pairs of a 12-combination space " *
                                       "(3 pairs forbidden, 2 impossible under the constraints)]")
     @test occursin("feasibility_limit", message(() -> report(all_pairs(solver_space()); feasibility_limit = 0)))
@@ -227,7 +367,7 @@ end
     @test [r.pairs.covered for r in t.rows] == [54, 18, 54, 54, 30, 54]
     @test [r.triples.covered for r in t.rows] == [108, 12, 39, 108, 28, 76]
     @test all(r -> (r.pairs.feasible, r.triples.feasible) == (54, 108), t.rows)
-    @test plain(t) == join([
+    @test shown(t) == join([
         "strategy        cases   share  pairs  triples",
         "full_factorial     81  100.0%  54/54  108/108  valid 81 of 81",
         "covering(1)         3    3.7%  18/54   12/108",
@@ -246,7 +386,7 @@ end
     @test [r.share for r in s.rows] == [1.0, 0.6, 1.0, 1.0, 0.4, 0.6]
     @test [r.pairs.covered for r in s.rows] == [11, 8, 11, 11, 5, 7]
     @test all(r -> r.pairs.feasible == 11 && r.triples.feasible == 5, s.rows)
-    @test plain(s) == join([
+    @test shown(s) == join([
         "strategy        cases   share  pairs  triples",
         "full_factorial      5  100.0%  11/11      5/5  valid 5 of 12",
         "covering(1)         3   60.0%   8/11      3/5",
@@ -275,7 +415,7 @@ end
     @test occursin("limit = 10 reached", ff.message)
     @test all(r -> r.share === nothing, t.rows)
     @test [r.cases for r in t.rows[2:end]] == [3, 5, 5, 2, 3]
-    @test occursin("\nfull_factorial      —      —      —        —  total 12 only; limit = 10 reached", plain(t))
+    @test occursin("\nfull_factorial      —      —      —        —  total 12 only; limit = 10 reached", shown(t))
     # A strategy that stops at feasibility_limit = 1 records its status; the others still report.
     lim = design_sizes(space; feasibility_limit = 1)
     stopped = lim.rows[2]
@@ -283,18 +423,18 @@ end
     @test startswith(stopped.message, "feasibility_limit = 1 reached")
     @test [r.status for r in lim.rows] == [:ok, :resource_limit, :ok, :ok, :ok, :ok]
     @test [r.cases for r in lim.rows] == [5, nothing, 5, 5, 2, 3]
-    @test occursin("\ncovering(1)         —       —      —        —  feasibility_limit = 1 reached", plain(lim))
+    @test occursin("\ncovering(1)         —       —      —        —  feasibility_limit = 1 reached", shown(lim))
     # Unresolved measurements print as bounds, never as a share of an unknown.
     f = limit_exhaustion
     u = design_sizes(test_space(f); strengths = [2], distances = [], feasibility_limit = 1)
     @test u.rows[1].status == :ok && u.rows[1].pairs.unknown > 0
     @test u.rows[2].status == :resource_limit
-    @test occursin("28/≥28", plain(u)) && !occursin("28/28", plain(u))
+    @test occursin("28/≥28", shown(u)) && !occursin("28/28", shown(u))
     # Strengths above the parameter count are left out, not errors.
     wide = design_sizes([1, 2], [:a, :b]; strengths = 1:4)
     @test [r.strategy for r in wide.rows] == ["full_factorial", "covering(1)", "covering(2)", "excursions(1)", "excursions(2)"]
     @test all(r -> r.triples === nothing, wide.rows) && all(r -> r.pairs !== nothing, wide.rows)
-    @test occursin("—", plain(wide))
+    @test occursin("—", shown(wide))
     # An excursion whose default base breaks a rule is recorded, not thrown; `from` fixes it.
     bad = TestSpace((a = [1, 2], b = [1, 2]); constraints = [forbid((a = 1, b = 1))])
     b = design_sizes(bad; strengths = [2])
