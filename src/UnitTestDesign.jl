@@ -18,11 +18,13 @@ export full_factorial
 export TestSpace, parameters, Invalid, Partition, hasinvalid
 export Constraint, forbid, require, @forbid, @require, ConstraintError
 export ResourceLimitError
+export isallowed, explain
 
 include("rule_table.jl")
 include("constraints.jl")
 include("space.jl")
 include("feasibility.jl")
+include("explain.jl")
 include("combinations.jl")
 include("coverage_matrix.jl")
 include("coverage_set.jl")

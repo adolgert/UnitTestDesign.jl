@@ -2,11 +2,12 @@ using Test
 using TestItemRunner
 
 # The fixture inventory (fixtures.jl), checked against the independent oracle.
-# Each item asserts the hand-known facts now. Each `@test_skip` line is an
-# engine or production test waiting for a later phase; its comment says
-# which. The skipped expressions sketch the future call and are never
-# evaluated; `test_space(fixture)` stands for the Phase 2 adapter from a
-# fixture to a production `TestSpace`, and `throws(T, f)` for `@test_throws`.
+# Each item asserts the hand-known facts now. `test_space(fixture)` is the
+# adapter from a fixture to a production `TestSpace` (fixture_model.jl), and
+# the "Phase 2" lines ask the production model the fixture's question. Each
+# `@test_skip` line is an engine or production test waiting for a later
+# phase; its comment says which. The skipped expressions sketch the future
+# call and are never evaluated; `throws(T, f)` stands for `@test_throws`.
 
 @testitem "fixtures: inventory" setup=[Checker] begin
     @test allunique(f.name for f in FIXTURES)
@@ -36,8 +37,8 @@ end
     @test classify_target(s, (A = 1, C = 2)).status == :implied
     @test classify_target(s, (A = 1, B = 2)).rules == [1]
     @test check_design([], s).ordinary.counts.feasible == 6
-    # pending: Phase 2 — explain((A = 1, C = 2)) is infeasible, implied by rules 1 and 2
-    @test_skip explain(test_space(astra_chain), (A = 1, C = 2)).rules == [1, 2]
+    # Phase 2 — explain((A = 1, C = 2)) is infeasible, implied by rules 1 and 2
+    @test explain(test_space(astra_chain), (A = 1, C = 2)).rules == [1, 2]
     # pending: Phase 3 — IPOG and GND cover all 6 feasible pairs
     @test_skip complete(check_design(all_pairs(test_space(astra_chain)), astra_chain.space))
 
@@ -49,8 +50,11 @@ end
         (mode = :fast, solver = :lu) => [1], (mode = :fast, solver = :qr) => [1],
         (mode = :exact, tol = 1e-3) => [2]])
     @test Set(r.ordinary.implied) == Set([(solver = :lu, tol = 1e-3), (solver = :qr, tol = 1e-3)])
-    # pending: Phase 2 — classify: 3 direct naming their rules, 2 implied with rules [1, 2]
-    @test_skip explain(test_space(fable_solver), (solver = :lu, tol = 1e-3)).rules == [1, 2]
+    # Phase 2 — classify: 3 direct naming their rules, 2 implied with rules [1, 2]
+    @test explain(test_space(fable_solver), (solver = :lu, tol = 1e-3)).rules == [1, 2]
+    excluded = vcat(first.(r.ordinary.forbidden), r.ordinary.implied)
+    @test [(c.status, c.rules) for c in UnitTestDesign.classify(test_space(fable_solver), excluded)] ==
+          [(:forbidden, [1]), (:forbidden, [1]), (:forbidden, [2]), (:implied, [1, 2]), (:implied, [1, 2])]
     # pending: Phase 3 — IPOG and GND cover all 11 feasible pairs; IPOG in 5 rows
     @test_skip length(all_pairs(test_space(fable_solver))) == 5
     # pending: Phase 5 — coverage and report agree with the checker
@@ -61,8 +65,8 @@ end
     @test classify_target(s, (os = :windows, gpu = true)).status == :implied
     r = check_design([], s)
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (13, 2, 1)
-    # pending: Phase 2 — explain((os = :windows, gpu = true)) is infeasible with rules [1, 2]
-    @test_skip explain(test_space(opus_gpu), (os = :windows, gpu = true)).rules == [1, 2]
+    # Phase 2 — explain((os = :windows, gpu = true)) is infeasible with rules [1, 2]
+    @test explain(test_space(opus_gpu), (os = :windows, gpu = true)).rules == [1, 2]
     # pending: Phase 3 — both engines cover all 13 feasible pairs (issue #51)
     @test_skip complete(check_design(all_pairs(test_space(opus_gpu); engine = GND()), opus_gpu.space))
 end
@@ -77,8 +81,8 @@ end
     r = check_design([], s)
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (0, 4, 12)
     @test complete(r)  # nothing is required, so the empty design is complete (§1.24)
-    # pending: Phase 2 — completable((free = 1,)) is proven infeasible by the {x, y} component
-    @test_skip explain(test_space(disconnected_unsat), (free = 1,)).outcome == :infeasible
+    # Phase 2 — completable((free = 1,)) is proven infeasible by the {x, y} component
+    @test explain(test_space(disconnected_unsat), (free = 1,)).outcome == :infeasible
     # pending: Phase 3 — all_pairs returns no rows and reports every target excluded
     @test_skip isempty(all_pairs(test_space(disconnected_unsat)))
 
@@ -90,8 +94,8 @@ end
     @test classify_target(s, (e = 1,)).status == :required
     r = check_design([], s)
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (14, 11, 32)
-    # pending: Phase 2 — the witness for (e = 1,) combines both components
-    @test_skip explain(test_space(disconnected_witness), (e = 1,)).witness == rows[1]
+    # Phase 2 — the witness for (e = 1,) combines both components
+    @test explain(test_space(disconnected_witness), (e = 1,)).witness == rows[1]
     # pending: Phase 3 — IPOG and GND return only rows with a = b = 3 and c = d = :y
     @test_skip complete(check_design(all_pairs(test_space(disconnected_witness)), disconnected_witness.space))
 
@@ -101,8 +105,8 @@ end
     @test classify_target(s, (e = 2,)).status == :required
     @test classify_target(s, (c = :y, e = 1)).status == :implied
     @test classify_target(s, (a = 3, b = 3, c = :y, d = :y, e = 1)).rules == [3]
-    # pending: Phase 2 — explain((e = 1,)) is infeasible with rules [2, 3]
-    @test_skip explain(test_space(whole_case_connects), (e = 1,)).rules == [2, 3]
+    # Phase 2 — explain((e = 1,)) is infeasible with rules [2, 3]
+    @test explain(test_space(whole_case_connects), (e = 1,)).rules == [2, 3]
     # pending: Phase 3 — generation returns the single valid row
     @test_skip collect(all_pairs(test_space(whole_case_connects))) == valid_rows(whole_case_connects.space)
 end
@@ -114,8 +118,9 @@ end
     r = check_design([], s)
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (28, 0, 420)
     @test limit_exhaustion.request.small_limit == 1
-    # pending: Phase 2 — explain with feasibility_limit = 1 is unknown; the default finds the witness
-    @test_skip explain(test_space(limit_exhaustion), (x1 = 4,); feasibility_limit = 1).outcome == :unknown
+    # Phase 2 — explain with feasibility_limit = 1 is unknown; the default finds the witness
+    @test explain(test_space(limit_exhaustion), (x1 = 4,); feasibility_limit = 1).outcome == :unknown
+    @test explain(test_space(limit_exhaustion), (x1 = 4,)).witness == only(valid_rows(s))
     # pending: Phase 3 — generation with limit 1 throws ResourceLimitError; the retry succeeds
     @test_skip throws(ResourceLimitError, () -> all_pairs(test_space(limit_exhaustion); feasibility_limit = 1))
     # pending: Phase 5 — coverage with limit 1 lists unknown targets and claims no percentage
@@ -171,8 +176,9 @@ end
     @test last.(r.ordinary.forbidden) == [[1], [2], [2]]
     @test same_list(r.ordinary.implied, [(y = nothing, z = "s"), (y = :a, z = "s")])
     @test complete(check_design(valid_rows(s), s))
-    # pending: Phase 2 — TestSpace keeps 1 and 1.0 as two choices and nothing as a value
-    @test_skip length(test_space(heterogeneous_values).values[1]) == 2
+    # Phase 2 — TestSpace keeps 1 and 1.0 as two choices and nothing as a value
+    @test length(test_space(heterogeneous_values).values[1]) == 2
+    @test test_space(heterogeneous_values).values[2][1] === nothing
     # pending: Phase 4 — generated rows keep Int, Float64, Nothing, Symbol and String values
     @test_skip Set(typeof(r.x) for r in all_pairs(test_space(heterogeneous_values))) == Set([Int, Float64])
     # pending: Phase 5 — coverage of the 3 valid rows is 7 of 7, keyed by identity
@@ -233,8 +239,8 @@ end
     @test (r.ordinary.counts.feasible, r.ordinary.counts.forbidden, r.ordinary.counts.implied) == (9, 2, 1)
     seed = only(f.request.negative_seed)
     @test length(filter(row -> same_value(row.n, seed.n), negative_rows(s))) == 3
-    # pending: Phase 2 — TestSpace accepts 1 and Invalid(1) in one domain
-    @test_skip length(test_space(invalid_beside_ordinary).values[1]) == 3
+    # Phase 2 — TestSpace accepts 1 and Invalid(1) in one domain
+    @test length(test_space(invalid_beside_ordinary).values[1]) == 3
     # pending: Phase 6 — all_pairs covers 9 ordinary pairs and 4 negative targets, reported separately
     @test_skip coverage(all_pairs(test_space(invalid_beside_ordinary))).negative.covered == 4
     # pending: Phase 6 — must_include = [(n = Invalid(1),)] completes as a negative row
@@ -247,8 +253,8 @@ end
     r = check_design([], s)
     @test r.ordinary.forbidden == [(size = :tiny, mode = :b) => [1]]
     @test classify_target(s, (size = :tiny, mode = :tiny)).status == :required
-    # pending: Phase 2 — TestSpace accepts the space and the rule receives :tiny
-    @test_skip explain(test_space(partition_names), (size = :tiny, mode = :b)).outcome == :forbidden
+    # Phase 2 — TestSpace accepts the space and the rule receives :tiny
+    @test explain(test_space(partition_names), (size = :tiny, mode = :b)).outcome == :forbidden
     # pending: Phase 6 — generated rows hold the Partition wrappers; realize draws each once
     @test_skip all(r -> !(r.size isa Symbol), all_pairs(test_space(partition_names)))
 end
@@ -304,8 +310,8 @@ end
     # GND never returns here, so it is not run.
     @test_throws BoundsError all_pairs(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
     @test_throws BoundsError all_triples(f.legacy.domains...; disallow = f.legacy.disallow, engine = IPOG())
-    # pending: Phase 2 — explain((p1 = 2, p2 = 2)) is infeasible with rules [1, 2]
-    @test_skip explain(test_space(bench12), (p1 = 2, p2 = 2)).rules == [1, 2]
+    # Phase 2 — explain((p1 = 2, p2 = 2)) is infeasible with rules [1, 2]
+    @test explain(test_space(bench12), (p1 = 2, p2 = 2)).rules == [1, 2]
     # pending: Phase 3 — IPOG and GND cover all 586 feasible pairs and 5702 feasible triples
     @test_skip complete(check_design(all_pairs(test_space(bench12)), bench12.space))
     @test_skip complete(check_design(all_triples(test_space(bench12); engine = GND()), bench12.space; strength = 3))
@@ -319,8 +325,20 @@ end
         @test f.legacy === nothing
         @test_throws ArgumentError CheckSpace(f.input...)
     end
-    # pending: Phase 2 — TestSpace rejects each of these five inputs with an ArgumentError naming the parameter
-    @test_skip all(f -> throws(ArgumentError, () -> test_space(f)),
-                   (invalid_only_domain, nested_invalid_partition, nested_invalid_invalid,
-                    partition_symbol_collision, duplicate_partition_name))
+    # Phase 2 — TestSpace rejects each of these five inputs with an ArgumentError
+    for f in (invalid_only_domain, nested_invalid_partition, nested_invalid_invalid,
+              partition_symbol_collision, duplicate_partition_name)
+        @test_throws ArgumentError test_space(f)
+    end
+    # The space's errors name the parameter. A nested wrapper is rejected when
+    # the wrapper is built, before it belongs to a parameter (§4.12).
+    for (f, name) in ((invalid_only_domain, "`n`"), (partition_symbol_collision, "`size`"),
+                      (duplicate_partition_name, "`size`"))
+        err = try
+            test_space(f)
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin(name, err.msg)
+    end
 end

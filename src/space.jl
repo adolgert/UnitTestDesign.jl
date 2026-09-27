@@ -377,8 +377,8 @@ the value itself (contract §4.5, §12.14). Predicates never see an `Invalid`
 rule_value(space::TestSpace, i::Integer, k::Integer) = rule_value(space.values[i][k])
 
 """
-    to_indices(space, partial::NamedTuple) -> Vector{Int}
-    to_indices(space, case::Tuple) -> Vector{Int}
+    case_indices(space, partial::NamedTuple) -> Vector{Int}
+    case_indices(space, case::Tuple) -> Vector{Int}
 
 Index-space form of an assignment written in the caller's vocabulary: for each
 parameter, the index of its value, or `0` for a parameter the `NamedTuple`
@@ -387,12 +387,11 @@ omits. Values match by identity and a partition may be written by its name
 names, values outside a domain, and a tuple of the wrong length are
 `ArgumentError`s.
 
-This shadows `Base.to_indices` inside the package; call it as
-`UnitTestDesign.to_indices` from outside.
+The name avoids `Base.to_indices`, which `Base` exports.
 """
-function to_indices end
+function case_indices end
 
-function to_indices(space::TestSpace, partial::NamedTuple)
+function case_indices(space::TestSpace, partial::NamedTuple)
     idx = zeros(Int, length(space.names))
     for (name, v) in pairs(partial)
         i = parameter_index(space, name)
@@ -401,7 +400,7 @@ function to_indices(space::TestSpace, partial::NamedTuple)
     return idx
 end
 
-function to_indices(space::TestSpace, case::Tuple)
+function case_indices(space::TestSpace, case::Tuple)
     n = length(space.names)
     length(case) == n || throw(ArgumentError(
         "a positional case lists $(length(case)) values, but the space has $n parameters " *
@@ -414,7 +413,7 @@ end
 
 The assignment an index vector stands for, with values as stored (wrappers
 kept) and parameters in space order. Entries of `0` are unassigned and left out,
-so `from_indices(space, to_indices(space, partial))` returns `partial` with its
+so `from_indices(space, case_indices(space, partial))` returns `partial` with its
 names in space order.
 """
 function from_indices(space::TestSpace, idx::AbstractVector{<:Integer})

@@ -4,47 +4,6 @@ using TestItemRunner
 # The model's value layer and TestSpace (src/space.jl): plan Phase 2 steps 1,
 # 2 and 8. Test names cite the contract clauses (docs/src/dev/contract.md).
 
-@testsnippet FixtureModel begin
-    # The Phase 2 adapter from a checker fixture (test/fixtures.jl) to a
-    # production TestSpace. CheckInvalid(x) becomes Invalid(x), CheckPartition(n)
-    # becomes Partition(n, Returns(n)), and each checker rule (scope, predicate),
-    # whose predicate is true for a forbidden combination, becomes
-    # forbid(predicate, scope...).
-    model_value(x::CheckInvalid) = Invalid(model_value(x.value))
-    model_value(x::CheckPartition) = Partition(x.name, Returns(x.name))
-    model_value(x) = x
-
-    function test_space(input::NamedTuple; kwargs...)
-        rules = map(input.rules) do (scope, predicate)
-            forbid(predicate, (scope isa Symbol ? (scope,) : Tuple(scope))...)
-        end
-        domains = [Any[model_value(x) for x in d] for d in input.domains]
-        return TestSpace(Pair.(input.names, domains)...; constraints = rules, kwargs...)
-    end
-    test_space(f::Fixture; kwargs...) = test_space(f.input; kwargs...)
-
-    # Valid ordinary and negative rows of a TestSpace, by brute force over its
-    # RuleTables, as sorted index vectors (the checker's order).
-    function model_rows(space::TestSpace)
-        ordinary, negative = Vector{Int}[], Vector{Int}[]
-        for key in Iterators.product((eachindex(v) for v in space.values)...)
-            row = collect(key)
-            bad = [p for p in eachindex(row) if row[p] in UnitTestDesign.invalid_indices(space, p)]
-            length(bad) > 1 && continue
-            p = isempty(bad) ? 0 : only(bad)
-            tables = UnitTestDesign.active_tables(space, p)
-            any(t -> UnitTestDesign.forbids(t, row), tables) && continue
-            push!(p == 0 ? ordinary : negative, row)
-        end
-        return (ordinary = sort!(ordinary), negative = sort!(negative))
-    end
-
-    # Index rows read back as checker values, to compare with valid_rows.
-    checker_row(cs::CheckSpace, row) =
-        NamedTuple{Tuple(cs.names)}(Tuple(cs.domains[p][row[p]] for p in eachindex(row)))
-end
-
-
 @testitem "space: the target screen (plan; §2.10, §12.1, §12.4, §12.18)" begin
     space = TestSpace(
         (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
@@ -118,7 +77,7 @@ end
     @test UnitTestDesign.value_index(s, 2, missing) == 1
     @test UnitTestDesign.ordinary_indices(s, 1) == [1, 2]
     @test isequal(UnitTestDesign.from_indices(s, [1, 1]), (a = nothing, b = missing))
-    @test UnitTestDesign.to_indices(s, (b = missing,)) == [0, 1]
+    @test UnitTestDesign.case_indices(s, (b = missing,)) == [0, 1]
 end
 
 
@@ -262,7 +221,7 @@ end
 
 
 @testitem "space: value lookup and index round trips (§2.11, §4.5)" begin
-    using UnitTestDesign: value_index, to_indices, from_indices, parameter_index, rule_value
+    using UnitTestDesign: value_index, case_indices, from_indices, parameter_index, rule_value
     tiny = Partition(:tiny, Returns(1e-9))
     space = TestSpace((size = [tiny, Partition(:huge, Returns(1e9)), 100],
                        n = Any[1, 1.0, Invalid(-1)], mode = [:a, :b, :tiny]))
@@ -291,12 +250,12 @@ end
     err = try parameter_index(space, :colour) catch e; e end
     @test err isa ArgumentError && occursin("`colour`", err.msg) && occursin("size, n, mode", err.msg)
 
-    # to_indices and from_indices, wrappers kept.
-    @test to_indices(space, (n = Invalid(-1), size = :tiny)) == [1, 3, 0]
-    @test to_indices(space, NamedTuple()) == [0, 0, 0]
-    @test to_indices(space, (tiny, 1.0, :b)) == [1, 2, 2]
-    @test_throws ArgumentError to_indices(space, (tiny, 1.0))
-    err = try to_indices(space, (colour = :red,)) catch e; e end
+    # case_indices and from_indices, wrappers kept.
+    @test case_indices(space, (n = Invalid(-1), size = :tiny)) == [1, 3, 0]
+    @test case_indices(space, NamedTuple()) == [0, 0, 0]
+    @test case_indices(space, (tiny, 1.0, :b)) == [1, 2, 2]
+    @test_throws ArgumentError case_indices(space, (tiny, 1.0))
+    err = try case_indices(space, (colour = :red,)) catch e; e end
     @test err isa ArgumentError && occursin("size, n, mode", err.msg)
     row = from_indices(space, [1, 3, 2])
     @test row.size === tiny
@@ -307,12 +266,12 @@ end
     @test_throws ArgumentError from_indices(space, [1, 1])
     for key in Iterators.product(1:3, 1:3, 1:3)
         idx = collect(key)
-        @test to_indices(space, from_indices(space, idx)) == idx
-        @test to_indices(space, Tuple(from_indices(space, idx))) == idx
+        @test case_indices(space, from_indices(space, idx)) == idx
+        @test case_indices(space, Tuple(from_indices(space, idx))) == idx
     end
     partial = (mode = :tiny, size = Partition(:huge, identity))
-    @test from_indices(space, to_indices(space, partial)).size.name == :huge
-    @test keys(from_indices(space, to_indices(space, partial))) == (:size, :mode)
+    @test from_indices(space, case_indices(space, partial)).size.name == :huge
+    @test keys(from_indices(space, case_indices(space, partial))) == (:size, :mode)
 
     # What rules see (§4.5, §5.8).
     @test rule_value(space, 1, 1) === :tiny
@@ -383,7 +342,8 @@ end
 end
 
 
-@testitem "space: fixtures agree with the checker (Phase 2 adapter)" setup=[Checker, FixtureModel] begin
+@testitem "space: fixtures agree with the checker (Phase 2 adapter)" setup=[Checker] begin
+    # test_space, model_rows and checker_row: test/fixture_model.jl, through the Checker module.
     # The five inputs construction must reject.
     for f in (invalid_only_domain, nested_invalid_partition, nested_invalid_invalid,
               partition_symbol_collision, duplicate_partition_name)
@@ -412,8 +372,11 @@ end
     # rows, and the rule sees the partition name in partition_names.
     @test length(model_rows(test_space(fable_solver)).ordinary) == 5
     @test length(model_rows(test_space(heterogeneous_values)).ordinary) == 3
+    # Its one rule names both parameters, so the adapter makes it a whole-case
+    # rule (lazy); it forbids only (size = :tiny, mode = :b).
     s = test_space(partition_names)
-    @test s.tables[1].forbidden == Set([(1, 2)])
+    @test [k for k in Iterators.product(1:3, 1:3) if UnitTestDesign.forbids(s.tables[1], collect(k))] ==
+          [(1, 2)]
     @test length(model_rows(s).ordinary) == 8
     # Invalid(1) beside 1: 4 ordinary rows and 3 negative rows.
     rows = model_rows(test_space(invalid_beside_ordinary))

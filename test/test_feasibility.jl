@@ -9,7 +9,7 @@ using TestItemRunner
 # domain, and a rule becomes the table of value-index tuples it forbids.
 
 @testsnippet FeasibilitySetup begin
-    using UnitTestDesign: RuleTable, Feasibility, Explanation, Classification,
+    using UnitTestDesign: RuleTable, Feasibility, IndexExplanation, IndexClassification,
         completable, violates, violated_rules, dead, classify, explain_partial,
         components, forbids, assigned
     using UnitTestDesign: ResourceLimitError
@@ -369,7 +369,7 @@ end
     c = only(classify(f, [[1, 1, 0]]))
     @test (c.status, c.rules, c.minimal) == (:implied, [1], :verified)
 
-    # Explanation limit on Astra's implied pair: the first trial (without
+    # The explanation limit on Astra's implied pair: the first trial (without
     # rule 1) spends the single node, so rule 2 is never tried. The target is
     # still proven infeasible and the full set is kept as sufficient (§3.15).
     astra = Feasibility([[1, 2], [1, 2], [1, 2]],

@@ -478,9 +478,10 @@ end
 
 
 """
-    Explanation
+    IndexExplanation
 
-The answer of `explain_partial` (contract §1.26). `outcome` is one of
+The index-space answer of `explain_partial`, which `explain(space, ...)` turns
+into an `Explanation` (contract §1.26). `outcome` is one of
 
 - `:allowed`: the assignment is complete and no table forbids it; `witness`
   is the assignment itself.
@@ -502,7 +503,7 @@ result: `:feasibility_limit` for `:unknown`; for an `:unresolved` explanation,
 `:feasibility_limit` when a trial reached its own limit; `nothing` when no
 limit mattered.
 """
-struct Explanation
+struct IndexExplanation
     outcome::Symbol
     rules::Vector{Int}
     minimal::Symbol
@@ -511,10 +512,10 @@ struct Explanation
 end
 
 """
-    explain_partial(f::Feasibility, partial; explanation_limit = 1_000_000) -> Explanation
+    explain_partial(f::Feasibility, partial; explanation_limit = 1_000_000) -> IndexExplanation
 
 Why `partial` is or is not part of a valid row, as one of the five outcomes
-of contract §1.26 (see `Explanation`). The direct check comes first, so a
+of contract §1.26 (see `IndexExplanation`). The direct check comes first, so a
 complete or partial assignment that some fully assigned table forbids is
 `:forbidden` with every such rule. A complete assignment that no table
 forbids is `:allowed`. Otherwise `completable` decides between
@@ -528,16 +529,16 @@ function explain_partial(f::Feasibility, partial::AbstractVector{<:Integer};
         "explanation_limit must be a positive Int, got $explanation_limit"))
     key = _checked_key(f, partial)
     direct = _violated_rules(f, key)
-    isempty(direct) || return Explanation(:forbidden, direct, :not_applicable, nothing, nothing)
-    all(!=(0), key) && return Explanation(:allowed, Int[], :not_applicable, key, nothing)
+    isempty(direct) || return IndexExplanation(:forbidden, direct, :not_applicable, nothing, nothing)
+    all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, key, nothing)
     status, witness = _completable(f, key, f.limit)
     if status === :feasible
-        return Explanation(:completable, Int[], :not_applicable, copy(witness), nothing)
+        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness), nothing)
     elseif status === :unknown
-        return Explanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit)
+        return IndexExplanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit)
     end
     rules, minimal, limit = _deletion_search(f, key, Int(explanation_limit))
-    return Explanation(:infeasible, rules, minimal, nothing, limit)
+    return IndexExplanation(:infeasible, rules, minimal, nothing, limit)
 end
 
 # The deletion search of contract §3.14–§3.16 for `key`, which is proven
@@ -576,9 +577,10 @@ end
 
 
 """
-    Classification
+    IndexClassification
 
-One target's classification (contract §1.2, §1.4, §1.7). `status` is
+One target's classification in index space, which `classify(space, ...)` turns
+into a `Classification` (contract §1.2, §1.4, §1.7). `status` is
 
 - `:required`: feasible; `witness` is a valid row containing it.
 - `:forbidden`: `rules` lists every table, in table order, whose scope lies
@@ -590,9 +592,9 @@ One target's classification (contract §1.2, §1.4, §1.7). `status` is
   nor excluded.
 
 `minimal` is `:not_applicable` except for `:implied`. `limit` is as in
-`Explanation`.
+`IndexExplanation`.
 """
-struct Classification
+struct IndexClassification
     status::Symbol
     rules::Vector{Int}
     minimal::Symbol
@@ -603,19 +605,19 @@ end
 const _STATUS_OF_OUTCOME = (allowed = :required, completable = :required,
     forbidden = :forbidden, infeasible = :implied, unknown = :unknown)
 
-Classification(e::Explanation) =
-    Classification(_STATUS_OF_OUTCOME[e.outcome], e.rules, e.minimal, e.witness, e.limit)
+IndexClassification(e::IndexExplanation) =
+    IndexClassification(_STATUS_OF_OUTCOME[e.outcome], e.rules, e.minimal, e.witness, e.limit)
 
 """
-    classify(f::Feasibility, targets; explanation_limit = 1_000_000) -> Vector{Classification}
+    classify(f::Feasibility, targets; explanation_limit = 1_000_000) -> Vector{IndexClassification}
 
 Classify each target, a partial assignment, as `:required`, `:forbidden`,
-`:implied`, or `:unknown` (see `Classification`). Results follow the order
+`:implied`, or `:unknown` (see `IndexClassification`). Results follow the order
 of `targets` (§9.7). Each target has its own feasibility budget, `f.limit`
 (§3.4), and its own `explanation_limit` for the deletion search (§3.13);
 answers proven for one target are cached in `f` for the next.
 """
 function classify(f::Feasibility, targets::AbstractVector{<:AbstractVector{<:Integer}};
                   explanation_limit::Integer = 1_000_000)
-    return Classification[Classification(explain_partial(f, t; explanation_limit)) for t in targets]
+    return IndexClassification[IndexClassification(explain_partial(f, t; explanation_limit)) for t in targets]
 end
