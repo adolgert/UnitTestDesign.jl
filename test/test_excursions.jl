@@ -2,7 +2,8 @@ using Test
 using TestItemRunner
 
 # Excursions through the internal Request (plan Phase 3 step 4; contract
-# §7.5–§7.7, §7.11).
+# §7.5–§7.7, §7.11). An excursion has one distance and no groups; the
+# request's strength is not read, so these requests use the default.
 
 
 @testitem "build_excursion: the 0.4 sizes and order" begin
@@ -23,14 +24,12 @@ using TestItemRunner
     ex = build_excursion(arity, 2, base, row -> row[3] == 2 && row[4] > 2)
     @test size(ex.matrix) == (4, 23)
     @test ex.dropped == 2
-    # 0.4 levels Dict(3 => [[1, 2, 3], [2, 3, 4]]): three-way changes within each group.
-    ex = build_excursion(arity, 2, base, row -> false; groups = [[1, 2, 3] => 3, [2, 3, 4] => 3])
-    @test size(ex.matrix) == (4, 25 + 2 * 1 + 3 * 2)
-    @test all(count(ex.matrix[:, j] .!= base) <= 2 || ex.matrix[1, j] == 1 || ex.matrix[4, j] == 1
-              for j in axes(ex.matrix, 2))
+    # There are no groups: the only widening keyword is gone.
+    @test_throws MethodError build_excursion(arity, 2, base, row -> false; groups = [[1, 2, 3] => 3])
     # Distance 0 is the base alone; a distance beyond the parameter count is the full product.
     @test build_excursion(arity, 0, base, row -> false).matrix == reshape(base, 4, 1)
     @test size(build_excursion(arity, 9, base, row -> false).matrix, 2) == prod(arity)
+    @test_throws ArgumentError build_excursion(arity, -1, base, row -> false)
     # Another base: each changed parameter takes every other value.
     ex = build_excursion(arity, 1, [2, 3, 1, 4], row -> false)
     @test ex.matrix == [2 1 2 2 2 2 2 2; 3 3 1 2 3 3 3 3; 1 1 1 1 2 1 1 1; 4 4 4 4 4 1 2 3]
@@ -45,11 +44,14 @@ end
     space = TestSpace(Pair.(names, domains)...)
     within(case, base, d) = count(k -> case[k] != base[k], keys(base)) <= d
 
-    request = Request(space; strength = 1)
+    request = Request(space)
     design = generate_excursion(request)
     cases = to_cases(request, design.matrix)
     @test cases == [(a = 1, b = :x, c = true), (a = 2, b = :x, c = true), (a = 3, b = :x, c = true),
                     (a = 1, b = :y, c = true), (a = 1, b = :x, c = false)]
+    # The request's strength is not read: any valid strength gives the same design.
+    @test generate_excursion(Request(space; strength = 1)).matrix == design.matrix
+    @test generate_excursion(Request(space; strength = 3)).matrix == design.matrix
     @test (design.strategy, design.engine, design.seed) == (:excursion, :Excursion, nothing)
     @test (design.required, design.covered, isempty(design.excluded)) == (0, 0, true)
     @test design.notes.dropped == 0
@@ -58,7 +60,7 @@ end
 
     base = (a = 3, b = :y, c = false)
     for from in (base, (3, :y, false), [3, 2, 2]), d in (1, 2)
-        rows = to_cases(request, generate_excursion(Request(space; strength = d); distance = d, from).matrix)
+        rows = to_cases(request, generate_excursion(request; distance = d, from).matrix)
         @test rows[1] == base
         @test allunique(rows)
         @test all(c -> within(c, base, d), rows)
@@ -80,7 +82,7 @@ end
     space = TestSpace(Pair.(names, domains)...;
         constraints = [forbid((b = :y, c = true); reason = "y needs c off")])
 
-    request = Request(space; strength = 1)
+    request = Request(space)
     design = generate_excursion(request; distance = 1)
     cases = to_cases(request, design.matrix)
     @test cases == [(a = 1, b = :x, c = true), (a = 2, b = :x, c = true), (a = 3, b = :x, c = true),
@@ -92,7 +94,6 @@ end
     @test result.ordinary.missing == [(b = :y,)]
     @test isempty(result.ordinary.rejected)
 
-    request = Request(space; strength = 2)
     design = generate_excursion(request; distance = 2)
     cases = to_cases(request, design.matrix)
     @test cases == [(a = 1, b = :x, c = true), (a = 2, b = :x, c = true), (a = 3, b = :x, c = true),
@@ -117,7 +118,7 @@ end
     space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]);
         constraints = [forbid((b = :y, c = true); reason = "y needs c off"),
                        forbid(:a, :b) do a, b; a == 3 && b == :y end])
-    request = Request(space; strength = 1)
+    request = Request(space)
     message(f) = try f(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $e" end
     msg = message(() -> generate_excursion(request; from = (a = 3, b = :y, c = true)))
     @test occursin("breaks", msg)
@@ -140,11 +141,11 @@ end
     names = [:a, :b, :c]
     domains = [[1, 2, 3], [:x, :y], [true, false]]
     space = TestSpace(Pair.(names, domains)...; constraints = [forbid((b = :y, c = true))])
-    plain = to_cases(Request(space; strength = 1), generate_excursion(Request(space; strength = 1)).matrix)
+    plain = to_cases(Request(space), generate_excursion(Request(space)).matrix)
     @test length(plain) == 4
 
     seeds = [(a = 3, b = :y, c = false), (a = 2, b = :x, c = true), (c = false,), (a = 3, b = :y, c = false)]
-    request = Request(space; strength = 1, must_include = seeds)
+    request = Request(space; must_include = seeds)
     design = generate_excursion(request)
     cases = to_cases(request, design.matrix)
     @test design.n_must_include == 4
@@ -154,26 +155,81 @@ end
     @test cases[5:end] == [(a = 1, b = :x, c = true), (a = 3, b = :x, c = true)]
     @test design.notes.dropped == 1
     @test isempty(design.notes.never_appear)
+
+    # Distance 0: the must-include rows and the base, nothing else.
+    design = generate_excursion(request; distance = 0)
+    cases = to_cases(request, design.matrix)
+    @test cases == [seeds[1], seeds[2], (a = 1, b = :x, c = false), seeds[4], (a = 1, b = :x, c = true)]
+    @test (design.notes.dropped, design.notes.distance) == (0, 0)
+    @test isempty(design.notes.never_appear)
 end
 
 
-@testitem "excursions: stronger groups widen the distance within the group" setup=[Checker] begin
+@testitem "excursions: distance 0 is the base alone (§7.5)" setup=[Checker] begin
     using UnitTestDesign: Request, generate_excursion, to_cases
-    # 0.4's pairs_excursion(fill(1:2, 20)...; wayness): 3-way coverage within groups.
+    space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]);
+        constraints = [forbid((b = :y, c = true))])
+    request = Request(space)
+    design = generate_excursion(request; distance = 0)
+    @test to_cases(request, design.matrix) == [(a = 1, b = :x, c = true)]
+    @test (design.notes.dropped, design.notes.distance, design.notes.base) == (0, 0, [1, 1, 1])
+    @test design.notes.never_appear == [(1, 2), (1, 3), (2, 2), (3, 2)]
+    from = (a = 2, b = :y, c = false)
+    @test to_cases(request, generate_excursion(request; distance = 0, from).matrix) == [from]
+    # A forbidden base is still an error at distance 0 (§7.6).
+    @test_throws ArgumentError generate_excursion(request; distance = 0, from = (a = 1, b = :y, c = true))
+end
+
+
+@testitem "excursions: stronger groups are refused; one distance only (§7.5)" setup=[Checker] begin
+    using UnitTestDesign: Request, generate_excursion
     names = [Symbol(:p, i) for i in 1:8]
     space = TestSpace((n => [1, 2] for n in names)...)
-    stronger = [(:p1, :p2, :p3, :p4) => 3, (:p6, :p7, :p8) => 3]
-    request = Request(space; strength = 2, stronger)
-    design = generate_excursion(request; distance = 2)
-    # 1 base, 8 singles, 28 pairs, and the triples inside each group: 4 + 1.
-    @test size(design.matrix, 2) == 1 + 8 + 28 + 4 + 1
-    checker = CheckSpace(names, [[1, 2] for _ in names])
-    cases = to_cases(request, design.matrix)
-    @test complete(check_design(cases, checker; strength = 2, stronger))
-    changed = [count(design.matrix[:, j] .!= 1) for j in axes(design.matrix, 2)]
-    @test maximum(changed) == 3
-    # p5 is in no group, so it never changes in a three-parameter excursion.
-    @test all(j -> changed[j] <= 2 || design.matrix[5, j] == 1, axes(design.matrix, 2))
+    request = Request(space; stronger = [(:p1, :p2, :p3, :p4) => 3, (:p6, :p7, :p8) => 3])
+    err = try generate_excursion(request; distance = 2); nothing catch e; e end
+    @test err isa ArgumentError
+    @test err.msg == "excursions take a single distance; stronger groups apply to covering designs"
+    # Even at distance 0 or 1, and whatever the base.
+    @test_throws ArgumentError generate_excursion(request; distance = 0)
+    @test_throws ArgumentError generate_excursion(request; distance = 1, from = fill(2, 8))
+    # A group at the base strength adds nothing (§11.7), so it is no group.
+    plain = Request(space; stronger = [(:p1, :p2) => 2])
+    @test size(generate_excursion(plain; distance = 2).matrix, 2) == 1 + 8 + 28
+end
+
+
+@testitem "excursions: no row beyond the distance, distance 1, 2 and n (§7.5)" setup=[Checker] begin
+    using UnitTestDesign: Request, generate_excursion, to_cases
+    # Five parameters and three rules, one of them a whole-case rule.
+    names = [:a, :b, :c, :d, :e]
+    domains = [[1, 2, 3], [:x, :y], [true, false], [1, 2], [:p, :q, :r]]
+    checker = CheckSpace(names, domains, [
+        ((:b, :c), (b, c) -> b == :y && c == true),
+        ((:a, :e), (a, e) -> a == 3 && e == :r),
+        (Tuple(names), (a, b, c, d, e) -> a + d == 5 && e == :q)])
+    space = TestSpace(Pair.(names, domains)...; constraints = [
+        forbid((b = :y, c = true)),
+        @forbid(a == 3 && e == :r),
+        forbid(case -> case.a + case.d == 5 && case.e == :q)])
+    valid = valid_rows(checker)
+    request = Request(space)
+    n = length(names)
+    for from in (nothing, (a = 3, b = :y, c = false, d = 2, e = :p)), d in (1, 2, n, n + 2)
+        design = generate_excursion(request; distance = d, from)
+        cases = to_cases(request, design.matrix)
+        base = cases[1]
+        hamming(c) = count(k -> !isequal(c[k], base[k]), names)
+        @test maximum(hamming, cases) <= min(d, n)
+        # Exactly the valid rows within the distance, each once.
+        near = filter(c -> hamming(c) <= d, valid)
+        @test Set(cases) == Set(near) && length(cases) == length(near)
+        @test design.notes.distance == min(d, n)
+        # Every candidate within the distance is kept or dropped.
+        product_near = count(r -> hamming(NamedTuple{Tuple(names)}(r)) <= d, Iterators.product(domains...))
+        @test length(cases) + design.notes.dropped == product_near
+    end
+    # A distance beyond the parameter count is the parameter count.
+    @test generate_excursion(request; distance = n + 2).matrix == generate_excursion(request; distance = n).matrix
 end
 
 
@@ -186,7 +242,7 @@ end
         # The first valid row as the base, and distances 1 to 3.
         base = first(valid)
         for d in 1:3
-            request = Request(space; strength = min(d, n))
+            request = Request(space)
             design = generate_excursion(request; distance = d, from = base)
             cases = to_cases(request, design.matrix)
             near = filter(c -> count(k -> c[k] != base[k], keys(base)) <= d, valid)
@@ -200,6 +256,6 @@ end
         end
     end
     # The default base, the first value of each parameter, breaks both rules here.
-    msg = try generate_excursion(Request(test_space(disconnected_witness); strength = 1)); "" catch e; e.msg end
+    msg = try generate_excursion(Request(test_space(disconnected_witness))); "" catch e; e.msg end
     @test occursin("breaks rule 1", msg) && occursin("rule 2", msg)
 end

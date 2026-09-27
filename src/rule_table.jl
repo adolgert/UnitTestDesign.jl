@@ -17,10 +17,14 @@ order the predicate expects them. `forbidden` is either a
 `Set{NTuple{N,Int}}` of value-index tuples (in scope order) that the rule
 forbids, when the rule was tabulated, or `nothing` when it is evaluated
 lazily. `lazy` is then a function from an `NTuple{N,Int}` of value indices
-to `Bool` (`true` = forbidden), already memoized by the model layer; it is
-`nothing` when the rule was tabulated. Exactly one of `forbidden` and
-`lazy` is `nothing`. A whole-case rule has `scope == 1:arity` and is
-always lazy (contract §12.20).
+to `Bool` (`true` = forbidden); it is `nothing` when the rule was tabulated.
+Exactly one of `forbidden` and `lazy` is `nothing`. A whole-case rule has
+`scope == 1:arity` and is always lazy (contract §12.20).
+
+A table holds no state that an operation changes: `lazy` evaluates the
+predicate each time it is called. The memo of a lazy rule's verdicts
+belongs to the operation's `Feasibility` (feasibility.jl, contract §3.5,
+§12.19), so a `TestSpace` retains nothing from any operation.
 """
 struct RuleTable
     scope::Vector{Int}
@@ -50,7 +54,9 @@ assigned(table::RuleTable, partial::AbstractVector{<:Integer}) =
 
 True when the rule forbids the values assigned in `partial`. Must only be
 called when `assigned(table, partial)` holds; the scoped values are read
-from `partial` in scope order.
+from `partial` in scope order. A lazy table is evaluated without a memo;
+searches ask `forbids(f::Feasibility, t, partial)`, which memoizes lazy
+verdicts for the operation.
 """
 function forbids(table::RuleTable, partial::AbstractVector{<:Integer})
     key = ntuple(k -> Int(partial[table.scope[k]]), length(table.scope))

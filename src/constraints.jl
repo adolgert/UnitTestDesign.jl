@@ -735,9 +735,9 @@ ordinary values is evaluated once per combination, when the space is built,
 and the forbidden value-index tuples are stored in a `Set`. The combinations
 follow `Iterators.product` over the scope's ordinary value indices in scope
 order, so the first parameter of the scope varies fastest. A larger scope is
-evaluated lazily with a memo, and the package warns once for that rule. A
-whole-case rule is always lazy, with no warning; its table's scope is every
-parameter.
+evaluated lazily, memoized per operation by the `Feasibility` that asks
+(§12.19), and the package warns once for that rule. A whole-case rule is
+always lazy, with no warning; its table's scope is every parameter.
 
 Only ordinary values are tabulated, and predicates receive them as
 [`rule_value`](@ref)s (a partition by its name, never an `Invalid`: §5.8,
@@ -780,35 +780,32 @@ end
 
 """
 The lazy form of a rule (contract §12.19, §12.20): a function from a tuple of
-value indices, in scope order, to `true` when forbidden, memoized per tuple.
-An evaluation that throws stores nothing.
+value indices, in scope order, to `true` when forbidden. Each call evaluates
+the predicate: a non-`Bool` result is an `ArgumentError` and an exception a
+`ConstraintError` (§12.15, §12.16), as in tabulation.
 
-The memo belongs to the `TestSpace`, as part of its tabulation: it lives as
-long as the space and is shared by every call on it, unlike the per-call
-search caches of feasibility.jl (§3.5). Keyed by value indices, it holds at
-most one entry per combination of the scope's ordinary values. `memo_size`
-reports its total size.
+It keeps no memo. The verdicts are memoized per operation by the
+`Feasibility` that asks (feasibility.jl: a request, or one `explain` or
+`classify` call), so the memo is released with the operation and a
+`TestSpace` retains nothing from any call (§3.5, §12.19).
 """
 struct _LazyRule{N} <: Function
     rule::Constraint
     ref::String
     names::NTuple{N,Symbol}
     domains::Vector{AbstractVector}
-    memo::Dict{NTuple{N,Int},Bool}
 end
 
 _LazyRule(c::Constraint, ref::String, names::NTuple{N,Symbol}, domains) where {N} =
-    _LazyRule{N}(c, ref, names, collect(AbstractVector, domains), Dict{NTuple{N,Int},Bool}())
+    _LazyRule{N}(c, ref, names, collect(AbstractVector, domains))
 
 function (r::_LazyRule{N})(key::NTuple{N,Int}) where {N}
-    return get!(r.memo, key) do
-        args = ntuple(Val(N)) do k
-            value = r.domains[k][key[k]]
-            value isa Invalid && throw(ArgumentError(
-                "internal error: $(r.ref) was consulted with the invalid value " *
-                "$(repr(value)) of `$(r.names[k])`; rules never see an Invalid (contract §5.8)"))
-            rule_value(value)
-        end
-        _evaluate_rule(r.rule, r.ref, r.names, args)
+    args = ntuple(Val(N)) do k
+        value = r.domains[k][key[k]]
+        value isa Invalid && throw(ArgumentError(
+            "internal error: $(r.ref) was consulted with the invalid value " *
+            "$(repr(value)) of `$(r.names[k])`; rules never see an Invalid (contract §5.8)"))
+        rule_value(value)
     end
+    return _evaluate_rule(r.rule, r.ref, r.names, args)
 end

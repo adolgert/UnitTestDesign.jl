@@ -654,3 +654,47 @@ end
     @test completable(g, [0, 0]) == (:feasible, [2, 1])
     @test g.stats.last_nodes == 0
 end
+
+
+@testitem "feasibility: the lazy-rule memo is the operation's, shared by its trials (§3.5, §12.19)" setup=[FeasibilitySetup] begin
+    using UnitTestDesign: memo_size, rule_memos
+    # A lazy three-parameter rule and a tabulated one, as in Fable's solver:
+    # (y = 2, z = 1) is implied, so its explanation runs deletion trials.
+    calls = Ref(0)
+    lazy = RuleTable([1, 2, 3], function (key)
+        calls[] += 1
+        key[1] == 1 && key[2] != 1          # require x == 2 || y == 1
+    end)
+    tables = [lazy, table([1, 3], (2, 1))]
+    cands = [[1, 2], [1, 2, 3], [1, 2]]
+    f = Feasibility(cands, tables)
+    @test f.rule_memo[1] isa Dict{NTuple{3, Int}, Bool} && f.rule_memo[2] === nothing
+    @test memo_size(f) == 0
+    e = explain_partial(f, [0, 2, 1])
+    @test (e.outcome, e.rules, e.minimal) == (:infeasible, [1, 2], :verified)
+    # The trials share f's memo: each tuple is evaluated at most once.
+    @test calls[] == memo_size(f) <= 12
+    before = calls[]
+    explain_partial(f, [0, 3, 1])
+    classify(f, [[0, 2, 1], [0, 3, 1], [1, 0, 0]])
+    @test calls[] == memo_size(f) <= 12
+    # Memos may be handed to another Feasibility of the same operation ...
+    g = Feasibility(cands, tables[[1]]; memos = f.rule_memo[[1]])
+    @test g.rule_memo[1] === f.rule_memo[1]
+    n = calls[]
+    forbids(g, 1, [1, 2, 1])
+    @test calls[] == n
+    # ... but they must fit the tables.
+    @test_throws ArgumentError Feasibility(cands, tables; memos = [nothing, nothing])
+    @test_throws ArgumentError Feasibility(cands, tables; memos = rule_memos(tables[[1]]))
+    @test_throws ArgumentError Feasibility(cands, tables; memos = [Dict{NTuple{2, Int}, Bool}(), nothing])
+    # A fresh object starts empty, and the table itself keeps nothing.
+    @test memo_size(Feasibility(cands, tables)) == 0
+    @test !hasfield(UnitTestDesign._LazyRule{3}, :memo)
+    # An evaluation that throws stores nothing.
+    bad = RuleTable([1], key -> key[1] == 2 ? error("no") : false)
+    h = Feasibility([[1, 2]], [bad])
+    @test_throws ErrorException forbids(h, 1, [2])
+    @test memo_size(h) == 0
+    @test !forbids(h, 1, [1]) && memo_size(h) == 1
+end

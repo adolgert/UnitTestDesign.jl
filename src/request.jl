@@ -30,7 +30,11 @@ Fields an engine reads:
 Bookkeeping for the caller: `space`, `candidates` (engine position `k` of
 parameter `i` is space value index `candidates[i][k]`), `n_must_include`,
 `feasibility_limit`, `explanation_limit`, and `feasibility` (the shared
-`Feasibility`, whose caches live as long as the request, §3.5).
+`Feasibility`). The request is the operation context of one generation
+(contract §3.5, §12.19): the feasibility caches and the lazy-rule memo live
+in `feasibility`, are shared by the must-include checks, the engine's
+searches and the final validation, and are released with the request. The
+space retains nothing. `memo_size(request)` counts the memoized verdicts.
 """
 struct Request
     space::TestSpace
@@ -72,6 +76,9 @@ function Request(space::TestSpace; strength::Integer = 2, stronger = [], must_in
 end
 
 n_must_include(request::Request) = size(request.must_include, 2)
+
+"The lazy-rule verdicts memoized by this request so far (contract §12.19)."
+memo_size(request::Request) = memo_size(request.feasibility)
 
 """
     _groups(space, strength, stronger)
@@ -123,7 +130,11 @@ Validate must-include rows (contract §10.1–§10.4): each a `NamedTuple`
 (partial allowed) or a `Tuple`/`AbstractVector` (positional, complete).
 Values are matched by identity; a row that violates an applicable rule is
 an `ArgumentError` naming the rule; a partial row must be completable, and
-an exhausted search is a `ResourceLimitError` (distinct from infeasible).
+an exhausted search is a `ResourceLimitError` (distinct from infeasible). A
+proven infeasible partial row is an `ArgumentError` carrying its
+explanation: the rules that together exclude it and their labels, in the
+words `explain` uses, from the same deletion search under
+`explanation_limit`.
 """
 function _must_include_matrix(request::Request, rows)
     space = request.space
@@ -146,9 +157,8 @@ function _must_include_matrix(request::Request, rows)
             "must_include row $r uses an Invalid or Partition value; not supported yet (contract §0.2)"))
         positions = _positions(request, idx)
         if violates(request.feasibility, _space_indices(request, positions))
-            rules = violated_rules(request.feasibility, _space_indices(request, positions))
-            labels = join((_rule_ref(space.constraints[k], k) for k in rules), ", ")
-            throw(ArgumentError("must_include row $r, $(from_indices(space, idx)), breaks $labels (contract §10.3)"))
+            throw(ArgumentError("must_include row $r, $(from_indices(space, idx)), breaks " *
+                                "$(_broken_rules(request, positions)) (contract §10.3)"))
         end
         if any(==(0), positions)
             status, _ = completable(request.feasibility, _space_indices(request, positions))
@@ -156,12 +166,37 @@ function _must_include_matrix(request::Request, rows)
                 "checking whether must_include row $r can be completed", request.feasibility_limit,
                 :feasibility_limit))
             status == :infeasible && throw(ArgumentError(
-                "must_include row $r, $(from_indices(space, idx)), has no valid completion (contract §10.4); " *
-                "explain(space, row) names the rules"))
+                "must_include row $r, $(from_indices(space, idx)), has no valid completion: " *
+                "$(_infeasible_clause(request, positions)) (contract §10.4)"))
         end
         push!(columns, positions)
     end
     return isempty(columns) ? zeros(Int, n, 0) : reduce(hcat, columns)
+end
+
+"Every rule a row (engine positions) breaks directly, as a phrase naming each."
+function _broken_rules(request::Request, row::AbstractVector{<:Integer})
+    rules = violated_rules(request.feasibility, _space_indices(request, row))
+    return join((_rule_ref(request.space.constraints[k], k) for k in rules), ", ", " and ")
+end
+
+"""
+    _infeasible_clause(request, partial) -> String
+
+Why the partial row (engine positions), proven infeasible, has no valid
+completion: the deletion search of `explain_partial` under the request's
+`explanation_limit`, as the clause `explain` prints ("rules 1 and 2
+together exclude it (rule 1: …; rule 2: …)", with the limit when the set is
+unresolved).
+"""
+function _infeasible_clause(request::Request, partial::AbstractVector{<:Integer})
+    e = explain_partial(request.feasibility, _space_indices(request, partial);
+                        explanation_limit = request.explanation_limit)
+    e.outcome === :infeasible ||
+        error("internal error: $partial was proven infeasible, then explained as $(e.outcome)")
+    labels = [rule_label(request.space, k) for k in e.rules]
+    limit = _limit_pair(e.limit, request.feasibility_limit, request.explanation_limit)
+    return sprint(_print_exclusion, e.rules, labels, e.minimal, limit)
 end
 
 "Engine positions from space value indices (0 stays 0)."
@@ -249,13 +284,18 @@ end
 
 One target the design does not need to cover: `target` (engine positions),
 `status` (`:forbidden` or `:implied`), `rules` (constraint positions in the
-space), `minimal` (`:verified`, `:unresolved`, or `:not_applicable`).
+space), `minimal` (`:verified`, `:unresolved`, or `:not_applicable`), and
+`limit`, the limit that left an `:unresolved` explanation unresolved, as
+`keyword => value` (from `IndexExplanation.limit`, as in `Explanation`), or
+`nothing`. A report can then say "explanation unresolved:
+explanation_limit = N reached" without searching again.
 """
 struct Excluded
     target::Vector{Int}
     status::Symbol
     rules::Vector{Int}
     minimal::Symbol
+    limit::Union{Nothing, Pair{Symbol, Int}}
 end
 
 """
@@ -281,9 +321,10 @@ function classify_targets(request::Request)
         elseif e.outcome == :allowed || e.outcome == :completable
             push!(required, t)
         elseif e.outcome == :forbidden
-            push!(excluded, Excluded(t, :forbidden, e.rules, :not_applicable))
+            push!(excluded, Excluded(t, :forbidden, e.rules, :not_applicable, nothing))
         else
-            push!(excluded, Excluded(t, :implied, e.rules, e.minimal))
+            push!(excluded, Excluded(t, :implied, e.rules, e.minimal,
+                                     _limit_pair(e.limit, request.feasibility_limit, request.explanation_limit)))
         end
     end
     return required, excluded
@@ -334,26 +375,33 @@ end
 """
     validate_design(request, matrix, required; strategy) -> Int
 
-Final validation (plan Phase 3 step 6, contract §1.21): every row is
-complete and within arity, every row passes every applicable rule
-(including lazy ones, through `isallowed` on the space), must-include rows
-come first in the given order, and for a covering design every required
-target is covered. Returns the number of required targets covered. A
-failure is an `ErrorException` beginning "internal error", naming the row
-or target.
+Final validation (plan Phase 3 step 6, contract §1.21), in index space:
+every row is complete and within arity, every row passes every rule of the
+request (`violates` on the complete row, so every table is consulted, lazy
+ones through the request's memo, §12.19), must-include rows come first in
+the given order, and for a covering design every required target is
+covered, recounted from the rows. Returns the number of required targets
+covered. A failure is an `ErrorException` beginning "internal error",
+naming the row or target. Values are never looked up; only `to_cases`
+converts rows to values.
 """
 function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, required;
                          strategy::Symbol = :covering)
     n = length(request.arity)
     size(matrix, 1) == n || error("internal error: design has $(size(matrix, 1)) rows for $n parameters")
+    f = request.feasibility
+    idx = zeros(Int, n)   # one row's space value indices, reused
     for j in axes(matrix, 2)
-        row = matrix[:, j]
         for i in 1:n
-            1 <= row[i] <= request.arity[i] ||
-                error("internal error: case $j has value position $(row[i]) for parameter $(request.space.names[i])")
+            v = matrix[i, j]
+            1 <= v <= request.arity[i] ||
+                error("internal error: case $j has value position $v for parameter $(request.space.names[i])")
+            idx[i] = request.candidates[i][v]
         end
-        case = from_indices(request.space, _space_indices(request, row))
-        isallowed(request.space, case) || error("internal error: case $j, $case, breaks a rule")
+        # Every entry is a candidate, so this is `violates(f, idx)` without
+        # its copy and check of the key.
+        _violates(f, idx) && error("internal error: case $j, $(from_indices(request.space, idx)), breaks " *
+                                   _broken_rules(request, matrix[:, j]))
     end
     seeds = request.must_include
     for s in axes(seeds, 2)

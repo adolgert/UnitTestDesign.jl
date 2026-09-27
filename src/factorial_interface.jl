@@ -81,10 +81,26 @@ function _stronger_from_wayness(wayness)
 end
 
 
-_positional_design(engine::IPOG, request::Request, n_way) = generate(engine, request)
-_positional_design(engine::GND, request::Request, n_way) = generate(engine, request)
-_positional_design(::Excursion, request::Request, n_way) = generate_excursion(request; distance = n_way)
-_positional_design(engine, request::Request, n_way) = throw(ArgumentError(
+"""
+    _positional_design(engine, space, n_way, stronger, must_include) -> (request, design)
+
+A covering engine gets a request at strength `n_way`. `Excursion()` gets a
+request at strength 1, which every space accepts, and `n_way` as the
+excursion's distance: excursion distance is not covering strength (contract
+§7.5), so a one-parameter excursion is not refused under §11.2. `stronger`
+is passed on either way; an excursion refuses it.
+"""
+function _positional_design(engine::Union{IPOG, GND}, space, n_way, stronger, must_include)
+    request = Request(space; strength = n_way, stronger, must_include)
+    return request, generate(engine, request)
+end
+
+function _positional_design(::Excursion, space, n_way, stronger, must_include)
+    request = Request(space; strength = 1, stronger, must_include)
+    return request, generate_excursion(request; distance = n_way)
+end
+
+_positional_design(engine, space, n_way, stronger, must_include) = throw(ArgumentError(
     "`engine` is IPOG(), GND(), or Excursion(); got $(repr(engine))"))
 
 "The rows of a design in the 0.4 shape: one `Vector{Any}` per case."
@@ -104,8 +120,11 @@ and `missing` are ordinary values. Returns one vector of values per case.
 # Arguments
 
 - `n_way = 2`: the strength, from 1 to the number of parameters. At the number
-  of parameters, the result is every combination.
-- `engine = IPOG()`: `IPOG()`, `GND()`, or `Excursion()`.
+  of parameters, the result is every combination. With `engine = Excursion()`
+  it is the excursion's distance instead: the base case, then every case that
+  differs from it in at most `n_way` parameters.
+- `engine = IPOG()`: `IPOG()`, `GND()`, or `Excursion()`. An excursion takes
+  no `wayness`.
 - `seeds = []`: test cases that must be included, each a vector or tuple with
   one value per parameter. They come first in the result, in order.
 - `wayness`: a dictionary that raises the strength for groups of parameters,
@@ -126,9 +145,8 @@ all_tuples(parameters...; n_way = 4, engine = Excursion())
 function all_tuples(parameters...; n_way::Integer = 2, engine = IPOG(), seeds = [], wayness = nothing)
     space = _positional_space(parameters)
     must_include = seeds === nothing ? Tuple[] : [Tuple(s) for s in seeds]
-    request = Request(space; strength = n_way, stronger = _stronger_from_wayness(wayness),
-                      must_include = must_include)
-    return _positional_rows(request, _positional_design(engine, request, n_way))
+    request, design = _positional_design(engine, space, n_way, _stronger_from_wayness(wayness), must_include)
+    return _positional_rows(request, design)
 end
 
 

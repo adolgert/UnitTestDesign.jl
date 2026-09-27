@@ -280,8 +280,10 @@ no run-wide total.
 
 **3.5** Cache keys include the assignment and the active rule set. Search
 caches are local to one call. An exhausted search is never cached as
-infeasible. A lazily evaluated rule's memo is not a search cache: it belongs
-to the space (§12.19).
+infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
+context too: a generation request, or one `explain` or `classify` call. The
+operation's searches and its final validation share it, and it is released
+with the operation. A `TestSpace` retains nothing from any operation.
 
 **3.6** Generation resolves every target classification, the whole-space
 feasibility check, every must-include completion, and every placement decision.
@@ -472,16 +474,28 @@ result reports candidate and accepted counts separately.
 Its result is a materialized `TestCases`.
 
 **7.5** `excursions(space; from, distance = 1, must_include)` returns the
-must-include rows, the base, and every valid row, ordinary or negative, that
-differs from the base in at most `distance` parameters. It never returns a
-multiple-invalid row.
+must-include rows, then the base, then every valid row, ordinary or
+negative, that differs from the base in at most `distance` parameters, each
+once. An excursion has exactly one distance, an integer of at least 0; a
+negative distance is an error. Distance 0 returns the must-include rows and
+the base alone. A distance above the parameter count is the parameter count.
+Every returned row other than a must-include row is within Hamming distance
+`distance` of the base (the number of parameters whose values differ), and
+nothing widens it: an excursion has no groups, and a request with `stronger`
+groups is an `ArgumentError` ("excursions take a single distance; stronger
+groups apply to covering designs"). Excursion distance is not covering
+strength: `strength` plays no part in an excursion, and a positional call's
+`n_way` is its distance. It never returns a multiple-invalid row.
 
 **7.6** `from` is a complete, valid, ordinary row. Omitted, it is the first
-ordinary value of each parameter. A base that contains an `Invalid` or
-violates a rule is an error naming the cause.
+ordinary value of each parameter. A base that is partial, contains an
+`Invalid`, or violates a rule is an error naming the cause, the rules it
+breaks for a violation. The base is never dropped or replaced, at any
+distance.
 
-**7.7** Excursions report the values that never appear in the result. They make
-no covering claim, and their docstring says so.
+**7.7** A row within the distance that violates a rule is left out. Excursions
+report how many rows were left out and the values that never appear in the
+result. They make no covering claim, and their docstring says so.
 
 **7.8** Without must-include rows, covering at strength equal to the parameter
 count returns, as a set, the same rows as `full_factorial`: every valid
@@ -711,11 +725,15 @@ order.
 **12.19** A rule whose scope product exceeds `tabulation_limit` (a `TestSpace`
 keyword, default `10^5` evaluations) is evaluated lazily with a memo. The
 package warns once per rule and suggests a narrower scope. A lazy rule's memo
-is part of the space's tabulation, a table built on demand: it lives as long
-as the space, is keyed by value indices so that every call on the space
-shares it, and holds at most one entry per combination of its scope's
-ordinary values (the full product of the ordinary domains for a whole-case
-rule). It is not a search cache (§3.5).
+belongs to the operation context (§3.5): a generation request, or one
+`explain` or `classify` call. It is keyed by value indices, shared by all of
+that operation's feasibility searches, deletion trials, and final
+validation, and released with the operation. Within an operation it holds
+at most one entry per combination of the scope's ordinary values (the full
+product of the ordinary domains for a whole-case rule), so a predicate is
+evaluated at most once per combination per operation. A `TestSpace` retains
+nothing from any operation: its size is the same before and after any call.
+`isallowed`, which checks one row, may evaluate lazy rules without a memo.
 
 **12.20** Whole-case rules are always evaluated lazily, memoized per row.
 

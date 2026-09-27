@@ -411,9 +411,10 @@ end
     e = explain(space, NamedTuple(); feasibility_limit = 1)
     @test e.outcome == :completable && e.witness == (x = 2000,)
     @test (e.nodes, e.evaluations, calls[]) == (1, 2000, 2000)
-    # The same question again: the same checks, answered by the rule's memo.
+    # The same question again: the same checks. The memo was the first call's,
+    # so the predicate runs again (§3.5, §12.19).
     e = explain(space, NamedTuple(); feasibility_limit = 1)
-    @test (e.nodes, e.evaluations, calls[]) == (1, 2000, 2000)
+    @test (e.nodes, e.evaluations, calls[]) == (1, 2000, 4000)
     # A direct check is one rule check and no node.
     e = explain(space, (x = 3,))
     @test (e.outcome, e.nodes, e.evaluations) == (:forbidden, 0, 1)
@@ -433,35 +434,53 @@ end
 end
 
 
-@testitem "explain: a lazy rule's memo belongs to the space and grows across calls (§12.19, §3.5)" setup=[ExplainSetup] begin
-    using UnitTestDesign: memo_size
-    # A whole-case rule is lazy; its memo is kept by the space between calls,
-    # while each call's search caches are dropped.
+@testitem "explain: a lazy rule's memo lasts one call, and the space keeps nothing (§12.19, §3.5)" setup=[ExplainSetup] begin
+    using UnitTestDesign: memo_size, explain_partial
+    # A whole-case rule is lazy. Its verdicts are memoized in the call's
+    # context, shared by that call's searches and row kinds, and dropped with it.
+    calls = Ref(0)
     space = TestSpace((a = 1:3, b = 1:3, c = 1:2);
-        constraints = [forbid(case -> case.a + case.b + case.c > 6; reason = "small sums")])
-    @test memo_size(space) == 0
+        constraints = [forbid(case -> (calls[] += 1; case.a + case.b + case.c > 6); reason = "small sums")])
+    before = Base.summarysize(space)
     explain(space, (a = 3,))
-    first_call = memo_size(space)
+    first_call = calls[]
     @test first_call > 0
-    explain(space, (a = 1, c = 2))
-    second_call = memo_size(space)
-    @test second_call > first_call
-    # Bounded by the product of the ordinary domains, 18 rows.
-    classify(space, ordinary_pairs(space))
-    @test second_call <= memo_size(space) <= 18
-    # A question already answered adds nothing.
-    before = memo_size(space)
+    @test Base.summarysize(space) == before
+    # The same question again evaluates the rule again: no memo survived.
     explain(space, (a = 3,))
-    @test memo_size(space) == before
+    @test calls[] == 2 * first_call
+    classify(space, ordinary_pairs(space))
+    @test Base.summarysize(space) == before
 
-    # A fully tabulated space has no memo, however it is queried.
+    # Within one call, each verdict is evaluated once: a context's memo is
+    # bounded by the product of the ordinary domains, 18 rows, and a second
+    # question in the same context reuses it.
+    context = FeasibilityContext(space)
+    @test memo_size(context) == 0
+    calls[] = 0
+    for t in ordinary_pairs(space)
+        idx = case_indices(space, t)
+        f, _ = feasibility_for(context, idx)
+        explain_partial(f, idx)
+    end
+    @test 0 < memo_size(context) <= 18
+    @test calls[] == memo_size(context)
+    # A fresh context starts empty.
+    @test memo_size(FeasibilityContext(space)) == 0
+
+    # A fully tabulated space memoizes nothing, however it is queried.
     tabulated = solver_space()
-    explain(tabulated, (solver = :lu, tol = 1e-3))
-    classify(tabulated, ordinary_pairs(tabulated))
-    @test memo_size(tabulated) == 0
+    context = FeasibilityContext(tabulated)
+    for t in ordinary_pairs(tabulated)
+        idx = case_indices(tabulated, t)
+        explain_partial(first(feasibility_for(context, idx)), idx)
+    end
+    @test memo_size(context) == 0
     # A scoped rule above tabulation_limit is lazy too, and counted.
     lazy = @test_logs (:warn,) TestSpace((a = 1:3, b = 1:3); constraints = [@forbid(a == b)],
                                          tabulation_limit = 4)
-    explain(lazy, (a = 1,))
-    @test 0 < memo_size(lazy) <= 9
+    context = FeasibilityContext(lazy)
+    idx = case_indices(lazy, (a = 1,))
+    explain_partial(first(feasibility_for(context, idx)), idx)
+    @test 0 < memo_size(context) <= 9
 end

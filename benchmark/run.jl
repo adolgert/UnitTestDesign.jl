@@ -212,7 +212,7 @@ function fixture3(opts, out, tsv)
 end
 
 
-## The retained memo of a lazy rule (contract §12.19)
+## The memo of a lazy rule (contract §3.5, §12.19)
 
 "A copy of `space` with one more rule, a whole-case rule that forbids nothing, so it is lazy."
 function with_whole_case_rule(space)
@@ -221,25 +221,30 @@ function with_whole_case_rule(space)
 end
 
 function memo_steps(out, label, space, steps)
-    size0, memo0 = Base.summarysize(space), UnitTestDesign.memo_size(space)
-    println(out, "| $label | before generation | – | – | $(count_str(size0)) | $(count_str(memo0)) | – |")
+    size0 = Base.summarysize(space)
+    println(out, "| $label | before generation | – | – | $(count_str(size0)) | – | – | – |")
     for (name, engine, strength) in steps
         request = UnitTestDesign.Request(space; strength)
         t = @timed UnitTestDesign.generate(engine, request)
         println(out, "| $label | after $name, strength $strength | $(size(t.value.matrix, 2)) | " *
                      "$(seconds(t.time)) | $(count_str(Base.summarysize(space))) | " *
-                     "$(count_str(UnitTestDesign.memo_size(space))) | $(count_str(request.feasibility.stats.total_nodes)) |")
+                     "$(count_str(UnitTestDesign.memo_size(request))) | " *
+                     "$(count_str(Base.summarysize(request.feasibility))) | " *
+                     "$(count_str(request.feasibility.stats.total_nodes)) |")
     end
 end
 
 function memo(opts, out)
-    println(out, "## Retained memory of a lazy rule's memo\n")
+    println(out, "## Memory of a lazy rule's memo\n")
     println(out, "Each space gets one added whole-case rule, `forbid(case -> false)`, which is always lazy " *
-                 "(contract §12.19), so every complete row the searches reach is memoized on the space. " *
-                 "One space per table; the calls run in order on the same space, so the memo accumulates. " *
-                 "Times are single first calls, not medians.\n")
-    println(out, "| Space | When | Cases | Time (s) | `Base.summarysize(space)` (bytes) | `memo_size(space)` (entries) | Nodes |")
-    println(out, "|:--|:--|--:|--:|--:|--:|--:|")
+                 "(contract §12.19), so every complete row the searches reach is memoized. The memo belongs " *
+                 "to the request (§3.5): `memo_size(request)` counts its entries and " *
+                 "`Base.summarysize(request.feasibility)` is the request's search state, memo included, while " *
+                 "`Base.summarysize(space)` should not change. One space per table; the calls run in order on " *
+                 "the same space, each with a fresh request. Times are single first calls, not medians.\n")
+    println(out, "| Space | When | Cases | Time (s) | `Base.summarysize(space)` (bytes) | " *
+                 "`memo_size(request)` (entries) | `Base.summarysize(request.feasibility)` (bytes) | Nodes |")
+    println(out, "|:--|:--|--:|--:|--:|--:|--:|--:|")
     bench = with_whole_case_rule(BenchFixtures.test_space(BenchFixtures.bench12))
     memo_steps(out, "bench12 + whole-case rule", bench,
                [(:IPOG, IPOG(), 2), (:IPOG, IPOG(), 3), (:GND, GND(seed = 0), 2), (:GND, GND(seed = 0), 3)])
@@ -262,13 +267,14 @@ end
 function breakdown(opts, out)
     println(out, "## Where the time goes\n")
     println(out, "Parts of the calls above, timed alone (median of 5 after one discarded call). " *
-                 "Recorded as Phase 4/5 candidates; nothing is optimized in Phase 3.\n")
+                 "Recorded as Phase 4/5 candidates; only the final validation changed in Phase 3 (review " *
+                 "round 1 moved it to index space).\n")
     println(out, "| Call | Part | Time (s) | Allocated (MiB) | Note |")
     println(out, "|:--|:--|--:|--:|:--|")
 
     # Full factorial on bench12: enumeration (each candidate row through
     # `violates`) versus the final validation (each accepted row through
-    # `from_indices` and `isallowed`).
+    # `violates` in index space, since Phase 3 review round 1).
     space = BenchFixtures.test_space(BenchFixtures.bench12)
     total, total_b = quick(() -> full_factorial_design(space))
     request = UnitTestDesign.Request(space; strength = 1)
@@ -300,7 +306,7 @@ function breakdown(opts, out)
     println(out, "| bench12 full factorial | whole call | $(seconds(total)) | $(mib(total_b)) | $(rows) rows of 331776 |")
     println(out, "| bench12 full factorial | enumeration, `violates` per candidate | $(seconds(enumerate_t)) | " *
                  "$(mib(enumerate_b)) | $(share(enumerate_t)) of the call; $(count_str(checks)) rule checks |")
-    println(out, "| bench12 full factorial | `validate_design`, `isallowed` per row | $(seconds(validate_t)) | " *
+    println(out, "| bench12 full factorial | `validate_design`, `violates` per row | $(seconds(validate_t)) | " *
                  "$(mib(validate_b)) | $(share(validate_t)) of the call; $(count_str(validate_checks)) rule checks |")
     println(out, "| `forbids` on a tabulated rule | one call | $(@sprintf("%.1f", 1e9 * per_call)) ns | " *
                  "$(@sprintf("%.0f", per_call_b)) bytes | the runtime-length `ntuple` key allocates on every check |")
@@ -309,17 +315,19 @@ function breakdown(opts, out)
     println(out, "| bench12 full factorial | `forbids` in validation, estimated | " *
                  "$(seconds(validate_checks * per_call)) | $(mib(validate_checks * per_call_b)) | " *
                  "$(share(validate_checks * per_call)) of the call |")
-    # The validation's round trip through values: each row becomes a case
-    # (`from_indices`), and `isallowed` reads it back (`case_indices`, a
-    # lookup of each value by identity) before its rule checks.
+    # The round trip through values that validation made before Phase 3
+    # review round 1, for comparison: each row becomes a case (`from_indices`,
+    # which `to_cases` still does), and `isallowed` reads it back
+    # (`case_indices`, a lookup of each value by identity) before its rule
+    # checks. Neither is part of the call any more.
     as_case(j) = UnitTestDesign.from_indices(space, UnitTestDesign._space_indices(request, design.matrix[:, j]))
     cases_t, cases_b = quick(() -> [as_case(j) for j in axes(design.matrix, 2)])
     cases = [as_case(j) for j in axes(design.matrix, 2)]
     allowed_t, allowed_b = quick(() -> count(c -> isallowed(space, c), cases))
     lookup_t, lookup_b = quick(() -> sum(c -> sum(UnitTestDesign.case_indices(space, c)), cases))
-    println(out, "| bench12 full factorial | validation: each row to a case, `from_indices` | " *
+    println(out, "| bench12 full factorial | not in the call: each row to a case, `from_indices` (`to_cases`) | " *
                  "$(seconds(cases_t)) | $(mib(cases_b)) | $(share(cases_t)) of the call |")
-    println(out, "| bench12 full factorial | validation: `isallowed` on each case | " *
+    println(out, "| bench12 full factorial | not in the call: `isallowed` on each case (the old validation) | " *
                  "$(seconds(allowed_t)) | $(mib(allowed_b)) | $(share(allowed_t)) of the call |")
     println(out, "| bench12 full factorial | ... of which `case_indices`, the value lookup | " *
                  "$(seconds(lookup_t)) | $(mib(lookup_b)) | $(share(lookup_t)) of the call |")

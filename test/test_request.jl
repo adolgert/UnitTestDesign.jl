@@ -160,10 +160,23 @@ end
 @testitem "request: a partial must-include row needs a proven completion (§10.4)" setup=[RequestSetup, Checker] begin
     space = solver_space()
     # (solver = :lu, tol = 1e-3) has no valid completion, though no rule forbids it directly.
+    # The error carries its explanation, in the words of explain (§10.4, §1.26).
     msg = message(() -> Request(space; must_include = [(solver = :lu, tol = 1e-3)]))
-    @test occursin("has no valid completion", msg)
-    @test occursin("§10.4", msg)
+    @test msg == "ArgumentError: must_include row 1, (solver = :lu, tol = 0.001), has no valid completion: " *
+                 "rules 1 and 2 together exclude it (rule 1: @require(mode == :exact || solver == :none); " *
+                 "rule 2: exact mode needs a tight tolerance) (contract §10.4)"
+    @test occursin(split(sprint(show, explain(space, (solver = :lu, tol = 1e-3))), "; ", limit = 2)[2], msg)
     @test_throws ArgumentError Request(space; must_include = [(solver = :lu, tol = 1e-3)])
+    # The deletion search runs under the request's explanation_limit; a cut-short
+    # search still names a sufficient set and says which limit it reached.
+    msg = message(() -> Request(space; must_include = [(mode = :fast,), (solver = :qr, tol = 1e-3)],
+                                explanation_limit = 1))
+    @test occursin("must_include row 2, (solver = :qr, tol = 0.001), has no valid completion: rules 1 and 2", msg)
+    @test occursin("; whether each rule is needed is unresolved: explanation_limit = 1 reached (contract §10.4)", msg)
+    # One rule alone: "rule k (label) excludes it".
+    one = TestSpace((a = 1:2, b = 1:2); constraints = [forbid(case -> case.a == 1; reason = "a is never 1")])
+    msg = message(() -> Request(one; must_include = [(a = 1,)]))
+    @test occursin("(a = 1,), has no valid completion: rule 1 (a is never 1) excludes it (contract §10.4)", msg)
 
     # An exhausted search is a ResourceLimitError, distinct from infeasible.
     f = limit_exhaustion
@@ -248,8 +261,18 @@ end
     implied = [e for e in excluded if e.status == :implied]
     @test [named(e.target) for e in implied] == [(solver = :lu, tol = 1e-3), (solver = :qr, tol = 1e-3)]
     @test all(e -> e.rules == [1, 2] && e.minimal == :verified, implied)
+    @test all(e -> e.limit === nothing, excluded)
     # Required targets keep the order of `targets`.
     @test required == filter(t -> t in required, targets(request))
+
+    # An explanation that a limit left unresolved records which limit, so a
+    # report can say so without searching again.
+    _, cut = classify_targets(Request(solver_space(); explanation_limit = 1))
+    @test [e.target for e in cut] == [e.target for e in excluded]
+    @test all(e -> e.limit === nothing, filter(e -> e.status == :forbidden, cut))
+    cut_implied = filter(e -> e.status == :implied, cut)
+    @test all(e -> e.rules == [1, 2] && e.minimal == :unresolved, cut_implied)
+    @test all(e -> e.limit == (:explanation_limit => 1), cut_implied)
 
     # An unconstrained request requires every target and classifies nothing.
     free = Request(TestSpace((a = 1:2, b = 1:3, c = 1:2)))
@@ -341,7 +364,8 @@ end
     outside = copy(good); outside[2, 2] = 4
     @test occursin("internal error: case 2 has value position 4 for parameter solver", msg(outside))
     broken = copy(good); broken[1, 5] = 1          # (fast, qr, 1e-6) breaks rule 1
-    @test occursin("internal error: case 5", msg(broken)) && occursin("breaks a rule", msg(broken))
+    @test occursin("internal error: case 5, (mode = :fast, solver = :qr, tol = 1.0e-6), breaks rule 1 " *
+                   "(@require(mode == :exact || solver == :none))", msg(broken))
     changed = copy(good); changed[2, 1] = 3        # the must-include row asked for :lu
     @test occursin("internal error: must_include row 1 was changed at parameter solver", msg(changed))
     @test occursin("internal error: must_include row 1 is missing", msg(zeros(Int, 3, 0)))
@@ -363,4 +387,54 @@ end
     @test cases[3].z === missing
     @test reduce(hcat, [positions(request, c) for c in cases]) == matrix
     @test isempty(to_cases(request, zeros(Int, 3, 0)))
+end
+
+
+@testitem "request: the lazy-rule memo belongs to the request, not the space (§3.5, §12.19)" setup=[RequestSetup] begin
+    using UnitTestDesign: generate, memo_size, validate_design, generate_full_factorial
+    # Ten parameters and a whole-case rule, which is always lazy.
+    names = [Symbol(:p, i) for i in 1:10]
+    space = TestSpace((n => 1:3 for n in names)...;
+                      constraints = [forbid(case -> case.p1 == case.p2 == case.p3 == 2; reason = "no three 2s"),
+                                     @forbid(p4 == 1 && p5 == 3)])
+    before = Base.summarysize(space)
+    request = Request(space)
+    @test memo_size(request) == 0
+    design = generate(IPOG(), request)
+    grown = memo_size(request)
+    @test grown > 0                                   # generation memoized verdicts ...
+    @test Base.summarysize(space) == before           # ... on the request, not the space
+    @test Base.summarysize(request.feasibility) > Base.summarysize(Request(space).feasibility)
+    # Validation shares the memo: every row was checked during generation.
+    validate_design(request, design.matrix, Vector{Int}[]; strategy = :excursion)
+    @test memo_size(request) == grown
+    # A second request on the same space starts empty.
+    second = Request(space)
+    @test memo_size(second) == 0
+    generate(GND(), second)
+    @test memo_size(second) > 0 && memo_size(request) == grown
+    # A long-lived space retains nothing, however often it is used.
+    sizes = Int[]
+    for k in 1:10
+        r = Request(space; strength = isodd(k) ? 2 : 3)
+        generate(isodd(k) ? IPOG() : GND(seed = k), r)
+        push!(sizes, Base.summarysize(space))
+    end
+    @test all(==(before), sizes)
+    # Full factorial memoizes one verdict per row it checks: every row once.
+    full = Request(space; strength = 1)
+    generate_full_factorial(full; limit = 3^10)
+    @test memo_size(full) == 3^10
+    @test Base.summarysize(space) == before
+    # explain and classify keep their memo for the one call.
+    explain(space, (p1 = 2, p2 = 2))
+    UnitTestDesign.classify(space, [(p1 = 2, p2 = 2), (p3 = 1,)])
+    @test Base.summarysize(space) == before
+    context = UnitTestDesign.FeasibilityContext(space)
+    idx = case_indices(space, (p1 = 2, p2 = 2))
+    f, _ = UnitTestDesign.feasibility_for(context, idx)
+    @test memo_size(f) == memo_size(context) == 0
+    UnitTestDesign.explain_partial(f, idx)
+    @test memo_size(f) == memo_size(context) > 0
+    @test memo_size(UnitTestDesign.FeasibilityContext(space)) == 0
 end

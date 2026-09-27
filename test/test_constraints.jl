@@ -448,7 +448,9 @@ end
             @test forbids(e, collect(row)) == forbids(l, collect(row))
         end
     end
-    # A lazy rule evaluates each combination at most once (memoized).
+    # A lazy rule is evaluated at most once per combination within one
+    # operation, whose Feasibility holds the memo; the table itself keeps
+    # none, so the space retains nothing (§12.19).
     calls = Ref(0)
     counted = forbid(:a, :b) do a, b
         calls[] += 1
@@ -457,10 +459,16 @@ end
     s = @test_logs (:warn,) TestSpace(domains; constraints = [counted], tabulation_limit = 5)
     @test calls[] == 0
     t = only(s.tables)
+    f = UnitTestDesign.Feasibility(s.ordinary, s.tables)
     for _ in 1:3, row in Iterators.product(1:3, 1:2, 1:2)
-        forbids(t, collect(row))
+        @test forbids(f, 1, collect(row)) == forbids(t, collect(row))
     end
-    @test calls[] == 6
+    @test calls[] == 6 + 3 * 12
+    @test UnitTestDesign.memo_size(f) == 6
+    calls[] = 0
+    g = UnitTestDesign.Feasibility(s.ordinary, s.tables)
+    forbids(g, 1, [1, 1, 1])
+    @test calls[] == 1
     # The product counts ordinary values only, so Invalid values do not push a rule over.
     s = @test_logs TestSpace((a = [1, 2, Invalid(0)], b = [1, 2]);
                              constraints = [@forbid(a == b)], tabulation_limit = 4)
@@ -489,13 +497,16 @@ end
     @test seen[1] isa NamedTuple
     @test seen[1] === (size = :tiny, mode = :fast)  # the partition's name (§4.5)
     @test seen[2] === (size = 100, mode = :fast)
-    # Memoized per row.
+    # Unmemoized on the table; memoized per row within an operation.
     forbids(t, [1, 1])
-    @test length(seen) == 3
+    @test length(seen) == 4
+    f = UnitTestDesign.Feasibility([[1, 2], [1, 2]], space.tables)
+    @test forbids(f, 1, [1, 1]) && forbids(f, 1, [1, 1])
+    @test length(seen) == 5
     # Never consulted at an invalid value: the table refuses (§5.8).
     err = try forbids(t, [3, 1]) catch e; e end
     @test err isa ArgumentError && occursin("Invalid(-1)", err.msg)
-    @test length(seen) == 3
+    @test length(seen) == 5
     # A negative row at `size` does not consult it (§5.6).
     @test isempty(UnitTestDesign.active_tables(space, 1))
 end

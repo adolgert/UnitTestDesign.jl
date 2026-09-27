@@ -123,3 +123,211 @@ re-derived on the CI runner.
 | 4 | 5 | typed values preserved in results, `must_include`, `stronger` keyword |
 | 5 | 3 | coverage/report |
 | 6 | 5 | negative generation, partitions kept, negative must-include |
+
+## Review round 1
+
+Four findings applied. Measurements: Julia 1.13.1, Apple M2, 1 thread,
+median of 5 warm calls after one discarded call, same method as above.
+
+### 1. Excursions have one distance and no groups
+
+Decision 2 above is withdrawn. `generate_excursion(request; distance, from)`
+takes one `distance`, an integer of at least 0, and every row after the
+must-include rows is within Hamming distance `distance` of the base. Nothing
+widens it. Distance 0 returns the must-include rows and the base. A distance
+above the parameter count is clamped, and `notes.distance` records the
+clamped value. A request with any `stronger` group is an `ArgumentError`:
+"excursions take a single distance; stronger groups apply to covering
+designs". `build_excursion` and `excursion_subsets` no longer take `groups`,
+and `_validate_excursion` checks the Hamming distance itself instead of a set
+of allowed change sets.
+
+Excursion distance is not covering strength. The request's `strength` is
+never read, so the caller builds the request with the default strength. The
+positional routing now builds `Request(space; strength = 1, stronger,
+must_include)` and passes `distance = n_way`, so `pairs_excursion([1, 2, 3])`
+returns its three rows instead of failing §11.2. `stronger` (from `wayness`)
+is passed through so that the excursion refuses it; 0.4's
+`pairs_excursion(...; wayness)` is now that error.
+
+Contract §7.5–§7.7 now state: one distance, distance 0, the clamp, no groups
+(with the error text), every non-must-include row within the distance, strength
+unused, dropped rows reported, and base validity (partial, `Invalid`, or
+rule-breaking bases are errors naming the cause; the base is never dropped).
+
+Tests: the group tests are gone, replaced by the refusal (distance 0, 1 and
+2, any base; a group at the base strength is no group). A new distance 0 test
+covers the base alone, must-include rows plus base, and the forbidden-base
+error. A new oracle test uses a five-parameter space with three rules (one
+whole-case), two bases, and distances 1, 2, n and n + 2. In each case no row
+exceeds min(d, n), the rows are exactly the oracle's valid rows within the
+distance, and kept + dropped equals the product rows within the distance.
+
+### 2. Explanations are kept
+
+`Excluded` has a fifth field, `limit::Union{Nothing, Pair{Symbol, Int}}`,
+taken from `IndexExplanation.limit` through the same `_limit_pair` that
+`explain` uses. On Fable's solver space with `explanation_limit = 1`, the two
+implied pairs record `minimal = :unresolved`, `limit = :explanation_limit => 1`.
+Forbidden and verified targets record `nothing`. A report can print
+"explanation unresolved: explanation_limit = 1 reached" without searching
+again.
+
+An infeasible partial must-include row now carries its explanation (§10.4).
+The row is explained by `explain_partial` on the request's `Feasibility`,
+under the request's `explanation_limit`. The clause comes from
+`_print_exclusion`, which was factored out of `show(::Explanation)`, so it
+reads word for word like `explain`:
+
+```
+ArgumentError: must_include row 1, (solver = :lu, tol = 0.001), has no valid
+completion: rules 1 and 2 together exclude it (rule 1: @require(mode == :exact
+|| solver == :none); rule 2: exact mode needs a tight tolerance) (contract §10.4)
+```
+
+A single rule reads "rule 1 (a is never 1) excludes it". A search that was
+cut short appends "; whether each rule is needed is unresolved:
+explanation_limit = 1 reached". The error type is still `ArgumentError`. The
+§10.3 message (a row that breaks a rule directly) now shares
+`_broken_rules` with the excursion base error and the validation error.
+
+### 3. The lazy-rule memo belongs to the request
+
+Design:
+- `_LazyRule` has no memo. A `RuleTable`'s `lazy` evaluates the predicate on
+  every call, and the `Bool` check and `ConstraintError` wrapping are
+  unchanged. `forbids(table, partial)` is therefore unmemoized. `isallowed`,
+  tests, and the checker use it.
+- `Feasibility` owns `rule_memo`, one `Dict{NTuple{N,Int},Bool}` per lazy
+  table (`nothing` for a tabulated one). Every rule check it makes goes
+  through `forbids(f, k, partial)`: `violates`, `violated_rules`, the direct
+  check, forward-checking prunes, and so the request's classification,
+  engine placements, must-include checks, and final validation. The key is
+  built with `Val(N)`, so the memo path is type-stable. A throwing
+  evaluation stores nothing.
+- A verdict depends on the table alone, not on the rule set, so the
+  `Feasibility` objects of one operation share the dicts through a new
+  `memos` keyword. Deletion trials share their parent's memo, as they shared
+  the space's before. A `FeasibilityContext` (one `explain`/`classify` call)
+  owns one memo per space rule and hands it to every row kind's
+  `Feasibility`.
+- `memo_size(space)` is gone. `memo_size(f::Feasibility)`,
+  `memo_size(request)`, and `memo_size(context)` replace it. The request holds
+  the `Feasibility`, so the memo is released with the request.
+- Contract §3.5 and §12.19 now say the memo is part of the operation context
+  (a request, or one `explain`/`classify` call), shared by that operation's
+  searches, deletion trials, and validation, and released with it. A
+  `TestSpace` retains nothing from any operation.
+
+Tests (new item in `test/test_request.jl`, 10 parameters of 3 values, one
+whole-case rule and one scoped rule):
+- `Base.summarysize(space)` is identical before and after `generate`.
+- `memo_size(request)` is 0 before generation and positive after.
+- Validation adds no entries: every row was checked during generation.
+- A second `Request` starts at 0, and generating on it leaves the first
+  unchanged.
+- Ten alternating IPOG/GND generations at strengths 2 and 3 on the same
+  space leave `summarysize(space)` constant all ten times.
+- Full factorial memoizes exactly 3^10 verdicts on its request.
+- `explain` and `classify` leave the space's size unchanged, and a
+  `FeasibilityContext` starts empty.
+
+`test/test_explain.jl` now shows that a second `explain` call evaluates the
+rule again (the 2,000-value probe goes from 2,000 to 4,000 predicate calls).
+It also shows that within one context each tuple is evaluated once
+(`calls == memo_size(context) <= 18`). `test/test_feasibility.jl` covers
+sharing, the `memos` validation, and throw-stores-nothing.
+
+The benchmark's memo section, rerun (whole-case rule `forbid(case -> false)`
+added, one fresh request per row, single first calls):
+
+| Space | After | Cases | Time (s) | `summarysize(space)` | `memo_size(request)` | `summarysize(request.feasibility)` | Nodes |
+|:--|:--|--:|--:|--:|--:|--:|--:|
+| bench12 | (before) | – | – | 5,440 | – | – | – |
+| bench12 | IPOG, 2 | 22 | 0.314 | 5,440 | 982 | 978,768 | 6,800 |
+| bench12 | IPOG, 3 | 93 | 0.075 | 5,440 | 4,870 | 5,710,288 | 54,583 |
+| bench12 | GND, 2 | 25 | 0.108 | 5,440 | 36,558 | 25,997,320 | 146,828 |
+| bench12 | GND, 3 | 96 | 0.623 | 5,440 | 85,380 | 96,593,480 | 497,731 |
+| fixture 1 | (before) | – | – | 3,864 | – | – | – |
+| fixture 1 | IPOG, 2 | 33 | 0.124 | 3,864 | 4,451 | 3,453,768 | 23,968 |
+| fixture 1 | IPOG, 3 | 177 | 0.395 | 3,864 | 47,666 | 54,020,808 | 359,151 |
+| fixture 1 | IPOG, 4 | 958 | 9.86 | 3,864 | 389,417 | 392,836,232 | 3,886,299 |
+
+The space no longer grows. Before this change it grew from 5,696 to
+25,695,808 bytes on `bench12` and from 4,144 to 127,930,416 on fixture 1.
+It is also 256 and 280 bytes smaller at rest (the empty memo dict is gone). Node
+counts are identical to the Phase 3 run, so the searches are unchanged.
+`summarysize(request.feasibility)` is the request's whole search state: the
+completability memo and component witness caches as well as the lazy memo.
+It is 393 MB after one strength-4 IPOG call on fixture 1, of which the lazy
+memo is about 120 MB (389 k entries at about 300 bytes). All of it is freed
+with the request. Bounding per-request state is a separate question for
+Phase 4/5 if a real space needs it.
+
+Timings without lazy rules are unchanged (`bench12`: IPOG 1.38 ms / 16.3 ms,
+GND 20.7 ms / 0.32 s at strengths 2 / 3; fixture 1 IPOG strength 4 4.03 s).
+
+### 4. Validation in index space
+
+`validate_design` no longer builds values. For each column it checks every
+entry against the arity, maps it to space value indices in one reused
+buffer, and calls `_violates(request.feasibility, idx)`. That is `violates`
+without re-copying and re-checking a key whose entries are candidates by
+construction. The row is complete, so every table is consulted, and lazy ones
+go through the request's memo. The must-include-first check and the coverage
+recount over hash sets are unchanged. Values appear only in `to_cases` and in
+the failure message, which now names the rules ("internal error: case 5,
+(mode = :fast, solver = :qr, tol = 1.0e-6), breaks rule 1 (...)").
+
+`generate_full_factorial` on `bench12` (207,360 of 331,776 rows valid),
+measured on this machine immediately before and after the change:
+
+| | Whole call | Allocated | `validate_design` | Allocated | Share |
+|:--|--:|--:|--:|--:|--:|
+| before | 0.732 s | 734.6 MiB | 0.661 s | 568.3 MiB | 90% |
+| after | 0.076 s | 191.7 MiB | 0.022 s | 25.3 MiB | 29% |
+
+The whole call is 9.6× faster, and validation 30×. The review's 0.83 s /
+92% came from the benchmark run. The remaining validation allocation is
+`forbids`' runtime-length key tuple (32 bytes × 4 tables × 207,360 rows),
+left alone as instructed. On fixture 1 (unconstrained) validation is
+unchanged at 0.09 s: it is the coverage recount there, not rule checks.
+
+One reporting change: the request's `stats.evaluations` now includes the
+final validation's checks (rows × tables), because validation runs through
+the request's `Feasibility`. The "Rule checks" column of fixture 2 rises by
+exactly that. IPOG 717 → 805 and 3,325 → 3,697, GND 35,549 → 35,649 and
+134,252 → 134,636, full factorial 1,150,848 → 1,980,288. Nodes and queries
+are unchanged.
+
+Streaming the recount (not done; the list is kept as the certification). For
+an unconstrained request, `classify_targets` is only `targets(request)`,
+which builds the 349,440-target list on fixture 1 at strength 4 in 0.469 s
+and 506 MiB allocated (57 MiB retained). The classic `ipog` path does not
+use the list. Only `validate_design` reads it, plus `length(required)`. A
+streamed recount would, for each group and each `s`-subset, count the
+distinct projections of the rows and compare the count with the product of
+the arities. That is the same certification (every assignment of every
+support appears), with no list. A prototype in the scratchpad gives 349,440
+covered in 0.041 s and 144 MiB, against 0.090 s and 240 MiB for the current
+recount with the list. So streaming would save the whole 0.47 s list and
+about 0.05 s of recount: roughly 0.52 s of the 4.03 s call (13%), which would
+bring IPOG within a few percent of 0.4's 3.48 s. It applies only when every
+target is required (unconstrained, no must-include rows). Overlapping groups
+need their shared targets counted once, and GND and constrained requests need
+the list anyway (GND covers from it, and classification visits every target
+regardless). Recommended for Phase 5 together with the other performance
+candidates.
+
+### Suite after round 1
+
+Full suite: 270,373 pass, 13 broken (the same Phase 4–6 lines), 0 failures,
+about 5 minutes. Aqua green. Pass totals are not comparable run to run:
+`test_combinations.jl` and `test_parameter_order.jl` run time-budgeted random
+loops, and two runs of the unchanged HEAD gave 269,760 and 271,487. The
+changed files, counted alone in the same environment, went from 143 to 187
+(excursions), 127 to 131 (positional interface), 157 to 179 (request), 415 to
+455 (constraints), and 102,638 to 102,656 (explain and feasibility). Docs
+build clean from a scratch copy of the `docs/` environment with the
+repository developed into it, with the same missing-docstrings warning as
+before. `docs/Manifest.toml` is untouched.

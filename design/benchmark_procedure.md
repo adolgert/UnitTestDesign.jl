@@ -75,17 +75,20 @@ engines the same way before and after the constraint fix.
   with allocations and bytes.
 - The case count of the returned design, so a speedup is never bought
   with a larger design unnoticed.
-- Retained memory of lazy-rule memos (Phase 2 review round 1). A lazy
-  rule's memo belongs to the `TestSpace` and outlives every call (contract
-  §12.19), unlike the per-call search caches (§3.5). Record
-  `Base.summarysize(space)` and `UnitTestDesign.memo_size(space)` before
-  and after generation for two spaces: `bench12` with an added whole-case
-  rule, and the 15-parameter, 4-value fixture 1 with a whole-case rule. A
-  whole-case memo is bounded by the product of the ordinary domains
+- Memory of lazy-rule memos (Phase 2 review round 1). Since Phase 3
+  review round 1 a lazy rule's memo belongs to the operation context, the
+  request, and is released with it; the `TestSpace` retains nothing
+  (contract §3.5, §12.19). Record `Base.summarysize(space)` before and
+  after generation, which must not change, and, for each request,
+  `UnitTestDesign.memo_size(request)` and
+  `Base.summarysize(request.feasibility)` after generation, for two
+  spaces: `bench12` with an added whole-case rule, and the 15-parameter,
+  4-value fixture 1 with a whole-case rule. A per-request whole-case memo
+  is bounded by the product of the ordinary domains
   (331776 rows for `bench12`, 4^15 for fixture 1), so the second is the one
-  that can grow without a practical bound. The decision to keep the memo on
-  the space, bound it, or move it into the request context is taken from
-  this measurement, not in advance.
+  that can grow without a practical bound. The Phase 3 measurement (memo on
+  the space, 128 MB retained on fixture 1) is what moved the memo into the
+  request; a bound on the per-request memo is decided from this one.
 - The search effort alongside the time: nodes and rule checks
   (`Explanation.nodes`, `.evaluations`, or the `SearchStats` of the
   request's feasibility searches). A separate evaluation budget (§3.3) is

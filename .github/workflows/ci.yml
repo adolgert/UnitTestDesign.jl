@@ -1,7 +1,8 @@
 name: CI
 on:
-  - push
-  - pull_request
+  push:
+  pull_request:
+  workflow_dispatch:
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -62,3 +63,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+  benchmark:
+    # The Phase 3 performance baseline on a stable runner (design/benchmark_procedure.md).
+    # GND on the 15x4 strength-4 fixture is left out (--skip-slow); it takes about four minutes per call.
+    name: Benchmark - ubuntu-latest - Julia 1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Run the benchmark script
+        run: julia --color=yes --project benchmark/run.jl --skip-slow --runs 5 --out benchmark_results.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: benchmark_results.md

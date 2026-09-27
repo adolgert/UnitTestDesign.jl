@@ -208,6 +208,14 @@ end
     ve1 = values_excursion(ve1_params...)
     ve1_arity = maximum.(ve1_params)
     @test length(ve1) == sum(ve1_arity .- 1) + 1
+    # n_way is the excursion's distance, not a covering strength (§7.5), so a
+    # single parameter is fine, and a distance above the parameter count is
+    # the parameter count.
+    @test values_excursion([1, 2, 3]) == [[1], [2], [3]]
+    @test pairs_excursion([1, 2, 3]) == [[1], [2], [3]]
+    @test triples_excursion([1, 2], [:a, :b]) == [[1, :a], [2, :a], [1, :b], [2, :b]]
+    @test all_tuples([1, 2], [3, 4]; n_way = 0, engine = Excursion()) == [[1, 3]]
+    @test_throws ArgumentError all_tuples([1, 2], [3, 4]; n_way = -1, engine = Excursion())
 end
 
 
@@ -219,7 +227,7 @@ end
 
     space2 = positional_space([1, 2], [true, false], ["a", "b", "c"];
                               constraints = [forbid((y, z) -> y == false && z in ("b", "c"), :p2, :p3)])
-    request2 = Request(space2; strength = 2)
+    request2 = Request(space2)
     trials2 = cases_of(request2, generate_excursion(request2; distance = 2))
     @test !isempty(trials2)
     for trial2 in trials2
@@ -236,15 +244,15 @@ end
     seed_cnt = length(seeds)
     @test length(trials4) == origin + double_walk + single_walk + seed_cnt
 
+    # An excursion has one distance: `wayness` groups are refused (§7.5).
     params5 = fill(1:2, 20)
     wayness5 = Dict(3 => [[1, 2, 3, 4, 5], [4, 5, 6]], 4 => [collect(11:18)])
-    trials5 = pairs_excursion(params5...; wayness = wayness5)
-    trails5_arr = hcat(trials5...)
-    arity5 = [length(x) for x in params5]
-    @test UnitTestDesign.test_coverage(trails5_arr, arity5, 2).finish == 0
-    @test UnitTestDesign.test_coverage(trails5_arr[1:5, :], arity5[1:5], 3).finish == 0
-    @test UnitTestDesign.test_coverage(trails5_arr[4:6, :], arity5[4:6], 3).finish == 0
-    @test UnitTestDesign.test_coverage(trails5_arr[11:18, :], arity5[11:18], 4).finish == 0
+    err = try pairs_excursion(params5...; wayness = wayness5); nothing catch e; e end
+    @test err isa ArgumentError && occursin("excursions take a single distance", err.msg)
+    # Every row is within distance 2 of the base.
+    trials6 = pairs_excursion(params5...)
+    @test length(trials6) == 1 + 20 + 190
+    @test all(t -> count(t .!= trials6[1]) <= 2, trials6)
 
     @test length(pairs_excursion([1, 2], [true, false], ["a", "b", "c"])) == 10
 end

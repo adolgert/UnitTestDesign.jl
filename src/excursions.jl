@@ -1,13 +1,12 @@
 # Excursions: every valid row within a distance of a base row (plan Phase 3
 # step 4; contract §7.5–§7.7, §7.11).
 #
-# The change sets. The base group allows changes of up to `distance`
-# parameters. Each `stronger` group `(G, s)` of the request (its groups after
-# the base group) also allows changes of up to `s` parameters within `G`,
-# which is how the 0.4 `wayness` levels of `build_excursion_multi` worked:
-# a group's strength is its distance. The request's own base strength is not
-# used; build the request with `strength = distance` so that its `stronger`
-# validation (§11.6, §11.7) compares group strengths with the distance.
+# One distance. An excursion row differs from the base in at most `distance`
+# parameters (Hamming distance), and nothing else widens that: an excursion
+# has no groups, and a request with `stronger` groups is refused, since
+# `stronger` belongs to covering designs. Excursion distance is not covering
+# strength. The request's `strength` is not read; build the request with the
+# default strength, or `strength = 1`, which every space accepts (§11.2).
 #
 # Order (the 0.4 order). The base first, then the change sets sorted by size
 # and then lexicographically, and within a set every combination of the
@@ -18,46 +17,36 @@
 using Combinatorics: combinations
 
 """
-    excursion_subsets(n, distance, groups = []) -> Vector{Vector{Int}}
+    excursion_subsets(n, distance) -> Vector{Vector{Int}}
 
 The sets of parameters an excursion row may change, sorted by size and then
 lexicographically: every nonempty subset of `1:n` with at most `distance`
-members, and for each `group => s` every nonempty subset of `group` with at
-most `s` members.
+members. Empty for distance 0.
 """
-function excursion_subsets(n::Integer, distance::Integer, groups = Pair{Vector{Int}, Int}[])
-    subsets = Set{Vector{Int}}()
-    for k in 1:min(distance, n), c in combinations(1:n, k)
-        push!(subsets, c)
-    end
-    for (members, s) in groups
-        sorted = sort(collect(Int, members))
-        for k in 1:min(s, length(sorted)), c in combinations(sorted, k)
-            push!(subsets, c)
-        end
-    end
-    return sort!(collect(subsets); by = x -> (length(x), x))
+function excursion_subsets(n::Integer, distance::Integer)
+    return [c for k in 1:min(distance, n) for c in combinations(1:n, k)]
 end
 
 """
-    build_excursion(arity, distance, base, dead; groups = []) -> (; matrix, dropped)
+    build_excursion(arity, distance, base, dead) -> (; matrix, dropped)
 
 Every row that differs from `base` (engine positions) in at most `distance`
-parameters, or within a `groups` entry `members => s` in at most `s` of its
-members, with each changed parameter taking every other value. The base
+parameters, with each changed parameter taking every other value. The base
 comes first, then the rows in the order of `excursion_subsets`, the last
 changed parameter varying fastest. `dead(row)` is asked of each complete
 row; rows it rejects are left out and counted in `dropped`. The base is
-included without asking; the caller checks it (contract §7.6).
+included without asking; the caller checks it (contract §7.6). Distance 0
+is the base alone; a distance above `length(arity)` acts as `length(arity)`.
 """
 function build_excursion(arity::AbstractVector{<:Integer}, distance::Integer,
-                         base::AbstractVector{<:Integer}, dead; groups = Pair{Vector{Int}, Int}[])
+                         base::AbstractVector{<:Integer}, dead)
     n = length(arity)
     length(base) == n || throw(ArgumentError("the base has $(length(base)) entries for $n parameters"))
+    distance >= 0 || throw(ArgumentError("the excursion distance must be at least 0, got $distance"))
     others = [[v for v in 1:arity[i] if v != base[i]] for i in 1:n]
     kept = Vector{Int}[collect(Int, base)]
     dropped = 0
-    for subset in excursion_subsets(n, distance, groups)
+    for subset in excursion_subsets(n, distance)
         # The last parameter of the subset varies fastest, as in 0.4.
         ranges = Tuple(others[i] for i in reverse(subset))
         for combo in Iterators.product(ranges...)
@@ -111,12 +100,6 @@ function excursion_base(request::Request, from)
     throw(ArgumentError("the excursion base `from` is a NamedTuple, a Tuple, or nothing; got a $(typeof(from))"))
 end
 
-"Every rule a complete row (engine positions) breaks, as a phrase naming each."
-function _broken_rules(request::Request, row::AbstractVector{<:Integer})
-    rules = violated_rules(request.feasibility, _space_indices(request, row))
-    return join((_rule_ref(request.space.constraints[k], k) for k in rules), ", ", " and ")
-end
-
 """
     _complete_toward(request, partial, preferred) -> Vector{Int}
 
@@ -145,32 +128,42 @@ end
     generate_excursion(request; distance = 1, from = nothing) -> Design
 
 The must-include rows, then the base, then every valid row that differs from
-the base in at most `distance` parameters (contract §7.5), and within each
-`stronger` group `(G, s)` of the request in at most `s` parameters of `G`.
-Rows that break a rule are dropped and reported: `notes.dropped` counts
-them and `notes.never_appear` lists the `(parameter, position)` pairs whose
-value appears in no returned row (§7.7). An excursion makes no covering
-claim. An excursion row equal to a must-include row is not repeated
-(§7.11); a partial must-include row is completed toward the base.
+the base in at most `distance` parameters (contract §7.5). `distance` is one
+integer of at least 0: 0 gives the must-include rows and the base alone, and
+a distance above the parameter count acts as the parameter count. Every row
+after the must-include rows is within `distance` of the base; nothing
+widens it. An excursion has no groups: a request with `stronger` groups is
+an `ArgumentError`. The request's `strength` is not used; build it with the
+default strength (or `strength = 1`, which a one-parameter space needs).
+
+Rows within the distance that break a rule are dropped and reported:
+`notes.dropped` counts them and `notes.never_appear` lists the
+`(parameter, position)` pairs whose value appears in no returned row (§7.7).
+An excursion makes no covering claim. An excursion row equal to a
+must-include row is not repeated (§7.11); a partial must-include row is
+completed toward the base.
 
 `from` is `nothing` (the first ordinary value of each parameter), a complete
 `NamedTuple` or `Tuple` of values, or a `Vector{Int}` of engine positions. A
 base that breaks a rule is an `ArgumentError` naming the rules (§7.6).
 
-`notes` also records `base` (engine positions) and `distance`.
+`notes` also records `base` (engine positions) and `distance` (after
+clamping to the parameter count).
 """
 function generate_excursion(request::Request; distance::Integer = 1, from = nothing)
     distance >= 0 || throw(ArgumentError("the excursion distance must be at least 0, got $distance"))
+    length(request.groups) == 1 || throw(ArgumentError(
+        "excursions take a single distance; stronger groups apply to covering designs"))
     space = request.space
+    distance = min(Int(distance), length(request.arity))
     base = excursion_base(request, from)
     if violates(request.feasibility, _space_indices(request, base))
         throw(ArgumentError(
             "the excursion base $(from_indices(space, _space_indices(request, base))) breaks " *
             _broken_rules(request, base) * "; choose a valid base with `from` (contract §7.6)"))
     end
-    groups = request.groups[2:end]
     isdead = row -> violates(request.feasibility, _space_indices(request, row))
-    excursion = build_excursion(request.arity, distance, base, isdead; groups = groups)
+    excursion = build_excursion(request.arity, distance, base, isdead)
     must = Vector{Int}[]
     for s in axes(request.must_include, 2)
         row = request.must_include[:, s]
@@ -185,9 +178,9 @@ function generate_excursion(request::Request; distance::Integer = 1, from = noth
     end
     matrix = reduce(hcat, rows)
     validate_design(request, matrix, Vector{Int}[]; strategy = :excursion)
-    _validate_excursion(request, matrix, length(must), base, distance, groups)
+    _validate_excursion(request, matrix, length(must), base, distance)
     notes = (dropped = excursion.dropped, never_appear = never_appear(request.arity, matrix),
-             base = base, distance = Int(distance))
+             base = base, distance = distance)
     return Design(matrix, :excursion, :Excursion, nothing, 0, 0, Excluded[], n_must_include(request), notes)
 end
 
@@ -212,16 +205,15 @@ function never_appear(arity::AbstractVector{<:Integer}, matrix::AbstractMatrix{<
 end
 
 # Strategy validation (plan Phase 3 step 6): every row after the must-include
-# rows is the base or changes an allowed set of parameters, and none repeats
-# an earlier row, must-include rows included (§7.11).
-function _validate_excursion(request::Request, matrix, n_must, base, distance, groups)
+# rows is within Hamming distance `distance` of the base, and none repeats an
+# earlier row, must-include rows included (§7.11).
+function _validate_excursion(request::Request, matrix, n_must, base, distance)
     n = length(base)
-    allowed = Set(excursion_subsets(n, distance, groups))
     seen = Set{Vector{Int}}(matrix[:, j] for j in 1:n_must)
     for j in (n_must + 1):size(matrix, 2)
         row = matrix[:, j]
         changed = findall(i -> row[i] != base[i], 1:n)
-        (isempty(changed) || changed in allowed) || error(
+        length(changed) <= distance || error(
             "internal error: excursion case $j changes $(request.space.names[changed]), " *
             "beyond distance $distance of the base")
         row in seen && error("internal error: excursion case $j repeats an earlier case")
