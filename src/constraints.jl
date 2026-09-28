@@ -228,6 +228,9 @@ Which identifiers are parameters (contract §12.6, §12.7):
   `local`, a quoted expression, or a macro call) is an `ArgumentError` when
   the macro expands. Write such a rule with the function form,
   `forbid(f, names...)`.
+- A subtype test written with the operator, `T <: \$AbstractFloat` or
+  `T >: \$Int`, is an `ArgumentError` too: `<:` and `>:` are syntax, not
+  calls. Write the call, `(<:)(T, \$AbstractFloat)`, or use the function form.
 
 The rule's label is its source text as Julia prints it, such as
 `"@forbid(mode == :fast && solver != :none)"`, preceded by the reason if one
@@ -361,6 +364,8 @@ function _walk(w::_RuleWalk, ex, bound::Set{Symbol})
         return ex  # r"...", v"...": a literal
     elseif head in _RULE_PLAIN_HEADS
         return Expr(head, (_walk(w, a, bound) for a in args)...)
+    elseif head === :<: || head === :>:
+        _rule_unsupported_operator(w, ex, bound)
     else
         _rule_unsupported(w, _describe_form(ex))
     end
@@ -614,6 +619,32 @@ function _rule_unsupported(w::_RuleWalk, what::AbstractString)
         "@$(w.polarity), only `->` and anonymous `function` arguments, `let` bindings, " *
         "generators, comprehensions and `do` blocks bind names (contract §12.6). For " *
         "anything else, use the function form $(w.polarity)(f, names...)."))
+end
+
+# `a <: b` and `a >: b` parse as their own expression heads, not as calls, so
+# a macro rule rejects them; they bind nothing, so the message says what to
+# write instead: the call form, which the macro reads, or the function form.
+# When the subtype test is the whole rule, one operand a parameter's name and
+# the other `$x`, as in `@forbid(T <: $AbstractFloat)`, the message spells out
+# the function form for it. With two bare names it cannot tell a parameter
+# from a type the caller forgot to interpolate, so it gives the general form.
+function _rule_unsupported_operator(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
+    op = ex.head
+    call = "($op)(" * join(map(_source_text, ex.args), ", ") * ")"
+    example = ""
+    is_name(a) = a isa Symbol && !(a in bound || a in _RULE_VALUE_NAMES)
+    is_interpolated(a) = a isa Expr && a.head === :$ && length(a.args) == 1
+    if w.text == "@$(w.polarity)(" * _source_text(ex) * ")" && length(ex.args) == 2 &&
+       count(is_name, ex.args) == 1 && count(is_interpolated, ex.args) == 1
+        name = only(filter(is_name, ex.args))
+        plain = Expr(op, (is_interpolated(a) ? a.args[1] : a for a in ex.args)...)
+        example = ", here $(w.polarity)(($name,) -> $(_source_text(plain)), $(repr(name)))"
+    end
+    throw(ArgumentError(
+        "$(w.text) contains `$(_source_text(ex))`, and `$op` is not supported inside " *
+        "@forbid/@require: Julia parses it as syntax, not as a function call (contract " *
+        "§12.6). Write it as the call `$call`, which the macro reads, or use the " *
+        "function form $(w.polarity)(f, names...)$example."))
 end
 
 # What the macros expand to: the same Constraint as the listed-names form.

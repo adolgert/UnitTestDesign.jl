@@ -368,7 +368,7 @@ negcases = all_pairs(negative)
 ```
 
 [`hasinvalid`](@ref) tells a test body which kind of case it has, and the
-value inside the marker is its `value` field:
+wrapped value of an [`Invalid`](@ref) `x` is `x.value`:
 
 ```@example tutorial
 unwrap(x) = x isa Invalid ? x.value : x

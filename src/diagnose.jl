@@ -54,12 +54,15 @@ The result of [`diagnose`](@ref). Fields:
   another; no suspects), or `:conflicting` (some case appears more than once
   with different outcomes; those rows are listed in `conflicting` and left
   out, and the rest are compared as for `:ranked`).
-- `groups::Vector{Vector{Suspect}}`: the suspects, grouped by the failing
-  cases that contain them. The members of a group occur in exactly the same
-  cases, so these outcomes cannot tell them apart. Groups are ranked by the
-  number of failing cases, most first, then by their representative, the
-  group's first and smallest member: fewer values first, then parameter
-  order, then domain order. Members follow the same order.
+- `groups::Vector{Vector{Suspect}}`: the suspects, grouped by failure
+  pattern, the set of failing cases that contain them. The members of a
+  group have the same failure pattern, so these outcomes cannot tell them
+  apart; `show` lists them as "same failures as" the first. This is not the
+  `:indistinguishable` status of [`followups`](@ref), which means that one
+  suspect contains another. Groups are ranked by the number of failing
+  cases, most first, then by their representative, the group's first and
+  smallest member: fewer values first, then parameter order, then domain
+  order. Members follow the same order.
 - `suspects::Vector{Suspect}`: every suspect, group by group, in rank order.
 - `strength::Int`: the largest combination considered.
 - `n_cases::Int`, `n_failed::Int`: the rows given, and how many failed,
@@ -106,9 +109,11 @@ least one failing case and in no passing case. Suspects are ranked by the
 number of failing cases that contain them, most first; then smaller
 combinations first, since a single value that explains the failures is a
 simpler hypothesis than a pair; then by parameter order and domain order,
-so the ranking is deterministic. Suspects that occur in exactly the same
-failing cases are grouped: these outcomes cannot tell them apart, and only
-new cases can. [`followups`](@ref) proposes those cases.
+so the ranking is deterministic. Suspects with the same failure pattern,
+those that occur in exactly the same failing cases, are grouped, and the
+display lists them as "same failures as" the group's first member: these
+outcomes cannot tell them apart, and only new cases can. [`followups`](@ref)
+proposes those cases.
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> space = TestSpace((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
@@ -384,7 +389,7 @@ function Base.show(io::IO, ::MIME"text/plain", d::Diagnosis)
         print(io, "\n", j, ". ", _exact(io, representative.combination), " — in ",
               representative.failures, " of ", total, " failure", total == 1 ? "" : "s")
         if length(group) > 1
-            print(io, " — indistinguishable from ",
+            print(io, " — same failures as ",
                   _listed([_exact(io, s.combination) for s in group[2:end]]))
         end
     end

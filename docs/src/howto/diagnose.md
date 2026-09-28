@@ -59,10 +59,11 @@ the suspect. The true cause ranks first, in both failures. The other two
 pairs appear only in failing cases, so nothing yet says whether they work:
 the failure masks them.
 
-Each numbered line is a group. Suspects that occur in exactly the same
-failing cases share a group, and the group's line lists the others as
-"indistinguishable from" the first: these outcomes cannot tell them apart,
-though new cases may. The second example below has such a group.
+Each numbered line is a group. Suspects with the same failure pattern,
+those that occur in exactly the same failing cases, share a group, and the
+group's line lists the others as "same failures as" the first: these
+outcomes cannot tell them apart, though new cases may. The second example
+below has such a group.
 
 ## 3. Run the follow-ups
 
@@ -91,8 +92,7 @@ sparse Newton step.
 - `indistinguishable`: the suspect contains another suspect, so every case
   that holds it holds the other too. No case can isolate it; run the
   smaller suspect's follow-up instead. This is stronger than a group's
-  "indistinguishable from" in the diagnosis, which is about the outcomes so
-  far.
+  "same failures as" in the diagnosis, which is about the outcomes so far.
 - `inseparable`: an exhausted search proved that, under the space's rules,
   every valid case holding the suspect holds another suspect too. The
   follow-up names the rules and the suspects in the proof.

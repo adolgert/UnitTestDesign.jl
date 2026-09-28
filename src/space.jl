@@ -24,6 +24,11 @@ A partition's identity is its name; `draw` is not part of it (§2.13). Names are
 unique within a parameter, and a domain may not also hold the raw `Symbol` of a
 partition's name (§4.3, §4.4). A partition is an ordinary value (§4.2).
 `Invalid(Partition(...))` is an error (§4.12).
+
+A partition prints as `Partition(:tiny)`, which does not read back as code. In
+cases committed to a test file as a literal, such as the output of
+`repr(collect(cases))`, write its name, `:tiny`, which `coverage` and
+`must_include` accept in its place (§2.11).
 """
 struct Partition
     name::Symbol
@@ -71,6 +76,10 @@ negative rows: each holds one invalid value beside ordinary values, and
 together they cover that value's negative targets (§6), such as, at strength
 2, the invalid value beside every feasible value of every other parameter.
 Rows keep the wrapper, so a test body can branch on [`hasinvalid`](@ref).
+
+The wrapped value is `x.value`, the supported way to read it. A test body
+unwraps a row's values before the call with
+`unwrap(x) = x isa Invalid ? x.value : x`.
 """
 struct Invalid{T}
     value::T

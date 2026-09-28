@@ -101,5 +101,7 @@ end
 
 Write `$BigFloat` to use the type's value, or use the pattern form,
 `forbid((T = BigFloat, n = 10_000))`, as above. A subtype test such as
-`T <: AbstractFloat` is not supported inside the macro; write it with the
-function form, `forbid(:T, :n) do T, n; T <: AbstractFloat && n > 1000 end`.
+`T <: AbstractFloat` is not supported inside the macro, because `<:` is
+syntax rather than a function call. Write it as the call,
+`@forbid((<:)(T, $AbstractFloat) && n > 1000)`, or with the function form,
+`forbid(:T, :n) do T, n; T <: AbstractFloat && n > 1000 end`.

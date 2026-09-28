@@ -87,14 +87,15 @@ parameter does not apply to a negative row, so row 7 may pair
 first check that fails cannot hide a second.
 
 The test body branches on [`hasinvalid`](@ref). A row keeps the wrapper, so
-unwrap it before the call:
+unwrap it before the call; the wrapped value of an [`Invalid`](@ref) `x` is
+`x.value`:
 
 ```@example invalid
-raw(x) = x isa Invalid ? x.value : x
+unwrap(x) = x isa Invalid ? x.value : x
 
 @testset "grid with Invalid" begin
     for case in cases
-        (; n, spacing, boundary) = map(raw, case)
+        (; n, spacing, boundary) = map(unwrap, case)
         if hasinvalid(case)
             @test_throws ArgumentError grid(n, spacing, boundary)
         else
@@ -140,7 +141,7 @@ message = (n = "n must be", spacing = "spacing must be", boundary = "unknown bou
 
 @testset "each rejection names its parameter" begin
     for case in filter(hasinvalid, cases)
-        (; n, spacing, boundary) = map(raw, case)
+        (; n, spacing, boundary) = map(unwrap, case)
         bad = findfirst(x -> x isa Invalid, case)      # such as :spacing
         @test_throws message[bad] grid(n, spacing, boundary)
     end

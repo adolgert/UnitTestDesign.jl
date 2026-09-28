@@ -147,6 +147,11 @@ when anything is missing or unresolved.
 target is unresolved (contract §1.16). An unknown target makes it `false`:
 coverage is never claimed complete under an exhausted limit (§1.7, §3.10).
 Rejected rows do not change it; they are listed in the result (§1.14).
+
+A rejected row does not make a result incomplete. To test that committed
+cases are still valid, check the rows with [`isallowed`](@ref) as well,
+`@test all(case -> isallowed(space, case), cases)`; otherwise a new rule
+that forbids a committed row passes unnoticed.
 """
 iscomplete(c::Coverage) = all(p -> isempty(p.missing) && isempty(p.unknown), (c.ordinary, c.negative))
 

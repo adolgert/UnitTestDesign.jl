@@ -10,7 +10,10 @@ Pick any two parameters, and one value for each: `mode = :exact` and
 `solver = :qr`, say. That is a *pair*, a 2-way combination. A suite of test
 cases *covers* the pair when at least one case holds both values. More
 generally, a ``t``-way combination fixes ``t`` parameters to one value each,
-and ``t`` is the *strength*.
+and ``t`` is the *strength*. The word also has a plain use: in a result's
+summary line, such as
+`5 cases · strength 2 · IPOG · 3 parameters · 12 combinations`, it counts
+the full product, every way to give each parameter a value.
 
 A combination is *feasible* when some valid case contains it. Rules can make
 a combination impossible, and then no suite needs to cover it (see

@@ -263,7 +263,7 @@ end
     @test [s.combination for s in d.groups[1]] == [(a = 2,), (a = 2, b = 1), (a = 2, c = 2)]
     @test shown(d) == """
         1 failure of 4 cases; 3 suspects in 1 group (hypotheses, not proof)
-        1. (a = 2,) — in 1 of 1 failure — indistinguishable from (a = 2, b = 1) and (a = 2, c = 2)"""
+        1. (a = 2,) — in 1 of 1 failure — same failures as (a = 2, b = 1) and (a = 2, c = 2)"""
 
     fs = followups(d)
     @test check_followups(d, fs) == [:found, :indistinguishable, :indistinguishable]

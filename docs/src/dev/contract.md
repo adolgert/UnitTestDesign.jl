@@ -708,7 +708,9 @@ the variables of generators and comprehensions. Any other form that binds or
 assigns a name or runs statements (an assignment outside a `let` binding,
 `for`, `while`, `try`, `global`, `local`, a quoted expression, a macro call)
 is an error when the macro expands, and the message points to the function
-form `forbid(f, names...)`.
+form `forbid(f, names...)`. The subtype operators `<:` and `>:` are syntax,
+not calls, and are an error too; the message suggests the call form,
+`(<:)(T, $S)`, which the macro reads, and the function form.
 
 **12.7** In a macro rule, `nothing` and `missing` denote those values, not
 parameter names. A parameter may not be named `nothing` or `missing`.
@@ -771,7 +773,8 @@ evaluated at most once per combination per operation. A `TestSpace` retains
 nothing from any operation: its size is the same before and after any call.
 `isallowed`, which checks one row, may evaluate lazy rules without a memo.
 
-**12.20** Whole-case rules are always evaluated lazily, memoized per row.
+**12.20** Whole-case rules are always evaluated lazily, memoized within the
+operation (§12.19).
 
 **12.21** Cost of whole-case rules, documented in their docstring: they connect
 every parameter into one component, and deciding feasibility may search up to

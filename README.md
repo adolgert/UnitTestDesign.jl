@@ -3,7 +3,7 @@
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://adolgert.github.io/UnitTestDesign.jl/stable)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://adolgert.github.io/UnitTestDesign.jl/dev)
 [![Build Status](https://github.com/adolgert/UnitTestDesign.jl/workflows/CI/badge.svg)](https://github.com/adolgert/UnitTestDesign.jl/actions)
-[![Coverage](https://codecov.io/gh/adolgert/UnitTestDesign.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/adolgert/UnitTestDesign.jl)
+[![Coverage](https://codecov.io/gh/adolgert/UnitTestDesign.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/adolgert/UnitTestDesign.jl)
 
 Describe the configurations your code must handle; it tells you which
 combinations your tests exercise, and supplies a compact set of additional
@@ -173,8 +173,10 @@ so the design chooses the classes and a generator chooses within them. See
 ### A design to commit
 
 Print the cases with `repr(collect(cases))`, paste them into a test file, and
-keep one test that checks `iscomplete(coverage(CASES, space))`. See [Commit a
-design as data](docs/src/howto/commit_design.md).
+keep two checks: `iscomplete(coverage(CASES, space))` and
+`all(case -> isallowed(space, case), CASES)`. The second catches a new rule
+that forbids a committed case, which `coverage` lists as rejected rather than
+missing. See [Commit a design as data](docs/src/howto/commit_design.md).
 
 ## Upgrading from 0.4
 

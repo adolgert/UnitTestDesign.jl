@@ -101,15 +101,18 @@ print(repr(collect(cases)))
 ```
 
 Paste that literal into the test file, so a reviewer sees every case in the
-diff and nothing is generated at test time. Keep one test that checks the
-committed cases still cover the space; it fails when someone adds a value or
-a rule that the list no longer covers.
+diff and nothing is generated at test time. Keep two checks: that the
+committed cases still cover the space, which fails when someone adds a value
+or a rule that the list no longer covers, and that every committed case is
+still allowed. The second is needed because `coverage` lists a row that a new
+rule forbids as rejected, not as missing, so `iscomplete` alone stays `true`.
 
 ```@example agents
 const CASES = [(mode = :exact, solver = :qr, tol = 1.0e-6), (mode = :exact, solver = :lu, tol = 1.0e-6), (mode = :exact, solver = :none, tol = 1.0e-6), (mode = :fast, solver = :none, tol = 0.001), (mode = :fast, solver = :none, tol = 1.0e-6)]
 
 @testset "committed cases" begin
-    @test iscomplete(coverage(CASES, space))
+    @test iscomplete(coverage(CASES, space))          # nothing missing
+    @test all(case -> isallowed(space, case), CASES)  # no case a rule now forbids
     for case in CASES
         x = solve(A, b; case...)
         @test norm(A * x - b) <= case.tol * norm(b)
@@ -129,6 +132,7 @@ iscomplete(coverage(cases, space))
 
 It measures the cases against the space from the rows alone, independent of
 how they were made, and is `true` only when every feasible combination is
-covered and none is unresolved. Print `coverage(cases, space)` to see what is
-missing, and `explain(space, combination)` to see why a combination is
-excluded.
+covered and none is unresolved. A row a rule forbids is listed as rejected
+and does not make it `false`; check rows with `isallowed(space, case)`. Print
+`coverage(cases, space)` to see what is missing, and
+`explain(space, combination)` to see why a combination is excluded.
