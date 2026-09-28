@@ -281,6 +281,10 @@ function _covering(fname::Symbol, input::Tuple; strength = nothing, stronger = n
 end
 
 """
+Use when you want every combination of values of every `strength` parameters
+(pairs at strength 2, triples at 3) to appear in at least one case, with as few
+cases as the engine finds.
+
     covering(space; strength = 2, stronger = [], must_include = [], engine = IPOG(),
              feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     covering(domains::NamedTuple; constraints = [], kwargs...)
@@ -345,7 +349,8 @@ result counts the two kinds of targets separately (§5.10).
   negative policy, with ordinary values elsewhere; a partial row without one
   is completed as an ordinary row; a row with two is an error (§5.7, §7.9).
 - `engine = IPOG()`: [`IPOG`](@ref) or [`GND`](@ref). Both are deterministic
-  for the same inputs (§9.1). Neither promises the fewest cases (§8.1).
+  for the same inputs (§9.1). Neither guarantees a particular number of
+  cases, and neither is always smaller than the other (§8.1).
 - `feasibility_limit = 1_000_000`: the node budget of each search that
   decides whether a combination, a partial must-include row or a placement
   has a valid completion (§3.3, §3.4). Generation resolves every one of them
@@ -362,9 +367,10 @@ result counts the two kinds of targets separately (§5.10).
   and the exclusion keeps its proven set of rules with
   `minimal = :unresolved` and `limit = :explanation_limit => N`, which `show`
   counts as "with an unresolved explanation" (§3.15, §3.16). Raise it only
-  when you want each implied exclusion attributed to the fewest rules; only
-  the attribution becomes more precise. It also bounds the explanation in
-  the error for a partial must-include row with no valid completion.
+  when you want each implied exclusion's rules verified inclusion-minimal,
+  so that none of them can be dropped; only the attribution becomes more
+  precise. It also bounds the explanation in the error for a partial
+  must-include row with no valid completion.
 
 The 0.4 keywords `n_way` (now `strength`), `seeds` (now `must_include`) and
 `wayness` (now `stronger`, translated from its `Dict` of positions) are
@@ -403,6 +409,10 @@ function _fixed_strength(fname::Symbol, s::Int, keyword::Symbol, value)
 end
 
 """
+Use when you want every value of every parameter to appear in at least one case,
+with as few cases as the engine finds: a quick check that each value works at
+all.
+
     all_values(input...; stronger, must_include, engine, constraints,
                feasibility_limit, explanation_limit)
 
@@ -425,6 +435,9 @@ function all_values(input...; stronger = nothing, must_include = nothing, engine
 end
 
 """
+Use when you want every pair of parameter values to appear in at least one case,
+with as few cases as the engine finds.
+
     all_pairs(input...; stronger, must_include, engine, constraints,
               feasibility_limit, explanation_limit)
 
@@ -451,6 +464,10 @@ function all_pairs(input...; stronger = nothing, must_include = nothing, engine 
 end
 
 """
+Use when you want every combination of three parameters' values to appear in at
+least one case, with as few cases as the engine finds; it reaches faults that
+need three values together, at the cost of more cases than pairs.
+
     all_triples(input...; stronger, must_include, engine, constraints,
                 feasibility_limit, explanation_limit)
 
@@ -513,6 +530,10 @@ function _excursions(fname::Symbol, input::Tuple, default_distance::Integer; fro
 end
 
 """
+Use when you trust one base case and want every valid variation that changes at
+most `distance` of its parameters. An excursion is not a covering design: it
+does not guarantee that every pair, or even every value, appears.
+
     excursions(space; from = nothing, distance = 1, must_include = [],
                feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     excursions(domains::NamedTuple; constraints = [], kwargs...)
@@ -574,6 +595,9 @@ end
 ## Full factorial
 
 """
+Use when the product of the domains is small enough to run every valid
+combination, or when you need every one of them.
+
     full_factorial(space; limit = 10^6, must_include = [], feasibility_limit = 1_000_000)
     full_factorial(domains::NamedTuple; constraints = [], kwargs...)
     full_factorial(name => domain, ...; constraints = [], kwargs...)
@@ -642,10 +666,13 @@ end
 ## Deprecated aliases (contract §13.1, §13.2)
 
 """
+Deprecated alias of [`covering`](@ref): call `covering` with the same inputs
+and keywords, writing `strength` for `n_way`.
+
     all_tuples(input...; n_way = 2, kwargs...)
 
-Deprecated: use [`covering`](@ref), which takes the same inputs and keywords,
-with `strength` for `n_way`.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2). See the migration table in the manual.
 """
 function all_tuples(input...; kwargs...)
     Base.depwarn("all_tuples is deprecated; use covering, which takes the same inputs, " *
@@ -654,10 +681,14 @@ function all_tuples(input...; kwargs...)
 end
 
 """
+Deprecated alias of [`excursions`](@ref) at distance 1: call
+`excursions(input...; distance = 1)`.
+
     values_excursion(input...; kwargs...)
 
-Deprecated: use [`excursions`](@ref)`(input...; distance = 1)`. It takes the
-keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It takes the keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2).
 """
 function values_excursion(input...; kwargs...)
     Base.depwarn("values_excursion is deprecated; use excursions(...; distance = 1)", :values_excursion)
@@ -665,10 +696,14 @@ function values_excursion(input...; kwargs...)
 end
 
 """
+Deprecated alias of [`excursions`](@ref) at distance 2: call
+`excursions(input...; distance = 2)`.
+
     pairs_excursion(input...; kwargs...)
 
-Deprecated: use [`excursions`](@ref)`(input...; distance = 2)`. It takes the
-keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It takes the keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2).
 """
 function pairs_excursion(input...; kwargs...)
     Base.depwarn("pairs_excursion is deprecated; use excursions(...; distance = 2)", :pairs_excursion)
@@ -676,10 +711,14 @@ function pairs_excursion(input...; kwargs...)
 end
 
 """
+Deprecated alias of [`excursions`](@ref) at distance 3: call
+`excursions(input...; distance = 3)`.
+
     triples_excursion(input...; kwargs...)
 
-Deprecated: use [`excursions`](@ref)`(input...; distance = 3)`. It takes the
-keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It takes the keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2).
 """
 function triples_excursion(input...; kwargs...)
     Base.depwarn("triples_excursion is deprecated; use excursions(...; distance = 3)", :triples_excursion)

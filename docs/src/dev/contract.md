@@ -789,10 +789,13 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 
 | Name | Kind | Status | Notes |
 |:--|:--|:--|:--|
-| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `arity(space)`, `length(space)` (full product). |
+| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `length(space)` (full product); `arity(space)` is internal. |
+| `parameters` | function | new | `parameters(space)`: the parameter names, in order. |
 | `constraints` | keyword | new | Rules for a space. |
 | `forbid`, `require` | functions | new | Pattern, listed-names, and whole-case forms (§12). |
 | `@forbid`, `@require` | macros | new | Bare-name rules (§12.6). |
+| `Constraint` | type | new | The one rule form that all four surface forms build (§12.1). |
+| `ConstraintError` | exception | new | A rule's predicate threw (§12.16). |
 | `must_include` | keyword | new | Replaces `seeds`. |
 | `seeds` | keyword | deprecated | Alias for `must_include`. |
 | `strength` | keyword | new | Replaces `n_way`. |
@@ -800,6 +803,7 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `stronger` | keyword | new | Replaces `wayness` (§11). |
 | `wayness` | keyword | deprecated | Translated to `stronger`. |
 | `TestCases` | type | new | Result of every generator. |
+| `Exclusion` | type | new | One excluded target and the rules that exclude it (§1.4). |
 | `covering` | function | new | General entry point. |
 | `all_tuples` | function | deprecated | Alias for `covering`. |
 | `all_values`, `all_pairs`, `all_triples` | functions | kept | `covering` at strength 1, 2, 3. |
@@ -807,10 +811,14 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `values_excursion`, `pairs_excursion`, `triples_excursion` | functions | deprecated | Thin aliases for `excursions` at distance 1, 2, 3. |
 | `full_factorial` | function | kept | Size guard (§7.3). |
 | `coverage` | function | new | Measurement (§1.12). |
+| `Coverage` | type | new | What `coverage` returns. |
+| `iscomplete` | function | new | §1.16. |
 | `missing_interactions` | function | new | §3.11. |
 | `explain`, `isallowed` | functions | new | §1.25–§1.27. |
 | `report` | function | new | Verification, excluded list, bonus coverage, prefix curve, seed. |
+| `Report` | type | new | What `report` returns. |
 | `design_sizes` | function | new | Cases per strategy before committing. |
+| `DesignSizes` | type | new | What `design_sizes` returns. |
 | `diagnose` | function | experimental | `diagnose(cases, passed)`: ranked suspects; a pure function of cases and outcomes. |
 | `followups` | function | experimental | Isolating cases per suspect: found, inseparable, or unknown. |
 | `github_matrix` | function | new | JSON for a workflow `include:` list; validates every row before writing. |

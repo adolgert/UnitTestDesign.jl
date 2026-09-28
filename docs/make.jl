@@ -3,17 +3,29 @@ using Documenter
 
 CI = get(ENV, "CI", nothing) == "true"
 
+# Every jldoctest block in a docstring runs after `using UnitTestDesign`, so
+# none needs its own setup for it. A manual page's jldoctest blocks set up
+# their own (a `@meta` block's `DocTestSetup`, or `setup =`).
+# test/test_doctests.jl runs the same doctests with the same setup.
+DocMeta.setdocmeta!(UnitTestDesign, :DocTestSetup, :(using UnitTestDesign); recursive = true)
+
 makedocs(;
     modules=[UnitTestDesign],
     authors="Andrew Dolgert <adolgert@andrew.cmu.edu>",
     sitename="UnitTestDesign.jl",
-    # Phase 7 brings every exported docstring into the manual and fixes
-    # cross references; until then these are warnings, not errors.
-    warnonly=[:missing_docs, :cross_references, :docs_block],
+    doctest=true,
+    # Every exported name's docstring must appear in the manual (reference.md).
+    checkdocs=:exports,
+    warnonly=false,
     format=Documenter.HTML(;
         prettyurls=CI,
         canonical="https://adolgert.github.io/UnitTestDesign.jl",
         assets=String[],
+        # reference.md holds every exported docstring on one page, about
+        # 140 KiB of HTML, over the default 100 KiB warning. Warn above
+        # 200 KiB and fail above 300 KiB instead.
+        size_threshold_warn=200 * 2^10,
+        size_threshold=300 * 2^10,
     ),
     pages=[
         "Home" => "index.md",

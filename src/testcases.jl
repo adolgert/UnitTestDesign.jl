@@ -5,6 +5,9 @@
 # the Request and the Design.
 
 """
+Use when you want to know why a design holds no case with some combination: an
+`Exclusion` names a target no valid case can hold and the rules that exclude it.
+
     Exclusion
 
 One target a design did not need to cover, in the user's vocabulary
@@ -35,6 +38,10 @@ struct Exclusion
 end
 
 """
+Use when you work with what a generator returned: a read-only vector of cases
+that also records the request, the engine and seed, and the combinations the
+rules excluded.
+
     TestCases{T} <: AbstractVector{T}
 
 The cases a generation call returns. `T` is a `NamedTuple` type for named
@@ -209,15 +216,15 @@ function row_type(space::TestSpace, positional::Bool)
     return positional ? types : NamedTuple{Tuple(space.names), types}
 end
 
-"""
-    TestCases(request, design; positional = false)
-
-Build the public result from an engine's `Design`. Rows come from
-`to_cases`; positional results drop the names (§1.18). Exclusions are
-translated into names and labels, and an excursion's `base` and
-`never_appear` from engine positions into values. `strength` is the
-request's for a covering design and 0 for the strategies that have none.
-"""
+# TestCases(request, design; positional = false)
+#
+# Build the public result from an engine's `Design`. Rows come from
+# `to_cases`; positional results drop the names (§1.18). Exclusions are
+# translated into names and labels, and an excursion's `base` and
+# `never_appear` from engine positions into values. `strength` is the
+# request's for a covering design and 0 for the strategies that have none.
+# (A comment, not a docstring, so that the public `TestCases` docstring is
+# the only one the reference shows.)
 function TestCases(request::Request, design::Design; positional::Bool = false)
     space = request.space
     T = row_type(space, positional)

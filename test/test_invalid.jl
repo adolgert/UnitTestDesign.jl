@@ -162,7 +162,7 @@ end
           "excluded: 7 pairs forbidden, 4 impossible under the constraints; negative: " *
           "1 pair forbidden, 1 impossible under the constraints; see report(cases)"
     @test report(cases).guarantee ==
-          "$(length(cases)) cases cover all 5 feasible pairs of a 18-combination space (7 pairs " *
+          "$(length(cases)) cases cover all 5 feasible pairs of an 18-combination space (7 pairs " *
           "forbidden, 4 impossible under the constraints); negative: covers 3 of 3 feasible pairs " *
           "(1 pair forbidden, 1 impossible under the constraints)"
     shown = plain(report(cases))

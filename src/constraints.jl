@@ -11,6 +11,10 @@
 # when they run.
 
 """
+Use when you handle rules as values: [`forbid`](@ref), [`require`](@ref),
+[`@forbid`](@ref) and [`@require`](@ref) all return a `Constraint`, and a
+[`TestSpace`](@ref) takes a vector of them as `constraints`.
+
     Constraint
 
 One rule of a [`TestSpace`](@ref): the single internal form that
@@ -92,6 +96,10 @@ _scope_text(c::Constraint) = isempty(c.scope) ? "the whole case" : "(" * join(c.
 
 
 """
+Use when some combinations of values are not valid and you can say which: an
+exact pattern of values, or a predicate over named parameters that returns
+`true` for the forbidden combinations.
+
     forbid(pattern::NamedTuple; reason = nothing)
 
 Forbid one exact combination of values, such as
@@ -143,6 +151,9 @@ forbid(f, names::Symbol...; reason = nothing) = _function_rule(:forbid, f, names
 
 
 """
+Use when it is easier to say which combinations are valid than which are not:
+the rule excludes every combination for which the predicate returns `false`.
+
     require(f, names::Symbol...; reason = nothing)
     require(names::Symbol...; reason = nothing) do values... end
     require(f; reason = nothing)
@@ -184,6 +195,10 @@ end
 ## The macros (contract §12.6–§12.8)
 
 """
+Use when a rule reads most clearly as a Julia expression over bare parameter
+names that is `true` for the forbidden combinations, such as
+`@forbid mode == :fast && solver != :none`.
+
     @forbid expr
     @forbid(expr; reason = "...")
 
@@ -225,6 +240,10 @@ macro forbid(args...)
 end
 
 """
+Use when a rule reads most clearly as a Julia expression over bare parameter
+names that must be `true` in every valid combination, such as
+`@require mode == :exact || solver == :none`.
+
     @require expr
     @require(expr; reason = "...")
 
@@ -636,6 +655,9 @@ end
 
 
 """
+Use when a rule's predicate may throw: the exception reaches you wrapped in a
+`ConstraintError` that names the rule and the values it received.
+
     ConstraintError(rule, arguments, exception)
 
 A rule's predicate threw an exception (contract §12.16). `rule` names the rule

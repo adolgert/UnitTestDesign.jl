@@ -1,5 +1,13 @@
 """
-Generates test cases, which are sets of arguments to use for testing functions.
+Use when a function or a configuration has several options and you want to
+test their combinations: describe the configurations your code must handle;
+it tells you which combinations your tests exercise, and supplies a compact
+set of additional cases covering the rest.
+
+    UnitTestDesign
+
+Start with [`TestSpace`](@ref) and [`all_pairs`](@ref), and measure any set
+of cases with [`coverage`](@ref).
 """
 module UnitTestDesign
 
