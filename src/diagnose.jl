@@ -8,9 +8,11 @@
 # is a partial index vector with 0 for a parameter it leaves out.
 #
 # `followups` asks the Phase 2 feasibility search for a valid row that holds
-# one suspect and no other. Every other suspect becomes a temporary forbidden
-# table, `RuleTable(scope, Set([values]))`, for that one search; the space's
-# own tables and its lazy-rule memos are shared, never changed (§3.5).
+# one suspect and no other, once per kind of row that could hold it (ordinary,
+# and negative at each invalid value the suspect leaves room for, §5.5).
+# Every other suspect becomes a temporary forbidden table, `RuleTable(scope,
+# Set([values]))`, for those searches; the space's own tables and its
+# lazy-rule memos are shared, never changed (§3.5).
 
 
 ## diagnose
@@ -401,6 +403,9 @@ One suspect's follow-up from [`followups`](@ref). Fields:
   `:unknown` (see `followups`).
 - `case`: for `:found`, a valid case holding the suspect and no other
   suspect, as a `NamedTuple` naming every parameter; otherwise `nothing`.
+- `kind::Symbol`: for `:found`, the kind of `case`: `:ordinary`, or
+  `:negative` when it holds one [`Invalid`](@ref) value and is valid under
+  the negative-row policy (§5.3, §5.5). `:none` otherwise.
 - `from::Int`, `changes::Int`: for `:found`, the failing case (its position
   among the rows diagnosed) that `case` is closest to, and how many
   parameters differ from it; 0 changes means that failing case already
@@ -413,16 +418,22 @@ One suspect's follow-up from [`followups`](@ref). Fields:
   space's rules in the proof, as positions in its `constraints`, and their
   labels.
 - `minimal::Symbol`: for `:inseparable`, `:verified` when each rule and
-  suspect in the proof was shown to be needed, `:unresolved` when a limit
-  stopped that check (the proof still stands, §3.15), and `:not_applicable`
-  otherwise.
+  suspect in the proof was shown to be needed for the kind of case whose
+  search it is part of, `:unresolved` when a limit stopped that check (the
+  proof still stands, §3.15), and `:not_applicable` otherwise.
 - `limit`: `keyword => value` for the limit that made the status `:unknown`
   or left an explanation `:unresolved`; otherwise `nothing`.
+- `searched::Vector{NamedTuple}`: the kinds of case searched, in the order
+  searched: `NamedTuple()` for ordinary cases, and `(p = v,)` for negative
+  cases with the invalid value `v` at `p`. For `:inseparable`, every kind
+  that could hold the suspect, each proven to hold no isolating case. Empty
+  for `:indistinguishable` and for a suspect with two `Invalid` values.
 """
 struct Followup
     suspect::NamedTuple
     status::Symbol
     case::Union{Nothing, NamedTuple}
+    kind::Symbol
     from::Int
     changes::Int
     others::Vector{NamedTuple}
@@ -430,7 +441,13 @@ struct Followup
     labels::Vector{String}
     minimal::Symbol
     limit::Union{Nothing, Pair{Symbol, Int}}
+    searched::Vector{NamedTuple}
 end
+
+"A `Followup` with no case: every field but those given takes its empty value."
+_no_case(suspect::NamedTuple, status::Symbol; others = NamedTuple[], rules = Int[], labels = String[],
+         minimal = :not_applicable, limit = nothing, searched = NamedTuple[]) =
+    Followup(suspect, status, nothing, :none, 0, -1, others, rules, labels, minimal, limit, searched)
 
 "Failing cases each suspect's `:nearest` search starts from, at most."
 const _FOLLOWUP_STARTS = 5
@@ -450,20 +467,23 @@ outcome speaks to that suspect alone. The result has one
 rank order, and each has a `status`:
 
 - `:found`: `case` is such a case, a `NamedTuple` naming every parameter
-  (for a positional result, `Tuple(f.case)` is the positional form).
+  (for a positional result, `Tuple(f.case)` is the positional form), and
+  `kind` says whether it is `:ordinary` or `:negative`. A negative case
+  holds an [`Invalid`](@ref) value, so run it as the negative test it is.
 - `:indistinguishable`: the suspect contains another suspect, listed in
   `others`, so every case that holds it holds that one too. No case can
   isolate it, whatever the rules; this is a matter of construction, not a
   search. When the two also fail in the same cases, as a value and a pair
   that contains it can, the outcomes so far cannot tell them apart either.
   The smaller suspect's follow-up is the case to run.
-- `:inseparable`: proven by an exhausted search: under the space's rules, no
-  valid case holds the suspect without another suspect. `others` lists the
-  suspects in the proof and `rules` and `labels` the space's rules, found
-  by the deletion search of `explain` (§3.13–§3.16), so the pair of them is
-  a sufficient reason, and `minimal` says whether each part was verified
-  necessary. With no `others`, no valid case holds the suspect at all: the
-  failing cases broke the rules.
+- `:inseparable`: proven by exhausted searches: under the space's rules, no
+  valid case of any kind, ordinary or negative, holds the suspect without
+  another suspect. `searched` lists the kinds of case proven. `others`
+  lists the suspects in the proof and `rules` and `labels` the space's
+  rules, found by the deletion search of `explain` (§3.13–§3.16), so the
+  pair of them is a sufficient reason, and `minimal` says whether each part
+  was verified necessary. With no `others`, no valid case holds the suspect
+  at all: the failing cases broke the rules.
 - `:unknown`: the search reached `feasibility_limit` before deciding
   (§3.17). Retry with a larger limit.
 
@@ -485,19 +505,29 @@ julia> followups(d)
 Each search is the witness search of `explain`, over the space's rules plus
 one temporary forbidden combination per other suspect. Those isolation
 conditions apply to every case, including one whose invalid value is at a
-parameter they name. A suspect with an [`Invalid`](@ref) value is searched
-among negative cases, where rules that read its parameter do not apply
-(§5.5); a suspect with two is `:inseparable`, since no valid case holds two
-(§5.7).
+parameter they name (§3.17). A case is valid under its own kind's rules
+(§5.3–§5.5), so every kind that could hold the suspect is searched:
 
-With `prefer = :nearest`, the search starts from a failing case that holds
+- A suspect with no [`Invalid`](@ref) value: ordinary cases first, then,
+  for each parameter the suspect leaves out and each invalid value of that
+  parameter, in parameter and domain order, negative cases with that value,
+  where the rules that read its parameter do not apply (§5.5). A rule that
+  keeps the suspect out of every ordinary case does not make it
+  inseparable when a negative case holds it alone.
+- A suspect with one `Invalid` value: negative cases with that value.
+- A suspect with two is `:inseparable`, since no valid case holds two
+  (§5.7).
+
+With `prefer = :nearest`, each search starts from a failing case that holds
 the suspect: each parameter tries that case's value first, so the case
 found tends to change few of its values. It starts in turn from each of the
-first five such failing cases and keeps the case with the fewest changes.
-This is a heuristic with no minimum-distance guarantee (§8.6). With
-`prefer = :domain`, values are tried in domain order. Either way `from` is
-the failing case that the case found is closest to, and `changes` the
-number of parameters that differ from it.
+first five such failing cases, for each kind of case, and keeps the case
+with the fewest changes; on a tie, the kind searched first, so an ordinary
+case before a negative one. This is a heuristic with no minimum-distance
+guarantee (§8.6). With `prefer = :domain`, values are tried in domain order,
+and the first kind with a case gives it, ordinary before negative. Either
+way `from` is the failing case that the case found is closest to, and
+`changes` the number of parameters that differ from it.
 
 `feasibility_limit` bounds each search (§3.3); `explanation_limit` bounds
 the deletion search that names an `:inseparable` suspect's reasons, and
@@ -528,55 +558,127 @@ _contains(outer::Vector{Int}, inner::Vector{Int}) = all(p -> inner[p] == 0 || in
 "The number of parameters at which two complete index rows differ."
 _changes(a::Vector{Int}, b::Vector{Int}) = count(p -> a[p] != b[p], eachindex(a))
 
-function _followup(d::Diagnosis, j::Int, isolation::Vector{RuleTable}, memos, limits, prefer::Symbol)
-    space, suspects = d.space, d.suspects
-    s = suspects[j]
+"""
+    _row_kinds(space, key) -> Vector{Tuple{Int, Int}}
+
+The kinds of valid case that can hold the combination `key`, each as
+`(p, v)`: `(0, 0)` for ordinary cases, and `(p, v)` for negative cases with
+the invalid value `v` at `p` (§5.3, §5.5), as `feasibility_for` keys them.
+A combination with one `Invalid` value has that one kind. One with none
+has the ordinary kind first, then each invalid value of each parameter it
+leaves out, in parameter order and then domain order: a negative case may
+hold every ordinary value of the combination.
+"""
+function _row_kinds(space::TestSpace, key::Vector{Int})
+    bad = _invalid_parameters(space, key)
+    isempty(bad) || return [(only(bad), key[only(bad)])]
+    return [(0, 0); [(p, v) for p in eachindex(key) if key[p] == 0 for v in space.invalid[p]]]
+end
+
+"A kind of case as `Followup.searched` records it: `NamedTuple()` for ordinary, `(p = v,)` for negative."
+_kind_named(space::TestSpace, p::Int, v::Int) =
+    p == 0 ? NamedTuple() : from_indices(space, [q == p ? v : 0 for q in eachindex(space.names)])
+
+"""
+    _isolate(d, s, (p, v), others, isolation, memos, limits, starts) -> NamedTuple
+
+One kind of case's isolation search for the suspect `s` (§3.17): ordinary
+cases when `p == 0`, else negative cases with `v` at `p`, whose candidates
+are `v` at `p` and ordinary values elsewhere and whose rules are the
+space's rules that omit `p` (§5.5). The isolation tables of the `others`
+apply to every kind, including those that name `p`. Each start, a failing
+case, orders the candidates with its values first; with no starts, domain
+order.
+
+Returns `(status, witness, from, changes, rules, others, minimal, limit)`:
+`:found` with the witness closest to a failing case of `s`; `:inseparable`
+with the proof, `rules` in the space's numbering and `others` as positions
+in `d.suspects`; or `:unknown`.
+"""
+function _isolate(d::Diagnosis, s::Suspect, (p, v)::Tuple{Int, Int}, others::Vector{Int},
+                  isolation::Vector{RuleTable}, memos, limits, starts::Vector{Int})
+    space = d.space
     feasibility_limit, explanation_limit = limits
-    contained = [i for i in eachindex(suspects) if i != j && _contains(s.key, suspects[i].key)]
-    if !isempty(contained)
-        return Followup(s.combination, :indistinguishable, nothing, 0, -1,
-                        NamedTuple[suspects[i].combination for i in contained], Int[], String[],
-                        :not_applicable, nothing)
-    end
-    bad = _invalid_parameters(space, s.key)
-    if length(bad) > 1
-        return Followup(s.combination, :inseparable, nothing, 0, -1, NamedTuple[], Int[], String[],
-                        :not_applicable, nothing)
-    end
-    p = isempty(bad) ? 0 : only(bad)
     active = active_rules(space, p)
-    others = [i for i in eachindex(suspects) if i != j]
     tables = RuleTable[space.tables[active]; isolation[others]]
     table_memos = Union{Nothing, Dict}[memos[active]; fill(nothing, length(others))]
-    base = [q == p ? [s.key[q]] : space.ordinary[q] for q in eachindex(space.names)]
-    starts = prefer === :nearest ? unique(k -> d.rows[k], s.failing) : Int[]
-    starts = starts[1:min(end, _FOLLOWUP_STARTS)]
+    base = [q == p ? [v] : space.ordinary[q] for q in eachindex(space.names)]
+    key = copy(s.key)
+    p == 0 || (key[p] = v)
     orders = isempty(starts) ? [base] :
              [[_value_first(base[q], d.rows[k][q]) for q in eachindex(base)] for k in starts]
-    best = nothing
+    none = (status = :unknown, witness = nothing, from = 0, changes = -1, rules = Int[], others = Int[],
+            minimal = :not_applicable, limit = nothing)
+    best = none
     for candidates in orders
         f = Feasibility(candidates, tables; limit = feasibility_limit, memos = table_memos)
-        e = explain_partial(f, s.key; explanation_limit)
+        e = explain_partial(f, key; explanation_limit)
         if e.outcome === :allowed || e.outcome === :completable
             k = argmin(k -> (_changes(e.witness, d.rows[k]), k), s.failing)
-            candidate = (witness = e.witness, from = k, changes = _changes(e.witness, d.rows[k]))
-            if best === nothing || candidate.changes < best.changes
-                best = candidate
+            changes = _changes(e.witness, d.rows[k])
+            if best.status !== :found || changes < best.changes
+                best = merge(none, (status = :found, witness = e.witness, from = k, changes = changes))
             end
             best.changes == 0 && break
         elseif e.outcome === :forbidden || e.outcome === :infeasible
-            space_rules = [active[r] for r in e.rules if r <= length(active)]
-            proof = NamedTuple[suspects[others[r - length(active)]].combination
-                               for r in e.rules if r > length(active)]
-            return Followup(s.combination, :inseparable, nothing, 0, -1, proof, space_rules,
-                            [rule_label(space, k) for k in space_rules], e.minimal,
-                            _limit_pair(e.limit, feasibility_limit, explanation_limit))
+            # Feasibility does not depend on the order values are tried in: one proof decides the kind.
+            return merge(none, (status = :inseparable,
+                rules = Int[active[r] for r in e.rules if r <= length(active)],
+                others = Int[others[r - length(active)] for r in e.rules if r > length(active)],
+                minimal = e.minimal, limit = _limit_pair(e.limit, feasibility_limit, explanation_limit)))
         end
     end
-    best === nothing && return Followup(s.combination, :unknown, nothing, 0, -1, NamedTuple[], Int[],
-                                        String[], :not_applicable, :feasibility_limit => feasibility_limit)
-    return Followup(s.combination, :found, from_indices(space, best.witness), best.from, best.changes,
-                    NamedTuple[], Int[], String[], :not_applicable, nothing)
+    return best
+end
+
+function _followup(d::Diagnosis, j::Int, isolation::Vector{RuleTable}, memos, limits, prefer::Symbol)
+    space, suspects = d.space, d.suspects
+    s = suspects[j]
+    contained = [i for i in eachindex(suspects) if i != j && _contains(s.key, suspects[i].key)]
+    if !isempty(contained)
+        return _no_case(s.combination, :indistinguishable;
+                        others = NamedTuple[suspects[i].combination for i in contained])
+    end
+    length(_invalid_parameters(space, s.key)) > 1 && return _no_case(s.combination, :inseparable)
+    others = [i for i in eachindex(suspects) if i != j]
+    starts = prefer === :nearest ? unique(k -> d.rows[k], s.failing) : Int[]
+    starts = starts[1:min(end, _FOLLOWUP_STARTS)]
+    # Every kind of case that could hold the suspect is searched, ordinary first
+    # (§5.5). The fewest changes win; on a tie the kind searched first.
+    kinds = _row_kinds(space, s.key)
+    searched = NamedTuple[]
+    best = nothing
+    proofs = []
+    for (p, v) in kinds
+        push!(searched, _kind_named(space, p, v))
+        r = _isolate(d, s, (p, v), others, isolation, memos, limits, starts)
+        if r.status === :found
+            if best === nothing || r.changes < best.changes
+                best = merge(r, (kind = p == 0 ? :ordinary : :negative,))
+            end
+            (best.changes == 0 || prefer === :domain) && break
+        elseif r.status === :inseparable
+            push!(proofs, r)
+        end
+    end
+    if best !== nothing
+        return Followup(s.combination, :found, from_indices(space, best.witness), best.kind, best.from,
+                        best.changes, NamedTuple[], Int[], String[], :not_applicable, nothing, searched)
+    elseif length(proofs) < length(kinds)
+        feasibility_limit = first(limits)
+        return _no_case(s.combination, :unknown; limit = :feasibility_limit => feasibility_limit, searched)
+    end
+    # Every kind is proven to hold no isolating case: the proof is the union of theirs.
+    rules = sort!(unique(Int[r for proof in proofs for r in proof.rules]))
+    proof_others = sort!(unique(Int[i for proof in proofs for i in proof.others]))
+    minimals = [proof.minimal for proof in proofs]
+    minimal = any(==(:unresolved), minimals) ? :unresolved :
+              all(==(:verified), minimals) ? :verified : :not_applicable
+    unresolved = findfirst(proof -> proof.limit !== nothing, proofs)
+    limit = unresolved === nothing ? nothing : proofs[unresolved].limit
+    return _no_case(s.combination, :inseparable;
+                    others = NamedTuple[suspects[i].combination for i in proof_others], rules,
+                    labels = [rule_label(space, k) for k in rules], minimal, limit, searched)
 end
 
 "`values` with `v` moved to the front when it is one of them; otherwise unchanged."
@@ -586,10 +688,19 @@ function _value_first(values::Vector{Int}, v::Int)
     return [v; values[1:(k - 1)]; values[(k + 1):end]]
 end
 
+"The kinds of case `searched` names: \"ordinary cases and negative cases with n = Invalid(0)\"."
+function _kinds_phrase(io::IO, searched::Vector{NamedTuple})
+    negative = [string(only(keys(k)), " = ", _exact(io, only(k))) for k in searched if !isempty(k)]
+    parts = String[]
+    any(isempty, searched) && push!(parts, "ordinary cases")
+    isempty(negative) || push!(parts, "negative cases with " * _listed(negative; conjunction = " or "))
+    return join(parts, " and ")
+end
+
 function Base.show(io::IO, f::Followup)
     print(io, _exact(io, f.suspect), ": ")
     if f.status === :found
-        print(io, "found ", _exact(io, f.case), ", ")
+        print(io, "found ", f.kind === :negative ? "negative case " : "", _exact(io, f.case), ", ")
         if f.changes == 0
             print(io, "failing case ", f.from, " itself")
         else
@@ -617,6 +728,8 @@ function Base.show(io::IO, f::Followup)
                       _grouped(f.limit.second), " reached)")
             end
         end
+        # An ordinary suspect beside Invalid values: say which kinds of case the proof covers.
+        length(f.searched) > 1 && print(io, "; searched ", _kinds_phrase(io, f.searched))
     else
         print(io, "unknown; ", f.limit.first, " = ", _grouped(f.limit.second),
               " reached; retry with a larger limit")

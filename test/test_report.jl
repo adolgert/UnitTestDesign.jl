@@ -300,7 +300,8 @@ end
                report(excursions(space; distance = 0, must_include = [(mode = :exact, solver = :lu, tol = 1e-6)])),
                report(covering(space; stronger = [(:mode, :solver, :tol) => 3]); explanation_limit = 1),
                report(all_pairs(test_space(limit_exhaustion)); feasibility_limit = 1),
-               report(all_pairs([1, 2, 3], [:a, :b], [true, false]))]
+               report(all_pairs([1, 2, 3], [:a, :b], [true, false])),
+               report(all_pairs(test_space(invalid_beside_ordinary)))]
     for r in reports
         x = plain(r)
         @test plain_tree(x)
@@ -318,10 +319,17 @@ end
     @test x.excluded[4] == (target = (solver = :lu, tol = 0.001), status = :implied, rules = [1, 2],
         labels = ["@require(mode == :exact || solver == :none)", "exact mode needs a tight tolerance"],
         minimal = :verified, limit = nothing)
-    @test x.bonus == (strength = 3, covered = 5, feasible = 5, unknown = 0, applicable = true, reason = "")
+    @test x.bonus == (strength = 3, covered = 5, feasible = 5, unknown = 0,
+                      negative = (covered = 0, feasible = 0, unknown = 0), applicable = true, reason = "")
     @test x.prefix[end] == (cases = 5, covered = 11, feasible = 11, unknown = 0)
+    @test x.prefix_negative[end] == (cases = 5, covered = 0, feasible = 0, unknown = 0)
     @test (x.strategy, x.engine, x.seed, x.n_must_include) == (:covering, :IPOG, nothing, 0)
     @test plain(reports[3]).coverage.stronger == [(names = [:mode, :solver, :tol], strength = 3)]
+    # With Invalid values the negative prefix curve and bonus are plain data too.
+    xi = plain(reports[6])
+    @test xi.prefix_negative[end] == (cases = 6, covered = 4, feasible = 4, unknown = 0)
+    @test xi.bonus.negative == (covered = 2, feasible = 3, unknown = 0)
+    @test plain(design_sizes(test_space(invalid_beside_ordinary))).has_invalid
     @test plain(reports[3]).excluded[4].limit == (keyword = :explanation_limit, value = 1)
     # Coverage of hand-written rows: rejected rows, tuples named by the space.
     c = coverage(rows, space)
@@ -340,9 +348,11 @@ end
     # DesignSizes.
     d = plain(design_sizes(space))
     @test plain_tree(d) && roundtrip(d) == d
-    @test d.total == 12 && d.valid == 5 && d.rows[2] == (strategy = "covering(1)", kind = :covering, level = 1,
-        status = :ok, message = "", cases = 3, share = 0.6, pairs = (covered = 8, feasible = 11, unknown = 0),
-        triples = (covered = 3, feasible = 5, unknown = 0))
+    none = (covered = 0, feasible = 0, unknown = 0)
+    @test d.total == 12 && d.valid == 5 && !d.has_invalid && d.rows[2] == (strategy = "covering(1)",
+        kind = :covering, level = 1, status = :ok, message = "", cases = 3, share = 0.6,
+        pairs = (covered = 8, feasible = 11, unknown = 0), triples = (covered = 3, feasible = 5, unknown = 0),
+        negative_cases = 0, negative_pairs = none, negative_triples = none)
     # Above `limit` the valid count is unknown; above typemax(Int) the total is a string of digits.
     wide = plain(design_sizes(fill(1:10, 5)...; strengths = Int[], distances = Int[], limit = 10))
     @test wide.total === 100_000 && wide.valid === nothing && plain_tree(wide)
@@ -448,4 +458,145 @@ end
     @test occursin("limit", message(() -> design_sizes(space; limit = 0)))
     @test occursin("engine", message(() -> design_sizes(space; engine = :ipog)))
     @test occursin("constraints belong to the space", message(() -> design_sizes(space; constraints = [])))
+end
+
+
+@testitem "report: the prefix curve and bonus give ordinary and negative figures apart (§5.9, §5.10, review round 1)" setup=[Checker, ReportSetup] begin
+    as_check(x::Invalid) = CheckInvalid(as_check(x.value))
+    as_check(x) = x
+    as_check(row::Union{NamedTuple, Tuple}) = map(as_check, row)
+
+    # The reviewer's two-domain example: the first row covers the one ordinary
+    # pair while both negative targets are missing, and the curve says so.
+    space = TestSpace((a = [1, Invalid(0)], b = [1, Invalid(0)]))
+    cases = all_pairs(space)
+    r = report(cases)
+    @test split(shown(r), "\n")[2:end] == [
+        "bonus coverage not applicable: strength 3 exceeds the number of parameters, 2",
+        "prefix curve:",
+        "  first 1 of 3 cover 100% of ordinary pairs (1 of 1); negative 0 of 2",
+        "  first 2 of 3 cover 100% of ordinary pairs (1 of 1); negative 1 of 2",
+        "  first 3 of 3 cover 100% of ordinary pairs (1 of 1); negative 2 of 2",
+        "seed: none (IPOG uses no randomness)"]
+    @test [p.covered for p in r.prefix] == [1, 1, 1]
+    @test [p.covered for p in r.prefix_negative] == [0, 1, 2]
+    @test all(p -> p.feasible == 2 && p.unknown == 0, r.prefix_negative)
+    @test r.prefix_negative[end].covered == r.coverage.negative.covered
+    @test r.bonus.negative == (covered = 0, feasible = 0, unknown = 0) && !r.bonus.applicable
+
+    # invalid_beside_ordinary: the bonus measures negative triples too.
+    cs = invalid_beside_ordinary.space
+    r = report(all_pairs(test_space(cs)))
+    @test split(shown(r), "\n")[(end - 7):end] == [
+        "bonus: 4 of 4 feasible triples covered; negative: 2 of 3",
+        "prefix curve:",
+        "  first 2 of 6 cover 66% of ordinary pairs (6 of 9); negative 0 of 4",
+        "  first 3 of 6 cover 77% of ordinary pairs (7 of 9); negative 0 of 4",
+        "  first 4 of 6 cover 100% of ordinary pairs (9 of 9); negative 0 of 4",
+        "  first 5 of 6 cover 100% of ordinary pairs (9 of 9); negative 2 of 4",
+        "  first 6 of 6 cover 100% of ordinary pairs (9 of 9); negative 4 of 4",
+        "seed: none (IPOG uses no randomness)"]
+    @test r.bonus.negative == (covered = 2, feasible = 3, unknown = 0)
+
+    # Every figure against the oracle, prefix by prefix, on spaces with one and
+    # two invalid parameters, no ordinary row, and a whole-case rule.
+    two = CheckSpace((a = [1, 2, CheckInvalid(0)], b = [CheckInvalid(:z), 1, 2], c = [1, 2]),
+        [((:a, :c), (a, c) -> a == 1 && c == 2),
+         ((:b, :c), (b, c) -> b == 2 && c == 1),
+         ((:a, :b, :c), (a, b, c) -> a == 2 && b == 1 && c == 2)])
+    for (cs, strengths) in ((invalid_beside_ordinary.space, 1:2), (empty_ordinary_negative_seed.space, 1:1),
+                            (two, 1:2)),
+        strength in strengths, engine in (IPOG(), GND(seed = 7))
+        cases = covering(test_space(cs); strength, engine)
+        r = report(cases)
+        rows = as_check.(collect(cases))
+        ok = length(r.prefix_negative) == length(cases)
+        for k in eachindex(rows)
+            check = check_design(rows[1:k], cs; strength)
+            ok &= r.prefix[k].covered == check.ordinary.counts.covered &&
+                  r.prefix_negative[k].covered == check.negative.counts.covered &&
+                  r.prefix_negative[k].feasible == check.negative.counts.feasible &&
+                  r.prefix_negative[k].unknown == 0
+        end
+        if strength < length(cs.names)
+            above = check_design(rows, cs; strength = strength + 1)
+            ok &= r.bonus.negative == (covered = above.negative.counts.covered,
+                                       feasible = above.negative.counts.feasible, unknown = 0)
+            ok &= (r.bonus.covered, r.bonus.feasible) == (above.ordinary.counts.covered, above.ordinary.counts.feasible)
+        end
+        ok || @error "report's negative figures disagree with the oracle" cs.names strength engine
+        @test ok
+    end
+
+    # With no feasible ordinary target the lines say so, and a search at its
+    # limit leaves the negative figures as bounds (§3.10).
+    space = TestSpace((n = [1, Invalid(0)], x1 = 1:4, x2 = 1:4, x3 = 1:4, x4 = 1:4);
+        constraints = [forbid(n -> n == 1, :n),
+                       forbid((a, b, c, d) -> !(a == b == c == d == 4), :x1, :x2, :x3, :x4)])
+    cases = all_pairs(space)
+    lines = split(shown(report(cases; feasibility_limit = 1)), "\n")
+    @test lines[(end - 3):end] == [
+        "bonus: 0 of 0 feasible triples covered; negative: 6 of at least 6, 90 unresolved",
+        "prefix curve:",
+        "  first 1 of 1: no ordinary pair is feasible; negative 4 of at least 4",
+        "seed: none (IPOG uses no randomness)"]
+    @test occursin("\n  first 1 of 1: no ordinary pair is feasible; negative 4 of 4\n", shown(report(cases)))
+end
+
+
+@testitem "design_sizes: negative rows and targets are counted apart (§5.10, review round 1)" setup=[Checker, ReportSetup] begin
+    as_check(x::Invalid) = CheckInvalid(as_check(x.value))
+    as_check(x) = x
+    as_check(row::Union{NamedTuple, Tuple}) = map(as_check, row)
+
+    cs = invalid_beside_ordinary.space
+    space = test_space(cs)
+    t = design_sizes(space)
+    @test t.has_invalid && (t.total, t.valid) == (12, 7)
+    @test shown(t) == join([
+        "strategy        cases   share      pairs    triples",
+        "full_factorial  4 + 3  100.0%  9/9 + 4/4  4/4 + 3/3  valid 7 of 12",
+        "covering(1)     2 + 1   42.9%  6/9 + 2/4  2/4 + 1/3",
+        "covering(2)     4 + 2   85.7%  9/9 + 4/4  4/4 + 2/3",
+        "covering(3)     4 + 3  100.0%  9/9 + 4/4  4/4 + 3/3",
+        "excursions(1)   3 + 1   57.1%  7/9 + 2/4  3/4 + 1/3",
+        "excursions(2)   4 + 2   85.7%  9/9 + 3/4  4/4 + 2/3",
+        "cells with + read ordinary + negative: rows without and with an Invalid value, and the targets " *
+            "each kind covers",
+        "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
+    # Each figure is the oracle's measure of the design the strategy produces.
+    designs = [full_factorial(space), all_values(space), all_pairs(space), all_triples(space),
+               excursions(space; distance = 1), excursions(space; distance = 2)]
+    @test [r.cases for r in t.rows] == length.(designs)
+    for (row, design) in zip(t.rows, designs)
+        rows = as_check.(collect(design))
+        @test row.negative_cases == count(hasinvalid, design)
+        for (s, ordinary, negative) in ((2, row.pairs, row.negative_pairs), (3, row.triples, row.negative_triples))
+            check = check_design(rows, cs; strength = s)
+            @test ordinary == (covered = check.ordinary.counts.covered, feasible = check.ordinary.counts.feasible,
+                               unknown = 0)
+            @test negative == (covered = check.negative.counts.covered, feasible = check.negative.counts.feasible,
+                               unknown = 0)
+        end
+    end
+    # The full factorial's negative rows are exactly the oracle's valid negative rows.
+    @test (t.rows[1].cases - t.rows[1].negative_cases, t.rows[1].negative_cases) ==
+          (length(valid_rows(cs)), length(negative_rows(cs)))
+
+    # A strategy stopped at a limit has no negative figures either.
+    stopped = TestSpace((n = [1, Invalid(0)], x1 = 1:4, x2 = 1:4, x3 = 1:4, x4 = 1:4);
+        constraints = [forbid(n -> n == 1, :n),
+                       forbid((a, b, c, d) -> !(a == b == c == d == 4), :x1, :x2, :x3, :x4)])
+    u = design_sizes(stopped; strengths = [2], distances = [], feasibility_limit = 1)
+    @test u.rows[2].status == :resource_limit
+    @test (u.rows[2].negative_cases, u.rows[2].negative_pairs, u.rows[2].negative_triples) == (nothing, nothing, nothing)
+    @test occursin("\ncovering(2)         —       —           —           —  feasibility_limit = 1 reached", shown(u))
+    @test occursin("\nfull_factorial  0 + 1  100.0%  0/0 + 4/≥4  0/0 + 6/≥6  valid 1 of 512", shown(u))
+
+    # A space without Invalid values has zero negative figures and prints as before.
+    s = design_sizes(solver_space())
+    none = (covered = 0, feasible = 0, unknown = 0)
+    @test !s.has_invalid
+    @test all(r -> r.negative_cases == 0 && r.negative_pairs == none && r.negative_triples == none, s.rows)
+    @test !occursin("+", shown(s))
 end

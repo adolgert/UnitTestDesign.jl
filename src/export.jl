@@ -24,6 +24,14 @@ so are a `Tuple` row's. A `NamedTuple` row supplies its own names. The
 document is one line with no trailing newline; `sprint(github_matrix, cases)`
 returns it as a `String`. The function returns `nothing`.
 
+Each name must be valid UTF-8 and nonempty, or the call is an
+`ArgumentError` naming the row and the field name. JSON.jl escapes quotes,
+backslashes and control characters in names as in values. A job reads a
+value as `matrix.<name>` when the name starts with a letter or `_` and holds
+only letters, digits, `-` and `_`, as most Julia names do; any other name,
+such as one with a space, a leading digit or a `.`, still works through
+index syntax, `matrix['<name>']`, so `github_matrix` does not reject it.
+
 Values are written as JSON can hold them:
 
 | Value | JSON |
@@ -121,9 +129,10 @@ end
 """
     _matrix_entry(row, k) -> NamedTuple
 
-Row `k` with each value checked and converted for JSON: a `NamedTuple` keeps
-its names, a `Tuple` is named `p1`, `p2`, …. An unsupported value is an
-`ArgumentError` naming the row and the field.
+Row `k` with each name and value checked and converted for JSON: a
+`NamedTuple` keeps its names, a `Tuple` is named `p1`, `p2`, …. A name that
+is empty or not valid UTF-8, or an unsupported value, is an `ArgumentError`
+naming the row and the field. Names are checked before values.
 """
 function _matrix_entry(row, k::Integer)
     if row isa NamedTuple
@@ -135,7 +144,29 @@ function _matrix_entry(row, k::Integer)
             "github_matrix: row $k, $(_fit(repr(row), 60)) ($(typeof(row))), is not a row; a row " *
             "is a NamedTuple, or a Tuple whose fields are written as p1, p2, …"))
     end
+    foreach(name -> _matrix_name(name, k), names)
     return NamedTuple{names}(ntuple(j -> _matrix_value(row[j], k, names[j]), length(row)))
+end
+
+"""
+    _matrix_name(name::Symbol, k)
+
+Check a field name of row `k` before it becomes a JSON key: JSON text must
+be valid UTF-8, as for a value, and a job reads each value by its name, so
+an empty one is refused. Anything else JSON.jl escapes. The error shows the
+name as `Symbol("…")` from its `String`'s `repr`, which escapes invalid
+bytes (the `repr` of such a `Symbol` itself throws).
+"""
+function _matrix_name(name::Symbol, k::Integer)
+    text = String(name)
+    shown = "Symbol(" * repr(text) * ")"
+    isempty(text) && throw(ArgumentError(
+        "github_matrix: row $k, field name $shown: empty; a job reads each value by its name, so " *
+        "a name needs at least one character; rename the field"))
+    isvalid(text) || throw(ArgumentError(
+        "github_matrix: row $k, field name $shown: not valid UTF-8, which JSON text must be; " *
+        "rename the field"))
+    return nothing
 end
 
 """

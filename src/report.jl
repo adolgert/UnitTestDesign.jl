@@ -6,13 +6,16 @@
 # adds bonus coverage at strength + 1 and the prefix curve. `design_sizes`
 # runs each strategy and measures what it produced. Neither prints a
 # percentage when a target is unresolved (§3.10, §3.12), and neither calls a
-# case count minimal (§8.3, §8.4).
+# case count minimal (§8.3, §8.4). With `Invalid` values every figure comes in
+# two parts, ordinary and negative, measured and printed apart (§5.9, §5.10).
 
 
 ## report
 
-const _BonusCounts = NamedTuple{(:strength, :covered, :feasible, :unknown, :applicable, :reason),
-                                Tuple{Int, Int, Int, Int, Bool, String}}
+"Counts for one part, ordinary or negative: covered, feasible (a lower bound with unknowns), unknown."
+const _PartCounts = NamedTuple{(:covered, :feasible, :unknown), NTuple{3, Int}}
+const _BonusCounts = NamedTuple{(:strength, :covered, :feasible, :unknown, :negative, :applicable, :reason),
+                                Tuple{Int, Int, Int, Int, _PartCounts, Bool, String}}
 const _PrefixPoint = NamedTuple{(:cases, :covered, :feasible, :unknown), NTuple{4, Int}}
 
 """
@@ -41,16 +44,30 @@ What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
   the measurement resolved every target, and always for an excursion or a
   full factorial, which record none.
 - `bonus`: coverage of the same rows at `strength + 1`, as `(strength,
-  covered, feasible, unknown, applicable, reason)`. `applicable` is `false`,
-  with a `reason`, when there are no targets at `strength + 1`: the strength
-  already equals the number of parameters (§3.12).
+  covered, feasible, unknown, negative, applicable, reason)`. `covered`,
+  `feasible` and `unknown` count the ordinary targets; `negative` is
+  `(covered, feasible, unknown)` for the negative targets at `strength + 1`
+  (§6), all 0 when the space has no [`Invalid`](@ref) values. `applicable`
+  is `false`, with a `reason`, when there are no targets at `strength + 1`:
+  the strength already equals the number of parameters (§3.12).
 - `prefix`: the prefix curve, one `(cases, covered, feasible, unknown)` per
   prefix length `1:n_cases`: how many ordinary targets at `strength` the
   first `cases` rows cover.
+- `prefix_negative`: the same for the negative targets, from the same pass
+  over the rows: how many of them the first `cases` rows cover. Its
+  `feasible` is 0 throughout when the space has no `Invalid` values.
+
+Every progress figure keeps the two parts apart (§5.9, §5.10): ordinary
+rows cover only ordinary targets and negative rows only negative ones, so
+the ordinary prefix curve can reach 100% while the negative targets are not
+yet covered. With `Invalid` values, `show` labels the ordinary figures as
+ordinary and prints the negative ones beside them, as in "first 1 of 3
+cover 100% of ordinary pairs (1 of 1); negative 0 of 2" and "bonus: 5 of 6
+feasible triples covered; negative: 3 of 4".
 
 With `unknown` targets (a search reached `feasibility_limit`), `feasible` in
-`coverage`, `bonus` and `prefix` is a lower bound, and nothing prints a
-percentage or claims completeness (§3.10, §3.12).
+`coverage`, `bonus` and the prefix curves is a lower bound, and nothing
+prints a percentage or claims completeness (§3.10, §3.12).
 
 `Report` fields are plain data except `coverage.space`, the
 [`TestSpace`](@ref), which holds the rules' predicates.
@@ -69,6 +86,7 @@ struct Report
     recorded::Vector{Exclusion}
     bonus::_BonusCounts
     prefix::Vector{_PrefixPoint}
+    prefix_negative::Vector{_PrefixPoint}
     seed::Union{Nothing, Int}
     engine::Symbol
     n_must_include::Int
@@ -125,7 +143,17 @@ cover of the negative targets (§6) and which of those are excluded, as in
 "6 cases cover all 9 feasible pairs of a 12-combination space (2 pairs
 forbidden, 1 impossible under the constraints); negative: covers 4 of 4
 feasible pairs". The excluded list gives the negative exclusions after the
-ordinary ones.
+ordinary ones. The bonus line and each prefix-curve line give the negative
+figure beside the ordinary one, which is labeled ordinary, so a prefix
+that covers every ordinary pair does not look complete while negative
+targets remain:
+
+```
+prefix curve:
+  first 1 of 3 cover 100% of ordinary pairs (1 of 1); negative 0 of 2
+  first 2 of 3 cover 100% of ordinary pairs (1 of 1); negative 1 of 2
+  first 3 of 3 cover 100% of ordinary pairs (1 of 1); negative 2 of 2
+```
 
 The measurement searches, within `feasibility_limit` nodes per target, for
 the targets no row holds (§3.9). A search that runs out leaves its target
@@ -151,16 +179,23 @@ function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_lim
     strength = covering ? cases.strength : min(2, n)
     stronger = covering ? cases.stronger : Pair[]
     rows = collect(cases)
-    c, prefix = _measure(rows, cases.space; strength, stronger, feasibility_limit, explanation_limit)
+    c, prefix, negative = _measure(rows, cases.space; strength, stronger, feasibility_limit,
+                                   explanation_limit)
     recorded = covering ? _recorded_exclusions(cases, c) : Exclusion[]
-    unknown = length(c.ordinary.unknown)
-    points = _PrefixPoint[(cases = k, covered = prefix[k], feasible = c.ordinary.feasible, unknown = unknown)
-                          for k in eachindex(prefix)]
     bonus = _bonus(rows, cases.space, strength; feasibility_limit, explanation_limit)
     return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c,
-                  [c.ordinary.excluded; c.negative.excluded], recorded, bonus, points, cases.seed,
+                  [c.ordinary.excluded; c.negative.excluded], recorded, bonus,
+                  _prefix_points(prefix, c.ordinary), _prefix_points(negative, c.negative), cases.seed,
                   cases.engine, cases.n_must_include)
 end
+
+"One prefix point per row: the part's targets the first `k` rows cover, out of its feasible and unknown."
+_prefix_points(curve::Vector{Int}, part::CoveragePart) =
+    _PrefixPoint[(cases = k, covered = curve[k], feasible = part.feasible, unknown = length(part.unknown))
+                 for k in eachindex(curve)]
+
+"A part's counts: covered, feasible, and how many targets are unresolved."
+_part_counts(part::CoveragePart) = _PartCounts((part.covered, part.feasible, length(part.unknown)))
 
 """
     _recorded_exclusions(cases, c) -> Vector{Exclusion}
@@ -178,17 +213,17 @@ function _recorded_exclusions(cases::TestCases, c::Coverage)
                      if case_indices(space, e.target) in unresolved]
 end
 
-"Coverage of `rows` at `strength + 1`, or why there is none (§3.12)."
+"Coverage of `rows` at `strength + 1`, ordinary and negative, or why there is none (§3.12)."
 function _bonus(rows, space::TestSpace, strength::Int; feasibility_limit, explanation_limit)
     n = length(space.names)
     if strength + 1 > n
-        return _BonusCounts((strength + 1, 0, 0, 0, false,
+        return _BonusCounts((strength + 1, 0, 0, 0, _PartCounts((0, 0, 0)), false,
             "strength $(strength + 1) exceeds the number of parameters, $n"))
     end
     b = _coverage(rows, space; strength = strength + 1, stronger = Pair[], feasibility_limit,
                   explanation_limit)
     return _BonusCounts((strength + 1, b.ordinary.covered, b.ordinary.feasible,
-                         length(b.ordinary.unknown), true, ""))
+                         length(b.ordinary.unknown), _part_counts(b.negative), true, ""))
 end
 
 _text(x) = sprint(show, x; context = :typeinfo => Any)
@@ -303,17 +338,29 @@ const _SHOWN_EXCLUSIONS = 20
 
 _percent(covered, feasible) = covered == feasible ? 100 : min(99, floor(Int, 100 * covered / feasible))
 
-"The prefix lengths `show` prints: about every fifth of the rows, and where coverage first is whole."
-function _prefix_cuts(prefix::Vector{_PrefixPoint})
-    n = length(prefix)
+"""
+    _prefix_cuts(curves...) -> Vector{Int}
+
+The prefix lengths `show` prints: about every fifth of the rows, and, for
+each curve, where its coverage first is whole.
+"""
+function _prefix_cuts(curves::Vector{_PrefixPoint}...)
+    n = length(first(curves))
     cuts = Set(cld(n * i, 5) for i in 1:5)
-    point = prefix[end]
-    if point.unknown == 0 && point.feasible > 0
-        whole = findfirst(p -> p.covered == p.feasible, prefix)
-        whole === nothing || push!(cuts, whole)
+    for prefix in curves
+        point = prefix[end]
+        if point.unknown == 0 && point.feasible > 0
+            whole = findfirst(p -> p.covered == p.feasible, prefix)
+            whole === nothing || push!(cuts, whole)
+        end
     end
     return sort!(collect(cuts))
 end
+
+"`covered of feasible`, or `covered of at least feasible` when some target is unresolved (§3.10)."
+_of(p) = p.unknown == 0 ? "$(p.covered) of $(p.feasible)" : "$(p.covered) of at least $(p.feasible)"
+
+_nothing_to_cover(p::_PrefixPoint) = p.unknown == 0 && p.feasible == 0
 
 function _print_prefix(io::IO, r::Report)
     noun = _coverage_noun(r.coverage)
@@ -321,20 +368,27 @@ function _print_prefix(io::IO, r::Report)
         print(io, "prefix curve: no cases")
         return nothing
     end
-    last = r.prefix[end]
-    if last.unknown == 0 && last.feasible == 0
+    # With Invalid values the ordinary figure is labeled and the negative one
+    # follows it on the same line (§5.10); without, the line is as it always was.
+    negative = _has_invalid(r.coverage.space)
+    if _nothing_to_cover(r.prefix[end]) && (!negative || _nothing_to_cover(r.prefix_negative[end]))
         print(io, "prefix curve: no feasible $noun to cover")
         return nothing
     end
     print(io, "prefix curve:")
     n = length(r.prefix)
-    for k in _prefix_cuts(r.prefix)
+    for k in _prefix_cuts(r.prefix, r.prefix_negative)
         p = r.prefix[k]
-        if p.unknown == 0
-            print(io, "\n  first $k of $n cover $(_percent(p.covered, p.feasible))% ($(p.covered) of $(p.feasible))")
+        print(io, "\n  first $k of $n")
+        if negative && _nothing_to_cover(p)
+            print(io, ": no ordinary $noun is feasible")
+        elseif p.unknown == 0
+            print(io, " cover $(_percent(p.covered, p.feasible))% ", negative ? "of ordinary $(noun)s " : "",
+                  "($(p.covered) of $(p.feasible))")
         else
-            print(io, "\n  first $k of $n cover $(p.covered) of at least $(p.feasible)")
+            print(io, " cover ", _of(p), negative ? " ordinary $(noun)s" : "")
         end
+        negative && print(io, "; negative ", _of(r.prefix_negative[k]))
     end
     return nothing
 end
@@ -353,6 +407,10 @@ function _print_bonus(io::IO, r::Report)
         print(io, "bonus: $(b.covered) of at least $(b.feasible) feasible $nouns covered; ",
               _plural(b.unknown, noun), " unresolved (feasibility_limit = ",
               _grouped(r.coverage.limits.feasibility_limit), "); no exact percentage")
+    end
+    if _has_invalid(r.coverage.space)
+        print(io, "; negative: ", _of(b.negative))
+        b.negative.unknown > 0 && print(io, ", ", b.negative.unknown, " unresolved")
     end
     return nothing
 end
@@ -393,18 +451,22 @@ end
 
 ## design_sizes
 
-const _SizeCounts = NamedTuple{(:covered, :feasible, :unknown), NTuple{3, Int}}
-const _SizeRow = NamedTuple{(:strategy, :kind, :level, :status, :message, :cases, :share, :pairs, :triples),
+const _SizeCounts = _PartCounts
+const _SizeRow = NamedTuple{(:strategy, :kind, :level, :status, :message, :cases, :share, :pairs, :triples,
+                             :negative_cases, :negative_pairs, :negative_triples),
     Tuple{String, Symbol, Int, Symbol, String, Union{Nothing, Int}, Union{Nothing, Float64},
-          Union{Nothing, _SizeCounts}, Union{Nothing, _SizeCounts}}}
+          Union{Nothing, _SizeCounts}, Union{Nothing, _SizeCounts},
+          Union{Nothing, Int}, Union{Nothing, _SizeCounts}, Union{Nothing, _SizeCounts}}}
 
 """
     DesignSizes
 
 The table [`design_sizes`](@ref) returns. Fields: `parameters` (the names),
-`total` (the full product), `valid` (the valid rows, or `nothing` when the
-product is above `limit` and they were not counted), `engine`, `limit`, and
-`rows`, one per strategy run, each a `NamedTuple`:
+`total` (the full product), `valid` (the valid rows, ordinary and negative,
+or `nothing` when the product is above `limit` and they were not counted),
+`engine`, `limit`, `has_invalid` (whether the space has [`Invalid`](@ref)
+values, so that each figure has a negative part), and `rows`, one per
+strategy run, each a `NamedTuple`:
 
 - `strategy`: `"full_factorial"`, `"covering(s)"` or `"excursions(d)"`;
   `kind` (`:full_factorial`, `:covering`, `:excursion`) and `level` (the
@@ -412,12 +474,18 @@ product is above `limit` and they were not counted), `engine`, `limit`, and
 - `status`: `:ok`; `:resource_limit` when the strategy stopped at a limit,
   with `message` naming it, and no case count or share (§3.12); or
   `:invalid_base` for an excursion whose default base breaks a rule.
-- `cases`: the rows the strategy produced, and `share`, `cases / valid`
-  (`nothing` when `valid` is unknown).
-- `pairs`, `triples`: the design's coverage at strength 2 and 3 as
-  `(covered, feasible, unknown)`; `nothing` when the space has too few
-  parameters or the strategy did not finish.
+- `cases`: the rows the strategy produced, ordinary and negative, and
+  `share`, `cases / valid` (`nothing` when `valid` is unknown).
+- `pairs`, `triples`: the design's coverage of the ordinary targets at
+  strength 2 and 3 as `(covered, feasible, unknown)`; `nothing` when the
+  space has too few parameters or the strategy did not finish.
+- `negative_cases`: how many of `cases` are negative rows, with one
+  `Invalid` value; `negative_pairs`, `negative_triples`: the coverage of the
+  negative targets (§6) at strength 2 and 3, in the same form. 0 and zero
+  counts when the space has no `Invalid` values; `nothing` where `cases` or
+  `pairs` and `triples` are.
 
+Every figure keeps the ordinary and negative parts apart (§5.9, §5.10).
 Case counts are what the engine produced, not lower bounds (§8.3).
 """
 struct DesignSizes
@@ -426,6 +494,7 @@ struct DesignSizes
     valid::Union{Nothing, Int}
     engine::Symbol
     limit::Int
+    has_invalid::Bool
     rows::Vector{_SizeRow}
 end
 
@@ -463,6 +532,12 @@ the product only and no shares (§7.3). A strategy that stops at a resource
 limit is shown with its status in place of a count (§3.12); the others still
 run. The counts are the rows each strategy produced with `engine`, not lower
 bounds (§8.3). The space comes in the forms `covering` takes.
+
+With [`Invalid`](@ref) values each count is two figures, ordinary + negative
+(§5.10): `cases` as "4 + 3", the ordinary rows and the negative rows, and
+`pairs` and `triples` as "9/9 + 4/4", the ordinary targets covered of the
+feasible ones and then the negative targets (§6). A line under the table
+says so. The share is of all valid rows, ordinary and negative.
 """
 function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(), limit = 10^6,
                       from = nothing, constraints = nothing, feasibility_limit = 1_000_000,
@@ -476,6 +551,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     n = length(space.names)
     limits = (; feasibility_limit, explanation_limit)
     rows = _SizeRow[]
+    none = (nothing, nothing, nothing)   # the negative figures of a row with no case count
     ff = _attempt(() -> full_factorial(space; limit, limits...))
     valid = ff isa TestCases ? length(ff) : nothing
     push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, n, limits))
@@ -489,13 +565,14 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
         if base !== nothing && !isallowed(space, base)
             push!(rows, _SizeRow(("excursions($d)", :excursion, d, :invalid_base,
                 "the default base $(_text(base)) breaks a rule; pass `from`", nothing, nothing,
-                nothing, nothing)))
+                nothing, nothing, none...)))
             continue
         end
         design = _attempt(() -> excursions(space; distance = d, from, limits...))
         push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, n, limits))
     end
-    return DesignSizes(copy(space.names), length(space), valid, nameof(typeof(engine)), limit, rows)
+    return DesignSizes(copy(space.names), length(space), valid, nameof(typeof(engine)), limit,
+                       _has_invalid(space), rows)
 end
 
 "A list of strengths or distances: integers of at least `least`, read before anything runs."
@@ -518,20 +595,24 @@ function _attempt(f)
     end
 end
 
+"The design's (ordinary, negative) coverage at strength `s`, or `(nothing, nothing)` above `n`."
 function _size_counts(cases::TestCases, s::Int, n::Int, limits)
-    s <= n || return nothing
+    s <= n || return nothing, nothing
     c = coverage(cases; strength = s, limits...)
-    return _SizeCounts((c.ordinary.covered, c.ordinary.feasible, length(c.ordinary.unknown)))
+    return _part_counts(c.ordinary), _part_counts(c.negative)
 end
 
 function _size_row(strategy, kind, level, design, valid, n, limits)
     if design isa ResourceLimitError
         message = "$(design.keyword) = $(_grouped(design.limit)) reached: $(design.what)"
-        return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing))
+        return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing,
+                         nothing, nothing, nothing))
     end
     share = valid === nothing ? nothing : (valid == 0 ? nothing : length(design) / valid)
-    return _SizeRow((strategy, kind, level, :ok, "", length(design), share,
-                     _size_counts(design, 2, n, limits), _size_counts(design, 3, n, limits)))
+    pairs, negative_pairs = _size_counts(design, 2, n, limits)
+    triples, negative_triples = _size_counts(design, 3, n, limits)
+    return _SizeRow((strategy, kind, level, :ok, "", length(design), share, pairs, triples,
+                     count(hasinvalid, design), negative_pairs, negative_triples))
 end
 
 # A share as a percentage: one decimal, but never 0.0% for a nonzero share nor
@@ -545,6 +626,15 @@ end
 
 _count_cell(c::Nothing) = "—"
 _count_cell(c::_SizeCounts) = c.unknown == 0 ? "$(c.covered)/$(c.feasible)" : "$(c.covered)/≥$(c.feasible)"
+# With Invalid values: "ordinary + negative" (§5.10).
+_count_cell(c::Nothing, negative::Nothing) = "—"
+_count_cell(c::_SizeCounts, negative::_SizeCounts) = _count_cell(c) * " + " * _count_cell(negative)
+
+function _cases_cell(t::DesignSizes, row::_SizeRow)
+    row.cases === nothing && return "—"
+    t.has_invalid || return string(row.cases)
+    return string(row.cases - row.negative_cases, " + ", row.negative_cases)
+end
 
 function _size_note(t::DesignSizes, row::_SizeRow)
     if row.kind === :full_factorial
@@ -559,10 +649,11 @@ Base.show(io::IO, t::DesignSizes) =
 
 function Base.show(io::IO, ::MIME"text/plain", t::DesignSizes)
     header = ["strategy", "cases", "share", "pairs", "triples"]
-    table = [[row.strategy,
-              row.cases === nothing ? "—" : string(row.cases),
+    counts(row, part) = t.has_invalid ? _count_cell(row[part], row[Symbol(:negative_, part)]) :
+                                        _count_cell(row[part])
+    table = [[row.strategy, _cases_cell(t, row),
               row.share === nothing ? "—" : _share_cell(row.share),
-              _count_cell(row.pairs), _count_cell(row.triples)] for row in t.rows]
+              counts(row, :pairs), counts(row, :triples)] for row in t.rows]
     widths = [maximum(textwidth, [header[j]; [r[j] for r in table]]) for j in eachindex(header)]
     cell(text, j) = j == 1 ? rpad(text, widths[j]) : lpad(text, widths[j])
     print(io, rstrip(join((cell(header[j], j) for j in eachindex(header)), "  ")))
@@ -571,6 +662,8 @@ function Base.show(io::IO, ::MIME"text/plain", t::DesignSizes)
         note = _size_note(t, row)
         print(io, "\n", isempty(note) ? rstrip(line) : line * "  " * note)
     end
+    t.has_invalid && print(io, "\ncells with + read ordinary + negative: rows without and with an Invalid ",
+                           "value, and the targets each kind covers")
     print(io, "\ncase counts are the rows each strategy produced with $(t.engine), not lower bounds")
     return nothing
 end
@@ -648,11 +741,13 @@ function plain(r::Report)
     return (guarantee = r.guarantee, strategy = r.strategy, n_cases = r.n_cases, strength = r.strength,
             coverage = plain(r.coverage), excluded = NamedTuple[_plain_exclusion(e) for e in r.excluded],
             recorded = NamedTuple[_plain_exclusion(e) for e in r.recorded], bonus = r.bonus,
-            prefix = copy(r.prefix), seed = r.seed, engine = r.engine, n_must_include = r.n_must_include)
+            prefix = copy(r.prefix), prefix_negative = copy(r.prefix_negative), seed = r.seed,
+            engine = r.engine, n_must_include = r.n_must_include)
 end
 
 function plain(t::DesignSizes)
     total = t.total isa Int ? t.total : (typemin(Int) <= t.total <= typemax(Int) ? Int(t.total) : string(t.total))
     return (parameters = copy(t.parameters), total = total, valid = t.valid, engine = t.engine,
-            limit = t.limit, rows = NamedTuple[NamedTuple{keys(row)}(values(row)) for row in t.rows])
+            limit = t.limit, has_invalid = t.has_invalid,
+            rows = NamedTuple[NamedTuple{keys(row)}(values(row)) for row in t.rows])
 end

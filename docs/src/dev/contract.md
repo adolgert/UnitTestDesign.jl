@@ -339,7 +339,8 @@ hides uncertainty.
 
 **3.12** `report` applies §3.10 to bonus coverage and to the prefix curve.
 `design_sizes` reports a strategy's resource-limit status in place of a case
-count or share.
+count or share. Both apply §3.10 to the ordinary and the negative figures
+separately (§5.10).
 
 **3.13** Explanation of implied exclusions has its own budget, the keyword
 `explanation_limit::Int`, default `1_000_000` nodes, shared by all deletion
@@ -360,7 +361,14 @@ unresolved.
 its rules was verified to make the target feasible, with a witness.
 
 **3.17** `followups` reports `unknown` for a suspect whose isolation search
-reaches the limit.
+reaches the limit. The search covers every kind of row that could hold the
+suspect: for a suspect with no `Invalid` value, ordinary rows and the
+negative rows at each invalid value of each parameter it leaves out (§5.5);
+for a suspect with one, the negative rows at that value. The isolation
+conditions (no other suspect) apply to every kind, including rules that
+name the invalid parameter. A suspect is `inseparable` only when every kind
+is proven to hold no isolating row, and `unknown` when no kind yields one
+and some kind's search reaches the limit.
 
 ## 4. Partitions
 
@@ -439,7 +447,12 @@ negative rows contribute to negative coverage. A negative row never increases
 ordinary coverage, including for the combinations among its ordinary values.
 
 **5.10** Ordinary and negative coverage are reported separately in `coverage`,
-`report`, and the `TestCases` bookkeeping.
+`report`, and the `TestCases` bookkeeping. Every progress and planning figure
+separates the two parts: `report`'s guarantee, bonus coverage and prefix
+curve, and `design_sizes`'s case counts and pair and triple coverage. For a
+space with `Invalid` values an ordinary figure is labeled as ordinary and
+printed beside its negative figure, so no ordinary figure reads as the
+whole.
 
 **5.11** A row that violates its applicable rules contributes to neither kind of
 coverage.

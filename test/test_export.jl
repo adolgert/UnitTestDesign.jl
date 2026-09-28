@@ -142,6 +142,40 @@ end
 end
 
 
+@testitem "github_matrix: field names are checked like values; JSON.jl escapes the rest (review round 1)" setup=[ExportSetup] begin
+    # The bytes rejected as a value are rejected as a name, before anything is written.
+    bad = Symbol(String(UInt8[0xff]))
+    for (rows, k) in (([NamedTuple{(bad,)}((1,))], 1),
+                      ([(n = 1,), NamedTuple{(:n, bad)}((2, 3))], 2))
+        io = IOBuffer()
+        @test message(() -> github_matrix(io, rows)) ==
+            "github_matrix: row $k, field name Symbol(\"\\xff\"): not valid UTF-8, which JSON text must " *
+            "be; rename the field"
+        @test position(io) == 0 && isempty(take!(io))
+    end
+    # A bad name wins over a bad value in the same row: names are checked first.
+    io = IOBuffer()
+    @test startswith(message(() -> github_matrix(io, [NamedTuple{(bad,)}((NaN,))])), "github_matrix: row 1, field name")
+    @test isempty(take!(io))
+    # An empty name names nothing a workflow can read.
+    @test message(() -> github_matrix(io, [NamedTuple{(Symbol(""),)}((1,))])) ==
+        "github_matrix: row 1, field name Symbol(\"\"): empty; a job reads each value by its name, so " *
+        "a name needs at least one character; rename the field"
+    @test isempty(take!(io))
+    # A TestSpace's names go through the same check.
+    cases = all_pairs(TestSpace(NamedTuple{(:a, bad)}(([1, 2], [3, 4]))))
+    @test startswith(message(() -> github_matrix(io, cases)), "github_matrix: row 1, field name Symbol(")
+    @test isempty(take!(io))
+
+    # Names GitHub reads only as matrix['<name>'] are written, escaped where JSON needs it.
+    names = (Symbol("a\"b"), Symbol("c\\d"), Symbol("e\nf"), :π, Symbol("with space"), Symbol("1st"), Symbol("x.y"))
+    text, entries = emitted([NamedTuple{names}((1, 2, 3, 4, 5, 6, 7))])
+    @test isvalid(text)
+    @test collect(keys(only(entries))) == [String(n) for n in names]
+    @test [only(entries)[String(n)] for n in names] == 1:7
+end
+
+
 @testitem "github_matrix: warns once above GitHub's 256 jobs" setup=[ExportSetup] begin
     rows = [(k = k,) for k in 1:257]
     io = IOBuffer()

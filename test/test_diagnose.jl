@@ -58,20 +58,43 @@ using TestItemRunner
         return found
     end
 
-    "Every valid row of a small space, by enumeration and isallowed."
-    valid_rows(space) = [NamedTuple{Tuple(parameters(space))}(values)
-                         for values in Iterators.product(space.values...)
-                         if isallowed(space, NamedTuple{Tuple(parameters(space))}(values))]
+    """
+    Every valid row of a small space, by enumeration and isallowed, split by
+    kind: `ordinary` rows hold no `Invalid` value; `negative` rows hold one
+    and are valid when the rules that omit its parameter allow them (§5.5).
+    Rows with two `Invalid` values are never valid (§5.7).
+    """
+    function valid_rows(space)
+        names = Tuple(parameters(space))
+        rows = [NamedTuple{names}(values) for values in Iterators.product(space.values...)]
+        valid = filter(row -> isallowed(space, row), rows)
+        @test !any(row -> count(x -> x isa Invalid, values(row)) > 1, valid)
+        return (ordinary = filter(!hasinvalid, valid), negative = filter(hasinvalid, valid))
+    end
+
+    "The kinds of case that could hold `suspect`, in the order `followups` searches them."
+    function row_kinds(space, suspect)
+        bad = [k for k in keys(suspect) if suspect[k] isa Invalid]
+        length(bad) > 1 && return NamedTuple[]
+        length(bad) == 1 && return NamedTuple[NamedTuple{(only(bad),)}((suspect[only(bad)],))]
+        names = parameters(space)
+        return NamedTuple[NamedTuple();
+                          [NamedTuple{(names[p],)}((v,)) for p in eachindex(names)
+                           if !haskey(suspect, names[p]) for v in space.values[p] if v isa Invalid]]
+    end
 
     """
-    Check every follow-up of `d` against the space's valid rows: a found
-    case is valid, holds its suspect and no other, and its distance is right;
-    an indistinguishable suspect holds the others it names; an inseparable
-    suspect has no valid row that isolates it. Returns the statuses.
+    Check every follow-up of `d` against the space's valid rows, ordinary and
+    negative, by brute force: a found case is a valid row of the kind it
+    names, holds its suspect and no other, and its distance is right; an
+    indistinguishable suspect holds the others it names; an inseparable
+    suspect has no valid row of either kind that isolates it, and every kind
+    of case that could hold it was searched. Returns the statuses.
     """
     function check_followups(d, fs)
         space = d.space
         rows = valid_rows(space)
+        every = [rows.ordinary; rows.negative]
         suspects = [s.combination for s in d.suspects]
         @test [f.suspect for f in fs] == suspects
         for (j, f) in enumerate(fs)
@@ -79,22 +102,28 @@ using TestItemRunner
             isolates(row) = holds(row, f.suspect) && !any(o -> holds(row, o), others)
             if f.status === :found
                 @test isallowed(space, f.case)
+                @test f.kind === (hasinvalid(f.case) ? :negative : :ordinary)
+                @test any(row -> holds(row, f.case), f.kind === :negative ? rows.negative : rows.ordinary)
                 @test isolates(f.case)
                 @test f.from in d.suspects[j].failing
                 failing_row = NamedTuple{Tuple(parameters(space))}(
                     Tuple(space.values[p][d.rows[f.from][p]] for p in eachindex(space.values)))
                 @test f.changes == count(k -> !same(f.case[k], failing_row[k]), keys(f.case))
                 @test isempty(f.others) && isempty(f.rules) && f.limit === nothing
+                # The kinds searched are a prefix of the kinds that could hold it.
+                kinds = row_kinds(space, f.suspect)
+                @test isequal(f.searched, kinds[1:length(f.searched)])
             elseif f.status === :indistinguishable
                 @test !isempty(f.others)
                 @test all(o -> o in others && holds(f.suspect, o), f.others)
-                @test f.case === nothing
+                @test f.case === nothing && f.kind === :none
             elseif f.status === :inseparable
-                @test !any(isolates, rows)   # proven: no valid row isolates it
+                @test !any(isolates, every)   # proven: no valid row of any kind isolates it
                 @test all(o -> o in others, f.others)
-                @test f.case === nothing
+                @test f.case === nothing && f.kind === :none
+                @test isequal(f.searched, row_kinds(space, f.suspect))
             else
-                @test f.status === :unknown
+                @test f.status === :unknown && f.kind === :none
             end
         end
         return [f.status for f in fs]
@@ -337,6 +366,81 @@ end
     @test fs[3].others == [] && fs[3].rules == []
     @test sprint(show, fs[3]) == "(n = Invalid(-1), m = Invalid(:z)): inseparable; it has more than " *
                                  "one Invalid value, and a case holds at most one"
+end
+
+
+@testitem "followups: a suspect kept out of ordinary cases is isolated by a negative case (§5.5, review round 1)" setup=[DiagnoseSetup] begin
+    # The reviewer's example: the rule forbids b = 2 beside the ordinary n = 1,
+    # but it reads n, so it does not apply to a negative case at n (§5.5).
+    space = TestSpace((n = [1, Invalid(0)], b = [1, 2]); constraints = [forbid((n = 1, b = 2))])
+    @test length(valid_rows(space).negative) == 2 && length(valid_rows(space).ordinary) == 1
+    rows = [(n = 1, b = 1), (n = Invalid(0), b = 1), (n = Invalid(0), b = 2)]
+    passed = [true, true, false]
+    d = diagnose(rows, passed; space, strength = 1)
+    @test [s.combination for s in d.suspects] == [(b = 2,)]
+    for prefer in (:nearest, :domain)
+        fs = followups(d; prefer)
+        @test check_followups(d, fs) == [:found]
+        f = only(fs)
+        @test f.case == (n = Invalid(0), b = 2) && f.kind === :negative
+        @test (f.from, f.changes) == (3, 0)
+        @test isequal(f.searched, NamedTuple[NamedTuple(), (n = Invalid(0),)])
+        @test sprint(show, f) == "(b = 2,): found negative case (n = Invalid(0), b = 2), failing case 3 itself"
+    end
+
+    # At strength 2 the pair (n = Invalid(0), b = 2) is a suspect too. Ordinary
+    # cases cannot hold b = 2 and the negative one holds the pair, so the value
+    # is inseparable, and the explanation names both kinds of case.
+    d = diagnose(rows, passed; space)
+    fs = followups(d)
+    @test check_followups(d, fs) == [:inseparable, :indistinguishable]
+    f = fs[1]
+    @test f.others == [(n = Invalid(0), b = 2)] && f.rules == [1]
+    @test isequal(f.searched, NamedTuple[NamedTuple(), (n = Invalid(0),)])
+    @test sprint(show, f) == "(b = 2,): inseparable; every valid case holding it also holds " *
+        "(n = Invalid(0), b = 2), under rule 1 on (n, b); searched ordinary cases and negative cases " *
+        "with n = Invalid(0)"
+
+    # An ordinary case wins a tie in changes, and needs no rule to be skipped.
+    free = TestSpace((n = [1, 2, Invalid(0)], b = [1, 2], c = [:x, :y]))
+    rows = [(n = 1, b = 1, c = :x), (n = 2, b = 1, c = :y), (n = Invalid(0), b = 1, c = :x),
+            (n = 1, b = 2, c = :y)]
+    d = diagnose(rows, [true, true, true, false]; space = free, strength = 1)
+    fs = followups(d)
+    @test check_followups(d, fs) == [:found]
+    @test fs[1].kind === :ordinary && fs[1].changes == 0
+    @test isequal(fs[1].searched, NamedTuple[NamedTuple()])   # a failing case itself stops the search
+end
+
+
+@testitem "followups: every claim holds by brute force over both kinds of case, for many outcomes (review round 1)" setup=[DiagnoseSetup] begin
+    using Random: Xoshiro
+    rng = Xoshiro(0x2026_0927_0601)
+    spaces = [
+        TestSpace((n = [1, Invalid(0)], b = [1, 2]); constraints = [forbid((n = 1, b = 2))]),
+        TestSpace((n = [1, 2, Invalid(-1)], m = [:a, :b, Invalid(:z)], k = [:x, :y]);
+                  constraints = [forbid(:n, :k) do n, k; k == :x end, forbid((m = :b, k = :y))]),
+        TestSpace((a = [1, 2, Invalid(0)], b = [1, 2], c = [1, 2, Invalid(9)]);
+                  constraints = [forbid((a = 1, b = 2)), forbid((a = 2, c = 1)), forbid((b = 1, c = 2))]),
+    ]
+    seen = Set{Symbol}()
+    for space in spaces
+        rows = let v = valid_rows(space); [v.ordinary; v.negative] end
+        n = length(rows)
+        outcomes = n <= 8 ? [digits(Bool, x; base = 2, pad = n) for x in 0:(2^n - 1)] :
+                            [rand(rng, Bool, n) for _ in 1:40]
+        for passed in outcomes, strength in 1:2, prefer in (:nearest, :domain)
+            d = diagnose(rows, passed; space, strength)
+            d.status === :ranked || continue
+            fs = followups(d; prefer)
+            union!(seen, check_followups(d, fs))
+            for f in fs
+                f.status === :found && push!(seen, f.kind)
+            end
+        end
+    end
+    # The sweep reaches every status the brute force can check, and both kinds of found case.
+    @test issubset([:found, :inseparable, :indistinguishable, :ordinary, :negative], seen)
 end
 
 
