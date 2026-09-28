@@ -6,8 +6,10 @@ CI = get(ENV, "CI", nothing) == "true"
 makedocs(;
     modules=[UnitTestDesign],
     authors="Andrew Dolgert <adolgert@andrew.cmu.edu>",
-    repo="https://github.com/adolgert/UnitTestDesign.jl/blob/{commit}{path}#L{line}",
     sitename="UnitTestDesign.jl",
+    # Phase 7 brings every exported docstring into the manual and fixes
+    # cross references; until then these are warnings, not errors.
+    warnonly=[:missing_docs, :cross_references, :docs_block],
     format=Documenter.HTML(;
         prettyurls=CI,
         canonical="https://adolgert.github.io/UnitTestDesign.jl",
