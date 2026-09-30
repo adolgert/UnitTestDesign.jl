@@ -447,6 +447,85 @@ the docstring, contract and how-to changes reviewed with Stage A's.
 
 Size: one session.
 
+### Implementation notes (2026-09-30)
+
+Done on `feature/stage-e1-proof-record`, stacked on
+`feature/stage-a-docs-truth`. Adjustments to the steps above, and why:
+
+- **Step 3.** A helper, `_followup_proof(d, searched, proof)`, builds each
+  `FollowupProof` from one `_isolate` result. `_followup` pairs `searched`
+  with the per-kind results by position, which is exact because it reaches
+  that line only when every kind was proven. The union is computed from the
+  same results by the same lines as before.
+- **Step 5, `Followup`.** `minimal` is `:not_applicable` for a suspect with
+  two `Invalid` values, which has no proofs; step 4's rule, applied to no
+  proofs, would say `:verified`, and `_no_case` never applies it. The field
+  doc says so. `FollowupProof.minimal` calls a `:not_applicable` proof
+  direct: the suspect's values, with the kind's invalid value, break each
+  rule listed and hold each suspect listed (`explain_partial`'s
+  `:forbidden`, `src/feasibility.jl:644-646`). `FollowupProof.rules` cites
+  §5.6 beside §5.5, for whole-case rules.
+- **Step 5, `followups`.** Besides the per-kind qualifier, the docstring
+  says that the printed line gives each kind's proof when they differ. The
+  file's header comment names `FollowupProof`.
+- **Step 5, how-to.** The example shows `followup.proofs` with the default
+  `show`, which prints each proof's fields in order; the text names them.
+  No `show` method for `FollowupProof` was added.
+- **Step 6.** "Several with the same `rules` and `others`" is tested by
+  size: each proof is part of the union, so a proof as large as the union
+  equals it. This compares no values; `==` on the `others` named tuples
+  would equate values that differ by identity, such as `1` and `1.0`
+  (§2.1). The two-`Invalid` branch now tests `isempty(f.proofs)` rather
+  than empty `others` and `rules`. The two agree for every `Followup` that
+  `followups` returns: every parameter has an ordinary value
+  (`src/space.jl:333-335`), so a searched proof always names a rule or a
+  suspect.
+- **Step 7, a kind left unresolved.** Not possible with Example A. Its
+  searches and deletion trials cost no nodes (`explain` reports 0 for
+  `(a = 2,)` and for `(a = 2, n = Invalid(0))`), so no `explanation_limit`
+  or `feasibility_limit` leaves it unresolved. The item uses Example B at
+  `explanation_limit = 2`, the smallest that leaves one kind unresolved and
+  the other verified (at 1 both are). A second case, a four-parameter space
+  at `feasibility_limit = 1`, has the first proof verified and the second
+  unresolved, so it tells "the first non-`nothing` limit" from "the first
+  proof's limit". Replacing the one with the other in `_followup` fails
+  only this case; the random sweep runs at the default limits.
+- **Step 7, the branches of `minimal`.** `:verified`: Example A.
+  `:not_applicable`: Example C. `:unresolved`: Example C at
+  `explanation_limit = 1`, where the unresolved ordinary proof outweighs the
+  direct negative one.
+- **Step 7, empty proofs.** Also a case where the ordinary kind is proven
+  and the negative search reaches `feasibility_limit = 1`: `:unknown`, with
+  no proofs, in the `feasibility_limit` item.
+- **Step 7, layout.** Examples B and B reversed share one item. Besides
+  each proof's sufficiency and necessity within its kind, `check_followups`
+  checks that each proof's `limit` is set exactly when it is `:unresolved`,
+  that its labels match the union's, and that the union fields combine the
+  proofs as step 4 says.
+
+No conflict between the code and the contract turned up beyond what the
+plan anticipated.
+
+Invariant check. A script outside the repository printed, with `repr`, the
+twelve fields `Followup` had before this stage, for 7,255 `followups`
+calls: probe 04 Examples A (also with rule 1 only, and with the rules
+reversed), B, B reversed, B with rule 1 only, C at strengths 1 and 2, and
+D; the scenarios of `test_diagnose` that call `followups`, except the
+positional result's; and the random sweep's three spaces over the same
+outcomes. Each ran at the default limits, with
+`prefer = :domain`, and at tight limits (`explanation_limit` 1 to 8 and
+`feasibility_limit` 1 to 6; the sweep at 1, 2, 3, 5 and 1, 2, 3). The
+corpus holds 10,017 inseparable follow-ups, 3,303 of them unresolved, and
+155 unknown. Its output at the Stage A head and at this stage is
+byte-identical. The printed line changed for exactly the 5,799 follow-ups
+whose proofs differ, and for none of the other 23,808.
+
+Verification: `test_diagnose` passes 66,121 assertions, against 32,670 at
+the Stage A head; most of the difference is `check_proofs` in the random
+sweep, and the file takes about 20 seconds longer. The full suite passed
+with 343,773 passes and no failures; the count differs from Stage A's
+because of the three time-boxed items. The docs build exits 0.
+
 ## Stage B: delete dead code (optional before 0.5)
 
 Goal: obsolete implementations that survive only because obsolete tests
