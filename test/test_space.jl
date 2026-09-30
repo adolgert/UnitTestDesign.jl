@@ -372,6 +372,25 @@ end
 end
 
 
+@testitem "space: the mixed-radix code of target order and its inverse (§9.7)" begin
+    using UnitTestDesign: _code, _decode!
+    radix = [3, 1, 4, 2]
+    for support in ([1, 3, 4], [4, 1], [3], [1, 2, 3, 4])
+        n = prod(radix[support])
+        rows = [_decode!(fill(-1, 4), c, support, radix) for c in 0:(n - 1)]
+        # Each code gives one assignment, only at the support, within the radix.
+        @test allunique(rows) && all(r -> all(q -> (q in support) == (r[q] != -1), 1:4), rows)
+        @test all(r -> all(q -> 1 <= r[q] <= radix[q], support), rows)
+        @test [_code(r, support, radix) for r in rows] == 0:(n - 1)
+        # The first parameter of the support varies fastest.
+        @test rows[1][support] == ones(Int, length(support))
+        n > 1 && @test rows[2][support] == [2; ones(Int, length(support) - 1)]
+    end
+    @test _decode!(zeros(Int, 4), 13, [1, 3, 4], radix) == [2, 0, 1, 2]   # 13 = 1 + 3 * (0 + 4 * 1)
+    @test _code([2, 7, 1, 2], [1, 3, 4], radix) == 13
+end
+
+
 @testitem "space: a space from parts takes every field by name, in order" begin
     message(f) = try
         f()

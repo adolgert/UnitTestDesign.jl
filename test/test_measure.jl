@@ -651,6 +651,39 @@ end
 end
 
 
+@testitem "coverage: a block's targets come in the order of their codes (§9.7)" begin
+    using UnitTestDesign: FeasibilityContext, _Lists, _measure_block!, _decode!, from_indices
+    # _measure_block! steps one buffer through a block's targets. They are the
+    # codes 0, 1, 2, … of _decode! over the rest of the support, in radix the
+    # ordinary arity, as positions among each parameter's ordinary values,
+    # which Invalid values between them make differ from value indices.
+    space = TestSpace((a = [Invalid(0), 1, 2], b = [:x, Invalid(:z), :y, :w], c = [true, false],
+                       d = [1, 2, 3, Invalid(9)]))
+    arity = length.(space.ordinary)
+    for (support, p) in (([1, 2, 3, 4], 0), ([2, 4], 0), ([3], 0), ([1, 2, 4], 1), ([2, 4], 2), ([2, 4], 4),
+                         ([4], 4))
+        rest = filter(!=(p), support)
+        t = zeros(Int, 4)
+        p == 0 || (t[p] = only(space.invalid[p]))
+        fixed = copy(t)
+        lists = _Lists(1_000_000)   # no rule, so every target is missing, listed as met
+        counts = _measure_block!(lists, FeasibilityContext(space), support, rest, t, nothing)
+        n = prod(arity[rest]; init = 1)
+        @test counts == (0, n, 0, 0)
+        expected = map(0:(n - 1)) do code
+            idx = copy(fixed)
+            positions = _decode!(zeros(Int, 4), code, rest, arity)
+            for q in rest
+                idx[q] = space.ordinary[q][positions[q]]
+            end
+            from_indices(space, idx)
+        end
+        @test lists.missing == expected
+        @test t == fixed   # the buffer is cleared again
+    end
+end
+
+
 @testitem "coverage: the documented solver outputs (plan Phase 5 acceptance gate)" setup=[MeasureSetup] begin
     space = solver_space()
     # The handwritten suite, its top-up, and a limited search.

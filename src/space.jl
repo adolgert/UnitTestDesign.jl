@@ -572,6 +572,37 @@ function from_indices(space::TestSpace, idx::AbstractVector{<:Integer})
 end
 
 """
+    _code(idx, support, radix) -> Int
+    _decode!(row, code, support, radix) -> row
+
+The mixed-radix code that fixes the order of the targets on one support
+(contract §9.7): `idx`'s entries at `support`, 1-based, read as a 0-based
+number whose first digit varies fastest, digit `p` in radix `radix[p]`. So
+codes 0, 1, 2, … are the assignments with the first parameter of the
+support varying fastest. `_decode!` is the inverse: it writes code `code`'s
+entries into `row` at `support`, leaves the rest of `row` alone, and
+returns it. `TargetList` and `_recount` (request.jl) code engine positions,
+with the ordinary arity as radix; measurement codes value indices, with the
+domain lengths (`_Marks`, measure.jl).
+"""
+function _code(idx::AbstractVector{<:Integer}, support::Vector{Int}, radix::Vector{Int})
+    code, stride = 0, 1
+    for p in support
+        code += (idx[p] - 1) * stride
+        stride *= radix[p]
+    end
+    return code
+end
+
+function _decode!(row::AbstractVector{<:Integer}, code::Integer, support::Vector{Int}, radix::Vector{Int})
+    for p in support
+        row[p] = code % radix[p] + 1
+        code ÷= radix[p]
+    end
+    return row
+end
+
+"""
     active_rules(space, p) -> Vector{Int}
 
 Positions of the rules a row must satisfy. With `p == 0`, an ordinary row:

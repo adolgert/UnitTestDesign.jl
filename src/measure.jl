@@ -241,16 +241,6 @@ end
 # BitVector, indexed by a mixed-radix code; larger ones use a Set of vectors.
 const _MAX_MARKS = 1 << 26
 
-"The 0-based code of `idx` over `support`, first parameter fastest, in radix `radix`."
-function _code(idx::AbstractVector{<:Integer}, support::Vector{Int}, radix::Vector{Int})
-    code, stride = 0, 1
-    for p in support
-        code += (idx[p] - 1) * stride
-        stride *= radix[p]
-    end
-    return code
-end
-
 """
     _Marks(marks, radix)
 
@@ -396,10 +386,12 @@ _classify!(::_Counts, context::FeasibilityContext, t::Vector{Int}) =
 
 Measure the targets that assign `t`'s fixed entries (an invalid value, for a
 negative block, or none) and every combination of ordinary values of the
-parameters `rest`, the first varying fastest (§1.8, §6.1). A target found in
-`seen`, the rows' projections onto `support`, is covered without a search
-(§1.10); any other is classified into `record`. `t` is a reused buffer:
-`rest` is cleared again on return.
+parameters `rest`, the first varying fastest (§1.8, §6.1): an odometer steps
+the one buffer `t` through the codes 0, 1, 2, … of `_decode!` over `rest`,
+positions among the ordinary values in radix the ordinary arity. A target
+found in `seen`, the rows' projections onto `support`, is covered without a
+search (§1.10); any other is classified into `record`. `rest` is cleared
+again on return.
 """
 function _measure_block!(record::_Record, context::FeasibilityContext,
                          support::Vector{Int}, rest::Vector{Int}, t::Vector{Int}, seen)

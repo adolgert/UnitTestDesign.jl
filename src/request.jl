@@ -359,10 +359,12 @@ end
 
 Every target of the request as a partial row in engine positions, computed
 on demand rather than stored: for each support (`_supports`), each
-assignment of engine positions, the first parameter varying fastest. The
+assignment of engine positions, the first parameter varying fastest, which
+is `_decode!` of the codes 0, 1, 2, … with the ordinary arity as radix. The
 order is fixed by the space and the request (contract §9.7). `offsets[k]`
 counts the targets before support `k`; the last entry is the total, checked
-against `Int` overflow.
+against `Int` overflow. Each index gives a fresh vector, which the caller
+may keep.
 
 An unconstrained request requires every target, so `classify_targets`
 returns this list without building it, and `validate_design` recounts it one
@@ -393,14 +395,7 @@ Base.IndexStyle(::Type{TargetList}) = IndexLinear()
 function Base.getindex(list::TargetList, i::Int)
     @boundscheck checkbounds(list, i)
     k = searchsortedlast(list.offsets, i - 1)
-    r = i - 1 - list.offsets[k]
-    row = zeros(Int, length(list.arity))
-    for p in list.supports[k]
-        a = list.arity[p]
-        row[p] = r % a + 1
-        r ÷= a
-    end
-    return row
+    return _decode!(zeros(Int, length(list.arity)), i - 1 - list.offsets[k], list.supports[k], list.arity)
 end
 
 # Production iterates `TargetList` directly; this stays as a convenience for the tests.
@@ -599,20 +594,14 @@ end
 
 # Every target of an unconstrained request is required. For each support, a
 # row's projection onto it, whose entries were checked against the arity
-# above, has the code `TargetList` gives that target: its position within the
-# support's block, first parameter fastest. The support is covered exactly
-# when every code appears. The same certification as the list, with no list.
+# above, has the code (`_code`) whose target `TargetList` decodes: its
+# position within the support's block. The support is covered exactly when
+# every code appears. The same certification as the list, with no list.
 function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList)
-    arity = required.arity
     for (k, support) in enumerate(required.supports)
         seen = falses(required.offsets[k + 1] - required.offsets[k])
         for j in axes(matrix, 2)
-            code, stride = 0, 1
-            for p in support
-                code += (matrix[p, j] - 1) * stride
-                stride *= arity[p]
-            end
-            seen[code + 1] = true
+            seen[_code(view(matrix, :, j), support, required.arity) + 1] = true
         end
         missed = findfirst(!, seen)
         missed === nothing || _uncovered(request, required[required.offsets[k] + missed])
