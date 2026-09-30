@@ -244,7 +244,11 @@ known in advance, a predicate that throws fails when the space is built
 rather than deep inside generation, and the searches only look up tables.
 A rule whose scope has more than `tabulation_limit` combinations (a
 `TestSpace` keyword, default ``10^5``) is evaluated lazily instead, and the
-package warns and suggests a narrower scope (§12.19).
+package warns and suggests a narrower scope (§12.19). A lazy rule,
+including every whole-case rule (below), runs its predicate only when a
+search or a row check reaches it, so a predicate that throws fails in
+whichever call reached it: a generation, `isallowed`, `explain`,
+`coverage`, `report` or `followups` (§12.16).
 
 A whole-case rule is always lazy (§12.20). Its predicate runs on complete
 cases as the searches reach them, and each answer is remembered until that

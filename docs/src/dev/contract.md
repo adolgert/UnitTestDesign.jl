@@ -763,7 +763,12 @@ assigned, and only with ordinary values. Partitions are passed by name.
 
 **12.16** An exception thrown by a predicate is rethrown as an error naming the
 rule's label and argument values, with the original exception as its cause.
-An exception never means forbidden or allowed.
+An exception never means forbidden or allowed. A tabulated rule's predicate
+runs when the space is built (§12.18), so its exception surfaces there. A
+lazily evaluated rule's predicate, including every whole-case rule, runs
+during searches and row checks, so its exception surfaces from whichever
+call evaluated it: a generation, `isallowed`, `explain`, `coverage`,
+`missing_interactions`, `report`, `design_sizes` or `followups`.
 
 **12.17** Predicates must be deterministic and free of observable side effects.
 They may be called more than once. Apart from tabulation (§12.18), call order

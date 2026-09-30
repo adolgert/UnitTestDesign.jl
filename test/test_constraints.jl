@@ -465,6 +465,17 @@ end
     @test err.rule == "rule 1 on the whole case"
     @test_throws ConstraintError UnitTestDesign.forbids(table, [2, 1])
     @test calls[] == 3
+
+    # Through the public calls, the exception surfaces from whichever call
+    # evaluated the rule. explain searches for a completion of a = 2.
+    err = try explain(space, (a = 2,)) catch e; e end
+    @test err isa ConstraintError && err.rule == "rule 1 on the whole case" && err.arguments.a == 2
+    # These rows avoid a = 2, so reading them does not throw; the search for
+    # a missing pair with a = 2 does.
+    rows = [(a = 1, b = 1), (a = 1, b = 2)]
+    @test all(row -> isallowed(space, row), rows)
+    err = try coverage(rows, space) catch e; e end
+    @test err isa ConstraintError && err.rule == "rule 1 on the whole case" && err.arguments.a == 2
 end
 
 
