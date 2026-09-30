@@ -286,8 +286,8 @@ end
     message(f) = try f(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $e" end
     tiny = Partition(:tiny, Returns(1e-9))
     space = TestSpace((size = [tiny, 100], n = Any[1, 1.0, Invalid(-1)], mode = [:a, :b]))
-    row_of(row; complete = false, section = nothing) =
-        _row_indices(space, row; what = "row 7", section, complete)
+    row_of(row; complete = false, section = nothing, hint = nothing) =
+        _row_indices(space, row; what = "row 7", section, complete, hint)
     # A NamedTuple, in any order and partial unless `complete`; a tuple or a
     # vector in parameter order; a partition by its name.
     @test row_of((mode = :b, size = :tiny)) == [1, 0, 2]
@@ -309,6 +309,16 @@ end
           "row 7, (n = 1,), has no value for `size` and `mode`; it must name every parameter"
     @test message(() -> row_of((n = 1, mode = :a); complete = true, section = "§1.13")) ==
           "row 7, (n = 1, mode = :a), has no value for `size`; it must name every parameter (contract §1.13)"
+    # A caller's hint follows the missing-value error only, before the section.
+    hinted(row) = message(() -> row_of(row; complete = true, section = "§1.13", hint = "use g instead"))
+    @test hinted((n = 1,)) ==
+          "row 7, (n = 1,), has no value for `size` and `mode`; it must name every parameter; use g instead " *
+          "(contract §1.13)"
+    @test message(() -> row_of((n = 1,); complete = true, hint = "use g instead")) ==
+          "row 7, (n = 1,), has no value for `size` and `mode`; it must name every parameter; use g instead"
+    @test hinted(5) == message(() -> row_of(5; section = "§1.13"))
+    @test hinted((tiny, 1)) == message(() -> row_of((tiny, 1); section = "§1.13"))
+    @test hinted((colour = :red,)) == message(() -> row_of((colour = :red,)))
 
     # The collection reader reads an iterator once and refuses a single row.
     rows_of(input) = _row_list(input; what = "f takes rows", fix = row -> "f([$(repr(row))])", section = "§0")

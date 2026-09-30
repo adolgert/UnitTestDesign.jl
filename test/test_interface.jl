@@ -725,16 +725,17 @@ end
     space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]))
     valid = (1, :x, true)
     # What each caller calls the row, the section its errors cite, whether the
-    # row must be complete, and a call that reads the row `r`.
+    # row must be complete, the hint a partial row's error adds, and a call
+    # that reads the row `r`.
     readers = [
-        ("coverage row 2", " (contract §1.13)", true, r -> coverage([valid, r], space)),
-        ("diagnose case 2", "", true, r -> diagnose([valid, r], [true, false]; space)),
-        ("must_include row 2", " (contract §10.1)", false, r -> all_pairs(space; must_include = [valid, r])),
-        ("the excursion base `from`", " (contract §7.6)", true, r -> excursions(space; from = r)),
-        ("the case", " (contract §1.25)", true, r -> isallowed(space, r)),
-        ("the assignment", " (contract §1.26)", false, r -> explain(space, r)),
+        ("coverage row 2", " (contract §1.13)", true, "", r -> coverage([valid, r], space)),
+        ("diagnose case 2", "", true, "", r -> diagnose([valid, r], [true, false]; space)),
+        ("must_include row 2", " (contract §10.1)", false, "", r -> all_pairs(space; must_include = [valid, r])),
+        ("the excursion base `from`", " (contract §7.6)", true, "", r -> excursions(space; from = r)),
+        ("the case", " (contract §1.25)", true, "; use explain for a partial assignment", r -> isallowed(space, r)),
+        ("the assignment", " (contract §1.26)", false, "", r -> explain(space, r)),
     ]
-    for (what, cited, complete, call) in readers
+    for (what, cited, complete, hint, call) in readers
         @test message(() -> call(:a)) ==
               "$what is a Symbol; a row is a NamedTuple, or a tuple or vector with one value per parameter$cited"
         @test message(() -> call((1, :x))) == "$what has 2 values; the space has 3 parameters (a, b, c)$cited"
@@ -745,7 +746,7 @@ end
         @test startswith(message(() -> call([1, :z, true])), "$what: :z is not a value of `b`")
         partial = message(() -> call((c = false, a = 2)))
         @test partial == (complete ? "$what, (c = false, a = 2), has no value for `b`; it must name every " *
-                                     "parameter$cited" : "no error")
+                                     "parameter$hint$cited" : "no error")
     end
     # classify takes NamedTuple targets only; their names and values read alike.
     @test message(() -> UnitTestDesign.classify(space, [(a = 1, d = 2)])) ==

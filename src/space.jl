@@ -457,7 +457,7 @@ function case_indices(space::TestSpace, case::Tuple)
 end
 
 """
-    _row_indices(space, row; what, section = nothing, complete) -> Vector{Int}
+    _row_indices(space, row; what, section = nothing, complete, hint = nothing) -> Vector{Int}
 
 The value indices of a row the caller wrote, one per parameter and `0` for
 a parameter the row leaves out, as `case_indices` finds them. A
@@ -481,12 +481,15 @@ must-include rows, an excursion's `from`, and the arguments of `isallowed`,
 
 When `section` is given, such as "§1.13", the first, second and fourth end
 with "(contract §1.13)". The third is `case_indices`'s message unchanged,
-which may cite a section of its own. What a caller accepts beyond the shape
-of a row stays with the caller: an ordinary base for `from`, no `NamedTuple`
-in a positional call, a `NamedTuple` target for `classify`.
+which may cite a section of its own. A `hint`, the caller's advice for a
+partial row such as `isallowed`'s "use explain for a partial assignment",
+follows the fourth, after "; " and before the section. What a caller accepts
+beyond the shape of a row stays with the caller: an ordinary base for
+`from`, no `NamedTuple` in a positional call, a `NamedTuple` target for
+`classify`.
 """
 function _row_indices(space::TestSpace, row; what::AbstractString, section = nothing,
-                      complete::Bool)
+                      complete::Bool, hint = nothing)
     n = length(space.names)
     if row isa Union{Tuple, AbstractVector}
         length(row) == n || throw(ArgumentError(
@@ -508,7 +511,7 @@ function _row_indices(space::TestSpace, row; what::AbstractString, section = not
         unset = space.names[idx .== 0]
         isempty(unset) || throw(ArgumentError(
             "$what, $(repr(row)), has no value for $(join(("`$u`" for u in unset), ", ", " and ")); " *
-            "it must name every parameter" * _cited(section)))
+            "it must name every parameter" * (hint === nothing ? "" : "; $hint") * _cited(section)))
     end
     return idx
 end

@@ -191,7 +191,8 @@ end
     # Inputs are complete and in the space's vocabulary.
     err = try isallowed(space, (n = 1, m = :a)) catch e; e end
     @test err isa ArgumentError &&
-          err.msg == "the case, (n = 1, m = :a), has no value for `k`; it must name every parameter (contract §1.25)"
+          err.msg == "the case, (n = 1, m = :a), has no value for `k`; it must name every parameter; " *
+                     "use explain for a partial assignment (contract §1.25)"
     err = try isallowed(space, (n = 3, m = :a, k = :x)) catch e; e end
     @test err isa ArgumentError && occursin("`n`", err.msg) && occursin("3", err.msg)
     @test_throws ArgumentError isallowed(space, (n = 1, m = :a, k = :x, j = 1))

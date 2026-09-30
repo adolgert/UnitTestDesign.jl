@@ -143,7 +143,8 @@ false
 ```
 """
 function isallowed(space::TestSpace, case)
-    idx = _row_indices(space, case; what = "the case", section = "§1.25", complete = true)
+    idx = _row_indices(space, case; what = "the case", section = "§1.25", complete = true,
+                       hint = "use explain for a partial assignment")
     bad = _invalid_parameters(space, idx)
     length(bad) > 1 && return false
     p = isempty(bad) ? 0 : only(bad)
