@@ -149,7 +149,7 @@ end
     msg = message(() -> excursions(space; from = (a = 1, b = :y, c = true)))
     @test occursin("y needs c off", msg) && !occursin("rule 2", msg)
     # A partial base, a value outside the domain, a wrong length.
-    @test occursin("complete row", message(() -> excursions(space; from = (a = 1,))))
+    @test occursin("has no value for `b` and `c`", message(() -> excursions(space; from = (a = 1,))))
     @test occursin("`b`", message(() -> excursions(space; from = (a = 1, b = :z, c = true))))
     @test occursin("3 parameters", message(() -> excursions(space; from = (1, :x))))
     @test occursin("`b`", message(() -> excursions(space; from = [1, 3, true])))   # values, not positions

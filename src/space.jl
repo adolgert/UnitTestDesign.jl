@@ -3,7 +3,9 @@
 # tabulated RuleTables (contract §2, §4, §5, §12). This layer is pure: it
 # generates nothing. It translates between the caller's vocabulary (names and
 # values) and index space (rule_table.jl), where parameter `i` is the i-th
-# name and value `k` of parameter `i` is `space.values[i][k]`.
+# name and value `k` of parameter `i` is `space.values[i][k]`. Every row a
+# caller writes, and every collection of rows, is read here (`_row_indices`,
+# `_row_list`).
 
 
 ## Wrappers (contract §2.12, §2.13, §4, §5)
@@ -452,6 +454,99 @@ function case_indices(space::TestSpace, case::Tuple)
         "a positional case lists $(length(case)) values, but the space has $n parameters " *
         "($(join(space.names, ", "))), and a positional case is complete"))
     return [value_index(space, i, case[i]) for i in 1:n]
+end
+
+"""
+    _row_indices(space, row; what, section = nothing, complete) -> Vector{Int}
+
+The value indices of a row the caller wrote, one per parameter and `0` for
+a parameter the row leaves out, as `case_indices` finds them. A
+`NamedTuple` names some or all parameters, in any order; a `Tuple`, or a
+vector read as one, lists one value per parameter in parameter order
+(contract §2.11). With `complete`, every parameter must have a value.
+
+Every row a caller writes is read here: `coverage` and `diagnose` rows,
+must-include rows, an excursion's `from`, and the arguments of `isallowed`,
+`explain` and `classify`. So the four input errors are worded here, each an
+`ArgumentError` that starts with `what`, such as "coverage row 3":
+
+- not a row: "WHAT is a T; a row is a NamedTuple, or a tuple or vector with
+  one value per parameter";
+- the wrong length: "WHAT has k values; the space has n parameters (a, b,
+  c)";
+- an unknown name, or a value outside its domain: "WHAT: " followed by the
+  message of `case_indices`, which names the parameter and the value;
+- a missing value, when `complete`: "WHAT, (…), has no value for `a` and
+  `b`; it must name every parameter".
+
+When `section` is given, such as "§1.13", the first, second and fourth end
+with "(contract §1.13)". The third is `case_indices`'s message unchanged,
+which may cite a section of its own. What a caller accepts beyond the shape
+of a row stays with the caller: an ordinary base for `from`, no `NamedTuple`
+in a positional call, a `NamedTuple` target for `classify`.
+"""
+function _row_indices(space::TestSpace, row; what::AbstractString, section = nothing,
+                      complete::Bool)
+    n = length(space.names)
+    if row isa Union{Tuple, AbstractVector}
+        length(row) == n || throw(ArgumentError(
+            "$what has $(length(row)) values; the space has $n parameters " *
+            "($(join(space.names, ", ")))" * _cited(section)))
+        row = Tuple(row)
+    elseif !(row isa NamedTuple)
+        throw(ArgumentError(
+            "$what is a $(typeof(row)); a row is a NamedTuple, or a tuple or vector with one " *
+            "value per parameter" * _cited(section)))
+    end
+    idx = try
+        case_indices(space, row)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("$what: " * err.msg))
+    end
+    if complete
+        unset = space.names[idx .== 0]
+        isempty(unset) || throw(ArgumentError(
+            "$what, $(repr(row)), has no value for $(join(("`$u`" for u in unset), ", ", " and ")); " *
+            "it must name every parameter" * _cited(section)))
+    end
+    return idx
+end
+
+"The end of an input error that cites `section`, or nothing when there is none."
+_cited(section) = section === nothing ? "" : " (contract $section)"
+
+"Whether `x` has the shape of a row: a `NamedTuple`, a `Tuple` or a vector."
+_is_row(x) = x isa Union{Tuple, NamedTuple, AbstractVector}
+
+"""
+    _row_list(input; what, fix, section = nothing) -> Vector
+
+The caller's collection of rows as a `Vector`, read once with `collect`, so
+an iterator that can be read only once gives all its rows. Each row is read
+later, by `_row_indices`. Two input errors are worded here, each an
+`ArgumentError` that starts with `what`, such as "coverage takes a
+collection of rows":
+
+- a single row, a `NamedTuple` or a collection none of whose elements is a
+  row: "WHAT; wrap a single row in a vector: " followed by the corrected
+  call that `fix(row)` writes;
+- anything that is not a collection: "WHAT, such as a vector of NamedTuples
+  or tuples; got …", ending with the contract `section` when it is given.
+
+A check that belongs to one caller, such as `coverage` given the space
+first, comes before this one, in the caller.
+"""
+function _row_list(input; what::AbstractString, fix, section = nothing)
+    input isa NamedTuple && throw(ArgumentError("$what; wrap a single row in a vector: $(fix(input))"))
+    rows = applicable(iterate, input) ? collect(input) : nothing
+    rows isa AbstractVector || throw(ArgumentError(
+        "$what, such as a vector of NamedTuples or tuples; got $(repr(input))" * _cited(section)))
+    if !isempty(rows) && !any(_is_row, rows)
+        single = input isa Union{Tuple, AbstractVector} ? input : Tuple(rows)
+        throw(ArgumentError("$what; wrap a single row in a vector: $(fix(single))"))
+    end
+    return rows
 end
 
 """

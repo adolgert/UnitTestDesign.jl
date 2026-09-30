@@ -159,66 +159,6 @@ iscomplete(c::Coverage) = all(p -> isempty(p.missing) && isempty(p.unknown), (c.
 ## Reading the rows (contract §1.13, §1.14)
 
 """
-    _coverage_rows(cases) -> Vector
-
-The caller's cases as a `Vector`, read once with `collect`, so an iterator
-that can be read only once gives all its rows. A single row, or the space in
-the rows' place, is an `ArgumentError` saying how to write the call.
-"""
-function _coverage_rows(cases)
-    cases isa TestSpace && throw(ArgumentError(
-        "coverage takes the rows first and the space second: coverage(cases, space)"))
-    cases isa NamedTuple && throw(ArgumentError(
-        "coverage takes a collection of rows; wrap a single row in a vector: " *
-        "coverage([$(repr(cases))], space)"))
-    rows = applicable(iterate, cases) ? collect(cases) : nothing
-    rows isa AbstractVector || throw(ArgumentError(
-        "coverage takes a collection of rows, such as a vector of NamedTuples or tuples; " *
-        "got $(repr(cases)) (contract §1.12)"))
-    if !isempty(rows) && !any(_is_row, rows)
-        throw(ArgumentError(
-            "coverage takes a collection of rows; wrap a single row in a vector: " *
-            "coverage([$(repr(cases))], space)"))
-    end
-    return rows
-end
-
-"""
-    _coverage_row(space, row, k) -> Vector{Int}
-
-Row `k` as one value index per parameter (contract §1.13, §2.11). A
-`NamedTuple` names every parameter, in any order; a `Tuple` or vector lists
-one value per parameter in parameter order. Values match by identity, and a
-[`Partition`](@ref) may be written by its name. Anything else is an
-`ArgumentError` naming the row and the parameter.
-"""
-function _coverage_row(space::TestSpace, row, k::Integer)
-    n = length(space.names)
-    if row isa Union{Tuple, AbstractVector}
-        length(row) == n || throw(ArgumentError(
-            "coverage row $k has $(length(row)) values; the space has $n parameters " *
-            "($(join(space.names, ", "))), and a row given to coverage is complete (contract §1.13)"))
-        row = Tuple(row)
-    elseif !(row isa NamedTuple)
-        throw(ArgumentError(
-            "coverage row $k is a $(typeof(row)); a row is a NamedTuple, or a tuple or vector " *
-            "with one value per parameter (contract §1.13)"))
-    end
-    idx = try
-        case_indices(space, row)
-    catch err
-        err isa ArgumentError || rethrow()
-        throw(ArgumentError("coverage row $k: " * err.msg))   # §1.13 names the row
-    end
-    unset = space.names[idx .== 0]
-    isempty(unset) || throw(ArgumentError(
-        "coverage row $k, $(repr(row)), has no value for " *
-        "$(join(("`$u`" for u in unset), ", ", " and ")); a row given to coverage names every " *
-        "parameter (contract §1.13)"))
-    return idx
-end
-
-"""
     _read_rows(context, rows) -> (kept, duplicates, rejected, slots)
 
 Sort the rows by kind and validity (contract §1.11, §1.14, §5.3–§5.7): `kept`
@@ -229,9 +169,10 @@ lists, per kind, the rows that break an applicable rule (judged under
 the rows with more than one `Invalid` value (negative kind). `slots[1][k]`
 is the position in `kept[1]` of row `k` when it is the first appearance of a
 valid ordinary row, else 0, and `slots[2][k]` the same for `kept[2]` and
-valid negative rows: the prefix curves of `report` read them. Rules are
-checked through the call's `FeasibilityContext`, so a lazy rule's verdicts
-are memoized for the call and no longer (§3.5, §12.19).
+valid negative rows: the prefix curves of `report` read them. Each row is
+read by `_row_indices`, complete (§1.13). Rules are checked through the
+call's `FeasibilityContext`, so a lazy rule's verdicts are memoized for the
+call and no longer (§3.5, §12.19).
 """
 function _read_rows(context::FeasibilityContext, rows::AbstractVector)
     space = context.space
@@ -241,7 +182,7 @@ function _read_rows(context::FeasibilityContext, rows::AbstractVector)
     slots = (zeros(Int, length(rows)), zeros(Int, length(rows)))
     seen = Set{Vector{Int}}()
     for (k, row) in enumerate(rows)
-        idx = _coverage_row(space, row, k)
+        idx = _row_indices(space, row; what = "coverage row $k", section = "§1.13", complete = true)
         bad = _invalid_parameters(space, idx)
         part = isempty(bad) ? 1 : 2
         if length(bad) > 1
@@ -642,7 +583,10 @@ function coverage(cases, input...; strength = 2, stronger = [], constraints = no
         "coverage needs the space the rows belong to: coverage(cases, space), with $_INPUT_FORMS; " *
         "only a TestCases carries its own space"))
     space, _ = _space(:coverage, input, constraints)
-    rows = _coverage_rows(cases)
+    cases isa TestSpace && throw(ArgumentError(
+        "coverage takes the rows first and the space second: coverage(cases, space)"))
+    rows = _row_list(cases; what = "coverage takes a collection of rows", section = "§1.12",
+                     fix = row -> "coverage([$(repr(row))], space)")
     return _coverage(rows, space; strength, stronger, feasibility_limit, explanation_limit)
 end
 

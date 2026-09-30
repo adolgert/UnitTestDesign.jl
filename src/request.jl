@@ -202,18 +202,7 @@ function _must_include_matrix(request::Request, rows)
     n = length(space.names)
     columns = Vector{Int}[]
     for (r, row) in enumerate(rows)
-        if row isa Tuple || row isa AbstractVector
-            length(row) == n || throw(ArgumentError(
-                "must_include row $r has $(length(row)) values; the space has $n parameters"))
-        elseif !(row isa NamedTuple)
-            throw(ArgumentError("must_include row $r is a $(typeof(row)); use a NamedTuple or a Tuple"))
-        end
-        idx = try
-            case_indices(space, row isa NamedTuple ? row : Tuple(row))
-        catch err
-            err isa ArgumentError || rethrow()
-            throw(ArgumentError("must_include row $r: " * err.msg))   # §10.2 names the row
-        end
+        idx = _row_indices(space, row; what = "must_include row $r", section = "§10.1", complete = false)
         bad = _invalid_parameters(space, idx)
         length(bad) > 1 && throw(ArgumentError(
             "must_include row $r, $(from_indices(space, idx)), has Invalid values for " *

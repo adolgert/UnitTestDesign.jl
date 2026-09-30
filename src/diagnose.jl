@@ -4,7 +4,7 @@
 # `diagnose` is a pure function of the rows and their outcomes. The package
 # never runs a test (§14.1); outcomes enter here and nowhere else. It works
 # in index space: each row becomes one value index per parameter
-# (`case_indices`), so values compare by identity (§2.1), and a combination
+# (`_row_indices`), so values compare by identity (§2.1), and a combination
 # is a partial index vector with 0 for a parameter it leaves out.
 #
 # `followups` asks the Phase 2 feasibility search for a valid row that holds
@@ -191,7 +191,8 @@ See [`Diagnosis`](@ref UnitTestDesign.Diagnosis) and
 function diagnose(cases, passed::AbstractVector; strength = nothing, space = nothing)
     rows, space, strength = _diagnosis_input(cases, strength, space)
     outcomes = _outcomes(passed, length(rows))
-    idx = [_diagnosis_row(space, row, k) for (k, row) in enumerate(rows)]
+    idx = [_row_indices(space, row; what = "diagnose case $k", complete = true)
+           for (k, row) in enumerate(rows)]
     conflicting = _conflicts(idx, outcomes)
     left_out = Set{Int}(k for group in conflicting for k in group)
     failing = [k for k in eachindex(idx) if !outcomes[k] && !(k in left_out)]
@@ -222,12 +223,8 @@ function _diagnosis_input(cases, strength, space)
     else
         cases isa TestSpace && throw(ArgumentError(
             "diagnose takes the cases first and their outcomes second: diagnose(cases, passed)"))
-        cases isa Union{NamedTuple, Tuple} && throw(ArgumentError(
-            "diagnose takes a collection of cases; wrap a single case in a vector: " *
-            "diagnose([$(_fit(repr(cases), 60))], passed; space)"))
-        rows = applicable(iterate, cases) ? collect(cases) : nothing
-        rows isa AbstractVector || throw(ArgumentError(
-            "diagnose takes a TestCases or a vector of cases; got $(_fit(repr(cases), 60))"))
+        rows = _row_list(cases; what = "diagnose takes a collection of cases",
+                         fix = row -> "diagnose([$(_fit(repr(row), 60))], passed; space)")
         space === nothing && throw(ArgumentError(
             "diagnose needs the space the cases belong to: diagnose(cases, passed; space, strength); " *
             "only a TestCases carries its own space"))
@@ -255,39 +252,6 @@ function _outcomes(passed::AbstractVector, n::Integer)
         outcomes[k] = x
     end
     return outcomes
-end
-
-"""
-    _diagnosis_row(space, row, k) -> Vector{Int}
-
-Case `k` as one value index per parameter. A `NamedTuple` names every
-parameter; a `Tuple` or vector lists them in order. Values match by identity
-and a [`Partition`](@ref) may be written by its name (§2.11). Anything else
-is an `ArgumentError` naming the case.
-"""
-function _diagnosis_row(space::TestSpace, row, k::Integer)
-    n = length(space.names)
-    if row isa Union{Tuple, AbstractVector}
-        length(row) == n || throw(ArgumentError(
-            "diagnose case $k has $(length(row)) values; the space has $n parameters " *
-            "($(join(space.names, ", "))), and a case is complete"))
-        row = Tuple(row)
-    elseif !(row isa NamedTuple)
-        throw(ArgumentError(
-            "diagnose case $k is a $(typeof(row)); a case is a NamedTuple, or a tuple or vector " *
-            "with one value per parameter"))
-    end
-    idx = try
-        case_indices(space, row)
-    catch err
-        err isa ArgumentError || rethrow()
-        throw(ArgumentError("diagnose case $k: " * err.msg))
-    end
-    unset = space.names[idx .== 0]
-    isempty(unset) || throw(ArgumentError(
-        "diagnose case $k, $(_fit(repr(row), 60)), has no value for " *
-        "$(join(("`$u`" for u in unset), ", ", " and ")); a case names every parameter"))
-    return idx
 end
 
 "The rows that repeat one case with different outcomes, one ascending vector per case, by first row."

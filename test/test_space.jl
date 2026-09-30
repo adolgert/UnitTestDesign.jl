@@ -281,6 +281,49 @@ end
 end
 
 
+@testitem "space: the row reader and its four input errors (§2.11)" begin
+    using UnitTestDesign: _row_indices, _row_list
+    message(f) = try f(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $e" end
+    tiny = Partition(:tiny, Returns(1e-9))
+    space = TestSpace((size = [tiny, 100], n = Any[1, 1.0, Invalid(-1)], mode = [:a, :b]))
+    row_of(row; complete = false, section = nothing) =
+        _row_indices(space, row; what = "row 7", section, complete)
+    # A NamedTuple, in any order and partial unless `complete`; a tuple or a
+    # vector in parameter order; a partition by its name.
+    @test row_of((mode = :b, size = :tiny)) == [1, 0, 2]
+    @test row_of((:tiny, 1.0, :b)) == row_of(Any[:tiny, 1.0, :b]) == row_of([tiny, 1.0, :b]) == [1, 2, 2]
+    @test row_of((size = 100, n = Invalid(-1), mode = :a); complete = true) == [2, 3, 1]
+    # The four errors, with and without a contract section.
+    @test message(() -> row_of(5)) ==
+          "row 7 is a Int64; a row is a NamedTuple, or a tuple or vector with one value per parameter"
+    @test message(() -> row_of(Set([1]); section = "§1.13")) ==
+          "row 7 is a Set{Int64}; a row is a NamedTuple, or a tuple or vector with one value per " *
+          "parameter (contract §1.13)"
+    @test message(() -> row_of([tiny, 1])) == "row 7 has 2 values; the space has 3 parameters (size, n, mode)"
+    @test message(() -> row_of((tiny, 1); section = "§1.13")) ==
+          "row 7 has 2 values; the space has 3 parameters (size, n, mode) (contract §1.13)"
+    @test message(() -> row_of((colour = :red,); section = "§1.13")) ==
+          "row 7: `colour` is not a parameter of this space; the parameters are size, n, mode"
+    @test startswith(message(() -> row_of((tiny, 2, :a))), "row 7: 2 is not a value of `n`")
+    @test message(() -> row_of((n = 1,); complete = true)) ==
+          "row 7, (n = 1,), has no value for `size` and `mode`; it must name every parameter"
+    @test message(() -> row_of((n = 1, mode = :a); complete = true, section = "§1.13")) ==
+          "row 7, (n = 1, mode = :a), has no value for `size`; it must name every parameter (contract §1.13)"
+
+    # The collection reader reads an iterator once and refuses a single row.
+    rows_of(input) = _row_list(input; what = "f takes rows", fix = row -> "f([$(repr(row))])", section = "§0")
+    once = Iterators.Stateful([(1, 2), (3, 4)])
+    @test rows_of(once) == [(1, 2), (3, 4)] && isempty(once)
+    @test rows_of(((a = 1,), (a = 2,))) == [(a = 1,), (a = 2,)]
+    @test rows_of([]) == []
+    @test message(() -> rows_of((a = 1,))) == "f takes rows; wrap a single row in a vector: f([(a = 1,)])"
+    @test message(() -> rows_of((1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
+    @test message(() -> rows_of([1, :x])) == "f takes rows; wrap a single row in a vector: f([Any[1, :x]])"
+    @test message(() -> rows_of(x for x in (1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
+    @test message(() -> rows_of(5)) == "f takes rows, such as a vector of NamedTuples or tuples; got 5 (contract §0)"
+end
+
+
 @testitem "space: active tables for negative rows (§5.4–§5.6, §12.22)" begin
     using UnitTestDesign: active_tables, active_rules
     space = TestSpace((n = [1, 2, Invalid(0)], m = [:a, :b], k = [:x, :y]);

@@ -86,8 +86,9 @@ _domain_positions(request::Request) = [sortperm(c) for c in request.candidates]
 
 The base row in engine positions. `nothing` is the first ordinary value of
 each parameter (contract §7.6). A `Vector{Int}` is taken as engine
-positions. A `NamedTuple` or `Tuple` is read in the caller's vocabulary and
-must be complete and ordinary.
+positions. Anything else is a row of values, such as a `NamedTuple` or
+`Tuple`, read by `_row_indices`; it must be complete and ordinary. The
+public `excursions` passes a vector of values as a `Tuple` (`_from_row`).
 """
 function excursion_base(request::Request, from)
     n = length(request.arity)
@@ -101,25 +102,15 @@ function excursion_base(request::Request, from)
                 "$(from[i]), outside 1:$(request.arity[i])"))
         end
         return collect(Int, from)
-    elseif from isa NamedTuple || from isa Tuple
-        idx = try
-            case_indices(request.space, from)
-        catch err
-            err isa ArgumentError || rethrow()
-            throw(ArgumentError("the excursion base `from`: " * err.msg))   # names the keyword (§7.6)
-        end
-        unset = request.space.names[idx .== 0]
-        isempty(unset) || throw(ArgumentError(
-            "the excursion base `from` must be a complete row (contract §7.6); it has no value for " *
-            join(unset, ", ")))
-        for i in 1:n
-            idx[i] in ordinary_indices(request.space, i) || throw(ArgumentError(
-                "the excursion base `from` has the Invalid value $(repr(request.space.values[i][idx[i]])) " *
-                "at `$(request.space.names[i])`; the base must be an ordinary row (contract §7.6)"))
-        end
-        return _positions(request, idx)
     end
-    throw(ArgumentError("the excursion base `from` is a NamedTuple, a Tuple, or nothing; got a $(typeof(from))"))
+    idx = _row_indices(request.space, from; what = "the excursion base `from`", section = "§7.6",
+                       complete = true)
+    for i in 1:n
+        idx[i] in ordinary_indices(request.space, i) || throw(ArgumentError(
+            "the excursion base `from` has the Invalid value $(repr(request.space.values[i][idx[i]])) " *
+            "at `$(request.space.names[i])`; the base must be an ordinary row (contract §7.6)"))
+    end
+    return _positions(request, idx)
 end
 
 """

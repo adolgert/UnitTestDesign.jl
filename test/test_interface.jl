@@ -429,10 +429,10 @@ end
     # Errors: a base that breaks a rule, a partial base, a negative distance, stronger (§7.5, §7.6).
     msg = message(() -> excursions(nt; from = (a = 1, b = :y, c = true), constraints = rules))
     @test occursin("breaks rule 1 (y needs c off)", msg) && occursin("§7.6", msg)
-    @test occursin("complete row", message(() -> excursions(nt; from = (a = 1,))))
+    @test occursin("it must name every parameter", message(() -> excursions(nt; from = (a = 1,))))
     @test message(() -> excursions(nt; distance = -1)) == "distance must be an integer of at least 0, got -1 (contract §7.5)"
     @test message(() -> excursions(nt; distance = 1.5)) == "distance must be an integer of at least 0, got 1.5 (contract §7.5)"
-    @test occursin("`from` is the base row", message(() -> excursions(nt; from = :a)))
+    @test occursin("the excursion base `from` is a Symbol", message(() -> excursions(nt; from = :a)))
     @test message(() -> excursions(nt; stronger = [(:a, :b, :c) => 3])) ==
           "excursions take a single distance; stronger groups apply to covering designs"
     @test_throws MethodError excursions(nt; strength = 2)
@@ -688,9 +688,9 @@ end
 
     # from: its shape, then its names and values, each error naming `from`.
     @test message(() -> excursions(d...; from = (1, 3))) ==
-          "`from` has 2 values; the space has 3 parameters, p1, p2, p3, and the base is a complete row (contract §7.6)"
+          "the excursion base `from` has 2 values; the space has 3 parameters (p1, p2, p3) (contract §7.6)"
     @test message(() -> excursions(d...; from = [1, 3, 5, 7])) ==
-          "`from` has 4 values; the space has 3 parameters, p1, p2, p3, and the base is a complete row (contract §7.6)"
+          "the excursion base `from` has 4 values; the space has 3 parameters (p1, p2, p3) (contract §7.6)"
     @test message(() -> excursions(d...; from = (p1 = 1, p2 = 3, p3 = 5))) ==
           "`from` is a NamedTuple; a positional call takes the base as a tuple or vector of values in " *
           "argument order, one for each of p1, p2, p3 (contract §7.6)"
@@ -699,8 +699,8 @@ end
     @test startswith(message(() -> excursions(nt; from = (a = 9, b = 3, c = 5))),
                      "the excursion base `from`: 9 is not a value of `a`")
     @test message(() -> excursions(nt; from = Dict(:a => 1))) ==
-          "`from` is the base row: a complete NamedTuple, or a tuple of values in parameter order; " *
-          "got a Dict{Symbol, Int64} (contract §7.6)"
+          "the excursion base `from` is a Dict{Symbol, Int64}; a row is a NamedTuple, or a tuple or " *
+          "vector with one value per parameter (contract §7.6)"
     @test excursions(nt; from = (1, 4, 6), distance = 0)[1] == (a = 1, b = 4, c = 6)   # values in parameter order
 
     # stronger: a vector of group => strength pairs, each group a tuple or vector.
@@ -718,6 +718,36 @@ end
           "`stronger` strength for (1, 2, 3) must be an integer, got 2.5 (contract §11.6)"
     @test message(() -> covering(d...; stronger = [(1, true) => 2])) ==
           "`stronger` group members are names or indices; got true"
+end
+
+
+@testitem "every row a caller writes is read by one reader, whose errors read alike (§1.13, §2.11, §7.6, §10.1)" setup=[InterfaceSetup] begin
+    space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]))
+    valid = (1, :x, true)
+    # What each caller calls the row, the section its errors cite, whether the
+    # row must be complete, and a call that reads the row `r`.
+    readers = [
+        ("coverage row 2", " (contract §1.13)", true, r -> coverage([valid, r], space)),
+        ("diagnose case 2", "", true, r -> diagnose([valid, r], [true, false]; space)),
+        ("must_include row 2", " (contract §10.1)", false, r -> all_pairs(space; must_include = [valid, r])),
+        ("the excursion base `from`", " (contract §7.6)", true, r -> excursions(space; from = r)),
+    ]
+    for (what, cited, complete, call) in readers
+        @test message(() -> call(:a)) ==
+              "$what is a Symbol; a row is a NamedTuple, or a tuple or vector with one value per parameter$cited"
+        @test message(() -> call((1, :x))) == "$what has 2 values; the space has 3 parameters (a, b, c)$cited"
+        @test message(() -> call([1, :x, true, 4])) ==
+              "$what has 4 values; the space has 3 parameters (a, b, c)$cited"
+        @test message(() -> call((a = 1, d = 2))) ==
+              "$what: `d` is not a parameter of this space; the parameters are a, b, c"
+        @test startswith(message(() -> call([1, :z, true])), "$what: :z is not a value of `b`")
+        partial = message(() -> call((c = false, a = 2)))
+        @test partial == (complete ? "$what, (c = false, a = 2), has no value for `b`; it must name every " *
+                                     "parameter$cited" : "no error")
+    end
+    # classify takes NamedTuple targets only; their names and values read alike.
+    @test message(() -> UnitTestDesign.classify(space, [(a = 1, d = 2)])) ==
+          "the target: `d` is not a parameter of this space; the parameters are a, b, c"
 end
 
 

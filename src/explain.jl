@@ -137,11 +137,7 @@ false
 ```
 """
 function isallowed(space::TestSpace, case::Union{NamedTuple, Tuple})
-    idx = case_indices(space, case)
-    unset = space.names[idx .== 0]
-    isempty(unset) || throw(ArgumentError(
-        "isallowed takes a complete case, but $(repr(case)) has no value for " *
-        "$(join(unset, ", ")). Use explain for a partial assignment (contract §1.25)."))
+    idx = _row_indices(space, case; what = "the case", section = "§1.25", complete = true)
     bad = _invalid_parameters(space, idx)
     length(bad) > 1 && return false
     p = isempty(bad) ? 0 : only(bad)
@@ -244,7 +240,7 @@ function explain(space::TestSpace, assignment::Union{NamedTuple, Tuple};
                  feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     context = FeasibilityContext(space; feasibility_limit)
     _check_limit(:explanation_limit, explanation_limit)
-    idx = case_indices(space, assignment)
+    idx = _row_indices(space, assignment; what = "the assignment", section = "§1.26", complete = false)
     shown = from_indices(space, idx)
     if length(_invalid_parameters(space, idx)) > 1
         return Explanation(shown, :forbidden, Int[], String[], :not_applicable, nothing, nothing, 0, 0)
@@ -382,7 +378,7 @@ function _classify_one(context::FeasibilityContext, target, explanation_limit)
     target isa NamedTuple || throw(ArgumentError(
         "a target is a NamedTuple of some parameters' values, such as (mode = :fast,); " *
         "got $(repr(target))"))
-    idx = case_indices(space, target)
+    idx = _row_indices(space, target; what = "the target", complete = false)
     f, active = feasibility_for(context, idx)
     c = IndexClassification(explain_partial(f, idx; explanation_limit))
     rules = active[c.rules]
