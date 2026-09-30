@@ -622,7 +622,41 @@ _kind_named(space::TestSpace, p::Int, v::Int) =
     p == 0 ? NamedTuple() : from_indices(space, [q == p ? v : 0 for q in eachindex(space.names)])
 
 """
-    _isolate(d, s, (p, v), others, isolation, memos, limits, starts) -> NamedTuple
+    _Found(witness, from, changes)
+
+An isolation search's case (see `_isolate`): `witness`, a valid row of the
+kind searched, as value indices, holds the suspect and no other suspect. It
+is closest to the failing case `from`, a position among the rows diagnosed,
+and differs from it at `changes` parameters.
+"""
+struct _Found
+    witness::Vector{Int}
+    from::Int
+    changes::Int
+end
+
+"""
+    _Proof(rules, others, minimal, limit)
+
+An isolation search's proof that no valid case of its kind holds the suspect
+without another suspect (see `_isolate`): a `FollowupProof` in index space,
+with `rules` in the space's numbering and `others` as positions in
+`d.suspects`. `minimal` and `limit` are as in `FollowupProof`.
+"""
+struct _Proof
+    rules::Vector{Int}
+    others::Vector{Int}
+    minimal::Symbol
+    limit::Union{Nothing, Pair{Symbol, Int}}
+end
+
+"An isolation search that reached `limit`, as `keyword => value`, before it decided (see `_isolate`)."
+struct _Unknown
+    limit::Pair{Symbol, Int}
+end
+
+"""
+    _isolate(d, s, (p, v), others, isolation, memos, limits, starts) -> Union{_Found, _Proof, _Unknown}
 
 One kind of case's isolation search for the suspect `s` (§3.17): ordinary
 cases when `p == 0`, else negative cases with `v` at `p`, whose candidates
@@ -632,12 +666,12 @@ apply to every kind, including those that name `p`. Each start, a failing
 case, orders the candidates with its values first; with no starts, domain
 order.
 
-`IndexClassification` gives each start's search a status. Returns
-`(status, witness, from, changes, rules, others, minimal, limit)`: `:found`
-when a search is `:required`, with the witness closest to a failing case of
-`s`; `:inseparable` when one is `:forbidden` or `:implied`, with the proof,
-`rules` in the space's numbering and `others` as positions in
-`d.suspects`; or `:unknown`.
+`IndexClassification` gives each start's search a status. `:required` gives
+a `_Found`, and of the starts' cases the one with the fewest changes from a
+failing case of `s` is kept, the earlier start's on a tie. `:forbidden` or
+`:implied` gives a `_Proof` at once, since feasibility does not depend on
+the order values are tried in. When every start's search is `:unknown`, the
+result is an `_Unknown` with the limit that stopped the first.
 """
 function _isolate(d::Diagnosis, s::Suspect, (p, v)::Tuple{Int, Int}, others::Vector{Int},
                   isolation::Vector{RuleTable}, memos, limits, starts::Vector{Int})
@@ -651,28 +685,28 @@ function _isolate(d::Diagnosis, s::Suspect, (p, v)::Tuple{Int, Int}, others::Vec
     p == 0 || (key[p] = v)
     orders = isempty(starts) ? [base] :
              [[_value_first(base[q], d.rows[k][q]) for q in eachindex(base)] for k in starts]
-    none = (status = :unknown, witness = nothing, from = 0, changes = -1, rules = Int[], others = Int[],
-            minimal = :not_applicable, limit = nothing)
-    best = none
+    result = nothing
     for candidates in orders
         f = Feasibility(candidates, tables; limit = feasibility_limit, memos = table_memos)
         c = IndexClassification(explain_partial(f, key; explanation_limit))
         if c.status === :required
             k = argmin(k -> (_changes(c.witness, d.rows[k]), k), s.failing)
             changes = _changes(c.witness, d.rows[k])
-            if best.status !== :found || changes < best.changes
-                best = merge(none, (status = :found, witness = c.witness, from = k, changes = changes))
+            if !(result isa _Found) || changes < result.changes
+                result = _Found(c.witness, k, changes)
             end
-            best.changes == 0 && break
-        elseif c.status === :forbidden || c.status === :implied
-            # Feasibility does not depend on the order values are tried in: one proof decides the kind.
-            return merge(none, (status = :inseparable,
-                rules = Int[active[r] for r in c.rules if r <= length(active)],
-                others = Int[others[r - length(active)] for r in c.rules if r > length(active)],
-                minimal = c.minimal, limit = _limit_pair(c.limit, feasibility_limit, explanation_limit)))
+            result.changes == 0 && break
+        elseif c.status === :unknown
+            result === nothing && (result = _Unknown(_limit_pair(c.limit, feasibility_limit, explanation_limit)))
+        else
+            # :forbidden or :implied. Feasibility does not depend on the order values
+            # are tried in: one proof decides the kind.
+            return _Proof(Int[active[r] for r in c.rules if r <= length(active)],
+                          Int[others[r - length(active)] for r in c.rules if r > length(active)],
+                          c.minimal, _limit_pair(c.limit, feasibility_limit, explanation_limit))
         end
     end
-    return best
+    return result::Union{_Found, _Unknown}   # `orders` is never empty
 end
 
 function _followup(d::Diagnosis, j::Int, isolation::Vector{RuleTable}, memos, limits, prefer::Symbol)
@@ -688,34 +722,30 @@ function _followup(d::Diagnosis, j::Int, isolation::Vector{RuleTable}, memos, li
     starts = prefer === :nearest ? unique(k -> d.rows[k], s.failing) : Int[]
     starts = starts[1:min(end, _FOLLOWUP_STARTS)]
     # Every kind of case that could hold the suspect is searched, ordinary first
-    # (§5.5). The fewest changes win; on a tie the kind searched first.
+    # (§5.5), until a case with no changes is found, or with `:domain` any case.
     kinds = _row_kinds(space, s.key)
-    searched = NamedTuple[]
-    best = nothing
-    proofs = []
+    results = Union{_Found, _Proof, _Unknown}[]
     for (p, v) in kinds
-        push!(searched, _kind_named(space, p, v))
         r = _isolate(d, s, (p, v), others, isolation, memos, limits, starts)
-        if r.status === :found
-            if best === nothing || r.changes < best.changes
-                best = merge(r, (kind = p == 0 ? :ordinary : :negative,))
-            end
-            (best.changes == 0 || prefer === :domain) && break
-        elseif r.status === :inseparable
-            push!(proofs, r)
-        end
+        push!(results, r)
+        r isa _Found && (r.changes == 0 || prefer === :domain) && break
     end
-    if best !== nothing
-        return Followup(s.combination, :found, from_indices(space, best.witness), best.kind, best.from,
-                        best.changes, NamedTuple[], Int[], String[], :not_applicable, nothing, searched,
-                        FollowupProof[])
-    elseif length(proofs) < length(kinds)
-        feasibility_limit = first(limits)
-        return _no_case(s.combination, :unknown; limit = :feasibility_limit => feasibility_limit, searched)
+    searched = NamedTuple[_kind_named(space, p, v) for (p, v) in first(kinds, length(results))]
+    found = findall(r -> r isa _Found, results)
+    if !isempty(found)
+        # The fewest changes win; on a tie the kind searched first.
+        i = argmin(i -> (results[i].changes, i), found)
+        r = results[i]::_Found
+        kind = first(kinds[i]) == 0 ? :ordinary : :negative
+        return Followup(s.combination, :found, from_indices(space, r.witness), kind, r.from, r.changes,
+                        NamedTuple[], Int[], String[], :not_applicable, nothing, searched, FollowupProof[])
     end
-    # Every kind is proven to hold no isolating case, so `proofs[i]` is the proof of
-    # `searched[i]`. Each is kept, and the union of theirs is sufficient for every
-    # kind, though not necessarily minimal as a whole.
+    unknown = findfirst(r -> r isa _Unknown, results)
+    unknown === nothing || return _no_case(s.combination, :unknown; limit = results[unknown].limit, searched)
+    # Every kind is proven to hold no isolating case, so every result is a proof and
+    # `proofs[i]` is the proof of `searched[i]`. Each is kept, and the union of theirs
+    # is sufficient for every kind, though not necessarily minimal as a whole.
+    proofs = Vector{_Proof}(results)
     rules = sort!(unique(Int[r for proof in proofs for r in proof.rules]))
     proof_others = sort!(unique(Int[i for proof in proofs for i in proof.others]))
     minimals = [proof.minimal for proof in proofs]
@@ -730,8 +760,8 @@ function _followup(d::Diagnosis, j::Int, isolation::Vector{RuleTable}, memos, li
                                            for (kind, proof) in zip(searched, proofs)])
 end
 
-"One kind's proof from `_isolate`, with its rules labeled and its other suspects named."
-_followup_proof(d::Diagnosis, searched::NamedTuple, proof) =
+"One kind's proof from `_isolate` as a `FollowupProof`, with its rules labeled and its other suspects named."
+_followup_proof(d::Diagnosis, searched::NamedTuple, proof::_Proof) =
     FollowupProof(searched, proof.rules, [rule_label(d.space, k) for k in proof.rules],
                   NamedTuple[d.suspects[i].combination for i in proof.others], proof.minimal, proof.limit)
 
