@@ -381,7 +381,10 @@ for a suspect with one, the negative rows at that value. The isolation
 conditions (no other suspect) apply to every kind, including rules that
 name the invalid parameter. A suspect is `inseparable` only when every kind
 is proven to hold no isolating row, and `unknown` when no kind yields one
-and some kind's search reaches the limit.
+and some kind's search reaches the limit. An `inseparable` follow-up gives
+one proof per kind of row searched; each proof's minimality is judged
+within its kind (§3.16), and the union of the proofs is sufficient but need
+not be minimal.
 
 ## 4. Partitions
 
