@@ -453,13 +453,11 @@ function _rule_unsupported_operator(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
         "function form $(w.polarity)(f, names...)$example."))
 end
 
-# What the macros expand to: the same Constraint as the listed-names form.
+# What the macros expand to: the Constraint of the listed-names form, built by
+# the same function, with the source text in its label.
 function _macro_rule(polarity::Symbol, scope::Tuple{Vararg{Symbol}}, f, text::String, reason)
     isempty(scope) && throw(ArgumentError(
         "$text reads no parameter. A rule names at least one parameter; for a rule on " *
         "the whole case, use $polarity(f), which receives the row as a NamedTuple."))
-    predicate = polarity === :require ? Negated(f) : f
-    why = _reason_label(reason)
-    label = isempty(why) ? text : string(why, ": ", text)
-    return Constraint(scope, predicate, polarity, label, :macro, nothing)
+    return _function_rule(polarity, f, scope, reason; text)
 end

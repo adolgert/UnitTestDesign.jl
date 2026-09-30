@@ -175,7 +175,11 @@ require(pattern::NamedTuple; reason = nothing) = throw(ArgumentError(
     "$(pattern), write forbid($(pattern)); to allow only some combinations, write " *
     "require(:a, :b) do a, b ... end."))
 
-function _function_rule(polarity::Symbol, f, names, reason)
+# The rule of `forbid(f, names...)` and `require(f, names...)`, a whole-case
+# rule when `names` is empty. The macros pass their source text as `text`: the
+# label is then the reason, if any, followed by the text (§12.3), and the
+# source is `:macro`.
+function _function_rule(polarity::Symbol, f, names, reason; text = nothing)
     if isempty(methods(f))
         shown = join(map(repr, (f, names...)), ", ")
         throw(ArgumentError(
@@ -187,8 +191,13 @@ function _function_rule(polarity::Symbol, f, names, reason)
             "$polarity lists `$name` twice; a rule's names are distinct (contract §12.5)"))
     end
     predicate = polarity === :require ? Negated(f) : f
+    label = _reason_label(reason)
     source = isempty(names) ? :whole_case : :names
-    return Constraint(names, predicate, polarity, _reason_label(reason), source, nothing)
+    if text !== nothing
+        label = isempty(label) ? text : string(label, ": ", text)
+        source = :macro
+    end
+    return Constraint(names, predicate, polarity, label, source, nothing)
 end
 
 

@@ -348,6 +348,40 @@ end
 end
 
 
+@testitem "constraints: a macro rule is the listed-names rule, labeled by its source text (§12.1, §12.3)" begin
+    using UnitTestDesign: Negated
+    domains = (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6])
+    limit = 1e-4
+    why = "fast mode has no solver"
+    # A macro rule, the same rule with listed names, and the macro rule's label.
+    cases = [
+        (@forbid(mode == :fast && solver != :none),
+         forbid((m, s) -> m == :fast && s != :none, :mode, :solver),
+         "@forbid(mode == :fast && solver != :none)"),
+        (@require(mode == :exact || solver == :none; reason = why),
+         require((m, s) -> m == :exact || s == :none, :mode, :solver; reason = why),
+         "fast mode has no solver: @require(mode == :exact || solver == :none)"),
+        (@require(tol < $limit || mode == :fast),
+         require((t, m) -> t < limit || m == :fast, :tol, :mode),
+         "@require(tol < \$limit || mode == :fast)"),
+    ]
+    for (rule, listed, label) in cases
+        @test rule.label == label && rule.source == :macro && listed.source == :names
+        for field in fieldnames(Constraint)
+            field in (:label, :source, :predicate) && continue
+            @test getfield(rule, field) == getfield(listed, field)
+        end
+        # The predicates are different closures, so they are compared on every
+        # combination of the scope's values. A require rule's are both Negated.
+        @test (rule.predicate isa Negated) == (listed.predicate isa Negated) ==
+              (rule.polarity === :require)
+        for values in Iterators.product((domains[name] for name in rule.scope)...)
+            @test rule.predicate(values...) == listed.predicate(values...)
+        end
+    end
+end
+
+
 @testitem "constraints: forms reject malformed arguments (§5.8, §12.4, §12.5)" begin
     message(g) = try g(); "" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError" end
     # Pattern values are domain values, matched by identity (§12.4, §2.11).
