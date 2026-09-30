@@ -372,6 +372,27 @@ end
 end
 
 
+@testitem "space: a space from parts takes every field by name, in order" begin
+    message(f) = try
+        f()
+        "no error"
+    catch e
+        sprint(showerror, e)
+    end
+    space = TestSpace((n = [1, 2, Invalid(0)], m = [:a, :b]); constraints = [@forbid(n == 2 && m == :b)])
+    parts = NamedTuple{fieldnames(TestSpace)}(Tuple(getfield(space, f) for f in fieldnames(TestSpace)))
+    rebuilt = TestSpace(Val(:parts), parts)
+    @test all(getfield(rebuilt, f) === getfield(space, f) for f in fieldnames(TestSpace))
+    # A missing, extra or misplaced part is refused, so a field added to
+    # TestSpace fails at the first negative generation (src/invalid.jl).
+    for wrong in (Base.structdiff(parts, NamedTuple{(:invalid,)}), merge(parts, (extra = 1,)),
+                  NamedTuple{reverse(keys(parts))}(reverse(values(parts))))
+        @test startswith(message(() -> TestSpace(Val(:parts), wrong)),
+                         "internal error: a TestSpace from parts needs the parts (:names, :values, ")
+    end
+end
+
+
 @testitem "space: length is the full product, BigInt-safe" begin
     @test length(TestSpace((a = [1],))) === 1
     @test length(TestSpace((a = [1, 2, Invalid(3)], b = 1:4))) === 12

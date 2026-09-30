@@ -57,9 +57,9 @@ function _negative_request(request::Request, p::Int, seeds::AbstractMatrix{<:Int
     renumber[others] = 1:(n - 1)
     active = active_rules(space, p)
     tables = RuleTable[RuleTable(renumber[t.scope], t.forbidden, t.lazy) for t in space.tables[active]]
-    subspace = TestSpace(Val(:parts), space.names[others], space.values[others],
-                         space.constraints[active], tables, space.tabulation_limit,
-                         space.ordinary[others], space.invalid[others])
+    subspace = TestSpace(Val(:parts), (names = space.names[others], values = space.values[others],
+        constraints = space.constraints[active], tables = tables, tabulation_limit = space.tabulation_limit,
+        ordinary = space.ordinary[others], invalid = space.invalid[others]))
     stronger = [renumber[filter(!=(p), members)] => s - 1 for (members, s) in request.groups[2:end]
                 if p in members]
     groups = _groups(subspace, request.strength - 1, stronger)

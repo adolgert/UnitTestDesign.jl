@@ -268,11 +268,14 @@ struct TestSpace
     # Internal: a space from parts that are already validated and tabulated,
     # with nothing checked or evaluated again. Negative generation (invalid.jl)
     # builds one over the parameters other than a negative row's invalid
-    # parameter, reusing that space's domains, rules and tables.
-    function TestSpace(::Val{:parts}, names::Vector{Symbol}, values::Vector{AbstractVector},
-                       constraints::Vector{Constraint}, tables::Vector{RuleTable}, tabulation_limit::Int,
-                       ordinary::Vector{Vector{Int}}, invalid::Vector{Vector{Int}})
-        return new(names, values, constraints, tables, tabulation_limit, ordinary, invalid)
+    # parameter, reusing that space's domains, rules and tables. `parts` names
+    # every field in order, so a field added to TestSpace fails here, at the
+    # first negative generation, instead of taking another field's part.
+    function TestSpace(::Val{:parts}, parts::NamedTuple)
+        keys(parts) == fieldnames(TestSpace) || error(
+            "internal error: a TestSpace from parts needs the parts $(fieldnames(TestSpace)), " *
+            "in that order; got $(keys(parts))")
+        return new(parts...)
     end
 end
 
