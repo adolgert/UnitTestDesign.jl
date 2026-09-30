@@ -1810,6 +1810,91 @@ unchanged; the new tests pass; doctests unchanged.
 
 Size: half a session.
 
+### Implementation notes (2026-09-30)
+
+Done on `feature/stage-f-macros`, stacked on Stage E2, in four commits and
+this note. Lines are in the tree at the end of this stage.
+
+**Step 1, in two commits.**
+
+- The move is a commit of its own. Lines 195-659 of `src/constraints.jl`
+  at the Stage E2 head, from "The macros" to the end of `_macro_rule`,
+  are `src/constraint_macros.jl` byte for byte, and the two blank lines
+  after them are gone. `src/UnitTestDesign.jl:31` includes the new file
+  right after `constraints.jl`. `git log --follow
+  src/constraint_macros.jl` reaches the commits before the move, and `git
+  blame -C` attributes its lines to them; plain `git blame` does not look
+  across files.
+- The headers come after step 2, so that they describe the code as it
+  ends up. `src/constraints.jl:1-6` says the macros are in
+  `constraint_macros.jl` and build their rules with `_function_rule`.
+  `src/constraint_macros.jl:1-12` says what the file holds, that a macro
+  rule differs from the listed-names rule only in its label and its source,
+  that `_check_rule` reads `source = :macro` (`src/constraints.jl:309`),
+  and that the file uses nothing else from the package.
+
+**Step 2.** `_function_rule(polarity, f, names, reason; text = nothing)`
+(`src/constraints.jl:180-203`). With `text`, the label is "reason: text",
+or `text` alone when there is no reason, and the source is `:macro`
+(`:196-201`). Without it, the code computes what it computed before.
+`_macro_rule` (`src/constraint_macros.jl:470-477`) keeps its empty-scope
+check first, then calls it. The test (`test/test_constraints.jl:378-409`)
+has three pairs: a forbid rule with no reason, a require rule with one, and
+a require rule with `$` interpolation whose scope is out of domain order.
+For each it checks the label and both sources, `==` on every other field
+but the predicate, that both predicates are `Negated` exactly when the rule
+is `require`, and that the predicates agree on every combination of the
+scope's values.
+
+**Step 3.** `test/test_constraints.jl:164-188`. The rules are built in
+`Module(:Bare)`, which only did `import UnitTestDesign`. The code goes
+through `include_string`, so each line is its own top-level statement: the
+import has to run before a later line's macro expands. The rules call a
+module-qualified function and read a module-qualified value
+(`Helpers.isbig(a)`, `Helpers.worst`), call an unqualified function of the
+bare module, and interpolate its `$limit`. Each is evaluated when the space
+tabulates the rule, and the test compares the forbidden sets. Changing the
+expansion so that it names `forbid`, an exported function, in the caller's
+module fails this item and passes every other item in the file.
+
+**Step 4.** Nothing to do; the tests stay in one file.
+
+Adjustments, and why:
+
+- **The headers are a separate commit, after step 2.** The plan puts them
+  in step 1. This keeps the move commit a pure move, and the headers name
+  `_function_rule` only once the macros use it.
+- **What the new file depends on.** The plan says that after step 2 the
+  file depends on `Constraint`, `Negated`, `_reason_label` and
+  `_function_rule`. After step 2 its code uses only `_function_rule`;
+  `Constraint`, `forbid` and `require` appear only in its docstrings'
+  cross-references. The header says that.
+- **The form of the keyword.** `_function_rule` computes the label and
+  source as before, then, given `text`, replaces them (`:196-201`), so the
+  path without `text` reads as it did. It had no comment; it has one now
+  (`:180-183`).
+
+One cost, construction only: `_function_rule` checks `isempty(methods(f))`
+(`:185`), which the old `_macro_rule` did not, so building a macro rule
+now takes about 0.7 µs longer on this machine.
+
+No `Constraint` field changes, and no conflict with the contract turned up.
+
+Verification: a scratch script (not committed) printed every field of 47
+rules, 39 of them macro rules covering each macro form in
+`test/test_constraints.jl`, with predicates shown by kind and by their
+value on every combination of the scope, and 12 error messages (empty
+scope, a non-string reason through a macro and through a function, repeated
+names, a missing predicate, an unknown name with and without a reason, a
+non-`Bool` result, a throwing predicate). Its output is byte-identical at
+the Stage E2 head and here. The snapshot is byte-identical to the Stage E2
+head's (383,501 lines). `test_constraints` passes 515 assertions: 479
+without the two new items (run after the move), 31 for step 2 and 5 for
+step 3; no existing line of the file changed. The full suite passed with
+345,198 passes and no failures (the three time-bounded items make the
+count vary), and the docs build exits 0 with its one usual warning, about
+`git remote`.
+
 ## The before/after snapshot (Stages C, D and E2)
 
 `benchmark/snapshot.jl` writes a text dump of a fixed corpus: for each case,
