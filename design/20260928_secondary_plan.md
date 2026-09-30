@@ -615,6 +615,82 @@ Acceptance gate:
 
 Size: one session.
 
+### Implementation notes (2026-09-30)
+
+Done on `feature/stage-b-dead-code`, stacked on
+`feature/stage-e1-proof-record`. The table's ranges held at the Stage E1
+head, and each was confirmed by content before it was deleted. Adjustments
+to the steps above, and why:
+
+- **Step 1, the GND item.** Besides `using Random`, "GND design size is
+  competitive" drops `setup=[IndexCoverage]`: `coverage_by_tuple`, in the
+  deleted lines, was all it used from that setup.
+- **Step 2, how the bullets combine.** Since `matches_from_missing` now
+  calls `case_partial_cover` itself, `choose_last_parameter!` passes it no
+  matcher, and `choose_last_parameter_filter!` drops the
+  `case_partial_cover` it passed (`:241` at `4d9d424`). Two more edits in
+  the same functions. `insert_tuple_into_tests` tests the verdict directly
+  instead of storing it in a local named `matches`, which shadowed the
+  function `matches` (`src/coverage_matrix.jl:170`). The
+  `matches_from_missing` docstring said it returns "a new version of the
+  entry"; it returns a count per value, and now says so and names
+  `case_partial_cover`. The comment "case_covers_tuple - variation." went
+  with the parameter.
+- **Step 3, placement.** Each comment is a `#` line above the docstring,
+  except for `misses`, one of five one-line definitions, which takes a
+  trailing comment. `memo_size` has three methods (`src/explain.jl:34`,
+  `src/feasibility.jl:286`, `src/request.jl:125`). The one comment is on
+  `memo_size(request)`, the method `benchmark/run.jl` calls, and says the
+  tests read all three; the `Feasibility` method's docstring already said
+  the benchmarks and tests read it.
+- **Step 4, output.** A rename commit, then an edit commit, so the second
+  diff shows only the edits. The analysis is unchanged. The probe wrote
+  five tables beside itself and printed a list. The script prints the list
+  when run with no argument, and with `names`, `refs`, `shadowed`,
+  `locals` or `callgraph` it prints that table instead, with a header row,
+  so nothing the probe produced is lost. It skips its own file, whose code
+  would otherwise count as references from `benchmark/`. Run on the Stage
+  E1 tree, its list and its five tables equal the probe's output. The
+  verification report's probe list
+  (`design/components_review_verification.md:264`) says where the probe
+  went, and the `benchmark/` row of the layout table in
+  `docs/src/contributing.md` names the script.
+- **Step 4, the list after this stage.** 370 top-level names in `src/`,
+  against 390: the 17 deleted names, and the three `Base` methods of
+  `FullFactorialRows`, which the sweep lists by name. The names that no
+  public entry point reaches went from 30 to 15, all kept on purpose: the
+  `classify` path (`classify`, `Classification`, `IndexClassification`,
+  `_classify_one`; decision 3, Stage C), `plain` and its six `_plain_*`
+  helpers, and `components`, `memo_size`, `misses` and `targets`. No other
+  name changed reachability.
+- **Step 5.** The item is in `test/test_checker.jl`, after the `Checker`
+  module. "Outside comments" is made exact by parsing: `Meta.parseall`
+  drops comments, and the item fails if any name, string or docstring
+  left contains `UnitTestDesign`. It passes today; `test/checker.jl`
+  mentions the package only in its header comment (`:1`, `:7`). Four
+  assertions check the check (comments pass; a `using`, a qualified call
+  and a docstring fail). Appending `_oracle_name() = "UnitTestDesign"` to
+  `checker.jl` made the item fail; that edit was not kept.
+
+Not in the table and left alone: `build_excursion(arity, ...)`
+(`src/excursions.jl:49-52`) is the same kind of convenience method as the
+deleted `never_appear(arity, _)`, but `test/test_excursions.jl:16-32`
+calls it.
+
+Verification. Benchmark fixture 1: IPOG, 958 cases, fingerprint
+`7a2b2a3b6f737644`, as at `4d9d424`. Every case count, query, node,
+rule-check, memo-entry and `summarysize` figure in the report's other
+tables equals the report at `4d9d424`. A script outside the repository
+printed the rows of classic `ipog` for 60 random arities at strengths 1
+to 4, and of `covering` (both engines, strengths 1 to 3, and a stronger
+group), `all_pairs`, `all_triples` and a must-include call on four spaces,
+with and without rules and an `Invalid` value; its output at the Stage E1
+head and here is identical. The grep gate finds nothing for any of the 17
+names. `methods(never_appear)` went from 2 to 1 and `methods(_Greedy)`
+from 3 to 2. The full suite passed with 343,701 passes and no failures
+(the count moves with the three time-boxed items), and the docs build
+exits 0.
+
 ## Stage C: measurement with one row reader, one preparation, one classification
 
 Goal: a caller's row is read by one function. A `report` or `design_sizes`
