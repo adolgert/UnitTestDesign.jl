@@ -1705,6 +1705,71 @@ snapshot's text.
 
 Size: half a session.
 
+### Implementation notes (2026-09-30)
+
+Done on `feature/stage-e2-isolation`, stacked on Stage D, in three commits
+and this note. Lines are in the tree at the end of this stage.
+
+**Step 1, in two commits.**
+
+- First, `_isolate` reads each search's status from `IndexClassification`
+  (`src/diagnose.jl:691`) instead of testing `explain_partial`'s outcomes
+  inline, per Stage C's notes. This was a fourth copy of the mapping that
+  `_STATUS_OF_OUTCOME` owns: `:required` is a case, `:forbidden` or
+  `:implied` a proof, `:unknown` neither. The `classify` docstring
+  (`src/explain.jl:374-376`) now names the isolation searches of
+  `followups` among the four callers that share it.
+- Then the typed results: `_Found` (witness, from, changes), `_Proof`
+  (rules in the space's numbering, other suspects as positions in
+  `d.suspects`, minimal, limit) and `_Unknown` (limit)
+  (`src/diagnose.jl:624-656`). `_isolate` returns one of them (`:676-710`;
+  docstring `:658-675`). `_followup` collects them in a `Vector` of their
+  `Union` (`:727-732`) and reduces after the loop: the found case with the
+  fewest changes, the first kind's on a tie (`:734-742`); else the first
+  `_Unknown`'s limit (`:743-744`), no longer rebuilt from
+  `feasibility_limit`; else every result is a `_Proof` (`:748`).
+  `_followup_proof` takes a `_Proof` (`:764`).
+
+Adjustments, and why:
+
+- **Names.** `_Found`, `_Proof` and `_Unknown`, the plan's words. The
+  `Union` is spelled out at its two uses rather than given an alias.
+- **`_isolate` starts from `nothing`.** The first search that ends unknown
+  sets `_Unknown`, and a case found by a later start replaces it. `orders`
+  is never empty (`:686-687`: one order per start, or domain order when
+  there is none), so some search always runs; the return carries a type
+  assertion, `Union{_Found, _Unknown}`, that says so (`:709`). Every
+  unknown search's limit is the same, `:feasibility_limit =>
+  feasibility_limit`, so keeping the first changes no value.
+- **No running `best` in `_followup`.** The loop stops at a found case with
+  no changes, or, with `:domain`, at any found case (`:731`). Before, it
+  tested `best.changes == 0`. The two agree, because the loop would already
+  have stopped at an earlier case with no changes. `searched` is the kinds
+  that have a result (`:733`), which is what the loop's `push!` built
+  before. A found case's `kind` comes from its entry in `kinds` (`:739`),
+  where the old code merged it into the named tuple.
+- **The test calls `_isolate` directly**
+  (`test/test_diagnose.jl:419-448`). Through `followups`, a carried limit
+  and a rebuilt one cannot differ: only `feasibility_limit` makes a search
+  unknown, and a limit already pinned at `:390` would pass either way. The
+  test uses a space where the only suspect's search among ordinary cases in
+  domain order is the one `explain` makes. At `feasibility_limit` 1 and 2
+  (a constant 1 would pass at 1 alone), with and without a start, and with
+  `explanation_limit = 100`, `_isolate` returns an `_Unknown` whose limit
+  equals `explain`'s and names the limit given. At 3 it returns a
+  `_Found`. `followups` reports the same limit at each. Replacing the
+  carried limit by `:feasibility_limit => 1` or by `:explanation_limit =>
+  explanation_limit` fails the item.
+
+No `Followup` value changes, and no conflict with the contract turned up.
+
+Verification: the snapshot at each of the two code commits, and at the
+head, is byte-identical to the Stage D head's (383,501 lines, with every
+`Followup` field including `proofs`, and its `show`, for the follow-up
+corpus). `test_diagnose` passes 66,133 assertions, the Stage E1 count of
+66,121 plus the new item's 12. The full suite passed with 345,547 passes
+and no failures, and the docs build exits 0.
+
 ## Stage F: the macro frontend file (after 0.5)
 
 Goal: the constraint macro walker lives in its own file with one
