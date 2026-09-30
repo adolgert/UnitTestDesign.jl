@@ -111,8 +111,8 @@ allow it; it evaluates the rules on that case and never searches.
     isallowed(space::TestSpace, case) -> Bool
 
 Whether the complete `case` is a valid row of `space` (contract §1.25). `case`
-is a `NamedTuple` naming every parameter, in any order, or a `Tuple` of values
-in parameter order. Values are matched by identity, and a
+is a `NamedTuple` naming every parameter, in any order, or a `Tuple` or
+vector of values in parameter order. Values are matched by identity, and a
 [`Partition`](@ref) may be written by its name (§2.11).
 
 An ordinary row is valid when no rule excludes it. A row with one
@@ -136,7 +136,7 @@ julia> isallowed(space, (:exact, 1e-3))
 false
 ```
 """
-function isallowed(space::TestSpace, case::Union{NamedTuple, Tuple})
+function isallowed(space::TestSpace, case)
     idx = _row_indices(space, case; what = "the case", section = "§1.25", complete = true)
     bad = _invalid_parameters(space, idx)
     length(bad) > 1 && return false
@@ -205,8 +205,9 @@ case, and, when they cannot, which rules exclude them.
 
 Say whether `assignment` can appear in a valid row of `space`, and why not
 when it cannot (contract §1.26). `assignment` is a `NamedTuple` naming some
-or all parameters, or a complete `Tuple` in parameter order. The result is an
-[`Explanation`](@ref UnitTestDesign.Explanation), which prints as a sentence:
+or all parameters, or a complete `Tuple` or vector in parameter order. The
+result is an [`Explanation`](@ref UnitTestDesign.Explanation), which prints
+as a sentence:
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> space = TestSpace(
@@ -236,8 +237,8 @@ stays infeasible even if that search is cut short (§3.13–§3.16). The result'
 `nodes` and `evaluations` report the effort the answer took: nodes against
 those limits, and the rule checks those nodes caused, which no limit bounds.
 """
-function explain(space::TestSpace, assignment::Union{NamedTuple, Tuple};
-                 feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
+function explain(space::TestSpace, assignment; feasibility_limit = 1_000_000,
+                 explanation_limit = 1_000_000)
     context = FeasibilityContext(space; feasibility_limit)
     _check_limit(:explanation_limit, explanation_limit)
     idx = _row_indices(space, assignment; what = "the assignment", section = "§1.26", complete = false)

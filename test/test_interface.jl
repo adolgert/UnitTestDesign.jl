@@ -721,7 +721,7 @@ end
 end
 
 
-@testitem "every row a caller writes is read by one reader, whose errors read alike (§1.13, §2.11, §7.6, §10.1)" setup=[InterfaceSetup] begin
+@testitem "every row a caller writes is read by one reader, whose errors read alike (§1.13, §1.25, §1.26, §2.11, §7.6, §10.1)" setup=[InterfaceSetup] begin
     space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]))
     valid = (1, :x, true)
     # What each caller calls the row, the section its errors cite, whether the
@@ -731,6 +731,8 @@ end
         ("diagnose case 2", "", true, r -> diagnose([valid, r], [true, false]; space)),
         ("must_include row 2", " (contract §10.1)", false, r -> all_pairs(space; must_include = [valid, r])),
         ("the excursion base `from`", " (contract §7.6)", true, r -> excursions(space; from = r)),
+        ("the case", " (contract §1.25)", true, r -> isallowed(space, r)),
+        ("the assignment", " (contract §1.26)", false, r -> explain(space, r)),
     ]
     for (what, cited, complete, call) in readers
         @test message(() -> call(:a)) ==
