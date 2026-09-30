@@ -45,7 +45,8 @@ end
     @test size(im232) == (3, 6)
     @test test_coverage(im232, arity, 2) == (start = 16, finish = 0)
     @inferred ipog_multi_way(arity, required, Returns(false))
-    # The same size as the classic algorithm.
+    # On this problem, the same size as the classic algorithm. That does not
+    # hold in general: the two cores can differ by a few rows either way.
     @test size(ipog_multi_way([2, 3, 2, 4, 7, 2], targets(positional_request([2, 3, 2, 4, 7, 2])),
                               Returns(false))) == (6, 28)
 end

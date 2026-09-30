@@ -241,7 +241,7 @@ _engine_seed(engine::GND) = engine.seed
 
 Unconstrained GND over parameters with `arity` values, covering every
 `n_way` combination, with `M` candidates per round, drawing from `rng`.
-The benchmark scripts use it; generation goes through `generate`.
+Only the tests call it; generation goes through `generate`.
 """
 function n_way_coverage(arity, n_way, M, rng)
     arity = collect(Int, arity)

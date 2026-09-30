@@ -321,7 +321,7 @@ end
 
 @testitem "n_way_coverage" setup=[IndexCoverage, UTSetup] begin
     using Random
-    # The unconstrained form the nonfunctional benchmark scripts call.
+    # The unconstrained form, in index space.
     rng = Xoshiro(9234724 ⊻ seed_mod())
     arity = [2, 3, 2, 3]
     for n_way in (2, 3)

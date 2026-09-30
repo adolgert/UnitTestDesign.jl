@@ -367,8 +367,8 @@ against negative rows (§5.5, §6.2); a target with more than one is an
 
 Each target gets its own `feasibility_limit` budget (§3.4) and its own
 `explanation_limit` budget for the deletion search (§3.13). Answers are
-cached for the duration of the call only (§3.5). Not exported: coverage
-measurement uses it.
+cached for the duration of the call only (§3.5). Not exported; the tests use
+it.
 """
 function classify(space::TestSpace, targets::AbstractVector;
                   feasibility_limit = 1_000_000, explanation_limit = 1_000_000)

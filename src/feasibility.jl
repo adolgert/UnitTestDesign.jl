@@ -1,9 +1,9 @@
 # Feasibility in index space: whether a partial assignment extends to a
 # valid row (with a witness), under a node budget, and why a target is
 # excluded when it does not. Plan Phase 2 step 6; Phase 3's request layer
-# consumes `dead`, and the public `explain`, `isallowed` and `classify`
+# consumes `dead`, and the public `explain` and the unexported `classify`
 # over a `TestSpace` are thin wrappers over `explain_partial` and `classify`
-# here.
+# here. (`isallowed` reads the rule tables directly and never searches.)
 #
 # Everything in this file is index space (see rule_table.jl). Parameters
 # are `1:n`, values are the integers listed in `candidates`, and a partial

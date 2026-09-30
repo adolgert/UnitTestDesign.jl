@@ -6,7 +6,7 @@
 # mixed-strength form that `generate(::IPOG, request)` uses otherwise.
 
 """
-    choose_last_parameter!(taller, arity, n_way)
+    choose_last_parameter!(taller, allc, matcher = case_partial_cover)
 
 Given a test set where the first k-1 parameters are chosen and the last parameter
 has not been chosen, this fills in the last parameters for each test case.
@@ -475,8 +475,8 @@ function cover_ordinary(::IPOG, request::Request, required)
     elseif !isconstrained(request) && isempty(seeds) && length(request.groups) == 1
         return ipog(request.arity, request.strength)
     end
-    alive = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
-    return ipog_multi_way(request.arity, required, alive, seeds;
+    isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
+    return ipog_multi_way(request.arity, required, isdead, seeds;
                           order = ipog_order(request.arity, request.groups))
 end
 
