@@ -1512,6 +1512,164 @@ For step 6:
   `src/request.jl:588-598`); the order decides only which target an
   internal error names first.
 
+### Implementation notes, part 2 (2026-09-30)
+
+D-1 and step 6, in seven commits after `f2db15e`, then this note. Lines
+are in the tree at the end of this part.
+
+**The snapshot first.** No case reached `feasibility_limit` inside a
+sub-request's engine, so a space was added before any code change,
+"negative rows' engine at the limit" (`benchmark/snapshot.jl:269-289`).
+It has invalid values at `n` and `m`. Both engines place `a = 5` beside
+`b = 5` in a negative row at `n`, and proving that pair leaves no valid
+row (five pigeons, `x` to `w`, in four holes) takes 66 nodes, which no
+pair's classification needs. `(m = Invalid(0), e = 2)` takes 26 nodes to
+classify; at `feasibility_limit = 8` every other pair is classified. Rules
+on `(n, a)` and `(m, e)` keep ordinary rows, and each invalid parameter's
+negative rows at the other, out of both hard searches. So at
+`feasibility_limit = 40` every classification succeeds and `n`'s engine
+run fails, and at 12 `m`'s classification fails as well. The space has
+204,800 rows and about 66,000 valid ones, so a `Case` field, `enumerated`
+(`:176`, used at `:433` and `:490`), skips `full_factorial()` and the
+hand-written row sets for it. The script run against `f2db15e` in a
+worktree is the baseline, `snapshot_D2_base.txt` in the session's
+scratchpad: 5,804 cases, 383,501 lines (35 MB), 110 seconds; without the
+new space's blocks it is byte-identical to `snapshot_D_base.txt`.
+
+**D-1: the agreement holds, so option (B).** "invalid: a negative
+sub-request's targets are the negative targets at its value, in target
+order" (`test/test_invalid.jl:627`), committed before the change and
+passing at `f2db15e` (189 checks). For five spaces (`out_of_order`; one
+whose `Invalid` values sit between ordinary ones, two at one parameter;
+`grouped`; `two_invalid`; `excluding`), strengths 1 to 3, `stronger`
+groups with and without an invalid parameter, and negative must-include
+rows as the sub-request's seeds, for every `(p, v)`: the negative targets
+at `(p, v)` of an unconstrained twin, in `coverage`'s order, begin with
+`(p = v)` exactly at strength 1 and are only that without a sub-request;
+`TargetList(sub)`, mapped back with `parent_row`, is the rest, in order;
+and restricted to the space's own required targets, and to its excluded
+ones, the two orders agree.
+
+**(b), the one enumerator.** It is measurement's own walk.
+`_walk_support!` (`src/measure.jl:449`), split out of `_measure_support!`
+(`:471`, which keeps the projections and the early return for a negative
+support with no invalid value), walks one support's targets in target
+order and classifies each that `seen` does not hold into a `_Record`
+(`:319`): `_Lists`, `_Counts`, or generation's `_NegativeTargets`
+(`src/invalid.jl:135-162`). `seen === nothing` means no rows
+(`_contains`, `src/measure.jl:306-308`). `classify_negative_targets`
+(`src/invalid.jl:176-182`) walks every support of the request that way.
+`cover_negative` (`:203-246`) calls it first, then, per `(p, v)` in
+parameter and domain order, gives the sub-request the required targets at
+`(p, v)` without `p` (`:212`, `:218`), and takes the witness for
+`(p = v)` when it is required and no row holds it (`:240`). Gone:
+`_classify_negative`, `_negative_order` and the sort, the separate
+classification of `(p = v)`, and the walk of `TargetList(sub)`. The file
+header (`:1-21`) no longer argues that the sub-request's targets are the
+negative ones, since the code projects them; `_negative_request`'s
+docstring (`:93-112`) says what its groups are still for (the engine's
+parameter order and full-strength case) and that the agreement test pins
+them.
+
+Why nothing moves for a call that succeeds: each `(p, v)` has its own
+negative-row search in the request's context, and it receives the same
+queries in the same order as before, its classifications (with
+`(p = v)` first at strength 1, as before) and then its witnesses; the
+sub-request's engine searches its own `Feasibility` and receives the same
+targets in the same order; the lazy-rule memo holds verdicts, which do not
+depend on order. So the snapshot at the head differs from
+`snapshot_D2_base.txt` in exactly two lines, both in the new space at
+`feasibility_limit = 12`, IPOG (line 153,504) and `GND(seed = 2)`
+(154,784):
+
+    < threw ResourceLimitError: ResourceLimitError: generating the negative rows with n = Invalid(0): placing a value: the feasibility search for (a = 5, b = 5) reached `feasibility_limit = 12` before finishing. Retry with a larger limit, for example `feasibility_limit = 120`.
+    > threw ResourceLimitError: ResourceLimitError: classifying the negative target (m = Invalid(0), e = 2) reached `feasibility_limit = 12` before finishing. Retry with a larger limit, for example `feasibility_limit = 120`.
+    < threw ResourceLimitError: ResourceLimitError: generating the negative rows with n = Invalid(0): placing a value: the feasibility search for (a = 5, b = 5, y = 1, e = 1) reached `feasibility_limit = 12` before finishing. Retry with a larger limit, for example `feasibility_limit = 120`.
+    > threw ResourceLimitError: ResourceLimitError: classifying the negative target (m = Invalid(0), e = 2) reached `feasibility_limit = 12` before finishing. Retry with a larger limit, for example `feasibility_limit = 120`.
+
+At 40 the engine's error is unchanged. "invalid: every negative target is
+classified before a negative row is generated"
+(`test/test_invalid.jl:472`) pins both.
+
+**(a), one code.** `_code` and its inverse `_decode!` are in
+`src/space.jl:588-603`, under one docstring that says which radix each
+caller uses. `TargetList.getindex` decodes into a fresh vector per index
+(`src/request.jl:410`); `_recount` codes each row with `_code`, radix the
+ordinary arity (`:616`), and `validate_design` on the 30 by 5 design
+allocates and takes the same as before at strengths 2 and 3.
+`_measure_block!`'s odometer and `_projections`' column-by-column
+accumulation are unchanged. Tests: "space: the mixed-radix code of
+target order and its inverse" (`test/test_space.jl:375`), and "coverage: a
+block's targets come in the order of their codes"
+(`test/test_measure.jl:654`), which runs `_measure_block!` on an
+unconstrained space whose `Invalid` values sit between ordinary ones, for
+ordinary and negative blocks, and compares the targets it lists with
+`_decode!` of codes 0, 1, 2, ….
+
+**(c), the support-to-group mapping once.** `_group_supports(groups) ->
+(supports, shares)` (`src/request.jl:347-365`) lists the supports as
+before and each group's positions in them; `_supports` (`:367`) is its
+first half, for `TargetList`, `_measure_counts` and
+`classify_negative_targets`. `_support_counts` returns a vector aligned
+with the supports (`src/measure.jl:491`), and `_measure_part` (`:511`)
+sums each group's share by position instead of listing its subsets again
+and looking them up in a `Dict`. Test: "request: the supports, each
+listed once, and each group's share of them" (`test/test_request.jl:236`).
+
+**The allocation check.** "coverage: a complete design classifies nothing
+and allocates little" (`test/test_measure.jl:687`): `coverage` of the
+complete 30 by 5 `all_pairs` design, 10,875 pairs, all covered. Measured
+at `f2db15e` before any change: 849,872 bytes on Julia 1.13 and 861,408
+on 1.10 (the same with `--code-coverage=user`). Now 595,840 and 606,208.
+The bound is 1,000,000, above the figure before step 6; a vector per
+target would take about 3 MB.
+
+Adjustments, and why:
+
+- **The enumerator is the measurement walk itself, not a lower-level
+  helper both walks call.** A shared block list with generation decoding
+  codes would have left two walkers. Generation classifying "the targets
+  of no rows" with a record of its own is the same two steps as
+  `classify_targets` then the engine.
+- **The marks carry their radix (`_Marks`, `src/measure.jl:251`).**
+  Not in the step. Otherwise the walk would take a radix that generation
+  has no use for; now `seen` alone decides coverage.
+- **`classify_negative_targets` runs inside `cover_negative`, after the
+  ordinary engine**, as the negative classification did before. So a call
+  whose ordinary engine and a negative classification both reach the
+  limit names the ordinary engine, as before.
+- **Which error a failing call names can change in a second way.**
+  Classification now follows target order across all `(p, v)`, not
+  `(p, v)` first, so of two negative classifications at different
+  invalid values that both reach the limit, the one whose support comes
+  first is named: at strength 2 with invalid values at the second and
+  third parameters, a target on `(1, 3)` before one on `(2, 5)`. Likewise a
+  lazy predicate that throws may be reached at another assignment first.
+  The stage's invariant allows it ("a call that fails at
+  `feasibility_limit` may name a different target"); no case in the
+  corpus shows it: "negative targets unresolved" has one invalid
+  parameter.
+- **Most of the allocation drop is from (b).** `_measure_support!` at
+  `f2db15e` allocated the walk's buffer before its early return, for every
+  negative support of a space with no invalid value, 435 of them here; the
+  walk now allocates it (731,552 bytes after (a)). (c) first cost 25 KB
+  more: an untyped comprehension left `_measure_part`'s sums uninferred.
+  The vector is typed, `NTuple{4, Int}[…]`, in the same commit.
+- **A readability commit** splits `_NegativeTargets`' `_classify!` into
+  two branches after the fact, since the branch is not rebased.
+
+No conflict between the code and the contract turned up: §3.6 and §3.7
+promise that generation throws and what the error names, not which of two
+unresolved queries it reports, and §9.7's lists keep their order.
+
+Verification: the snapshot as above. The benchmark (`--runs 1
+--skip-slow`) gives fixture 1's IPOG fingerprint `7a2b2a3b6f737644`, 958
+cases, and every case count, query, node, rule-check, memo-entry and
+`summarysize` figure of the report at `4d9d424`; only timing shares
+differ. The full suite passed with 344,235 passes and no failures (the
+count moves with the three time-boxed items; iterating a `TargetList`
+takes the time it did), and the docs build exits 0.
+
 ## Stage E2: typed isolation results (after E1)
 
 Goal: `_isolate`'s three outcomes are three types instead of one tuple
