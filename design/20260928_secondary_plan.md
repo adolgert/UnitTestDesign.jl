@@ -265,6 +265,61 @@ fail if the code contradicted the new wording.
 
 Size: one session.
 
+### Implementation notes (2026-09-30)
+
+Done on `feature/stage-a-docs-truth`. Adjustments to the steps above, and
+why:
+
+- **Step 1, §3.14.** The proposed "the explanation's `limit` names the
+  keyword that stopped it" is ambiguous when several trials stop. The code
+  (`src/feasibility.jl:676-692`) names `:explanation_limit` when that
+  budget stopped a trial or left one untried, and `:feasibility_limit`
+  otherwise. The clause says that rule. The existing
+  "A trial that ends unknown keeps the rule" stays, so the new text does
+  not repeat it. The `explanation_limit` keyword doc also says that each
+  trial is bounded by `feasibility_limit`.
+- **Step 1, test.** The plan names no file; the item is in
+  `test/test_interface.jl`, beside the `explanation_limit` item. The space
+  has one exclusion, `(w = 1, v = 1)`. Besides the checks listed, the item
+  asserts that at limits 6, 10 and 14 this exclusion is `:unresolved` with
+  `limit = :feasibility_limit => N`, which tests the new §3.14 sentence.
+  It does not assert that rule sets are equal.
+- **Step 2, test.** In `test/test_measure.jl`. The space has four
+  parameters and a whole-case rule that forbids something, so the one
+  `coverage` call has missing targets, an implied exclusion and deletion
+  trials. It asserts that the logged assignments are all distinct, the
+  exact form of "at most one call per distinct assignment". With the memo
+  disabled, the same call makes 48 calls on 24 assignments, so the test
+  catches a lost memo.
+- **Step 3.** The header comment of `src/report.jl` also said `report`
+  never trusts the bookkeeping. It now says which parts of the line are
+  copied from the result, and that recorded exclusions are a fallback.
+- **Step 4.** The two tests already covering the behavior now cite §8.6 in
+  comments. No new test, as planned.
+- **Step 5.** §12.16's list of calls adds `missing_interactions`, which
+  searches through `coverage` and is public. The constraints page gives
+  its shorter list as examples ("such as"). The new sentence is in the
+  tabulated-rule paragraph, which already describes the lazy fallback.
+- **Step 6.** The `src/feasibility.jl` header also called `isallowed` a
+  thin wrapper over that file; it reads the rule tables directly
+  (`src/explain.jl:139-149`) and never searches. The same sentence now
+  says so. The `n_way_coverage` docstring says that only the tests call it.
+- **Step 7.** The paragraph is at the end of "What the macros treat as a
+  name", after the examples, and names `require(f, names...)` beside
+  `forbid(f, names...)`.
+
+No conflict between the code and the contract turned up beyond what the
+plan anticipated. No behavior changed: `src/` differs only in docstrings,
+comments and the one renamed local.
+
+Verification: the full suite passed with 303,579 passes and no failures,
+and the docs build exits 0. The count is below the 305,788 baseline
+because three items loop for 30 seconds each (`test/test_combinations.jl:51`,
+`test/test_parameter_order.jl:94, 115`), so their counts depend on machine
+load, and a docs build ran alongside. Without those three items the count
+is deterministic: 146,344 at `cc3f760` and 146,367 here. The difference,
+23, is the new assertions: 17 for step 1, 3 for step 2 and 3 for step 5.
+
 ## Stage E1: the public proof record (before 0.5)
 
 Goal: a follow-up proof says which rules and suspects came from which kind
