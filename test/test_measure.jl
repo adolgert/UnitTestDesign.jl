@@ -503,6 +503,23 @@ end
 end
 
 
+@testitem "coverage: one call evaluates a lazy rule at most once per assignment (§3.5, §12.19)" begin
+    # A whole-case rule is lazy. One coverage call is one operation, so its
+    # row checks, target searches and deletion trials share one memo.
+    seen = NTuple{4, Int}[]
+    space = TestSpace((a = 1:2, b = 1:2, c = 1:2, d = 1:3);
+        constraints = [forbid(case -> (push!(seen, Tuple(case)); case.a == case.b == 2 && case.d == 3);
+                              reason = "counted")])
+    design = all_pairs(space)
+    empty!(seen)
+    c = coverage(design; strength = 3)
+    # The call searched: some triples are missing, and one is excluded.
+    @test !isempty(c.ordinary.missing) && !isempty(c.ordinary.excluded)
+    @test !isempty(seen)
+    @test allunique(seen)
+end
+
+
 @testitem "coverage: the per-group breakdown; overlapping stronger groups (§1.8, §11.7, §11.8)" setup=[Checker, MeasureSetup] begin
     f = overlapping_groups
     space = test_space(f)

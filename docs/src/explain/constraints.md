@@ -248,10 +248,11 @@ package warns and suggests a narrower scope (§12.19).
 
 A whole-case rule is always lazy (§12.20). Its predicate runs on complete
 cases as the searches reach them, and each answer is remembered until that
-one call returns, whether it is a generation, an `explain`, or a
-measurement such as `coverage`; the space keeps nothing (§12.19). The cost
-is in the searches: a whole-case rule reads every parameter, so it joins them
-all into one search, and deciding whether a combination is feasible may
+one call returns: a generation, an `explain`, a `coverage` or a `followups`
+call. `report` and `design_sizes` run several of these, each with its own
+memo. The space keeps nothing (§12.19). The cost is in the searches: a
+whole-case rule reads every parameter, so it joins them all into one
+search, and deciding whether a combination is feasible may
 explore up to the product of the unassigned domains, bounded by
 `feasibility_limit` (§12.21). In the package's benchmark, adding one
 whole-case rule that forbids nothing roughly doubled the time of a
