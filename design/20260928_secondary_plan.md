@@ -1042,6 +1042,161 @@ Stage B head's. The full suite passed with 343,899 passes and no failures
 (the count moves with the three time-boxed items), and the docs build exits
 0.
 
+### Implementation notes, part 2 (2026-09-30)
+
+Steps 2 to 6, and one repair to step 1, in seven commits after `b778b45`,
+then this note. Lines are in the tree at the end of this part.
+
+**Step 3, first, because step 2's measurement code builds on it.**
+`_classify_target` (`src/request.jl:475-483`) and `_classify!`
+(`src/measure.jl:348-363`) build `Excluded` and `Exclusion` from an
+`IndexClassification` (`src/feasibility.jl:733-737`), as `_classify_one`
+already did. `_classify!` returns the status in that vocabulary
+(`:required`, `:forbidden`, `:implied`, `:unknown`) instead of its own
+`:missing` and `:excluded`, and `_measure_block!` (`:392-393`) counts by
+it. `_status` (`src/feasibility.jl:750-758`) came with its first caller,
+in step 4. The `classify` docstring says the three share
+`IndexClassification` (`src/explain.jl:375-377`).
+
+**Step 2.** `PreparedRows` and `_prepare_rows(space, memos, rows)`
+(`src/measure.jl:191-235`); `FeasibilityContext(space, memos =
+rule_memos(space.tables); feasibility_limit)`, one method with an optional
+memo (`src/explain.jl:32-37`); `_measure(prepared, space; strength,
+stronger, memos, feasibility_limit, explanation_limit, curves)`
+(`src/measure.jl:533-552`), which builds its own context, so its own
+answer caches, around the memo; `_coverage` (`:575-580`) prepares and
+measures once with a memo of its own. `report` (`src/report.jl:197-204`)
+prepares once and passes one memo to both measurements. `design_sizes`
+(`src/report.jl:576-600`) keeps one memo for the call; `_size_row`
+(`:637-650`) prepares each design once, and `_size_counts` (`:631-634`)
+measures at `_measured_request(cases, s, nothing)`.
+
+**Step 4.** `_Counts` (`src/measure.jl:330`), `_classify!` for it
+(`:365-366`), `_support_counts` (`:460-473`), the walk both records share,
+`_count_part` (`:504-511`) and `_measure_counts` (`:565-572`). `_bonus`
+(`src/report.jl:233-242`) and `_size_counts` use it. `_PartCounts` moved to
+`measure.jl` (`:29`), which now makes it, and `_part_counts` is gone.
+
+**Step 6.** §3.5 (`docs/src/dev/contract.md:302-306`), §12.19 (`:788-795`),
+the constraints page (`docs/src/explain/constraints.md:264-269`) and the
+`_LazyRule` docstring (`src/constraints.jl:840-846`) take the step's
+wording.
+
+**The step 1 repair.** `_row_indices` takes `hint` (`src/space.jl:460-516`),
+appended to the missing-value message only, after "; " and before the
+section; `isallowed` passes "use explain for a partial assignment"
+(`src/explain.jl:146-147`). Its message is again "the case, (n = 1, m =
+:a), has no value for `k`; it must name every parameter; use explain for a
+partial assignment (contract §1.25)". The two pins of that message,
+`test/test_explain.jl:193-195` and the readers table of
+`test/test_interface.jl:724` (now with a hint column), are rewritten in
+that commit, deliberately; `test/test_space.jl:312-321` checks that the
+hint follows the missing-value error, with and without a section, and no
+other error.
+
+Adjustments, and why:
+
+- **`_completable` builds no search state when nothing is pending**
+  (`src/feasibility.jl:439-458`), its own commit. Not in the step, but the
+  allocation check could not be written without it. With steps 2 to 4
+  alone, the counts-only bonus on the 30 by 5 design allocated 725,673,840
+  bytes against 1,007,801,136 before this stage: listing was not most of
+  the cost. Each of the 287,305 queries allocated 2,416 bytes in `_status`,
+  2,048 of them the `_Search` (one candidate vector per parameter) that
+  `_completable` built even when every constrained component was assigned
+  or cached, as here, where no parameter has a rule. Now it builds one
+  only for a pending component. No node, cache entry or counter changes
+  (such a query spent no nodes before either), and the snapshot is
+  identical. The generators ask such queries too, and gain the same;
+  nothing measured that.
+- **`PreparedRows` has no field for the original row positions.** `slots`
+  is indexed by them and each `rejected` record carries its `index`; no
+  reader needs the map from a kept row back to its position.
+- **`_prepare_rows` builds a context of its own**, `FeasibilityContext(space,
+  memos)` at the default limit, only to get each row kind's rule set for
+  `violated_rules`. It searches nothing, so neither the limit nor its
+  answer caches enter the result.
+- **Counting is its own function, `_measure_counts`**, not a flag on
+  `_measure`: the step gives `_measure`'s keywords and has the counting
+  measurement return only counts, so one function would have two return
+  types. It takes no `explanation_limit`, since it runs no deletion search.
+- **`_Counts` holds nothing.** The step has `_classify!` increment a counter
+  with it; `_measure_block!` already counts each status per support, for
+  the group breakdown, so a counter in `_Counts` would count twice.
+- **`_Lists` carries `explanation_limit`**, its only reader, so
+  `_measure_support!` and `_measure_block!` no longer pass it through.
+- **`_status` stops at the first rule that forbids.** It uses `_violates`,
+  the direct check, where `explain_partial` collects every forbidding rule
+  with `_violated_rules`. The status is the same. So counting consults
+  fewer lazy predicates than listing: no deletion trials, and no rule after
+  the first that forbids. A predicate that throws only on an assignment
+  that just those evaluations reached no longer throws from `report`'s
+  bonus or `design_sizes`. §12.17 leaves call order and count unspecified,
+  and no figure changes.
+- **`design_sizes` prepares a design's rows only when it measures them**,
+  with two parameters or more, as it read no rows for one parameter before.
+- **`coverage` reads its rows before it checks the request.** The rows are
+  prepared before `_measure` checks the strength against the number of
+  parameters and the `stronger` groups, so a call with both a malformed
+  row and such a request error now reports the row. The keyword values
+  themselves are still checked first, in `coverage`. No test pins the
+  order; keeping it would mean checking the request twice.
+- **The 03b property test compares with public calls.** Probe 03b built
+  "fresh" and "shared" contexts from internals that this stage changed.
+  The test compares every `report` figure with a `coverage` call, which
+  has its own memo and answer caches: every field of both parts, the
+  exclusions, and the bonus against `coverage` one strength higher. It runs
+  twelve problems of `test/random_problems.jl` (their rules are all
+  tabulated, so each space is also built with `tabulation_limit = 1`, or
+  sharing a memo would be vacuous), `limit_exhaustion`, the negative space
+  of the "prefix curve and bonus" test and the snapshot's four-plus-four
+  two-component space, at strengths 1 and 2, at `feasibility_limit` 1 to 5,
+  `explanation_limit = 1` and the defaults (`limit_exhaustion` at 1 to 5
+  only: its default takes seconds). Each `design_sizes` figure of the last
+  two spaces is compared with `coverage(design; strength = s)`. With a
+  throwaway override that gave every context around one memo the same
+  answer caches, the test fails three times (the two-component space at
+  `feasibility_limit = 4`, tabulated and lazy, and its pinned bonus of 10
+  unresolved triples, which becomes 14), and the snapshot differs in the
+  same bonus, 8 lines.
+- **A shared answer cache moves that bonus both ways.** Decision 7 says a
+  second measurement sharing the cache "can resolve a target the first left
+  unknown". Asked alone, `(b1 = 2, b2 = 1, b3 = 1)` does: the base
+  measurement left a witness of component A's empty assignment, so the
+  query spends its whole budget on B. But what is cached also decides which
+  components later queries solve and store, and over the whole bonus the
+  net runs the other way: the separate bonus solves and stores component B
+  at `(b2 = 1, b3 = 1)`, the shared one never does, and four triples
+  `(a_i = v, b2 = 1, b3 = 1)` stay unknown. Either way a figure moves, so
+  the decision stands. The property test's first comment said "resolves
+  more"; a follow-up commit corrects it.
+
+Tests (`test/test_report.jl`): the property test (`:629`); probe 03a
+(`:710`): within one `report` a whole-case predicate runs at most once per
+assignment, and `design_sizes`' calls less those of its generations and
+`isallowed` checks made alone are at most 8, the number of assignments; the
+allocation check (`:739`): the bonus of the 30 by 5 design counts 220,195
+of 507,500 and allocates under 400 MB. Predicate calls, before and after
+(probe 03a's spaces): `report` 12, 16, 15 and 16 calls on 8 assignments,
+now 8 each; `design_sizes` 136 and 140 calls of which 45 are generation,
+now 53, so 91 and 95 measurement calls became 8. Bonus allocation on Julia
+1.13: 1,007,801,136 bytes before, 224,613,920 after, and 506,665,632 for a
+measurement that lists the same targets; time 0.66 s before, about 0.27 s
+after.
+
+Verification: the snapshot at the head is byte-identical to the Stage B
+head's, and so was it after step 2 alone. The full suite passed with
+344,655 passes and no failures (the count moves with the three time-boxed
+items), and the docs build exits 0. The benchmark (`--runs 1
+--skip-slow`) gives fixture 1's IPOG fingerprint `7a2b2a3b6f737644`, 958
+cases, and every case count, query, node, rule-check, memo-entry and
+`summarysize` figure of the Stage B report; the constrained generations
+allocate less, from the `_completable` change (bench12, GND at strength 3:
+185.1 MiB before, 120.6 MiB now). On Julia 1.10, the other version CI
+runs, the counting bonus allocates 242,739,168 bytes and the listing
+measurement 570,656,672, so the 400 MB bound holds there too, with and
+without code coverage.
+
 ## Stage D: the negative sub-request projection and shared target order (after C)
 
 Goal: the negative sub-request has one owner and fails loudly when it is
