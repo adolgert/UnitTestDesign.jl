@@ -3,12 +3,12 @@
 #
 # `report` is where verification happens (§1.23): it measures a result's rows
 # with `coverage` machinery (measure.jl) instead of reading the recorded
-# counts, and adds bonus coverage at strength + 1 and the prefix curve. The
-# guarantee line's other parts (must-include rows, an excursion's notes,
-# GND's seed) are copied from the result (`_guarantee`), and recorded
-# exclusions are a fallback for targets the measurement leaves unknown
-# (`_recorded_exclusions`). `design_sizes` runs each strategy and measures
-# what it produced. Each call reads a set of rows once and keeps one
+# counts, and adds bonus coverage at strength + 1, counted only, and the
+# prefix curve. The guarantee line's other parts (must-include rows, an
+# excursion's notes, GND's seed) are copied from the result (`_guarantee`),
+# and recorded exclusions are a fallback for targets the measurement leaves
+# unknown (`_recorded_exclusions`). `design_sizes` runs each strategy and
+# counts what its rows cover. Each call reads a set of rows once and keeps one
 # lazy-rule memo for all its measurements (§3.5). Neither prints a percentage
 # when a target is unresolved (§3.10, §3.12), and neither calls a case count
 # minimal (§8.3, §8.4). With `Invalid` values every figure comes in two
@@ -17,8 +17,6 @@
 
 ## report
 
-"Counts for one part, ordinary or negative: covered, feasible (a lower bound with unknowns), unknown."
-const _PartCounts = NamedTuple{(:covered, :feasible, :unknown), NTuple{3, Int}}
 const _BonusCounts = NamedTuple{(:strength, :covered, :feasible, :unknown, :negative, :applicable, :reason),
                                 Tuple{Int, Int, Int, Int, _PartCounts, Bool, String}}
 const _PrefixPoint = NamedTuple{(:cases, :covered, :feasible, :unknown), NTuple{4, Int}}
@@ -203,7 +201,7 @@ function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_lim
     c, prefix, negative = _measure(prepared, cases.space; strength, stronger, memos, feasibility_limit,
                                    explanation_limit, curves = true)
     recorded = covering ? _recorded_exclusions(cases, c) : Exclusion[]
-    bonus = _bonus(prepared, cases.space, strength; memos, feasibility_limit, explanation_limit)
+    bonus = _bonus(prepared, cases.space, strength; memos, feasibility_limit)
     return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c,
                   [c.ordinary.excluded; c.negative.excluded], recorded, bonus,
                   _prefix_points(prefix, c.ordinary), _prefix_points(negative, c.negative), cases.seed,
@@ -214,9 +212,6 @@ end
 _prefix_points(curve::Vector{Int}, part::CoveragePart) =
     _PrefixPoint[(cases = k, covered = curve[k], feasible = part.feasible, unknown = length(part.unknown))
                  for k in eachindex(curve)]
-
-"A part's counts: covered, feasible, and how many targets are unresolved."
-_part_counts(part::CoveragePart) = _PartCounts((part.covered, part.feasible, length(part.unknown)))
 
 """
     _recorded_exclusions(cases, c) -> Vector{Exclusion}
@@ -234,18 +229,16 @@ function _recorded_exclusions(cases::TestCases, c::Coverage)
                      if case_indices(space, e.target) in unresolved]
 end
 
-"Coverage of the prepared rows at `strength + 1`, ordinary and negative, or why there is none (§3.12)."
-function _bonus(prepared::PreparedRows, space::TestSpace, strength::Int; memos, feasibility_limit,
-                explanation_limit)
+"Coverage counts of the prepared rows at `strength + 1`, ordinary and negative, or why there are none (§3.12)."
+function _bonus(prepared::PreparedRows, space::TestSpace, strength::Int; memos, feasibility_limit)
     n = length(space.names)
     if strength + 1 > n
         return _BonusCounts((strength + 1, 0, 0, 0, _PartCounts((0, 0, 0)), false,
             "strength $(strength + 1) exceeds the number of parameters, $n"))
     end
-    b, _ = _measure(prepared, space; strength = strength + 1, stronger = Pair[], memos, feasibility_limit,
-                    explanation_limit, curves = false)
-    return _BonusCounts((strength + 1, b.ordinary.covered, b.ordinary.feasible,
-                         length(b.ordinary.unknown), _part_counts(b.negative), true, ""))
+    b = _measure_counts(prepared, space; strength = strength + 1, stronger = Pair[], memos, feasibility_limit)
+    return _BonusCounts((strength + 1, b.ordinary.covered, b.ordinary.feasible, b.ordinary.unknown,
+                         b.negative, true, ""))
 end
 
 _text(x) = sprint(show, x; context = :typeinfo => Any)
@@ -587,11 +580,11 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     none = (nothing, nothing, nothing)   # the negative figures of a row with no case count
     ff = _attempt(() -> full_factorial(space; limit, limits...))
     valid = ff isa TestCases ? length(ff) : nothing
-    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, n; memos, limits...))
+    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, n; memos, feasibility_limit))
     for s in strengths
         s <= n || continue
         design = _attempt(() -> covering(space; strength = s, engine, limits...))
-        push!(rows, _size_row("covering($s)", :covering, s, design, valid, n; memos, limits...))
+        push!(rows, _size_row("covering($s)", :covering, s, design, valid, n; memos, feasibility_limit))
     end
     for d in distances
         base = from === nothing ? _default_base(space) : nothing
@@ -602,7 +595,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
             continue
         end
         design = _attempt(() -> excursions(space; distance = d, from, limits...))
-        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, n; memos, limits...))
+        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, n; memos, feasibility_limit))
     end
     return DesignSizes(copy(space.names), length(space), valid, nameof(typeof(engine)), limit,
                        _has_invalid(space), rows)
@@ -629,22 +622,19 @@ function _attempt(f)
 end
 
 """
-    _size_counts(cases, prepared, s, n; memos, feasibility_limit, explanation_limit) -> (ordinary, negative)
+    _size_counts(cases, prepared, s, n; memos, feasibility_limit) -> (ordinary, negative)
 
 The design's coverage counts at strength `s`, at the strength and groups
 `coverage(cases; strength = s)` measures (`_measured_request`), or
 `(nothing, nothing)` above `n`.
 """
-function _size_counts(cases::TestCases, prepared, s::Int, n::Int; memos, feasibility_limit,
-                      explanation_limit)
+function _size_counts(cases::TestCases, prepared, s::Int, n::Int; memos, feasibility_limit)
     s <= n || return nothing, nothing
     strength, stronger = _measured_request(cases, s, nothing)
-    c, _ = _measure(prepared, cases.space; strength, stronger, memos, feasibility_limit, explanation_limit,
-                    curves = false)
-    return _part_counts(c.ordinary), _part_counts(c.negative)
+    return _measure_counts(prepared, cases.space; strength, stronger, memos, feasibility_limit)
 end
 
-function _size_row(strategy, kind, level, design, valid, n; memos, feasibility_limit, explanation_limit)
+function _size_row(strategy, kind, level, design, valid, n; memos, feasibility_limit)
     if design isa ResourceLimitError
         message = "$(design.keyword) = $(_grouped(design.limit)) reached: $(design.what)"
         return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing,
@@ -653,8 +643,8 @@ function _size_row(strategy, kind, level, design, valid, n; memos, feasibility_l
     share = valid === nothing ? nothing : (valid == 0 ? nothing : length(design) / valid)
     # The rows are read once for both strengths, and only when one is measured.
     prepared = n < 2 ? nothing : _prepare_rows(design.space, memos, collect(design))
-    pairs, negative_pairs = _size_counts(design, prepared, 2, n; memos, feasibility_limit, explanation_limit)
-    triples, negative_triples = _size_counts(design, prepared, 3, n; memos, feasibility_limit, explanation_limit)
+    pairs, negative_pairs = _size_counts(design, prepared, 2, n; memos, feasibility_limit)
+    triples, negative_triples = _size_counts(design, prepared, 3, n; memos, feasibility_limit)
     return _SizeRow((strategy, kind, level, :ok, "", length(design), share, pairs, triples,
                      count(hasinvalid, design), negative_pairs, negative_triples))
 end

@@ -737,6 +737,27 @@ IndexClassification(e::IndexExplanation) = IndexClassification(_STATUS_OF_OUTCOM
     e.rules, e.minimal, e.witness, e.limit, e.nodes, e.evaluations)
 
 """
+    _status(f::Feasibility, partial) -> Symbol
+
+The status `IndexClassification` gives `partial` (`:required`, `:forbidden`,
+`:implied` or `:unknown`), without its rules, witness or effort: for
+counting, which keeps none of them. It reaches the outcome as
+`explain_partial` does, the direct check and then `completable`, and skips
+the deletion search. That search's trials are fresh `Feasibility` objects
+that share only the rule memo, so skipping it leaves `f`'s answer caches as
+`explain_partial` would, and every later answer the same.
+"""
+function _status(f::Feasibility, partial::AbstractVector{<:Integer})
+    key = _checked_key(f, partial)
+    _violates(f, key) && return _STATUS_OF_OUTCOME.forbidden
+    all(!=(0), key) && return _STATUS_OF_OUTCOME.allowed
+    status, _ = _completable(f, key, f.limit)
+    status === :feasible && return _STATUS_OF_OUTCOME.completable
+    status === :unknown && return _STATUS_OF_OUTCOME.unknown
+    return _STATUS_OF_OUTCOME.infeasible
+end
+
+"""
     classify(f::Feasibility, targets; explanation_limit = 1_000_000) -> Vector{IndexClassification}
 
 Classify each target, a partial assignment, as `:required`, `:forbidden`,
