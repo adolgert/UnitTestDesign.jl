@@ -115,8 +115,6 @@ function _Greedy(request::Request, required)
     end
 end
 
-_Greedy(mc::MatrixCoverage) = _Greedy(mc, nothing, fill(false, length(mc.arity)))
-
 _check(g::_Greedy, p) = g.checked[p] ? g.isdead : nothing
 
 "Assign each unset parameter of `entry`, in `order`, its best allowed value."
@@ -234,19 +232,3 @@ cover_ordinary(engine::GND, request::Request, required) = first(gnd_cover(engine
 _engine_name(::GND) = :GND
 "The seed recorded in the result: `engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6)."
 _engine_seed(engine::GND) = engine.seed
-
-
-"""
-    n_way_coverage(arity, n_way, M, rng) -> Vector{Vector{Int}}
-
-Unconstrained GND over parameters with `arity` values, covering every
-`n_way` combination, with `M` candidates per round, drawing from `rng`.
-Only the tests call it; generation goes through `generate`.
-"""
-function n_way_coverage(arity, n_way, M, rng)
-    arity = collect(Int, arity)
-    g = _Greedy(all_combinations_matrix(arity, n_way))
-    rows = Vector{Int}[]
-    _greedy_rounds!(rows, rng, g, Int(M))
-    return rows
-end

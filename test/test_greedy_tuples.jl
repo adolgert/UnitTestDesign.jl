@@ -202,17 +202,13 @@ end
 end
 
 
-@testitem "GND design size is competitive" setup=[IndexCoverage] begin
-    using Random
+@testitem "GND design size is competitive" begin
     using UnitTestDesign: Request, generate
     # Before the scoring fix in most_matches_existing, GND chose most values
     # at random and needed 36-38 cases here, compared with 28 for IPOG.
     arity = fill(4, 10)
     space = TestSpace((Symbol(:p, i) => 1:4 for i in 1:10)...)
     for seed in 1:3
-        cases = UnitTestDesign.n_way_coverage(arity, 2, 50, Xoshiro(seed))
-        @test length(cases) <= 32
-        @test coverage_by_tuple(cases, 2) == UnitTestDesign.total_combinations(arity, 2)
         design = generate(GND(; seed), Request(space))
         @test size(design.matrix, 2) <= 32
         @test design.covered == UnitTestDesign.total_combinations(arity, 2)
@@ -316,17 +312,4 @@ end
     @test Base.JLOptions().depwarn == 2 || GND(M = 3).candidates == 3
     design = generate(GND(candidates = 3), request)
     @test design.covered == design.required
-end
-
-
-@testitem "n_way_coverage" setup=[IndexCoverage, UTSetup] begin
-    using Random
-    # The unconstrained form, in index space.
-    rng = Xoshiro(9234724 ⊻ seed_mod())
-    arity = [2, 3, 2, 3]
-    for n_way in (2, 3)
-        cover = UnitTestDesign.n_way_coverage(arity, n_way, 50, rng)
-        @test coverage_by_tuple(cover, n_way) == UnitTestDesign.total_combinations(arity, n_way)
-    end
-    @test length(UnitTestDesign.n_way_coverage(fill(4, 9), 2, 50, rng)) in 16:40
 end

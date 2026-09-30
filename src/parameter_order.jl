@@ -26,46 +26,6 @@ function choose_last_parameter!(taller, allc, matcher = case_partial_cover)
 end
 
 
-
-"""
-The given test cases have missing values, which are zeros.
-This fills in missing values anywhere they cover tuples.
-"""
-function fill_missing_test_set_values!(taller, allc, matcher = case_compatible_with_tuple)
-    param_idx  = size(taller, 1)
-    for missing_col_idx in axes(taller, 2)
-        nonzero = sum(taller[1:(param_idx - 1), missing_col_idx] .> 0)
-        if nonzero < param_idx - 1
-            # The found_values has what format?
-            found_entry = fill_consistent_matches(allc, taller[:, missing_col_idx], matcher)
-            remain_zero = sum(found_entry .> 0)
-            if remain_zero < nonzero
-                taller[:, missing_col_idx] .= found_entry
-                add_coverage!(allc, found_entry)
-            end  # else nothing found for this row.
-        end
-    end
-end
-
-
-"""
-If not all tuples are covered by a test set, this creates new test cases
-to cover all remaining tuples.
-"""
-function cover_remaining_by_creating_cases(allc, matcher = case_compatible_with_tuple)
-    param_idx = parameter_cnt(allc)
-    add_entries = Array{Array{eltype(allc),1},1}()
-    while remaining_uncovered(allc) > 0
-        # add a new row. Fill with necessary tuples.
-        entry = first_match_for_parameter(allc, param_idx)
-        filled = fill_consistent_matches(allc, entry, matcher)
-        add_coverage!(allc, filled)
-        push!(add_entries, filled)
-    end
-    add_entries
-end
-
-
 function put_tuple_in_case(tuple, case)
     for i in eachindex(tuple)
         if tuple[i] != 0

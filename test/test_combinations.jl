@@ -19,16 +19,6 @@ using TestItemRunner
 end
 
 
-@testitem "number of combinations" begin
-    for cn_a in 1:6
-        for cn_b in 1:cn_a
-            oracle = factorial(cn_a) ÷ (factorial(cn_a - cn_b) * factorial(cn_b))
-            @test UnitTestDesign.combination_number(cn_a, cn_b) == oracle
-        end
-    end
-end
-
-
 @testitem "next multiplicative value" begin
     arity0 = [3, 7, 9, 4]
     vv0 = copy(arity0)

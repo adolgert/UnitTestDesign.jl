@@ -95,20 +95,3 @@ function one_parameter_combinations(arity, n_way)
     end
     comb
 end
-
-
-combination_number(n, m) = prod(n:-1:(n-m+1)) ÷ factorial(m)
-
-
-function pairs_in_entry(entry, n_way)
-    n = length(entry)
-    ans = zeros(Int, combination_number(n, n_way), n)
-    col_set_idx = 1
-    for param_idx in combinations(1:length(entry), n_way)
-        for row_idx in 1:n_way
-            ans[param_idx[row_idx], col_set_idx] = entry[param_idx[row_idx]]
-        end
-        col_set_idx += 1
-    end
-    ans
-end
