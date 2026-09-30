@@ -273,24 +273,27 @@ _rule_details(rules, labels) =
     "(" * join((_unlabeled(k, l) ? l : "rule $k: $l" for (k, l) in zip(rules, labels)), "; ") * ")"
 
 """
-    _print_exclusion(io, rules, labels, minimal, limit)
+    _print_exclusion(io, rules, labels, minimal, limit; parenthesized = false)
 
 The clause of an infeasible explanation that names its rules: "rule 1 (…)
 excludes it" or "rules 1 and 2 together exclude it (rule 1: …; rule 2: …)",
 then, when `minimal` is `:unresolved`, the limit that left it unresolved
-(`limit` is `keyword => value`). `explain` prints it after "infeasible: no
-valid case contains …; ", and the must-include check (§10.4) after "has no
-valid completion: ", so both say the same thing the same way.
+(`limit` is `keyword => value`): "; whether each rule is needed is
+unresolved: …", or, with `parenthesized`, the same note in parentheses, for
+a line whose clauses "; " already separates. `explain` prints it after
+"infeasible: no valid case contains …; ", and the must-include check
+(§10.4) after "has no valid completion: ", so both say the same thing the
+same way; a follow-up's proofs print it too (`_print_proof`).
 """
-function _print_exclusion(io::IO, rules, labels, minimal::Symbol, limit)
+function _print_exclusion(io::IO, rules, labels, minimal::Symbol, limit; parenthesized::Bool = false)
     if length(rules) == 1
         print(io, _rule_phrase(only(rules), only(labels)), " excludes it")
     else
         print(io, _rule_numbers(rules), " together exclude it ", _rule_details(rules, labels))
     end
     if minimal === :unresolved
-        print(io, "; whether each rule is needed is unresolved: ", limit.first, " = ",
-              _grouped(limit.second), " reached")
+        note = "whether each rule is needed is unresolved: $(limit.first) = $(_grouped(limit.second)) reached"
+        print(io, parenthesized ? " ($note)" : "; $note")
     end
     return nothing
 end
