@@ -371,9 +371,9 @@ against negative rows (§5.5, §6.2); a target with more than one is an
 Each target gets its own `feasibility_limit` budget (§3.4) and its own
 `explanation_limit` budget for the deletion search (§3.13). Answers are
 cached for the duration of the call only (§3.5). Not exported; the tests use
-it. `classify`, generation and coverage measurement share
-`IndexClassification`, which maps each search outcome to a status, so the
-three classify alike.
+it. `classify`, generation, coverage measurement and the isolation searches
+of `followups` share `IndexClassification`, which maps each search outcome
+to a status, so the four classify alike.
 """
 function classify(space::TestSpace, targets::AbstractVector;
                   feasibility_limit = 1_000_000, explanation_limit = 1_000_000)

@@ -632,10 +632,12 @@ apply to every kind, including those that name `p`. Each start, a failing
 case, orders the candidates with its values first; with no starts, domain
 order.
 
-Returns `(status, witness, from, changes, rules, others, minimal, limit)`:
-`:found` with the witness closest to a failing case of `s`; `:inseparable`
-with the proof, `rules` in the space's numbering and `others` as positions
-in `d.suspects`; or `:unknown`.
+`IndexClassification` gives each start's search a status. Returns
+`(status, witness, from, changes, rules, others, minimal, limit)`: `:found`
+when a search is `:required`, with the witness closest to a failing case of
+`s`; `:inseparable` when one is `:forbidden` or `:implied`, with the proof,
+`rules` in the space's numbering and `others` as positions in
+`d.suspects`; or `:unknown`.
 """
 function _isolate(d::Diagnosis, s::Suspect, (p, v)::Tuple{Int, Int}, others::Vector{Int},
                   isolation::Vector{RuleTable}, memos, limits, starts::Vector{Int})
@@ -654,20 +656,20 @@ function _isolate(d::Diagnosis, s::Suspect, (p, v)::Tuple{Int, Int}, others::Vec
     best = none
     for candidates in orders
         f = Feasibility(candidates, tables; limit = feasibility_limit, memos = table_memos)
-        e = explain_partial(f, key; explanation_limit)
-        if e.outcome === :allowed || e.outcome === :completable
-            k = argmin(k -> (_changes(e.witness, d.rows[k]), k), s.failing)
-            changes = _changes(e.witness, d.rows[k])
+        c = IndexClassification(explain_partial(f, key; explanation_limit))
+        if c.status === :required
+            k = argmin(k -> (_changes(c.witness, d.rows[k]), k), s.failing)
+            changes = _changes(c.witness, d.rows[k])
             if best.status !== :found || changes < best.changes
-                best = merge(none, (status = :found, witness = e.witness, from = k, changes = changes))
+                best = merge(none, (status = :found, witness = c.witness, from = k, changes = changes))
             end
             best.changes == 0 && break
-        elseif e.outcome === :forbidden || e.outcome === :infeasible
+        elseif c.status === :forbidden || c.status === :implied
             # Feasibility does not depend on the order values are tried in: one proof decides the kind.
             return merge(none, (status = :inseparable,
-                rules = Int[active[r] for r in e.rules if r <= length(active)],
-                others = Int[others[r - length(active)] for r in e.rules if r > length(active)],
-                minimal = e.minimal, limit = _limit_pair(e.limit, feasibility_limit, explanation_limit)))
+                rules = Int[active[r] for r in c.rules if r <= length(active)],
+                others = Int[others[r - length(active)] for r in c.rules if r > length(active)],
+                minimal = c.minimal, limit = _limit_pair(c.limit, feasibility_limit, explanation_limit)))
         end
     end
     return best
