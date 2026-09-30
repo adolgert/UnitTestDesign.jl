@@ -34,6 +34,16 @@ The aim, beyond fixing what the review and its verification found: each
 stage leaves one owner for one concern. Where a fix had a simpler and a
 more elaborate form, this revision takes the simpler one.
 
+**Status, 2026-09-30: implemented.** Every stage is built, on a stack of
+local branches from `feature/phase7-docs`: `feature/stage-a-docs-truth`,
+`-e1-proof-record`, `-b-dead-code`, `-c-measurement`, `-d-projection`,
+`-e2-isolation`, `-f-macros`, and on top `feature/review-fixes` (an
+independent review of the whole stack and its fixes). None is pushed. Each
+stage section below ends with its implementation notes: what was adjusted
+and why. `design/20260930_walkthrough.md` is the guide for reading the
+result: what changed where, the deliberate behavior changes, the evidence,
+and the questions left for you.
+
 ## What the verification changed about the review
 
 The review's structure holds and none of its claims is fabricated. The
@@ -132,6 +142,15 @@ All seven recommendations were accepted.
    because within measurement a lazy predicate runs only on a memo miss
    (`src/feasibility.jl:270-275`). Not chosen: sharing whole contexts and
    documenting the refinement.
+
+   Found in implementation (Stage C part 2): a shared answer cache does not
+   only resolve more. It changes which queries are asked with which budget,
+   so it can move a figure either way. In the snapshot's two-component
+   space, a shared cache resolves one bonus triple the separate run leaves
+   unknown, but the net is 4 more unresolved triples (10 to 14), because the
+   separate run caches a component the shared run never solves. So the
+   refinement the "not chosen" alternative would have documented is not
+   one-directional, which is one more reason for separate answer caches.
 
 ## Stage A: make the documentation true (before 0.5)
 
@@ -1918,9 +1937,11 @@ The corpus has three parts, each run at the default limits and at a tight
 - **Follow-ups:** `diagnose` and `followups` on the probe `04` spaces and
   on fixed seeds of the `test_diagnose` random sweep.
 
-Draw spaces from `test/random_problems.jl` with fixed seeds, and from the
-probe spaces. Write it in Stage C before any code change, and extend it as
-later stages need.
+As built, the script draws its random spaces from a small seeded generator
+of its own, not from `test/random_problems.jl`, which needs the checker
+loaded and makes no `Invalid` values, whole-case rules or lazy rules
+(Stage C notes, part 1). It was written in Stage C before any code change,
+and extended in Stage D.
 
 ## Not in this plan, and why
 
@@ -2015,9 +2036,10 @@ Found during verification or the readiness check. Each has a disposition.
 15. **A shared answer cache can change bounded results.** `_completable`
     caches each solved component's witness even when the whole query ends
     unknown (`src/feasibility.jl:440-449`). So sharing a `Feasibility`
-    across measurements or operations can resolve a target that a separate
-    search leaves unknown. The result stays sound, but a reported figure
-    changes. Decision 7 keeps answer caches separate for that reason.
+    across measurements or operations changes which targets a bounded
+    search resolves, in either direction (see decision 7's note). The
+    result stays sound, but a reported figure changes. Decision 7 keeps
+    answer caches separate for that reason.
 
 ## Order of work
 
@@ -2045,34 +2067,38 @@ and speed.
 
 ## The structure this plan leaves behind
 
-One owner per concern once every stage has landed, for reading the code
-afterwards:
+One owner per concern, as built (corrected 2026-09-30 after the review of
+the whole stack; line numbers at `feature/review-fixes`):
 
-| Concern | Owner after the plan | Today |
+| Concern | Owner, as built | Before the plan |
 |:--|:--|:--|
-| Reading one caller's row into value indices | `_row_indices` (`space.jl`) | seven readers in six files |
-| Reading a caller's collection of rows | `_row_list` | three |
-| The candidate values of one kind of row | `_candidates(space, p, v)` (`space.jl`) | four expressions |
-| Target order (the mixed-radix code) | `_code` and `_decode!` (`space.jl`) | `TargetList`, `_recount` and measurement, each by hand |
-| Whether an assignment extends to a valid row | `completable` and `explain_partial` (`feasibility.jl`) | unchanged |
-| From a search outcome to required, forbidden, implied or unknown | `IndexClassification` (`feasibility.jl`) | three places |
-| A status with no explanation, for counting | `_status` (`feasibility.jl`) | none; every count built an explanation |
-| What one call remembers | `FeasibilityContext`: one lazy-rule memo per public call, one answer cache per measurement (`explain.jl`) | one memo per measurement |
-| Rows made ready for measurement | `PreparedRows` (`measure.jl`) | a tuple, rebuilt for each measurement |
-| Negative targets, in one order | one enumerator, used by generation and measurement | two walks and a sort |
-| The space as one kind of negative row sees it | the projection type (`invalid.jl`) | seven fields passed positionally |
-| Why a suspect cannot be isolated, per kind | `FollowupProof`, and typed isolation results (`diagnose.jl`) | a union, and a named tuple with placeholder values |
-| Rules written with macros | `constraint_macros.jl`, through `_function_rule` | a second copy of the construction |
+| Reading one caller's row into value indices | `_row_indices` (`src/space.jl:494`) | seven readers in six files |
+| Reading a caller's collection of rows | `_row_list` (`src/space.jl:549`). Out of scope and still separate: `github_matrix` (`_matrix_rows`, `_matrix_entry`, `src/export.jl:117, 137`) and `realize` (`src/partition.jl:64`), which read rows without a space | three |
+| The candidate values of one kind of row | `_candidates(space, p, v)` (`src/space.jl:641`) | four expressions |
+| Target order (the mixed-radix code) | `_code` and `_decode!` (`src/space.jl:592, 601`). The odometer in `_measure_block!` (`src/measure.jl:402`) and the column accumulation in `_projections` (`:273`) still step through that order inline, for speed; the test "coverage: a block's targets come in the order of their codes" (`test/test_measure.jl:654`) ties them to `_decode!` | `TargetList`, `_recount` and measurement, each by hand |
+| Supports, and each group's share of their counts | `_group_supports` (`src/request.jl:347`) | recomputed per group |
+| Whether an assignment extends to a valid row | `completable` and `explain_partial` (`src/feasibility.jl`) | unchanged |
+| From a search outcome to required, forbidden, implied or unknown | the table `_STATUS_OF_OUTCOME` (`src/feasibility.jl:733`), read by `IndexClassification` and `_status`; used by generation (`_classify_target`), measurement (`_classify!`), `classify` and `followups` (`_isolate`) | four places |
+| A status with no explanation, for counting | `_status` (`src/feasibility.jl:750`) | none; every count built an explanation |
+| What a call remembers | One lazy-rule memo per operation: a generation (held by its `Request`), or one `explain`, `classify`, `coverage`, `missing_interactions`, `report` or `followups` call; `design_sizes` keeps one for all its measurements, and each design it generates has its own. One answer cache per `FeasibilityContext` (`src/explain.jl:25`), that is, per measurement | one memo per measurement |
+| Rows made ready for measurement | `PreparedRows` and `_prepare_rows` (`src/measure.jl:191, 207`) | a tuple, rebuilt for each measurement |
+| Negative targets, in one order | `_walk_support!` (`src/measure.jl:455`) with a `_Record`: `_Lists` or `_Counts` for measurement (`:334, 351`), `_NegativeTargets` for generation (`src/invalid.jl:145`), which reaches it through `classify_negative_targets` (`:176`) | two walks and a sort |
+| The space as one kind of negative row sees it | `NegativeProjection` (`src/invalid.jl:54`), with `parent_rule` and `parent_row`; the checked parts constructor `TestSpace(Val(:parts), parts)` (`src/space.jl:274`) | seven fields passed positionally |
+| Why a suspect cannot be isolated, per kind | `FollowupProof` (`src/diagnose.jl:401`), and the typed isolation results `_Found`, `_Proof`, `_Unknown` (`:633-655`) | a union, and a named tuple with placeholder values |
+| Rules written with macros | `src/constraint_macros.jl`, whose `_macro_rule` calls `_function_rule(...; text)` (`src/constraints.jl:184`) | a second copy of the construction |
 
-The files, in include order (`src/UnitTestDesign.jl:29-49`), are also a
+The files, in include order (`src/UnitTestDesign.jl:29-50`), are also a
 reasonable reading order:
 - `rule_table.jl`, `constraints.jl` and `constraint_macros.jl` for rules;
-- `space.jl` for the vocabulary, the indices and the row reader;
+- `space.jl` for the vocabulary, the indices, the row readers and the code;
 - `feasibility.jl` for search and classification in index space;
 - `explain.jl` for the per-call context and the public questions;
 - `request.jl` and `engines.jl` for generation;
+- `testcases.jl` for the result type;
 - `measure.jl` and `report.jl` for measurement;
-- the older index engines;
+- the older index engines (`combinations.jl` to `excursions.jl`);
 - `invalid.jl` for negative rows;
+- `partition.jl` for partitions;
 - `interface.jl` for the public generators;
-- `diagnose.jl`.
+- `diagnose.jl`;
+- `export.jl` for `github_matrix`.
