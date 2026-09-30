@@ -694,7 +694,7 @@ end
 end
 
 
-@testitem "followups: an unresolved proof with no other suspect notes its limit in parentheses when \"; \" separates kinds" setup=[DiagnoseSetup] begin
+@testitem "followups: an unresolved proof with no other suspect notes its limit in parentheses, since \"; \" separates the clauses" setup=[DiagnoseSetup] begin
     # Rules 1 and 3 read n and m, so negative cases at n need rules 2 and 3,
     # and at m rules 1 and 2: the proofs differ. At explanation_limit = 3 only
     # the ordinary proof is unresolved, and its note comes before the next kind.
@@ -717,7 +717,7 @@ end
         "cases with m = Invalid(0), no valid case holds it: rules 1 and 2 together exclude it (rule 1 on " *
         "(a, b, n); rule 2 on (a, b))"
 
-    # A line of one proof, or of proofs that agree, ends as explain's does.
+    # So does a line of one proof, or of proofs that agree, before the kinds searched.
     function unresolved(domains, rows)
         space = TestSpace(domains; constraints = [forbid((a = 2, b = 1)), forbid((a = 2, b = 2))])
         d = diagnose(rows, [true, true, false]; space, strength = 1)
@@ -727,7 +727,7 @@ end
         return sprint(show, only(fs))
     end
     line = "(a = 2,): inseparable; no valid case holds it: rules 1 and 2 together exclude it (rule 1 on " *
-           "(a, b); rule 2 on (a, b)); whether each rule is needed is unresolved: explanation_limit = 1 reached"
+           "(a, b); rule 2 on (a, b)) (whether each rule is needed is unresolved: explanation_limit = 1 reached)"
     @test unresolved((a = [1, 2], b = [1, 2], c = [1, 2]),
                      [(a = 1, b = 1, c = 1), (a = 1, b = 2, c = 2), (a = 2, b = 1, c = 1)]) == line
     @test unresolved((a = [1, 2], b = [1, 2], n = [1, Invalid(0)]),

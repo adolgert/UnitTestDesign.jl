@@ -783,20 +783,18 @@ function _kinds_phrase(io::IO, searched::Vector{NamedTuple})
 end
 
 """
-    _print_proof(io, rules, labels, others, minimal, limit; per_kind = false)
+    _print_proof(io, rules, labels, others, minimal, limit)
 
-One inseparable proof, after "inseparable; " or, `per_kind`, after "in
-KIND, ": "no valid case holds it: …" when it names no other suspect,
-otherwise "every valid case holding it also holds …, under …". An
-unresolved proof is followed by the limit that left it so, in parentheses;
-a line of one proof with no other suspect instead ends as `explain` does,
-"; whether each rule is needed is unresolved: …", which the per-kind form
-cannot, since there "; " separates the kinds.
+One inseparable proof, after "inseparable; " or "in KIND, ": "no valid case
+holds it: …" when it names no other suspect, otherwise "every valid case
+holding it also holds …, under …". An unresolved proof is followed by the
+limit that left it so, in parentheses, since "; " separates the clauses of
+a follow-up's line.
 """
-function _print_proof(io::IO, rules, labels, others, minimal::Symbol, limit; per_kind::Bool = false)
+function _print_proof(io::IO, rules, labels, others, minimal::Symbol, limit)
     if isempty(others)
         print(io, "no valid case holds it: ")
-        _print_exclusion(io, rules, labels, minimal, limit; parenthesized = per_kind)
+        _print_exclusion(io, rules, labels, minimal, limit; parenthesized = true)
         return nothing
     end
     print(io, "every valid case holding it also holds ",
@@ -838,7 +836,7 @@ function Base.show(io::IO, f::Followup)
             # Proofs that differ: the union need not be minimal, so each kind's proof is printed.
             for (i, p) in enumerate(f.proofs)
                 print(io, i == 1 ? "" : "; ", "in ", _kinds_phrase(io, NamedTuple[p.searched]), ", ")
-                _print_proof(io, p.rules, p.labels, p.others, p.minimal, p.limit; per_kind = true)
+                _print_proof(io, p.rules, p.labels, p.others, p.minimal, p.limit)
             end
         end
     else
