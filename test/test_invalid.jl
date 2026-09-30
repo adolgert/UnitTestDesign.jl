@@ -596,3 +596,60 @@ end
         @test !isempty(calls) && allunique(calls)
     end
 end
+
+
+@testitem "invalid: a negative sub-request's targets are the negative targets at its value, in target order (§6.1, §6.3, §9.7)" setup=[Checker, InvalidSetup] begin
+    using UnitTestDesign: Request, NegativeProjection, TargetList, parent_row, _negative_request, _space_indices,
+                          from_indices
+    # The negative targets at (p, v), in the order coverage lists them, are
+    # (p = v) at strength 1, then (p = v) beside each target of the
+    # sub-request at (p, v), in TargetList order. So a sub-request built from
+    # the required negative targets at (p, v), taken in target order, gets
+    # its targets in the order its own TargetList would give them.
+    interleaved = TestSpace((a = [1, 2], b = [1, Invalid(0), 2, Invalid(9)], c = [1, 2, 3], d = [Invalid(:x), 1, 2],
+                             e = [1, 2]);
+        constraints = [forbid((b = 2, c = 3)), forbid((a = 1, e = 2)), forbid((c = 1, d = 2))])
+    spaces = [
+        out_of_order() => ([(1, [(:c, :a, :e) => 3, (:b, :d) => 2]), (1, [(:a, :b) => 2]), (2, []),
+                            (2, [(:c, :a, :e) => 3, (:b, :d) => 2]), (2, [(:a, :b, :c, :d) => 4]), (3, []),
+                            (3, [(:a, :b, :c, :d) => 4])],
+                           [(a = Invalid(0), e = 3), (c = Invalid(-1), a = 3, b = :y, d = false, e = 1),
+                            (c = Invalid(-1),), (a = 1, b = :x)]),
+        interleaved => ([(1, [(:a, :b, :c) => 2]), (1, [(:b, :c) => 2, (:a, :b, :d, :e) => 3]), (2, []),
+                         (2, [(:a, :b, :c) => 3, (:b, :d, :e) => 3, (:c, :d, :e) => 3]), (3, []),
+                         (3, [(:a, :b, :c, :d) => 4])],
+                        [(b = Invalid(9), c = 2), (d = Invalid(:x),)]),
+        test_space(grouped()) => ([(1, [(:a, :b, :c) => 3]), (2, [(:a, :b, :c) => 3]), (3, [])],
+                                  [(a = Invalid(0), d = :x)]),
+        test_space(two_invalid()) => ([(1, [(:a, :b) => 2]), (2, []), (3, [])], []),
+        excluding() => ([(2, []), (3, [])], [(n = Invalid(-1), k = :y)]),
+    ]
+    for (space, (requests, must_include)) in spaces, (strength, stronger) in requests
+        free = TestSpace(NamedTuple{Tuple(space.names)}(Tuple(space.values)))   # the same targets, all feasible
+        every = coverage(NamedTuple[], free; strength, stronger).negative.missing
+        measured = coverage(NamedTuple[], space; strength, stronger).negative
+        @test isempty(measured.unknown)
+        request = Request(space; strength, stronger, must_include)
+        must = request.must_include
+        for p in eachindex(space.names), position in (request.arity[p] + 1):length(request.candidates[p])
+            v = space.values[p][request.candidates[p][position]]
+            at(t) = haskey(t, space.names[p]) && t[space.names[p]] === v
+            # Every negative target at (p, v), in target order; (p = v) alone first at strength 1.
+            here = filter(at, every)
+            @test (length(first(here)) == 1) == (strength == 1)
+            if strength == 1 && !any(g -> p in g.first, request.groups[2:end])
+                @test length(here) == 1   # no sub-request
+                continue
+            end
+            pr = NegativeProjection(space, p)
+            sub = _negative_request(request, pr, must[pr.kept, [j for j in axes(must, 2) if must[p, j] == position]])
+            listed = [from_indices(space, _space_indices(request, parent_row(pr, t, position))) for t in TargetList(sub)]
+            @test listed == filter(t -> length(t) > 1, here)
+            # So too for the required and the excluded ones.
+            required = filter(at, measured.missing)
+            excluded = filter(at, [e.target for e in measured.excluded])
+            @test filter(in(required), listed) == filter(t -> length(t) > 1, required)
+            @test filter(in(excluded), listed) == filter(t -> length(t) > 1, excluded)
+        end
+    end
+end
