@@ -531,25 +531,6 @@ Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_inclu
            0, 0, Excluded[])
 
 """
-    covers(matrix, target) -> Bool
-
-Whether some column of `matrix` contains the partial row `target`.
-"""
-function covers(matrix::AbstractMatrix{<:Integer}, target::AbstractVector{<:Integer})
-    for j in axes(matrix, 2)
-        ok = true
-        for i in eachindex(target)
-            if target[i] != 0 && matrix[i, j] != target[i]
-                ok = false
-                break
-            end
-        end
-        ok && return true
-    end
-    return false
-end
-
-"""
     validate_design(request, matrix, required; strategy, negative = []) -> Int
 
 Final validation (plan Phase 3 step 6, contract §1.21), in index space:

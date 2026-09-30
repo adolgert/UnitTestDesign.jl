@@ -216,16 +216,12 @@ function generate_excursion(request::Request; distance::Integer = 1, from = noth
 end
 
 """
-    never_appear(arity, matrix) -> Vector{Tuple{Int, Int}}
-    never_appear(choices, matrix)
+    never_appear(choices, matrix) -> Vector{Tuple{Int, Int}}
 
 The `(parameter, position)` pairs whose value is in no column of `matrix`,
-by parameter and then position: every position in `1:arity[i]`, or in
-`choices[i]`, in that order.
+by parameter and then position: every position in `choices[i]`, in that
+order.
 """
-never_appear(arity::AbstractVector{<:Integer}, matrix::AbstractMatrix{<:Integer}) =
-    never_appear([collect(1:a) for a in arity], matrix)
-
 function never_appear(choices::AbstractVector{<:AbstractVector{<:Integer}}, matrix::AbstractMatrix{<:Integer})
     out = Tuple{Int, Int}[]
     for i in eachindex(choices)
