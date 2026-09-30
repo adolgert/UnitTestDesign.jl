@@ -63,7 +63,7 @@ function _negative_request(request::Request, p::Int, seeds::AbstractMatrix{<:Int
     stronger = [renumber[filter(!=(p), members)] => s - 1 for (members, s) in request.groups[2:end]
                 if p in members]
     groups = _groups(subspace, request.strength - 1, stronger)
-    feasibility = Feasibility([copy(ordinary_indices(space, q)) for q in others], tables;
+    feasibility = Feasibility(_candidates(subspace, 0, 0), tables;
                               limit = request.feasibility_limit, memos = request.feasibility.rule_memo[active])
     return _request(subspace, request.strength - 1, groups, Matrix{Int}(seeds), feasibility,
                     request.feasibility_limit, request.explanation_limit)

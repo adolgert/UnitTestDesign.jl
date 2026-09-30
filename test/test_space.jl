@@ -360,6 +360,18 @@ end
 end
 
 
+@testitem "space: the candidates of each kind of row (§5.4, §5.5)" begin
+    using UnitTestDesign: _candidates
+    space = TestSpace((n = [1, Invalid(0), 2, Invalid(9)], m = [:a, :b], k = [Invalid(:z), :x, :y]))
+    # An ordinary row: every parameter's ordinary values, the space's own vectors.
+    @test _candidates(space, 0, 0) == [[1, 3], [1, 2], [2, 3]]
+    @test all(splat(===), zip(_candidates(space, 0, 0), space.ordinary))
+    # A negative row: its invalid value at its parameter, ordinary values elsewhere.
+    @test _candidates(space, 1, 4) == [[4], [1, 2], [2, 3]]
+    @test _candidates(space, 3, 1) == [[1, 3], [1, 2], [1]]
+end
+
+
 @testitem "space: length is the full product, BigInt-safe" begin
     @test length(TestSpace((a = [1],))) === 1
     @test length(TestSpace((a = [1, 2, Invalid(3)], b = 1:4))) === 12

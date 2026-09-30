@@ -644,7 +644,7 @@ function _isolate(d::Diagnosis, s::Suspect, (p, v)::Tuple{Int, Int}, others::Vec
     active = active_rules(space, p)
     tables = RuleTable[space.tables[active]; isolation[others]]
     table_memos = Union{Nothing, Dict}[memos[active]; fill(nothing, length(others))]
-    base = [q == p ? [v] : space.ordinary[q] for q in eachindex(space.names)]
+    base = _candidates(space, p, v)
     key = copy(s.key)
     p == 0 || (key[p] = v)
     orders = isempty(starts) ? [base] :

@@ -592,6 +592,17 @@ row (`p == 0`), and for a negative row at `p` the tables whose scope omits `p`.
 active_tables(space::TestSpace, p::Integer) = space.tables[active_rules(space, p)]
 
 """
+    _candidates(space, p, v) -> Vector{Vector{Int}}
+
+The value indices a search may assign to each parameter for one kind of row:
+for an ordinary row, `p == 0`, every parameter's ordinary values (contract
+§5.4); for a negative row, `[v]` at `p` and every other parameter's ordinary
+values (§5.5). The vectors are the space's; `Feasibility` copies them.
+"""
+_candidates(space::TestSpace, p::Int, v::Int) =
+    [q == p ? [v] : space.ordinary[q] for q in eachindex(space.names)]
+
+"""
     rule_label(space, k) -> String
 
 The label of the space's `k`-th rule: its reason and/or macro source text, or

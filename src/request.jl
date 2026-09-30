@@ -77,8 +77,7 @@ function Request(space::TestSpace; strength = 2, stronger = [], must_include = [
     n = length(space.names)
     strength = _check_strength(strength, n)
     groups = _groups(space, strength, stronger)
-    feasibility = Feasibility([copy(ordinary_indices(space, i)) for i in 1:n], space.tables;
-                              limit = feasibility_limit)
+    feasibility = Feasibility(_candidates(space, 0, 0), space.tables; limit = feasibility_limit)
     request = _request(space, strength, groups, zeros(Int, n, 0), feasibility, feasibility_limit,
                        explanation_limit)
     return _with_must_include(request, _must_include_matrix(request, must_include))

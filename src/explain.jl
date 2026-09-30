@@ -97,9 +97,8 @@ function feasibility_for(context::FeasibilityContext, idx::AbstractVector{<:Inte
     p = isempty(bad) ? 0 : only(bad)
     v = p == 0 ? 0 : Int(idx[p])
     return get!(context.searches, (p, v)) do
-        candidates = [q == p ? [v] : space.ordinary[q] for q in 1:n]
         rules = active_rules(space, p)
-        (Feasibility(candidates, space.tables[rules]; limit = context.feasibility_limit,
+        (Feasibility(_candidates(space, p, v), space.tables[rules]; limit = context.feasibility_limit,
                      memos = context.memos[rules]), rules)
     end
 end
