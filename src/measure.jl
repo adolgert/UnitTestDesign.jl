@@ -252,14 +252,26 @@ function _code(idx::AbstractVector{<:Integer}, support::Vector{Int}, radix::Vect
 end
 
 """
+    _Marks(marks, radix)
+
+The rows' projections onto a support with at most `_MAX_MARKS` value
+combinations: `marks[c + 1]` is set when some row's projection has the code
+`c`, `_code` over value indices in radix `radix`, the domain lengths.
+"""
+struct _Marks
+    marks::BitVector
+    radix::Vector{Int}
+end
+
+"""
     _projections(table, support, radix, codes, firsts)
 
 The rows' projections onto `support`, the set that decides coverage without
 a search (contract §1.10). `table` holds the rows parameter-major, one row
 per case and one column per parameter, so a support reads only its own
 columns, in order. A support with at most `_MAX_MARKS` value combinations
-gets a `BitVector` over the codes of `_code`, accumulated column by column in
-the buffer `codes`; a larger one gets a `Set` of value-index vectors.
+gets `_Marks` over the codes of `_code`, accumulated column by column in the
+buffer `codes`; a larger one gets a `Set` of value-index vectors.
 
 `firsts`, when it is a vector, gains one at row `j` for each projection that
 row `j` is the first to hold: summed over the supports, the targets each row
@@ -288,7 +300,7 @@ function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{In
             marks[code + 1] = true
             counts(j) && (firsts[j] += 1)
         end
-        return marks
+        return _Marks(marks, radix)
     end
     set = Set{Vector{Int}}()
     for j in axes(table, 1)
@@ -300,8 +312,21 @@ function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{In
     return set
 end
 
-_contains(marks::BitVector, t, support, radix) = marks[_code(t, support, radix) + 1]
-_contains(set::Set{Vector{Int}}, t, support, radix) = t[support] in set
+"Whether the target `t` over `support` is among the projections `seen`; with no rows (`nothing`), never."
+_contains(seen::_Marks, t, support) = seen.marks[_code(t, support, seen.radix) + 1]
+_contains(seen::Set{Vector{Int}}, t, support) = t[support] in seen
+_contains(::Nothing, t, support) = false
+
+"""
+    _Record
+
+What a walk of the targets (`_walk_support!`) does with each target that no
+row holds: `_classify!(record, context, t)` classifies it and returns its
+status. Measurement lists the targets (`_Lists`) or counts them
+(`_Counts`); negative generation keeps the required ones and the
+exclusions (`_NegativeTargets`, invalid.jl).
+"""
+abstract type _Record end
 
 """
     _Lists(explanation_limit)
@@ -310,7 +335,7 @@ What a measured part lists: its missing, excluded and unknown targets, in
 the order they are met (target order, §9.7). Each excluded target carries
 the rules the deletion search found within `explanation_limit` (§3.13).
 """
-struct _Lists
+struct _Lists <: _Record
     missing::Vector{NamedTuple}
     excluded::Vector{Exclusion}
     unknown::Vector{NamedTuple}
@@ -327,7 +352,7 @@ and explains no exclusion, so the counts `_measure_block!` returns are the
 whole measurement. It holds nothing, because those counts are kept per
 support anyway.
 """
-struct _Counts end
+struct _Counts <: _Record end
 
 """
     _classify!(record, context, t) -> Symbol
@@ -366,18 +391,18 @@ _classify!(::_Counts, context::FeasibilityContext, t::Vector{Int}) =
     _status(first(feasibility_for(context, t)), t)
 
 """
-    _measure_block!(record, context, support, rest, t, seen, radix)
+    _measure_block!(record, context, support, rest, t, seen)
         -> (covered, missing, excluded, unknown)
 
 Measure the targets that assign `t`'s fixed entries (an invalid value, for a
 negative block, or none) and every combination of ordinary values of the
 parameters `rest`, the first varying fastest (§1.8, §6.1). A target found in
 `seen`, the rows' projections onto `support`, is covered without a search
-(§1.10); any other is classified into `record`, a `_Lists` or a `_Counts`.
-`t` is a reused buffer: `rest` is cleared again on return.
+(§1.10); any other is classified into `record`. `t` is a reused buffer:
+`rest` is cleared again on return.
 """
-function _measure_block!(record::Union{_Lists, _Counts}, context::FeasibilityContext,
-                         support::Vector{Int}, rest::Vector{Int}, t::Vector{Int}, seen, radix::Vector{Int})
+function _measure_block!(record::_Record, context::FeasibilityContext,
+                         support::Vector{Int}, rest::Vector{Int}, t::Vector{Int}, seen)
     choices = [context.space.ordinary[q] for q in rest]
     k = length(rest)
     position = ones(Int, k)
@@ -386,7 +411,7 @@ function _measure_block!(record::Union{_Lists, _Counts}, context::FeasibilityCon
     end
     c = m = x = u = 0
     while true
-        if _contains(seen, t, support, radix)
+        if _contains(seen, t, support)
             c += 1
         else
             status = _classify!(record, context, t)
@@ -412,10 +437,15 @@ function _measure_block!(record::Union{_Lists, _Counts}, context::FeasibilityCon
 end
 
 """
-    _measure_support!(record, context, support, kind, table, codes, radix, firsts, at)
-        -> (covered, missing, excluded, unknown)
+    _walk_support!(record, context, support, kind, seen) -> (covered, missing, excluded, unknown)
 
-The targets of `kind` on one support, in a fixed order (contract §9.7):
+The targets of `kind` on one support, in target order (contract §9.7). A
+target in `seen`, the rows' projections onto `support` (`_projections`), is
+covered without a search (§1.10); any other is classified into `record`.
+This is the one statement of the order of negative targets: `coverage` walks
+them against its rows, and negative generation walks them with no rows,
+`seen === nothing`, classifying every one (`classify_negative_targets`,
+invalid.jl).
 
 - `:ordinary` (§1.8): every assignment of ordinary values, the first
   parameter varying fastest, as `TargetList` orders engine positions.
@@ -423,27 +453,36 @@ The targets of `kind` on one support, in a fixed order (contract §9.7):
   order, each invalid value `v` of `p`, in domain order, every assignment of
   ordinary values to the rest of the support, the first parameter fastest.
   At strength 1 the rest is empty and the target is `(p = v)` alone.
-
-`firsts` and `at` are passed to `_projections` for the prefix curves.
 """
-function _measure_support!(record::Union{_Lists, _Counts}, context::FeasibilityContext,
-                           support::Vector{Int}, kind::Symbol, table::Matrix{Int}, codes::Vector{Int},
-                           radix::Vector{Int}, firsts, at)
+function _walk_support!(record::_Record, context::FeasibilityContext, support::Vector{Int}, kind::Symbol, seen)
     space = context.space
     t = zeros(Int, length(space.names))
-    kind === :negative && all(p -> isempty(space.invalid[p]), support) && return (0, 0, 0, 0)
-    # A negative row's projection onto a support without its invalid
-    # parameter is no negative target, so `at` keeps it out of `firsts`.
-    seen = _projections(table, support, radix, codes, firsts, at)
-    kind === :ordinary && return _measure_block!(record, context, support, support, t, seen, radix)
+    kind === :ordinary && return _measure_block!(record, context, support, support, t, seen)
     total = (0, 0, 0, 0)
     for p in support, v in space.invalid[p]
         t[p] = v
-        block = _measure_block!(record, context, support, filter(!=(p), support), t, seen, radix)
-        total = total .+ block
+        total = total .+ _measure_block!(record, context, support, filter(!=(p), support), t, seen)
         t[p] = 0
     end
     return total
+end
+
+"""
+    _measure_support!(record, context, support, kind, table, codes, radix, firsts, at)
+        -> (covered, missing, excluded, unknown)
+
+The targets of `kind` on one support (`_walk_support!`), measured against
+the rows in `table` through their projections onto it (`_projections`, which
+takes `firsts` and `at` for the prefix curves). A negative support with no
+invalid value has no targets, and its projections are not built.
+"""
+function _measure_support!(record::_Record, context::FeasibilityContext, support::Vector{Int}, kind::Symbol,
+                           table::Matrix{Int}, codes::Vector{Int}, radix::Vector{Int}, firsts, at)
+    kind === :negative && all(p -> isempty(context.space.invalid[p]), support) && return (0, 0, 0, 0)
+    # A negative row's projection onto a support without its invalid
+    # parameter is no negative target, so `at` keeps it out of `firsts`.
+    seen = _projections(table, support, radix, codes, firsts, at)
+    return _walk_support!(record, context, support, kind, seen)
 end
 
 """
@@ -457,7 +496,7 @@ a vector of zeros aligned with `rows`, receives the number of targets of
 `kind` each row is the first to cover (see `_projections`), so
 `sum(firsts)` is the part's `covered`.
 """
-function _support_counts(record::Union{_Lists, _Counts}, context::FeasibilityContext,
+function _support_counts(record::_Record, context::FeasibilityContext,
                          supports::Vector{Vector{Int}}, rows::Vector{Vector{Int}}, kind::Symbol;
                          firsts = nothing)
     space = context.space

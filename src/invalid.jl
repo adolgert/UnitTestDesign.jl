@@ -1,29 +1,20 @@
 # Negative generation (plan Phase 6 step 1; contract §5, §6, §7.9, §10).
 #
 # The covering design is built over ordinary values only (`generate` in
-# engines.jl, `cover_ordinary`). Then, for each invalid value `v` of each
-# parameter `p`, in parameter order and then domain order, the negative
-# targets of §6 are classified by the negative-row search (`feasibility_for`
+# engines.jl, `cover_ordinary`). Then every negative target of §6 is
+# classified by the negative-row search of its invalid value (`feasibility_for`
 # with `p = v`: candidates `[v]` at `p`, ordinary values elsewhere, the rules
-# whose scope omits `p`, §5.5, §6.2), and rows covering the feasible ones are
-# generated with the same engine.
-#
-# The rows come from a sub-request. No active rule reads `p`, so a negative
-# row at `(p, v)` is `p = v` beside any valid assignment of the other
-# parameters under the active rules, and its targets `(p = v, a)` are the
-# targets `a` of a request over the other parameters: at strength `s - 1`,
-# with each `stronger` group `G` that contains `p` as `G \ {p}` at `s_G - 1`
-# (§6.1, §6.3); groups without `p` add nothing (§6.5). A `NegativeProjection`
-# is the space as those rows see it: a sub-space of the other parameters that
-# reuses the space's domains and its active rule tables, renumbered, with the
-# maps back to the space's parameters and rules. `_negative_request` builds
-# the request over it, sharing the request's lazy-rule memo (§3.5). The
-# engine covers the sub-request's required targets, and `parent_row` puts
-# `p = v` back into each row. A base strength of 1 gives the sub-request
-# strength 0: its base group has no targets and only its groups do (see
-# `Request`). At strength 1 with no group containing `p` there is no
-# sub-request: the one target `(p = v)` takes one witness row (§6.4), never a
-# strength-0 public call.
+# whose scope omits `p`, §5.5, §6.2), in target order, by the walk `coverage`
+# makes (`classify_negative_targets`). Then, for each invalid value `v` of
+# each parameter `p`, in parameter order and then domain order, the same
+# engine covers the required targets at `(p, v)` on a sub-request over the
+# other parameters (`NegativeProjection`, `_negative_request`). No active rule
+# reads `p`, so a negative row at `(p, v)` is `p = v` beside a valid row of the
+# sub-space, and it holds a target at `(p, v)` exactly when that row holds the
+# target without `p`: those are the sub-request's required targets, and
+# `parent_row` puts `p = v` back into each row. At strength 1 with no group
+# containing `p` there is no sub-request: the one target `(p = v)` takes one
+# witness row (§6.4), never a strength-0 public call.
 #
 # Negative must-include rows count toward the negative targets they hold
 # (§10.6): those at `(p, v)` are the sub-request's must-include rows, so the
@@ -56,9 +47,9 @@ whole-case rule: its scope is every parameter, `p` included, so
 A rule number that leaves a sub-request is the sub-space's, and goes
 through `parent_rule` before a message or record names it. None leaves
 today: negative targets are classified on the space's own searches
-(`_classify_negative`), a sub-request's `ResourceLimitError` names values,
-not rules, and an error from a lazy rule's predicate names the rule as the
-space did when it tabulated it (`_LazyRule`).
+(`classify_negative_targets`), a sub-request's `ResourceLimitError` names
+values, not rules, and an error from a lazy rule's predicate names the rule
+as the space did when it tabulated it (`_LazyRule`).
 """
 struct NegativeProjection
     space::TestSpace
@@ -107,9 +98,12 @@ value at `projection.p` (see the file header): over the projection's
 sub-space, sharing the lazy-rule memos of its rules with `request` (§3.5);
 at base strength `request.strength - 1`, which may be 0; with each
 `stronger` group `G` that contains `p` as `G \\ {p}` at its strength less one.
-`seeds` are its must-include rows, engine positions over the other
-parameters. Nothing is validated or tabulated again, and no predicate is
-called.
+So, for each invalid value `v` of `p`, its targets are the negative targets
+at `(p, v)` other than `(p = v)` alone, without `p`, in the same order (a
+test pins this): the engine is given the required ones, and reads the
+strength and the groups for its parameter order. `seeds` are its
+must-include rows, engine positions over the other parameters. Nothing is
+validated or tabulated again, and no predicate is called.
 
 It checks that `request`'s rule tables are the projection's space's, in
 order, so that `request`'s `k`-th memo is that of the space's rule `k`; and
@@ -139,88 +133,86 @@ function _negative_request(request::Request, pr::NegativeProjection, seeds::Abst
 end
 
 """
-    _classify_negative(request, target) -> Union{Nothing, Excluded}
+    _NegativeTargets(request)
 
-Classify one negative target (engine positions, one invalid position) with
-the negative-row search of its invalid value (`feasibility_for`, §6.2):
-`nothing` when it is required, else its `Excluded` record with the rules in
-the space's numbering (§1.4, §6.7). An unknown answer throws
-`ResourceLimitError` (§3.6, §6.7).
+Negative generation's `_Record` for the walk that `coverage` makes
+(`_walk_support!`): each negative target is classified by the negative-row
+search of its invalid value (`feasibility_for`, §6.2) through
+`_classify_target`, and kept in `required`, in engine positions, or in
+`excluded`, as an `Excluded` record with the rules in the space's numbering
+(§1.4, §6.7). An unknown answer throws `ResourceLimitError` (§3.6, §6.7).
 """
-function _classify_negative(request::Request, target::AbstractVector{<:Integer})
-    idx = _space_indices(request, target)
-    f, active = feasibility_for(request.context, idx)
-    return _classify_target(request, f, active, target, idx, "classifying the negative target")
+struct _NegativeTargets <: _Record
+    request::Request
+    required::Vector{Vector{Int}}
+    excluded::Vector{Excluded}
+end
+
+function _classify!(record::_NegativeTargets, context::FeasibilityContext, t::Vector{Int})
+    request = record.request
+    f, active = feasibility_for(context, t)
+    target = _positions(request, t)
+    e = _classify_target(request, f, active, target, t, "classifying the negative target")
+    e === nothing || (push!(record.excluded, e); return e.status)
+    push!(record.required, target)
+    return :required
 end
 
 """
-    _negative_order(ranks, target) -> Tuple
+    classify_negative_targets(request) -> (required, excluded)
 
-The sort key that puts negative targets in the order `coverage` measures them
-(§9.7): by support, in the order of `_supports(request.groups)` (`ranks`),
-then by the invalid parameter, its value, and the other values with the first
-parameter varying fastest. So a result's negative exclusions list as
-`coverage(cases).negative.excluded` does.
+Classify every negative target of `request` (§6.1–§6.5), in target order
+(§9.7), by the walk that `coverage` makes over its supports with no rows
+(`_walk_support!`): `required`, the targets some valid negative row holds,
+in engine positions, and `excluded`, the `Excluded` records of the rest,
+so that a result's negative exclusions list as
+`coverage(cases).negative.excluded` does. An unknown answer throws
+`ResourceLimitError` (§3.6, §6.7). The negative counterpart of
+`classify_targets`.
 """
-function _negative_order(ranks::Dict{Vector{Int}, Int}, arity::Vector{Int}, target::Vector{Int})
-    support = findall(!=(0), target)
-    p = only(q for q in support if target[q] > arity[q])
-    rest = [target[q] for q in reverse(support) if q != p]
-    return (ranks[support], p, target[p], rest)
+function classify_negative_targets(request::Request)
+    record = _NegativeTargets(request, Vector{Int}[], Excluded[])
+    for support in _supports(request.groups)
+        _walk_support!(record, request.context, support, :negative, nothing)
+    end
+    return record.required, record.excluded
 end
 
 """
     cover_negative(engine, request, columns) -> (; seeds, rows, required, excluded)
 
-Negative generation (contract §6.7). For each invalid value `v` of each
-parameter `p`, in parameter order and then domain order: classify its
-negative targets (§6.1–§6.5) by the negative-row search, stopping with
-`ResourceLimitError` on any unknown; record the infeasible ones; and cover
-the feasible ones with `engine` through `_negative_request`, whose
-must-include rows are the negative must-include rows at `(p, v)` (the
-request's must-include `columns` that hold an invalid value). At strength 1
-the target `(p = v)` alone is required when a valid negative row with
-`p = v` exists, and takes one witness row unless a must-include or generated
-row already holds `p = v` (§6.4).
+Negative generation (contract §6.7). First classify every negative target
+(`classify_negative_targets`), stopping with `ResourceLimitError` on any
+unknown. Then, for each invalid value `v` of each parameter `p`, in
+parameter order and then domain order, cover the required targets at
+`(p, v)` with `engine` through `_negative_request`, whose must-include rows
+are the negative must-include rows at `(p, v)` (the request's must-include
+`columns` that hold an invalid value). At strength 1 the target `(p = v)`
+alone, when it is required, takes one witness row unless a must-include or
+generated row already holds `p = v` (§6.4).
 
 Returns, in engine positions: `seeds`, each negative must-include column's
 completed row, by column; `rows`, the generated negative rows, in `(p, v)`
-order; `required`, every required negative target; and `excluded`, the
-`Excluded` negative targets in the order `coverage` lists them. The caller
-validates the rows (`validate_design`).
+order; `required`, every required negative target, and `excluded`, the
+`Excluded` negative targets, each in target order, as `coverage` lists them.
+The caller validates the rows (`validate_design`).
 """
 function cover_negative(engine, request::Request, columns::Vector{Int})
     space = request.space
     n = length(space.names)
     must = request.must_include
+    required, excluded = classify_negative_targets(request)
     seeds = Dict{Int, Vector{Int}}()
     rows = Vector{Int}[]
-    required = Vector{Int}[]
-    excluded = Excluded[]
     for p in 1:n, position in (request.arity[p] + 1):length(request.candidates[p])
         at = [j for j in columns if must[p, j] == position]
+        here = filter(t -> t[p] == position, required)   # in target order
         added = 0
-        alone = nothing   # the target (p = v) at strength 1, when it is required
-        if request.strength == 1
-            t = zeros(Int, n)
-            t[p] = position
-            e = _classify_negative(request, t)
-            e === nothing ? (push!(required, t); alone = t) : push!(excluded, e)
-        end
         if request.strength > 1 || any(g -> p in g.first, request.groups[2:end])
             pr = NegativeProjection(space, p)
             sub = _negative_request(request, pr, must[pr.kept, at])
-            sub_required = Vector{Int}[]
-            for target in TargetList(sub)
-                t = parent_row(pr, target, position)
-                e = _classify_negative(request, t)
-                if e === nothing
-                    push!(required, t)
-                    push!(sub_required, target)
-                else
-                    push!(excluded, e)
-                end
-            end
+            # Every target here but (p = v) alone is p = v beside a target of the sub-request.
+            sub_required = [t[pr.kept] for t in here if count(!=(0), t) > 1]
             matrix = try
                 cover_ordinary(engine, sub, sub_required)
             catch err
@@ -242,11 +234,10 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
                 seeds[j] = any(==(0), row) ? witness(request, row) : row
             end
         end
+        alone = findfirst(t -> count(!=(0), t) == 1, here)   # (p = v), a target at strength 1
         if alone !== nothing && isempty(at) && added == 0
-            push!(rows, witness(request, alone))
+            push!(rows, witness(request, here[alone]))
         end
     end
-    ranks = Dict(support => k for (k, support) in enumerate(_supports(request.groups)))
-    sort!(excluded; by = e -> _negative_order(ranks, request.arity, e.target))
     return (; seeds, rows, required, excluded)
 end

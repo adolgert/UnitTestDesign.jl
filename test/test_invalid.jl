@@ -469,6 +469,32 @@ end
 end
 
 
+@testitem "invalid: every negative target is classified before a negative row is generated (§3.6, §6.7)" setup=[Checker, InvalidSetup] begin
+    # As benchmark/snapshot.jl's space "negative rows' engine at the limit".
+    # Both engines place a = 5 beside b = 5 in a negative row at n, and
+    # proving that (a = 5, b = 5) leaves no valid row, five pigeons in four
+    # holes, takes 66 nodes. Classifying (m = Invalid(0), e = 2) takes 26, and
+    # every other pair is classified at feasibility_limit = 12. n = 1 keeps a
+    # from 5, and m = 1 keeps e from 2, wherever they apply.
+    five = (:x, :y, :z, :u, :w)
+    crowded = [forbid((a, b, p, q) -> a == 5 && b == 5 && p == q, :a, :b, h, k)
+               for (i, h) in enumerate(five) for k in five[(i + 1):end]]
+    space = TestSpace((n = [1, Invalid(0)], m = [1, Invalid(0)], a = 1:5, b = 1:5, x = 1:4, y = 1:4, z = 1:4,
+                       u = 1:4, w = 1:4, e = 1:2);
+        constraints = [crowded; forbid((n, a) -> n == 1 && a == 5, :n, :a); forbid((m, e) -> m == 1 && e == 2, :m, :e);
+                       forbid((e, x, y, z) -> e == 2 && !(x == y == z == 4), :e, :x, :y, :z)])
+    for engine in ENGINES
+        # Every classification resolves, and n's engine run reaches the limit.
+        @test occursin("generating the negative rows with n = Invalid(0): placing a value",
+                       message(() -> all_pairs(space; engine, feasibility_limit = 40)))
+        # m's classification reaches it first, though m's invalid value comes after n's.
+        @test occursin("classifying the negative target (m = Invalid(0), e = 2) reached `feasibility_limit = 12`",
+                       message(() -> all_pairs(space; engine, feasibility_limit = 12)))
+        @test iscomplete(coverage(all_pairs(space; engine)))
+    end
+end
+
+
 @testitem "invalid: a negative row's projection is the space without its invalid parameter, field by field" setup=[Checker, InvalidSetup] begin
     using UnitTestDesign: Request, NegativeProjection, parent_row, _negative_request
     space = out_of_order()
