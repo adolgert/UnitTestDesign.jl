@@ -21,7 +21,7 @@
 # against both commits; a field that a commit lacks, such as `Followup.proofs`
 # before Stage E1, is not printed there. Nothing machine-dependent is printed:
 # no timings, object ids or file paths, and two runs print the same bytes. It
-# takes about a minute and a half and prints about 25 MB.
+# takes about a minute and a half and prints about 29 MB.
 #
 # The corpus, each part at the default limits and at tight ones:
 #
@@ -33,7 +33,8 @@
 # - Measurement: `coverage`, `missing_interactions`, `report` and
 #   `design_sizes` on those results, and `coverage` on hand-written rows with
 #   repeats, rejected rows and rows with two `Invalid` values, written as
-#   named tuples, tuples and vectors.
+#   named tuples, tuples and vectors. Two spaces are built so that sharing an
+#   answer cache between measurements would change a figure.
 # - Follow-ups: `diagnose` and `followups` on the spaces of probe 04
 #   (design/components_review_probes/04_proof_union.jl), on outcomes drawn with
 #   fixed seeds for the spaces of the random sweep in test/test_diagnose.jl, and
@@ -233,6 +234,23 @@ function fixed_cases()
              constraints = [forbid(n -> n == 1, :n),
                             forbid((a, b, c, d) -> !(a == b == c == d == 4), :x1, :x2, :x3, :x4)],
              strengths = [2], measured = [2], limits = [DEFAULT, (feasibility_limit = 1,), TIGHT], sizes = false),
+        # Two components that every search solves, each a few nodes deep: a
+        # search that has one component's witness cached resolves at a limit
+        # where a fresh search does not. So these figures change if two
+        # measurements share an answer cache (decision 7 of the plan): the
+        # 4 + 4 report's bonus at feasibility_limit = 4, and the strength-3
+        # coverage of no rows at limits 2 to 4.
+        Case(name = "two components, four parameters each",
+             domains = NamedTuple{Tuple(Symbol(c, i) for c in (:a, :b) for i in 1:4)}(Tuple(1:2 for _ in 1:8)),
+             constraints = [forbid((a1 = 1, a2 = 1)), forbid((a3 = 1, a4 = 1)), forbid((a2 = 2, a3 = 2)),
+                            forbid((b1 = 1, b2 = 1)), forbid((b3 = 1, b4 = 1)), forbid((b2 = 2, b3 = 2))],
+             strengths = [2, 3], limits = [DEFAULT, (feasibility_limit = 2,), (feasibility_limit = 3,),
+                                           (feasibility_limit = 4,)]),
+        Case(name = "two components, three parameters each",
+             domains = NamedTuple{Tuple(Symbol(c, i) for c in (:a, :b) for i in 1:3)}(Tuple(1:3 for _ in 1:6)),
+             constraints = [forbid((a1 = 1, a2 = 1)), forbid((a2 = 2, a3 = 2)),
+                            forbid((b1 = 1, b2 = 1)), forbid((b2 = 2, b3 = 2))],
+             strengths = [2], limits = [DEFAULT, (feasibility_limit = 2,), (feasibility_limit = 3,)]),
     ]
 end
 
