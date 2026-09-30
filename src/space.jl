@@ -635,7 +635,8 @@ active_tables(space::TestSpace, p::Integer) = space.tables[active_rules(space, p
 The value indices a search may assign to each parameter for one kind of row:
 for an ordinary row, `p == 0`, every parameter's ordinary values (contract
 §5.4); for a negative row, `[v]` at `p` and every other parameter's ordinary
-values (§5.5). The vectors are the space's; `Feasibility` copies them.
+values (§5.5). The vectors may be the space's own, so a caller must not
+change them; `Feasibility` copies them.
 """
 _candidates(space::TestSpace, p::Int, v::Int) =
     [q == p ? [v] : space.ordinary[q] for q in eachindex(space.names)]

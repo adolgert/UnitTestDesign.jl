@@ -376,9 +376,8 @@ end
 @testitem "space: the candidates of each kind of row (§5.4, §5.5)" begin
     using UnitTestDesign: _candidates
     space = TestSpace((n = [1, Invalid(0), 2, Invalid(9)], m = [:a, :b], k = [Invalid(:z), :x, :y]))
-    # An ordinary row: every parameter's ordinary values, the space's own vectors.
-    @test _candidates(space, 0, 0) == [[1, 3], [1, 2], [2, 3]]
-    @test all(splat(===), zip(_candidates(space, 0, 0), space.ordinary))
+    # An ordinary row: every parameter's ordinary values.
+    @test _candidates(space, 0, 0) == [[1, 3], [1, 2], [2, 3]] == space.ordinary
     # A negative row: its invalid value at its parameter, ordinary values elsewhere.
     @test _candidates(space, 1, 4) == [[4], [1, 2], [2, 3]]
     @test _candidates(space, 3, 1) == [[1, 3], [1, 2], [1]]
