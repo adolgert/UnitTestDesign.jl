@@ -464,26 +464,22 @@ end
     _classify_target(request, f, active, target, idx, what) -> Union{Nothing, Excluded}
 
 Classify one target (contract §1.4) with the search `f`, whose table `k` is
-the space's rule `active[k]`: `nothing` when some valid row of `f`'s kind
-contains it (it is required), otherwise its `Excluded` record, with `target`
-(engine positions) and its rules in the space's numbering. `idx` is the
-target as space value indices. An unknown answer throws `ResourceLimitError`,
-naming the target after `what` (§3.6). Ordinary targets (`classify_targets`)
-and negative targets (invalid.jl) are classified here.
+the space's rule `active[k]`, through `IndexClassification`: `nothing` when
+some valid row of `f`'s kind contains it (it is required), otherwise its
+`Excluded` record, with `target` (engine positions) and its rules in the
+space's numbering. `idx` is the target as space value indices. An unknown
+answer throws `ResourceLimitError`, naming the target after `what` (§3.6).
+Ordinary targets (`classify_targets`) and negative targets (invalid.jl) are
+classified here.
 """
 function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
                           target::AbstractVector{<:Integer}, idx::AbstractVector{<:Integer}, what)
-    e = explain_partial(f, idx; explanation_limit = request.explanation_limit)
-    if e.outcome == :unknown
-        throw(ResourceLimitError("$what $(from_indices(request.space, idx))",
-                                 request.feasibility_limit, :feasibility_limit))
-    elseif e.outcome == :allowed || e.outcome == :completable
-        return nothing
-    elseif e.outcome == :forbidden
-        return Excluded(collect(Int, target), :forbidden, active[e.rules], :not_applicable, nothing)
-    end
-    return Excluded(collect(Int, target), :implied, active[e.rules], e.minimal,
-                    _limit_pair(e.limit, request.feasibility_limit, request.explanation_limit))
+    c = IndexClassification(explain_partial(f, idx; explanation_limit = request.explanation_limit))
+    c.status === :unknown && throw(ResourceLimitError("$what $(from_indices(request.space, idx))",
+                                                      request.feasibility_limit, :feasibility_limit))
+    c.status === :required && return nothing
+    return Excluded(collect(Int, target), c.status, active[c.rules], c.minimal,
+                    _limit_pair(c.limit, request.feasibility_limit, request.explanation_limit))
 end
 
 """

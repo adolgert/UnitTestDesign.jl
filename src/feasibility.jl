@@ -725,6 +725,7 @@ struct IndexClassification
     evaluations::Int
 end
 
+"The status of each outcome of `explain_partial`: the one place a search outcome becomes a status."
 const _STATUS_OF_OUTCOME = (allowed = :required, completable = :required,
     forbidden = :forbidden, infeasible = :implied, unknown = :unknown)
 

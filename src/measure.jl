@@ -7,10 +7,10 @@
 # A target that a valid row contains is feasible, with that row as its
 # witness, and is never searched (§1.10): each support gets the set of the
 # valid rows' projections onto it, and only the targets missing from that set
-# are classified, through the Phase 2 machinery (`explain_partial` on the
-# `Feasibility` of the target's row kind, from one `FeasibilityContext` per
-# call, §3.5). Ordinary and negative targets are measured separately, each
-# against its own kind of row (§5.9–§5.11).
+# are classified, through the Phase 2 machinery (`IndexClassification` of
+# `explain_partial` on the `Feasibility` of the target's row kind, from one
+# `FeasibilityContext` per call, §3.5). Ordinary and negative targets are
+# measured separately, each against its own kind of row (§5.9–§5.11).
 
 
 ## The result
@@ -290,28 +290,28 @@ _Lists() = _Lists(NamedTuple[], Exclusion[], NamedTuple[])
     _classify!(lists, context, t, explanation_limit) -> Symbol
 
 Decide one target that no valid row contains, `t` a full-width index vector,
-with `explain_partial` on the `Feasibility` of its row kind (§5.5, §6.2), and
-record it: allowed or completable is `:missing`; forbidden or infeasible is
-`:excluded`, with its rules in the space's numbering and their labels, the
-deletion search bounded by `explanation_limit` (§1.4, §3.13–§3.16); a search
-at its limit is `:unknown` (§1.7). `t` is not retained.
+with `explain_partial` on the `Feasibility` of its row kind (§5.5, §6.2),
+record it, and return its status as `IndexClassification` gives it:
+`:required` is missing (§1.9); `:forbidden` or `:implied` is excluded, with
+its rules in the space's numbering and their labels, the deletion search
+bounded by `explanation_limit` (§1.4, §3.13–§3.16); `:unknown` is a search
+at its limit (§1.7). `t` is not retained.
 """
 function _classify!(lists::_Lists, context::FeasibilityContext, t::Vector{Int}, explanation_limit::Int)
     space = context.space
     f, active = feasibility_for(context, t)
-    e = explain_partial(f, t; explanation_limit)
-    if e.outcome === :allowed || e.outcome === :completable
+    c = IndexClassification(explain_partial(f, t; explanation_limit))
+    if c.status === :required
         push!(lists.missing, from_indices(space, t))
-        return :missing
-    elseif e.outcome === :unknown
+    elseif c.status === :unknown
         push!(lists.unknown, from_indices(space, t))
-        return :unknown
+    else
+        rules = active[c.rules]
+        push!(lists.excluded, Exclusion(from_indices(space, t), c.status, rules,
+            [rule_label(space, k) for k in rules], c.minimal,
+            _limit_pair(c.limit, context.feasibility_limit, explanation_limit)))
     end
-    rules = active[e.rules]
-    push!(lists.excluded, Exclusion(from_indices(space, t),
-        e.outcome === :forbidden ? :forbidden : :implied, rules, [rule_label(space, k) for k in rules],
-        e.minimal, _limit_pair(e.limit, context.feasibility_limit, explanation_limit)))
-    return :excluded
+    return c.status
 end
 
 """
@@ -340,7 +340,7 @@ function _measure_block!(lists::_Lists, context::FeasibilityContext, support::Ve
             c += 1
         else
             status = _classify!(lists, context, t, explanation_limit)
-            status === :missing ? (m += 1) : status === :excluded ? (x += 1) : (u += 1)
+            status === :required ? (m += 1) : status === :unknown ? (u += 1) : (x += 1)
         end
         i = 1   # the next assignment, first parameter fastest
         while i <= k
