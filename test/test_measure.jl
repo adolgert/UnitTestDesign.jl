@@ -684,6 +684,21 @@ end
 end
 
 
+@testitem "coverage: a complete design classifies nothing and allocates little (plan Stage D)" begin
+    # 30 parameters of 5 values, no rules: all_pairs covers all 10,875 pairs,
+    # so no target is classified, and a measurement allocates only to read
+    # the rows, list the supports, project the rows onto each and walk its
+    # targets. Before Stage D's step 6 that took about 850 KB (Julia 1.13;
+    # 861 KB on 1.10); now about 600 KB. A vector per target would take 3 MB.
+    space = TestSpace(NamedTuple{Tuple(Symbol("x$i") for i in 1:30)}(Tuple(1:5 for _ in 1:30)))
+    cases = all_pairs(space)
+    measure() = coverage(cases)
+    c = measure()
+    @test iscomplete(c) && (c.ordinary.covered, c.ordinary.feasible, c.negative.feasible) == (10_875, 10_875, 0)
+    @test @allocated(measure()) < 1_000_000
+end
+
+
 @testitem "coverage: the documented solver outputs (plan Phase 5 acceptance gate)" setup=[MeasureSetup] begin
     space = solver_space()
     # The handwritten suite, its top-up, and a limited search.
