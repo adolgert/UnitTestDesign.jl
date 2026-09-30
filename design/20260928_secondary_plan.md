@@ -1362,6 +1362,156 @@ Acceptance gate:
 
 Size: three sessions.
 
+### Implementation notes, part 1 (2026-09-30)
+
+On `feature/stage-d-projection`, stacked on `feature/stage-c-measurement`
+(`17b175e`). Part 1 is D-2's snapshot corpus and steps 1 to 5; step 6, with
+D-1, follows. Lines are in the tree at the end of this part.
+
+**D-2, the corpus.** The snapshot already had what D-2 lists: `Invalid`
+values in six fixed spaces and some random ones; a `stronger` group holding
+two invalid parameters ("negative, five parameters", `(:a, :b, :c) => 3`); a
+lazy rule active in a negative sub-request ("negative, five parameters,
+rules lazy": the rule on `(c, d)` exceeds `tabulation_limit = 5` and omits
+the invalid `a` and `b`); negative must-include rows; both engines; and
+strengths 1 to 3. It had two gaps:
+
+- It generated with `stronger` groups and with must-include rows only at
+  strength 2. So the strength-0 sub-request (base strength 1, a group
+  holding the invalid parameter) and a negative must-include row completed
+  by a witness at strength 1 (`src/invalid.jl:239-243`) never ran.
+- Every rule active in a sub-request had its scope in parameter order, so a
+  projection that sorted scopes would have printed the same bytes.
+
+Added (`benchmark/snapshot.jl`): the `stronger` calls also at strength 1,
+the must-include calls also at strength 1, and, for a space with both,
+strength 1 with both, each with both engines (`:369-393`); and a space,
+"negative sub-requests, scopes out of order" (`:191-196`, `:217-230`). It
+has invalid values at `a` and `c`; lazy rules on `(e, b)` and `(e, d, b)`,
+active in both sub-requests; tabulated rules on `(d, c)` and `(d, a)`, each
+active in one; groups `(:c, :a, :e) => 3` and `(:b, :d) => 2`; negative
+must-include rows at both invalid parameters, partial and complete; and, at
+strength 3, forbidden and implied negative targets, such as
+`(a = Invalid(0), d = true, e = 3)`, implied by the two lazy rules.
+
+Every block the first version printed is printed unchanged and in order
+(4,886 blocks); 906 are new. The script prints 5,792 cases in 372,878
+lines (34 MB) in about 1 minute 45 seconds. Its output at `17b175e`, in a
+worktree, is the baseline, `snapshot_D_base.txt` in the session's
+scratchpad; at the branch head before any code change it was identical.
+Reach: with the projected scopes sorted, in a throwaway worktree, the
+output changes in the new space only. 28 of its blocks differ, 25 of them
+generations that now throw (`validate_design`'s "internal error: case 1,
+(a = Invalid(0), b = :y, c = 2, d = false, e = 3), breaks rule 1 on
+(e, b)", or an engine's internal error), and the 124 measurements of those
+results are gone. No earlier space would have shown it.
+
+**Steps.**
+
+- Step 3. `_candidates(space, p, v)` (`src/space.jl:597-606`), beside
+  `active_rules`. Its callers: `feasibility_for` (`src/explain.jl:101`),
+  `_isolate` (`src/diagnose.jl:647`), `Request` (`src/request.jl:80`) and
+  `_negative_request` (`src/invalid.jl:129`). The two `copy` calls are gone.
+- Step 2. `TestSpace(Val(:parts), parts::NamedTuple)` (`src/space.jl:268-279`)
+  checks `keys(parts) == fieldnames(TestSpace)` and calls `new(parts...)`.
+- Step 1. `NegativeProjection` (`src/invalid.jl:33-89`), built from
+  `(space, p)`, holds `space`, `p`, `kept`, `renumber`, `rules`
+  (`active_rules(space, p)`) and `subspace`. `parent_rule(pr, i)` (`:92`)
+  and `parent_row(pr, row, position)` (`:95-100`), which replaces
+  `_with_invalid`, map back. `_negative_request(request, pr, seeds)`
+  (`:102-138`) builds the sub-request over it, and `cover_negative` maps
+  every sub-request row through it (`:210-237`). The checks: scopes in the
+  rule's order (`:79-83`), the request's tables `===` the space's in order
+  (`:123-125`), and each sub-request memo `===` the request's
+  (`:133-137`). The docstring says why there is no whole-case check.
+- Step 4. The docstring states the rule: a sub-request's rule number goes
+  through `parent_rule` before a message or record names it.
+- Tests. "space: the candidates of each kind of row"
+  (`test/test_space.jl:363`); "space: a space from parts takes every field
+  by name, in order" (`:375`): a space rebuilt from its own fields, each
+  `===`, and a missing, an extra and a reordered part refused. In
+  `test/test_invalid.jl`, on a space like the snapshot's new one with a
+  whole-case rule added (`out_of_order`, `:105-121`): "a negative row's
+  projection is the space without its invalid parameter, field by field"
+  (`:472`), for every parameter, with the scopes pinned out of order,
+  `parent_row`, and a projection of another space refused; "a negative
+  sub-request's rule numbers map back to the space's" (`:520`), step 4's
+  `===` check for every sub-space rule of every parameter; and "a negative
+  sub-request shares its request's lazy-rule memos" (`:556`), step 5.
+
+Adjustments, and why:
+
+- **`_negative_request` takes the projection instead of `p`.**
+  `cover_negative` needs the projection's `parent_row` for the same
+  sub-request's rows, and building one inside `_negative_request` as well
+  would build two. The request it returns is the same, field for field; the
+  snapshot is the check. A projection is built per sub-request, per
+  `(p, v)`, as the sub-space was. One per `p` would do; step 6 restructures
+  that loop.
+- **The projection also holds `renumber` and the sub-space.** `kept` maps
+  rows back, `renumber` maps scopes and `stronger` groups in; together they
+  are the position map that `_with_invalid` assumed.
+- **Where the checks live.** The scope check runs when a projection is
+  built, since it is about the space. The table and memo checks run in
+  `_negative_request`, since they are about the request and the
+  sub-request, which a projection built from `(space, p)` does not have.
+  All three are internal errors, `error("internal error: …")`, like the
+  package's other internal checks.
+- **The scope check reads each projected scope back through `kept`**
+  (`get(kept, j, 0)`), rather than comparing it with `renumber[scope]`,
+  which would repeat the construction. So a rule that reads `p`, whole-case
+  or not, fails it before `Feasibility` sees the table, and the comment on
+  whole-case rules says so rather than pointing only at `Feasibility`.
+  With a scope sorted, or with a fresh memo passed to the sub-request, a
+  throwaway edit made the scope check and the memo check fail with their
+  messages.
+- **Step 4 maps nothing, because nothing leaves.** Negative targets are
+  classified on the space's own searches (`_classify_negative`);
+  `cover_ordinary` on a sub-request raises `ResourceLimitError`s that name
+  values; and a lazy rule's `ConstraintError`, or its `ArgumentError` for a
+  result that is not a `Bool`, names the rule by the reference the space
+  made when it tabulated it (`_LazyRule`, `src/constraints.jl:805`, `:817`).
+  So it already says "rule 2" where the sub-space's number is 1. The test
+  pins that path beside the `===` check the step asks for. `parent_rule`'s
+  one caller in `src/` is the memo check.
+- **Step 2's tests are split.** The parts constructor has its own item in
+  `test_space.jl`, beside it; the comparison of every field of a projected
+  sub-space is in `test_invalid.jl`. `_candidates` has an item of its own,
+  which the step does not ask for. It takes `p::Int, v::Int`, which every
+  caller passes.
+- **Step 5 adds a generation check.** Besides the three controlled checks,
+  one `covering` call, at strengths 1 to 3, with both engines, with and
+  without a group holding the invalid parameter, and with a negative
+  must-include row, evaluates the lazy predicate at most once per
+  combination.
+
+No conflict between the code and the contract turned up.
+
+Verification: the snapshot at the head is byte-identical to the
+baseline. The benchmark (`--runs 1 --skip-slow`) gives fixture 1's IPOG fingerprint
+`7a2b2a3b6f737644`, 958 cases, and every case count, query, node,
+rule-check, memo-entry and `summarysize` figure of the report at
+`4d9d424`; only timing shares differ. The full suite passed with 344,845
+passes and no failures (the count moves with the three time-boxed items),
+and the docs build exits 0.
+
+For step 6:
+
+- The corpus now reaches the strength-0 sub-request and the witness path
+  at strength 1, which option (B) of D-1 restructures.
+- No call in the corpus fails inside a sub-request's engine: "generating
+  the negative rows with …" never appears. The only negative limit errors
+  are four "classifying the negative target" lines, in "negative targets
+  unresolved". So under (B) the snapshot cannot show the change in which
+  target an error names; a case where a sub-request's engine reaches
+  `feasibility_limit` after every classification succeeds would.
+- Under (B), a required target at `(p, v)`, in the space's positions, is
+  `t[pr.kept]` in the sub-request's.
+- `cover_negative`'s `required` would come in measurement order rather
+  than `(p, v)` order. `validate_design` only counts it (`_recount`,
+  `src/request.jl:588-598`); the order decides only which target an
+  internal error names first.
+
 ## Stage E2: typed isolation results (after E1)
 
 Goal: `_isolate`'s three outcomes are three types instead of one tuple
