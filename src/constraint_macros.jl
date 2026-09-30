@@ -1,3 +1,17 @@
+# The rule macros, `@forbid` and `@require` (contract §12.6–§12.8). A macro
+# walks its expression to find the parameter names it reads, in order of first
+# appearance, and expands to a call of `_macro_rule` with a lambda over them.
+# `_macro_rule` builds the rule with `_function_rule` (constraints.jl), so a
+# macro rule is the rule `forbid(f, names...)` or `require(f, names...)` would
+# build, except for its label, which ends with the source text, and its
+# source, `:macro`, which `_check_rule` reads to suggest `$name` for a name
+# the space lacks (§12.8).
+#
+# Included after constraints.jl. Of the package, this file uses only
+# `_function_rule`. The expansion holds `_macro_rule` itself, not its name, so
+# a module that only imports UnitTestDesign can use the macros.
+
+
 ## The macros (contract §12.6–§12.8)
 
 """

@@ -1,7 +1,9 @@
 # Rules. Every surface form (a pattern, listed names, a macro, a whole-case
 # function) compiles to one `Constraint` (contract §12.1), and a TestSpace
 # tabulates each Constraint into a `RuleTable` (rule_table.jl), the index-space
-# form the feasibility search reads (§12.18–§12.22).
+# form the feasibility search reads (§12.18–§12.22). The macros, `@forbid` and
+# `@require`, are in constraint_macros.jl, which builds their rules with
+# `_function_rule` here.
 #
 # This file is included before space.jl because a TestSpace stores
 # Constraints. The functions a TestSpace calls here take the parts of the space
