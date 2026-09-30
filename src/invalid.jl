@@ -205,41 +205,55 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
     n = length(space.names)
     must = request.must_include
     required, excluded = classify_negative_targets(request)
+    # The required targets at each (p, v), in target order. A negative target
+    # holds one invalid position, v at p.
+    targets = Dict{Tuple{Int, Int}, Vector{Vector{Int}}}()
+    for t in required
+        p = findfirst(q -> t[q] > request.arity[q], eachindex(t))
+        push!(get!(() -> Vector{Int}[], targets, (p, t[p])), t)
+    end
     seeds = Dict{Int, Vector{Int}}()
     rows = Vector{Int}[]
-    for p in 1:n, position in (request.arity[p] + 1):length(request.candidates[p])
-        at = [j for j in columns if must[p, j] == position]
-        here = filter(t -> t[p] == position, required)   # in target order
-        added = 0
-        if request.strength > 1 || any(g -> p in g.first, request.groups[2:end])
-            pr = NegativeProjection(space, p)
-            sub = _negative_request(request, pr, must[pr.kept, at])
-            # Every target here but (p = v) alone is p = v beside a target of the sub-request.
-            sub_required = [t[pr.kept] for t in here if count(!=(0), t) > 1]
-            matrix = try
-                cover_ordinary(engine, sub, sub_required)
-            catch err
-                err isa ResourceLimitError || rethrow()
-                value = space.values[p][request.candidates[p][position]]
-                throw(ResourceLimitError("generating the negative rows with $(space.names[p]) = " *
-                                         "$(repr(value)): $(err.what)", err.limit, err.keyword))
+    for p in 1:n
+        positions = (request.arity[p] + 1):length(request.candidates[p])   # p's invalid values
+        isempty(positions) && continue
+        # One projection serves every invalid value of p. Without a sub-request
+        # (strength 1, no group holding p), the one target at (p, v) is (p = v).
+        pr = request.strength > 1 || any(g -> p in g.first, request.groups[2:end]) ?
+             NegativeProjection(space, p) : nothing
+        for position in positions
+            at = [j for j in columns if must[p, j] == position]
+            here = get(targets, (p, position), Vector{Int}[])
+            added = 0
+            if pr !== nothing
+                sub = _negative_request(request, pr, must[pr.kept, at])
+                # Every target here but (p = v) alone is p = v beside a target of the sub-request.
+                sub_required = [t[pr.kept] for t in here if count(!=(0), t) > 1]
+                matrix = try
+                    cover_ordinary(engine, sub, sub_required)
+                catch err
+                    err isa ResourceLimitError || rethrow()
+                    value = space.values[p][request.candidates[p][position]]
+                    throw(ResourceLimitError("generating the negative rows with $(space.names[p]) = " *
+                                             "$(repr(value)): $(err.what)", err.limit, err.keyword))
+                end
+                for (k, j) in enumerate(at)
+                    seeds[j] = parent_row(pr, matrix[:, k], position)
+                end
+                for k in (length(at) + 1):size(matrix, 2)
+                    push!(rows, parent_row(pr, matrix[:, k], position))
+                    added += 1
+                end
+            else
+                for j in at
+                    row = must[:, j]
+                    seeds[j] = any(==(0), row) ? witness(request, row) : row
+                end
             end
-            for (k, j) in enumerate(at)
-                seeds[j] = parent_row(pr, matrix[:, k], position)
+            alone = findfirst(t -> count(!=(0), t) == 1, here)   # (p = v), a target at strength 1
+            if alone !== nothing && isempty(at) && added == 0
+                push!(rows, witness(request, here[alone]))
             end
-            for k in (length(at) + 1):size(matrix, 2)
-                push!(rows, parent_row(pr, matrix[:, k], position))
-                added += 1
-            end
-        else
-            for j in at
-                row = must[:, j]
-                seeds[j] = any(==(0), row) ? witness(request, row) : row
-            end
-        end
-        alone = findfirst(t -> count(!=(0), t) == 1, here)   # (p = v), a target at strength 1
-        if alone !== nothing && isempty(at) && added == 0
-            push!(rows, witness(request, here[alone]))
         end
     end
     return (; seeds, rows, required, excluded)
