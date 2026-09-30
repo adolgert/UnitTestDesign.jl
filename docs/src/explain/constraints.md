@@ -233,6 +233,17 @@ catch err
 end
 ```
 
+The macros reject any other form that binds or assigns a name or runs
+statements: an assignment outside a `let` binding, `for`, `while`, `try`,
+`global`, `local`, a quoted expression, or a macro call. They also reject a
+subtype test written with `<:` or `>:`, which are syntax, not calls; the
+call form, `(<:)(T, $AbstractFloat)`, is read like any other call. Each is
+an `ArgumentError` when the macro expands, and the message points to the
+function form. For a rule the macros cannot express, write
+[`forbid(f, names...)`](@ref forbid) or `require(f, names...)`, whose
+function is ordinary Julia code that receives the listed parameters' values
+(§12.6).
+
 ## What rules cost
 
 A scoped rule, written in any form but the whole-case one, is *tabulated*
