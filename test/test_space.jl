@@ -329,7 +329,16 @@ end
     @test message(() -> rows_of((a = 1,))) == "f takes rows; wrap a single row in a vector: f([(a = 1,)])"
     @test message(() -> rows_of((1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
     @test message(() -> rows_of([1, :x])) == "f takes rows; wrap a single row in a vector: f([Any[1, :x]])"
-    @test message(() -> rows_of(x for x in (1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
+    # The input itself, or, with `as_tuple`, the tuple of the elements of one
+    # that is neither a tuple nor a vector.
+    @test message(() -> rows_of(Dict(:a => 1))) == "f takes rows; wrap a single row in a vector: f([Dict(:a => 1)])"
+    @test message(() -> rows_of("ab")) == "f takes rows; wrap a single row in a vector: f([\"ab\"])"
+    tuple_of(input) = _row_list(input; what = "f takes rows", fix = row -> "f([$(repr(row))])", as_tuple = true)
+    @test message(() -> tuple_of(x for x in (1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
+    @test message(() -> tuple_of(Dict(:a => 1))) == "f takes rows; wrap a single row in a vector: f([(:a => 1,)])"
+    @test message(() -> tuple_of("ab")) == "f takes rows; wrap a single row in a vector: f([('a', 'b')])"
+    @test message(() -> tuple_of([1, :x])) == message(() -> rows_of([1, :x]))
+    @test message(() -> tuple_of((a = 1,))) == message(() -> rows_of((a = 1,)))
     @test message(() -> rows_of(5)) == "f takes rows, such as a vector of NamedTuples or tuples; got 5 (contract §0)"
     # The caller may call a row something else.
     cases_of(input) = _row_list(input; what = "g takes cases", noun = "case", fix = row -> "g([$(repr(row))])")

@@ -754,6 +754,26 @@ end
 end
 
 
+@testitem "a collection of values, not rows, is a single row: coverage and diagnose show it wrapped, must_include the tuple of its values (§1.12, §10.1)" setup=[InterfaceSetup] begin
+    space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]))
+    @test message(() -> coverage(Dict(:a => 1), space)) ==
+          "coverage takes a collection of rows; wrap a single row in a vector: coverage([Dict(:a => 1)], space)"
+    @test message(() -> coverage("abc", space)) ==
+          "coverage takes a collection of rows; wrap a single row in a vector: coverage([\"abc\"], space)"
+    @test message(() -> diagnose(Dict(:a => 1), [true]; space)) ==
+          "diagnose takes a collection of cases; wrap a single case in a vector: " *
+          "diagnose([Dict(:a => 1)], passed; space)"
+    @test message(() -> diagnose("abc", [true]; space)) ==
+          "diagnose takes a collection of cases; wrap a single case in a vector: diagnose([\"abc\"], passed; space)"
+    @test message(() -> all_pairs(space; must_include = Dict(:a => 1))) ==
+          "must_include is a list of rows; wrap a single row in a vector: must_include = [(:a => 1,)]"
+    @test message(() -> all_pairs(space; must_include = "abc")) ==
+          "must_include is a list of rows; wrap a single row in a vector: must_include = [('a', 'b', 'c')]"
+    @test message(() -> all_pairs(space; must_include = (v for v in (1, :x, true)))) ==
+          "must_include is a list of rows; wrap a single row in a vector: must_include = [(1, :x, true)]"
+end
+
+
 @testitem "removed: Excursion, generate_tuples, disallow, Counter (§12.10, §13.3)" begin
     using Base.CoreLogging: with_logger, NullLogger   # Logging is not a test dependency
     @test !isdefined(UnitTestDesign, :Excursion)

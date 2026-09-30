@@ -526,7 +526,7 @@ _cited(section) = section === nothing ? "" : " (contract $section)"
 _is_row(x) = x isa Union{Tuple, NamedTuple, AbstractVector}
 
 """
-    _row_list(input; what, fix, noun = "row", section = nothing) -> Vector
+    _row_list(input; what, fix, noun = "row", as_tuple = false, section = nothing) -> Vector
 
 The caller's collection of rows as a `Vector`, read once with `collect`, so
 an iterator that can be read only once gives all its rows. Each row is read
@@ -537,20 +537,23 @@ collection of rows":
 - a single row, a `NamedTuple` or a collection none of whose elements is a
   row: "WHAT; wrap a single NOUN in a vector: " followed by the corrected
   call that `fix(row)` writes, where `noun` is what the caller calls a row,
-  such as "case" for `diagnose`;
+  such as "case" for `diagnose`. `row` is `input` itself; with `as_tuple`,
+  an input that is neither a tuple nor a vector, such as a generator, a
+  `Dict` or a `String`, is shown as the tuple of its elements;
 - anything that is not a collection: "WHAT, such as a vector of NamedTuples
   or tuples; got …", ending with the contract `section` when it is given.
 
 A check that belongs to one caller, such as `coverage` given the space
 first, comes before this one, in the caller.
 """
-function _row_list(input; what::AbstractString, fix, noun::AbstractString = "row", section = nothing)
+function _row_list(input; what::AbstractString, fix, noun::AbstractString = "row", as_tuple::Bool = false,
+                   section = nothing)
     input isa NamedTuple && throw(ArgumentError("$what; wrap a single $noun in a vector: $(fix(input))"))
     rows = applicable(iterate, input) ? collect(input) : nothing
     rows isa AbstractVector || throw(ArgumentError(
         "$what, such as a vector of NamedTuples or tuples; got $(repr(input))" * _cited(section)))
     if !isempty(rows) && !any(_is_row, rows)
-        single = input isa Union{Tuple, AbstractVector} ? input : Tuple(rows)
+        single = as_tuple && !(input isa Union{Tuple, AbstractVector}) ? Tuple(rows) : input
         throw(ArgumentError("$what; wrap a single $noun in a vector: $(fix(single))"))
     end
     return rows

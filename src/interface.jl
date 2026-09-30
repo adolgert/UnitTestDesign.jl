@@ -99,7 +99,7 @@ function _must_include_rows(must_include, space::TestSpace, positional::Bool)
             [NamedTuple{Tuple(given)}(row) for row in must_include] : collect(must_include)
     end
     rows = _row_list(must_include; what = "must_include is a list of rows", section = "§10.1",
-                     fix = row -> "must_include = [$(repr(row))]")
+                     as_tuple = true, fix = row -> "must_include = [$(repr(row))]")
     if positional
         for (r, row) in enumerate(rows)
             row isa NamedTuple && throw(ArgumentError(
