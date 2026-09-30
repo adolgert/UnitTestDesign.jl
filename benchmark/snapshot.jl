@@ -21,7 +21,7 @@
 # against both commits; a field that a commit lacks, such as `Followup.proofs`
 # before Stage E1, is not printed there. Nothing machine-dependent is printed:
 # no timings, object ids or file paths, and two runs print the same bytes. It
-# takes about a minute and a half and prints about 29 MB.
+# takes about two minutes and prints about 34 MB.
 #
 # The corpus, each part at the default limits and at tight ones:
 #
@@ -29,7 +29,9 @@
 #   seeds), `excursions` and `full_factorial`, on spaces with tabulated and
 #   lazy rules, whole-case rules, partitions, `Invalid` values, `stronger`
 #   groups that hold an invalid parameter, and ordinary and negative
-#   must-include rows; and positional calls.
+#   must-include rows (groups and must-include rows at strengths 1 and 2);
+#   and positional calls. One space has lazy and tabulated rules, their
+#   scopes out of parameter order, active in negative rows' sub-requests.
 # - Measurement: `coverage`, `missing_interactions`, `report` and
 #   `design_sizes` on those results, and `coverage` on hand-written rows with
 #   repeats, rejected rows and rows with two `Invalid` values, written as
@@ -186,6 +188,12 @@ function fixed_cases()
                   end]
     wide_must = [(a = Invalid(0), b = :x), (a = 2, e = :q), (b = Invalid(:bad), c = true, d = 2),
                  (a = 3, b = :x, c = false, d = 1, e = :p)]
+    subrequest = (a = [1, 2, 3, Invalid(0)], b = [:x, :y, :z], c = [1, 2, Invalid(-1)], d = [true, false],
+                  e = [1, 2, 3])
+    subrequest_rules = [forbid(:e, :b) do e, b; e == 3 && b != :x end,
+                        forbid(:d, :c) do d, c; d && c == 2 end,
+                        forbid(:d, :a) do d, a; !d && a == 2 end,
+                        forbid(:e, :d, :b) do e, d, b; e == 3 && d && b == :x end]
     # Probe 08a: (w = 1, v = 1) is excluded directly by rule 1 and by a
     # four-pigeon, three-hole rule set that is slow to prove.
     holes = (:x, :y, :z, :u)
@@ -206,6 +214,20 @@ function fixed_cases()
         Case(name = "negative, five parameters, rules lazy", domains = wide, constraints = wide_rules,
              tabulation_limit = 5, stronger = [(:a, :b, :c) => 3], must_include = wide_must,
              sizes = false),
+        # Negative sub-requests (Stage D). Every rule's scope is written out of
+        # parameter order. The two lazy rules (above tabulation_limit) omit both
+        # invalid parameters, so they are active in both sub-requests; of the
+        # two tabulated rules, the one that reads `c` is active in `a`'s
+        # sub-request and the one that reads `a` in `c`'s. At strength 3 each
+        # sub-request has targets its rules forbid or imply. A projection that
+        # sorted the scopes, or gave a sub-request other rules or tables, would
+        # move rows or exclusions.
+        Case(name = "negative sub-requests, scopes out of order", domains = subrequest,
+             constraints = subrequest_rules, tabulation_limit = 6,
+             stronger = [(:c, :a, :e) => 3, (:b, :d) => 2],
+             must_include = [(a = Invalid(0), e = 3), (c = Invalid(-1), a = 3, b = :y, d = false, e = 1),
+                             (c = Invalid(-1),), (a = 1, b = :x)],
+             from = (a = 1, b = :x, c = 1, d = true, e = 1)),
         Case(name = "partitions", domains = (size = [tiny, 1.0, 100.0], mode = [:a, :b], flag = [true, false]),
              constraints = [forbid((size = :tiny, mode = :b); reason = "tiny needs mode a")],
              must_include = [(size = :tiny,), (size = 100.0, mode = :b, flag = false)],
@@ -344,19 +366,30 @@ function generators(case::Case, space::TestSpace)
         push!(calls, "covering(strength = $s, engine = GND(seed = $s))" =>
                      limits -> covering(space; strength = s, engine = GND(seed = s), limits...))
     end
+    # At strength 1 a negative row's sub-request exists only for a group that
+    # holds its invalid parameter, and has strength 0; without one, a negative
+    # must-include row is completed by a witness search instead.
     if !isempty(case.stronger)
-        for engine in (IPOG(), GND(seed = 7))
-            push!(calls, "covering(strength = 2, stronger = $(case.stronger), engine = $engine)" =>
-                         limits -> covering(space; strength = 2, stronger = case.stronger, engine, limits...))
+        for s in (2, 1), engine in (IPOG(), GND(seed = 7))
+            push!(calls, "covering(strength = $s, stronger = $(case.stronger), engine = $engine)" =>
+                         limits -> covering(space; strength = s, stronger = case.stronger, engine, limits...))
         end
     end
     if !isempty(case.must_include)
-        push!(calls, "covering(strength = $(min(2, n)), must_include = $(case.must_include))" =>
-                     limits -> covering(space; strength = min(2, n), must_include = case.must_include,
-                                        limits...))
-        push!(calls, "covering(strength = $(min(2, n)), must_include, engine = GND(seed = 11))" =>
-                     limits -> covering(space; strength = min(2, n), must_include = case.must_include,
-                                        engine = GND(seed = 11), limits...))
+        for s in unique([min(2, n), 1])
+            push!(calls, "covering(strength = $s, must_include = $(case.must_include))" =>
+                         limits -> covering(space; strength = s, must_include = case.must_include, limits...))
+            push!(calls, "covering(strength = $s, must_include, engine = GND(seed = 11))" =>
+                         limits -> covering(space; strength = s, must_include = case.must_include,
+                                            engine = GND(seed = 11), limits...))
+        end
+        if !isempty(case.stronger)
+            for engine in (IPOG(), GND(seed = 13))
+                push!(calls, "covering(strength = 1, stronger, must_include, engine = $engine)" =>
+                             limits -> covering(space; strength = 1, stronger = case.stronger,
+                                                must_include = case.must_include, engine, limits...))
+            end
+        end
     end
     for d in 1:2
         push!(calls, "excursions(distance = $d)" => limits -> excursions(space; distance = d, limits...))
