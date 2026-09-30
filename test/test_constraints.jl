@@ -161,6 +161,33 @@ end
 end
 
 
+@testitem "constraints: macro rules work in a module that only imports the package (§12.6)" begin
+    # The expansion needs no name bound in the caller's module, and the rule's
+    # own names resolve there: a function, a module-qualified function and
+    # value, and an interpolated variable, each evaluated when the space is built.
+    bare = Module(:Bare)
+    include_string(bare, """
+        import UnitTestDesign
+        module Helpers
+        isbig(v) = v > 1
+        const worst = 2
+        end
+        small(v) = v < 2
+        limit = 1
+        forbid_rule = UnitTestDesign.@forbid(Helpers.isbig(a) && b == Helpers.worst)
+        require_rule = UnitTestDesign.@require(small(a) || b > \$limit; reason = "a large a needs b = 2")
+        """)
+    @test !isdefined(bare, :forbid) && !isdefined(bare, Symbol("@forbid"))
+    domains = (a = 1:3, b = 1:2)
+    rule = bare.forbid_rule
+    @test rule.scope == (:a, :b) && rule.label == "@forbid(Helpers.isbig(a) && b == Helpers.worst)"
+    @test only(TestSpace(domains; constraints = [rule]).tables).forbidden == Set([(2, 2), (3, 2)])
+    rule = bare.require_rule
+    @test rule.scope == (:a, :b) && rule.label == "a large a needs b = 2: @require(small(a) || b > \$limit)"
+    @test only(TestSpace(domains; constraints = [rule]).tables).forbidden == Set([(2, 1), (3, 1)])
+end
+
+
 @testitem "constraints: macro binding forms follow Julia's scoping (§12.6)" begin
     # Each macro rule gives the table of the explicit listed-names rule, with
     # the same scope, in order of first appearance. Regressions from the
