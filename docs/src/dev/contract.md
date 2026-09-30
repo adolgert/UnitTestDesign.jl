@@ -362,7 +362,8 @@ it. A trial that ends unknown keeps the rule. Each trial is a search bounded
 by `feasibility_limit` and by what remains of `explanation_limit`, whichever
 is smaller, so either limit can stop it. An unresolved explanation's
 `limit` names the keyword that stopped it: `explanation_limit` when that
-budget ran out, and otherwise `feasibility_limit`.
+budget stopped a trial or left one untried, and otherwise
+`feasibility_limit`.
 
 **3.15** Proven infeasibility stays proven. Classifying a target as infeasible
 never depends on the explanation search. When `explanation_limit` runs out,

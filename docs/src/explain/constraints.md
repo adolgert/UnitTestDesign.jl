@@ -258,7 +258,7 @@ A rule whose scope has more than `tabulation_limit` combinations (a
 package warns and suggests a narrower scope (§12.19). A lazy rule,
 including every whole-case rule (below), runs its predicate only when a
 search or a row check reaches it, so a predicate that throws fails in
-whichever call reached it: a generation, `isallowed`, `explain`,
+whichever call reached it, such as a generation, `isallowed`, `explain`,
 `coverage`, `report` or `followups` (§12.16).
 
 A whole-case rule is always lazy (§12.20). Its predicate runs on complete

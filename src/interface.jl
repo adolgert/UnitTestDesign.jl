@@ -368,12 +368,13 @@ result counts the two kinds of targets separately (§5.10).
   changes the cases: the design is complete and certified as usual, and the
   exclusion keeps its proven set of rules with `minimal = :unresolved`,
   which `show` counts as "with an unresolved explanation" (§3.15, §3.16).
-  Its `limit` is `:explanation_limit => N` when this budget ran out, and
-  `:feasibility_limit => N` when a trial reached the feasibility limit
-  instead (§3.14). Raise it only when you want each implied exclusion's
-  rules verified inclusion-minimal, so that none of them can be dropped;
-  only the attribution becomes more precise. It also bounds the explanation
-  in the error for a partial must-include row with no valid completion.
+  Its `limit` is `:explanation_limit => N` when this budget stopped a trial
+  or left one untried, and `:feasibility_limit => N` when a trial reached
+  the feasibility limit instead (§3.14). Raise it only when you want each
+  implied exclusion's rules verified inclusion-minimal, so that none of them
+  can be dropped; only the attribution becomes more precise. It also bounds
+  the explanation in the error for a partial must-include row with no valid
+  completion.
 
 The 0.4 keywords `n_way` (now `strength`), `seeds` (now `must_include`) and
 `wayness` (now `stronger`, translated from its `Dict` of positions) are
