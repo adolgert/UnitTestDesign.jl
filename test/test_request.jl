@@ -233,6 +233,20 @@ end
 end
 
 
+@testitem "request: the supports, each listed once, and each group's share of them (§1.8, §1.15)" setup=[RequestSetup] begin
+    using UnitTestDesign: _group_supports, _supports
+    # A subset two groups share is one support, where it first appears; each
+    # group's share lists it all the same.
+    groups = [[1, 2, 3, 4] => 2, [1, 2, 3] => 3, [1, 2, 3, 4] => 3]
+    supports, shares = _group_supports(groups)
+    @test supports == [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4], [1, 2, 3], [1, 2, 4], [1, 3, 4], [2, 3, 4]]
+    @test shares == [1:6, [7], 7:10]
+    @test _supports(groups) == supports
+    # A base group at strength 0, as a negative sub-request's, has no share.
+    @test _group_supports([[1, 2, 3] => 0, [1, 2] => 1, [2, 3] => 2]) == ([[1], [2], [2, 3]], [Int[], [1, 2], [3]])
+end
+
+
 @testitem "request: dead and witness on Fable's space (plan Phase 3 step 1)" setup=[RequestSetup] begin
     request = Request(solver_space())
     @test isconstrained(request)

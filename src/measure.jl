@@ -479,14 +479,14 @@ end
 
 """
     _support_counts(record, context, supports, rows, kind; firsts = nothing)
-        -> Dict{Vector{Int}, NTuple{4, Int}}
+        -> Vector{NTuple{4, Int}}
 
 Measure the targets of `kind` (`:ordinary` or `:negative`) against `rows`,
 the distinct valid rows of that kind, support by support, classifying into
-`record`: each support's `(covered, missing, excluded, unknown)`. `firsts`,
-a vector of zeros aligned with `rows`, receives the number of targets of
-`kind` each row is the first to cover (see `_projections`), so
-`sum(firsts)` is the part's `covered`.
+`record`: each support's `(covered, missing, excluded, unknown)`, in the
+order of `supports`. `firsts`, a vector of zeros aligned with `rows`,
+receives the number of targets of `kind` each row is the first to cover
+(see `_projections`), so `sum(firsts)` is the part's `covered`.
 """
 function _support_counts(record::_Record, context::FeasibilityContext,
                          supports::Vector{Vector{Int}}, rows::Vector{Vector{Int}}, kind::Symbol;
@@ -496,37 +496,35 @@ function _support_counts(record::_Record, context::FeasibilityContext,
     radix = [length(v) for v in space.values]
     table = Int[r[p] for r in rows, p in eachindex(space.names)]   # cases × parameters
     codes = zeros(Int, length(rows))
-    counts = Dict{Vector{Int}, NTuple{4, Int}}()
-    for support in supports
-        counts[support] = _measure_support!(record, context, support, kind, table, codes, radix, firsts, at)
-    end
-    return counts
+    return NTuple{4, Int}[_measure_support!(record, context, support, kind, table, codes, radix, firsts, at)
+                          for support in supports]
 end
 
 """
-    _measure_part(context, groups, supports, rows, kind; explanation_limit, duplicates, rejected,
-                  firsts) -> CoveragePart
+    _measure_part(context, groups, supports, shares, rows, kind; explanation_limit, duplicates,
+                  rejected, firsts) -> CoveragePart
 
 Measure the targets of `kind` against `rows` (see `_support_counts`),
-listing them, and sum each group's supports for its breakdown (§1.15).
+listing them, and sum each group's supports, `shares` from
+`_group_supports`, for its breakdown (§1.15).
 """
 function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vector{Int}},
-                       rows::Vector{Vector{Int}}, kind::Symbol; explanation_limit::Int,
-                       duplicates::Int, rejected::Vector{_Rejected}, firsts)
+                       shares::Vector{Vector{Int}}, rows::Vector{Vector{Int}}, kind::Symbol;
+                       explanation_limit::Int, duplicates::Int, rejected::Vector{_Rejected}, firsts)
     space = context.space
     lists = _Lists(explanation_limit)
     counts = _support_counts(lists, context, supports, rows, kind; firsts)
     breakdown = _GroupCounts[]
-    for (members, s) in groups
+    for ((members, s), share) in zip(groups, shares)
         c = m = x = u = 0
-        for support in combinations(members, s)
-            sc, sm, sx, su = counts[support]
+        for k in share
+            sc, sm, sx, su = counts[k]
             c += sc; m += sm; x += sx; u += su
         end
         push!(breakdown, (names = Tuple(space.names[members]), strength = s, covered = c,
                           feasible = c + m, missing_count = m, excluded_count = x, unknown_count = u))
     end
-    covered = sum(first, values(counts); init = 0)
+    covered = sum(first, counts; init = 0)
     return CoveragePart(covered, covered + length(lists.missing), lists.missing, lists.excluded,
                         lists.unknown, breakdown, length(rows), duplicates, rejected)
 end
@@ -535,7 +533,7 @@ end
 function _count_part(context::FeasibilityContext, supports::Vector{Vector{Int}}, rows::Vector{Vector{Int}},
                      kind::Symbol)
     c = m = u = 0
-    for (sc, sm, _, su) in values(_support_counts(_Counts(), context, supports, rows, kind))
+    for (sc, sm, _, su) in _support_counts(_Counts(), context, supports, rows, kind)
         c += sc; m += sm; u += su
     end
     return _PartCounts((c, c + m, u))
@@ -567,12 +565,12 @@ function _measure(prepared::PreparedRows, space::TestSpace; strength, stronger, 
     groups = _groups(space, strength, stronger)
     context = FeasibilityContext(space, memos; feasibility_limit)
     explanation_limit = _check_limit(:explanation_limit, explanation_limit)
-    supports = _supports(groups)
+    supports, shares = _group_supports(groups)
     kept, duplicates, rejected = prepared.kept, prepared.duplicates, prepared.rejected
     firsts = curves ? (zeros(Int, length(kept[1])), zeros(Int, length(kept[2]))) : (nothing, nothing)
-    ordinary = _measure_part(context, groups, supports, kept[1], :ordinary; explanation_limit,
+    ordinary = _measure_part(context, groups, supports, shares, kept[1], :ordinary; explanation_limit,
                              duplicates = duplicates[1], rejected = rejected[1], firsts = firsts[1])
-    negative = _measure_part(context, groups, supports, kept[2], :negative; explanation_limit,
+    negative = _measure_part(context, groups, supports, shares, kept[2], :negative; explanation_limit,
                              duplicates = duplicates[2], rejected = rejected[2], firsts = firsts[2])
     named = Pair{Tuple{Vararg{Symbol}}, Int}[Tuple(space.names[g]) => s for (g, s) in groups[2:end]]
     c = Coverage(ordinary, negative, space, strength, named,

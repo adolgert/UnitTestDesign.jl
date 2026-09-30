@@ -331,28 +331,40 @@ end
 isconstrained(request::Request) = !isempty(request.feasibility.tables)
 
 """
-    _supports(groups) -> Vector{Vector{Int}}
+    _group_supports(groups) -> (supports, shares)
+    _supports(groups) -> supports
 
 The parameter sets that carry targets (contract §1.8): for each group
 `(G, s)`, each `s`-subset of `G` in `combinations` order, the base group
 first. A subset that two groups share is listed once, where it first
 appears, so that a target arising from two groups is one target. Each
 subset is sorted, since every group's members are. A group at strength 0 (a
-negative sub-request's base group, invalid.jl) has no subsets.
+negative sub-request's base group, invalid.jl) has no subsets. `shares[g]`
+lists the positions in `supports` of group `g`'s subsets, so that a
+measurement gives each group its share of the counts (§1.15) without
+listing the subsets again.
 """
-function _supports(groups)
-    out = Vector{Int}[]
-    seen = Set{Vector{Int}}()
+function _group_supports(groups)
+    supports = Vector{Int}[]
+    position = Dict{Vector{Int}, Int}()
+    shares = Vector{Int}[]
     for (members, s) in groups
-        s == 0 && continue   # a base group at strength 0 has no targets (see `Request`)
-        for subset in combinations(members, s)
-            subset in seen && continue
-            push!(seen, subset)
-            push!(out, subset)
+        share = Int[]
+        if s > 0   # a base group at strength 0 has no targets (see `Request`)
+            for subset in combinations(members, s)
+                k = get!(position, subset) do
+                    push!(supports, subset)
+                    length(supports)
+                end
+                push!(share, k)
+            end
         end
+        push!(shares, share)
     end
-    return out
+    return supports, shares
 end
+
+_supports(groups) = first(_group_supports(groups))
 
 """
     TargetList(request) <: AbstractVector{Vector{Int}}
