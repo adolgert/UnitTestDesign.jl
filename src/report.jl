@@ -580,11 +580,11 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     none = (nothing, nothing, nothing)   # the negative figures of a row with no case count
     ff = _attempt(() -> full_factorial(space; limit, limits...))
     valid = ff isa TestCases ? length(ff) : nothing
-    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, n; memos, feasibility_limit))
+    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, space; memos, feasibility_limit))
     for s in strengths
         s <= n || continue
         design = _attempt(() -> covering(space; strength = s, engine, limits...))
-        push!(rows, _size_row("covering($s)", :covering, s, design, valid, n; memos, feasibility_limit))
+        push!(rows, _size_row("covering($s)", :covering, s, design, valid, space; memos, feasibility_limit))
     end
     for d in distances
         base = from === nothing ? _default_base(space) : nothing
@@ -595,7 +595,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
             continue
         end
         design = _attempt(() -> excursions(space; distance = d, from, limits...))
-        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, n; memos, feasibility_limit))
+        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, space; memos, feasibility_limit))
     end
     return DesignSizes(copy(space.names), length(space), valid, nameof(typeof(engine)), limit,
                        _has_invalid(space), rows)
@@ -622,19 +622,27 @@ function _attempt(f)
 end
 
 """
-    _size_counts(cases, prepared, s, n; memos, feasibility_limit) -> (ordinary, negative)
+    _size_counts(design, space, prepared, s; memos, feasibility_limit) -> (ordinary, negative)
 
-The design's coverage counts at strength `s`, at the strength and groups
-`coverage(cases; strength = s)` measures (`_measured_request`), or
-`(nothing, nothing)` above `n`.
+The coverage counts at strength `s` of the design's rows, `prepared` in
+`space`, at the strength and groups `coverage(design; strength = s)`
+measures (`_measured_request`), or `(nothing, nothing)` above the number of
+parameters. `memos` are the lazy-rule memos of `space`'s rules.
 """
-function _size_counts(cases::TestCases, prepared, s::Int, n::Int; memos, feasibility_limit)
-    s <= n || return nothing, nothing
-    strength, stronger = _measured_request(cases, s, nothing)
-    return _measure_counts(prepared, cases.space; strength, stronger, memos, feasibility_limit)
+function _size_counts(design::TestCases, space::TestSpace, prepared, s::Int; memos, feasibility_limit)
+    s <= length(space.names) || return nothing, nothing
+    strength, stronger = _measured_request(design, s, nothing)
+    return _measure_counts(prepared, space; strength, stronger, memos, feasibility_limit)
 end
 
-function _size_row(strategy, kind, level, design, valid, n; memos, feasibility_limit)
+"""
+    _size_row(strategy, kind, level, design, valid, space; memos, feasibility_limit) -> _SizeRow
+
+One line of `design_sizes`: `design`, generated from `space`, or the
+`ResourceLimitError` that stopped it. The design's rows are measured in
+`space`, not in `design.space`, because `memos` memoize `space`'s rules.
+"""
+function _size_row(strategy, kind, level, design, valid, space::TestSpace; memos, feasibility_limit)
     if design isa ResourceLimitError
         message = "$(design.keyword) = $(_grouped(design.limit)) reached: $(design.what)"
         return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing,
@@ -642,9 +650,9 @@ function _size_row(strategy, kind, level, design, valid, n; memos, feasibility_l
     end
     share = valid === nothing ? nothing : (valid == 0 ? nothing : length(design) / valid)
     # The rows are read once for both strengths, and only when one is measured.
-    prepared = n < 2 ? nothing : _prepare_rows(design.space, memos, collect(design))
-    pairs, negative_pairs = _size_counts(design, prepared, 2, n; memos, feasibility_limit)
-    triples, negative_triples = _size_counts(design, prepared, 3, n; memos, feasibility_limit)
+    prepared = length(space.names) < 2 ? nothing : _prepare_rows(space, memos, collect(design))
+    pairs, negative_pairs = _size_counts(design, space, prepared, 2; memos, feasibility_limit)
+    triples, negative_triples = _size_counts(design, space, prepared, 3; memos, feasibility_limit)
     return _SizeRow((strategy, kind, level, :ok, "", length(design), share, pairs, triples,
                      count(hasinvalid, design), negative_pairs, negative_triples))
 end
