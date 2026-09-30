@@ -35,10 +35,12 @@ the isolation tables of `followups`, holds one bit.
 
 A lazy table is a function `lazy` from the scope's value indices, a
 `Vector{Int}` in scope order, to `Bool` (`true` = forbidden); `low`, `radix`
-and `forbidden` are empty. A whole-case rule has `scope == 1:arity` and is
-always lazy (contract §12.20). `lazy` is the one field whose type is not
-concrete, so evaluating a lazy rule is one dynamic call; a space's lazy rules
-are `_LazyRule`s (constraints.jl), whose evaluation is concrete behind it.
+and `forbidden` are empty. The vector may be a memo's scratch key, rewritten
+by the next check, so `lazy` must not keep it. A whole-case rule has
+`scope == 1:arity` and is always lazy (contract §12.20). `lazy` is the one
+field whose type is not concrete, so evaluating a lazy rule is one dynamic
+call; a space's lazy rules are `_LazyRule`s (constraints.jl), whose
+evaluation is concrete behind it.
 
 A table holds no state that an operation changes: `lazy` evaluates the
 predicate each time it is called. The memo of a lazy rule's verdicts
