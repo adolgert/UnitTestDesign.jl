@@ -21,7 +21,7 @@
 # needs N nodes succeeds exactly when the limit is at least N.
 #
 # Rule checks are not budgeted but are counted (contract §3.3). A check is one
-# `forbids(f, t, partial)` call: a set lookup for a tabulated table, a lookup
+# `forbids(f, t, partial)` call: a bit test for a tabulated table, a lookup
 # in the operation's memo (evaluating the predicate on a miss) for a lazy
 # one. After a node assigns `x`, forward checking checks each surviving
 # candidate of the one unset parameter of every table of `x` that has one
@@ -73,7 +73,7 @@ Counters for one `Feasibility`, for tests and for reporting search effort.
 `evaluations` counts every rule check made through the object: each
 `forbids` call by `violates`, `violated_rules`, the direct check of
 `completable` and `explain_partial`, and forward-checking prunes. A check of a
-tabulated table is a set lookup and a check of a lazy one a lookup in the
+tabulated table is a bit test and a check of a lazy one a lookup in the
 operation's memo, evaluating the predicate on a miss, so `evaluations` bounds
 the predicate calls from above.
 """
@@ -256,15 +256,15 @@ components(f::Feasibility) = [copy(c) for c in f.components]
     forbids(f::Feasibility, k, partial) -> Bool
 
 Whether table `k` of `f` forbids the values assigned in `partial` (its scope
-must be assigned), through the operation's memo: a tabulated table is a set
-lookup, and a lazy table's predicate is evaluated at most once per tuple of
+must be assigned), through the operation's memo: a tabulated table is a bit
+test, and a lazy table's predicate is evaluated at most once per tuple of
 scoped value indices, then read from `f.rule_memo[k]` (contract §12.19). An
 evaluation that throws stores nothing. Callers count the check in
 `f.stats.evaluations`.
 """
 function forbids(f::Feasibility, k::Int, partial::AbstractVector{<:Integer})
     table = f.tables[k]
-    table.lazy === nothing && return forbids(table, partial)
+    table.lazy === nothing && return _forbidden_bit(table, partial)
     return _memo_forbids(f.rule_memo[k], table, partial)
 end
 

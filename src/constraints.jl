@@ -329,12 +329,13 @@ The index-space form of the rule at `position` (contract §12.18–§12.20).
 
 A scoped rule whose scope has at most `tabulation_limit` combinations of
 ordinary values is evaluated once per combination, when the space is built,
-and the forbidden value-index tuples are stored in a `Set`. The combinations
-follow `Iterators.product` over the scope's ordinary value indices in scope
-order, so the first parameter of the scope varies fastest. A larger scope is
-evaluated lazily, memoized per operation by the `Feasibility` that asks
-(§12.19), and the package warns once for that rule. A whole-case rule is
-always lazy, with no warning; its table's scope is every parameter.
+and the table stores the forbidden value-index tuples (`RuleTable`). The
+combinations follow `Iterators.product` over the scope's ordinary value
+indices in scope order, so the first parameter of the scope varies fastest.
+A larger scope is evaluated lazily, memoized per operation by the
+`Feasibility` that asks (§12.19), and the package warns once for that rule.
+A whole-case rule is always lazy, with no warning; its table's scope is
+every parameter.
 
 Only ordinary values are tabulated, and predicates receive them as
 [`rule_value`](@ref)s (a partition by its name, never an `Invalid`: §5.8,

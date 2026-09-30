@@ -5,6 +5,7 @@ using TestItemRunner
 # 2 and 8. Test names cite the contract clauses (docs/src/dev/contract.md).
 
 @testitem "space: the target screen (plan; §2.10, §12.1, §12.4, §12.18)" begin
+    using UnitTestDesign: forbidden_tuples
     space = TestSpace(
         (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
         constraints = [
@@ -24,9 +25,9 @@ using TestItemRunner
     # Rule 1 forbids fast mode with a solver; rule 2 exact mode at 1e-3.
     t1, t2 = space.tables
     @test t1.scope == [1, 2] && t1.lazy === nothing
-    @test t1.forbidden == Set([(1, 2), (1, 3)])
+    @test forbidden_tuples(t1) == Set([(1, 2), (1, 3)])
     @test t2.scope == [1, 3]
-    @test t2.forbidden == Set([(2, 1)])
+    @test forbidden_tuples(t2) == Set([(2, 1)])
     @test space.constraints[1].polarity == :require
     @test space.constraints[2].polarity == :forbid
     @test UnitTestDesign.rule_label(space, 1) == "@require(mode == :exact || solver == :none)"
@@ -36,7 +37,7 @@ using TestItemRunner
     pairs_space = TestSpace(:mode => [:fast, :exact], :solver => [:none, :lu, :qr],
         :tol => [1e-3, 1e-6]; constraints = space.constraints)
     @test pairs_space.names == space.names
-    @test [t.forbidden for t in pairs_space.tables] == [t.forbidden for t in space.tables]
+    @test [forbidden_tuples(t) for t in pairs_space.tables] == [forbidden_tuples(t) for t in space.tables]
     # The caller's constraint vector is copied.
     rules = [@forbid(mode == :fast)]
     s = TestSpace((mode = [:fast, :exact],); constraints = rules)

@@ -517,10 +517,11 @@ end
         for field in fieldnames(TestSpace)
             got, want = getfield(pr.subspace, field), expected[field]
             if field == :tables
-                # A table keeps its forbidden set or predicate; its scope is
+                # A table keeps its forbidden bits or predicate; its scope is
                 # renumbered one parameter at a time, in the rule's order.
                 @test length(got) == length(want) && all(zip(got, want)) do (t, u)
-                    kept[t.scope] == u.scope && t.forbidden === u.forbidden && t.lazy === u.lazy
+                    kept[t.scope] == u.scope &&
+                        all(f -> getfield(t, f) === getfield(u, f), (:low, :radix, :forbidden, :lazy))
                 end
             elseif want isa Vector
                 @test length(got) == length(want) && all(splat(===), zip(got, want))

@@ -66,7 +66,7 @@ function NegativeProjection(space::TestSpace, p::Int)
     renumber = zeros(Int, n)
     renumber[kept] = eachindex(kept)
     rules = active_rules(space, p)
-    tables = RuleTable[RuleTable(renumber[t.scope], t.forbidden, t.lazy) for t in space.tables[rules]]
+    tables = RuleTable[RuleTable(renumber[t.scope], t.low, t.radix, t.forbidden, t.lazy) for t in space.tables[rules]]
     for (i, t) in enumerate(tables)
         scope = space.tables[rules[i]].scope
         [get(kept, j, 0) for j in t.scope] == scope || error(
