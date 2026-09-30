@@ -1,0 +1,29 @@
+== 1. user predicate runs inside the feasibility search (lazy rule)
+table lazy? true  forbidden set: nothing
+explain -> completable; predicate calls during search: 2
+throwing predicate surfaces from the search as: ConstraintError
+tabulated forbidden set (value-index tuples): Set([(3, 2)]) scope [1, 2]
+
+== 3. feasibility_limit caps each deletion trial
+feasibility_limit=1, explanation_limit=1e6: infeasible rules=[1] minimal=unresolved limit=:feasibility_limit => 1
+both 1e6: infeasible rules=[2, 3, 4] minimal=verified limit=nothing
+explanation_limit=1: infeasible rules=[1, 2, 3, 4] minimal=unresolved limit=:explanation_limit => 1
+
+== 5. coverage of externally supplied rows
+NamedTuples: covers 2 of 4 feasible pairs, 2 missing
+Tuples:      covers 2 of 4 feasible pairs, 2 missing
+Vectors:     covers 2 of 4 feasible pairs, 2 missing
+Generator:   covers 2 of 4 feasible pairs, 2 missing
+Positional domains: covers 1 of 4 feasible pairs, 3 missing
+Matrix: ArgumentError: ArgumentError: coverage takes a collection of rows, such as a vector of NamedTuples or tuples; got Any[:fast :
+report(Vector): MethodError
+diagnose(external rows; space): ranked
+
+== 7. github_matrix side effects
+default io writes to stdout:
+{"include":[{"m":"fast","t":1},{"m":"fast","t":2},{"m":"exact","t":1},{"m":"exact","t":2}]}
+returns: nothing
+to IOBuffer: 91 bytes
+┌ Warning: github_matrix: 300 jobs exceed GitHub Actions' limit of 256 jobs per matrix, so the workflow will be rejected. Split the cases across several matrices, or use fewer cases.
+└ @ UnitTestDesign ~/dev/UnitTestDesign.jl/src/export.jl:102
+realize returns new rows, no mutation: (m = :fast, t = 1)

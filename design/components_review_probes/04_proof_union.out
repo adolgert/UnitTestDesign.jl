@@ -1,0 +1,72 @@
+
+==== A: no valid case holds the suspect ====
+suspects: [(a = 2,)]
+  show: (a = 2,): inseparable; no valid case holds it: rules 1 and 2 together exclude it (rule 1: a = 2 never, whatever b; rule 2: a = 2 never with an ordinary n); searched ordinary cases and negative cases with n = Invalid(0)
+    status=inseparable rules=[1, 2] others=NamedTuple[] minimal=verified limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  per-kind proofs that _followup unions:
+    kind ordinary: active rules [1, 2] -> status=inseparable rules=[2] others=Any[] minimal=verified
+    kind (n = Invalid(0),): active rules [1] -> status=inseparable rules=[1] others=Any[] minimal=verified
+  global deletion check on the combined proof (rules=[1, 2], others=NamedTuple[]):
+    drop (:rule, 1): needed; witness (a = 2, b = 1, n = Invalid(0))
+    drop (:rule, 2): NOT needed (still no isolating row of any kind)
+  followups on the same rows with ONLY rule 1 in the space:
+    (a = 2,): inseparable; no valid case holds it: rule 1 (a = 2 never, whatever b) excludes it; searched ordinary cases and negative cases with n = Invalid(0)  | rules=[1] minimal=verified
+  brute force, rule 1 only: isolating rows of any kind = Any[]
+  brute force, rule 2 only: isolating rows of any kind = @NamedTuple{a::Int64, b::Int64, n::Invalid{Int64}}[(a = 2, b = 1, n = Invalid(0)), (a = 2, b = 2, n = Invalid(0))]
+
+==== B: valid failing case, proof with another suspect ====
+suspects: NamedTuple{names, Tuple{Int64}} where names[(a = 2,), (b = 1,)]
+  show: (a = 2,): inseparable; every valid case holding it also holds (b = 1,), under rules 1 and 2 (rule 1: a = 2 needs b = 1; rule 2: whole-case: no a = 2 with b = 2); searched ordinary cases and negative cases with n = Invalid(0)
+    status=inseparable rules=[1, 2] others=NamedTuple[(b = 1,)] minimal=verified limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  show: (b = 1,): found (a = 1, b = 1, n = 1), 1 change from case 3
+    status=found rules=Int64[] others=NamedTuple[] minimal=not_applicable limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  per-kind proofs that _followup unions:
+    kind ordinary: active rules [1, 2] -> status=inseparable rules=[2] others=[(b = 1,)] minimal=verified
+    kind (n = Invalid(0),): active rules [1] -> status=inseparable rules=[1] others=[(b = 1,)] minimal=verified
+  global deletion check on the combined proof (rules=[1, 2], others=NamedTuple[(b = 1,)]):
+    drop (:rule, 1): needed; witness (a = 2, b = 2, n = Invalid(0))
+    drop (:rule, 2): NOT needed (still no isolating row of any kind)
+    drop (:other, (b = 1,)): needed; witness (a = 2, b = 1, n = 1)
+  followups on the same rows with ONLY rule 1 in the space:
+    (a = 2,): inseparable; every valid case holding it also holds (b = 1,), under rule 1 (a = 2 needs b = 1); searched ordinary cases and negative cases with n = Invalid(0)  | rules=[1] minimal=verified
+  brute force, rule 1 + other suspect only: isolating rows = Any[]
+
+==== B reversed: same rules, whole-case rule first ====
+suspects: NamedTuple{names, Tuple{Int64}} where names[(a = 2,), (b = 1,)]
+  show: (a = 2,): inseparable; every valid case holding it also holds (b = 1,), under rule 2 (a = 2 needs b = 1); searched ordinary cases and negative cases with n = Invalid(0)
+    status=inseparable rules=[2] others=NamedTuple[(b = 1,)] minimal=verified limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  show: (b = 1,): found (a = 1, b = 1, n = 1), 1 change from case 3
+    status=found rules=Int64[] others=NamedTuple[] minimal=not_applicable limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  per-kind proofs:
+    kind ordinary: active rules [1, 2] -> status=inseparable rules=[2] others=[(b = 1,)] minimal=verified
+    kind (n = Invalid(0),): active rules [2] -> status=inseparable rules=[2] others=[(b = 1,)] minimal=verified
+
+==== C: test_diagnose.jl:394 setup at strength 2 ====
+suspects: NamedTuple[(b = 2,), (n = Invalid(0), b = 2)]
+  show: (b = 2,): inseparable; every valid case holding it also holds (n = Invalid(0), b = 2), under rule 1 on (n, b); searched ordinary cases and negative cases with n = Invalid(0)
+    status=inseparable rules=[1] others=NamedTuple[(n = Invalid(0), b = 2)] minimal=not_applicable limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  show: (n = Invalid(0), b = 2): indistinguishable; every case holding it holds (b = 2,)
+    status=indistinguishable rules=Int64[] others=NamedTuple[(b = 2,)] minimal=not_applicable limit=nothing searched=NamedTuple[]
+  per-kind proofs:
+    kind ordinary: active rules [1] -> status=inseparable rules=[1] others=Any[] minimal=verified
+    kind (n = Invalid(0),): active rules Int64[] -> status=inseparable rules=Int64[] others=@NamedTuple{n::Invalid{Int64}, b::Int64}[(n = Invalid(0), b = 2)] minimal=not_applicable
+
+==== D: union of others ====
+suspects: NamedTuple[(a = 2,), (b = 1,), (a = 2, b = 1), (a = 2, n = 1), (b = 1, n = 1)]
+  show: (a = 2,): inseparable; every valid case holding it also holds (a = 2, b = 1) or (a = 2, n = 1), under rule 1 (a = 2 needs b = 1); searched ordinary cases and negative cases with n = Invalid(0)
+    status=inseparable rules=[1] others=NamedTuple[(a = 2, b = 1), (a = 2, n = 1)] minimal=verified limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  show: (b = 1,): found negative case (a = 1, b = 1, n = Invalid(0)), 2 changes from case 3
+    status=found rules=Int64[] others=NamedTuple[] minimal=not_applicable limit=nothing searched=NamedTuple[NamedTuple(), (n = Invalid(0),)]
+  show: (a = 2, b = 1): indistinguishable; every case holding it holds (a = 2,) and (b = 1,)
+    status=indistinguishable rules=Int64[] others=NamedTuple[(a = 2,), (b = 1,)] minimal=not_applicable limit=nothing searched=NamedTuple[]
+  show: (a = 2, n = 1): indistinguishable; every case holding it holds (a = 2,)
+    status=indistinguishable rules=Int64[] others=NamedTuple[(a = 2,)] minimal=not_applicable limit=nothing searched=NamedTuple[]
+  show: (b = 1, n = 1): indistinguishable; every case holding it holds (b = 1,)
+    status=indistinguishable rules=Int64[] others=NamedTuple[(b = 1,)] minimal=not_applicable limit=nothing searched=NamedTuple[]
+  per-kind proofs:
+    kind ordinary: active rules [1] -> status=inseparable rules=Int64[] others=[(a = 2, n = 1)] minimal=verified
+    kind (n = Invalid(0),): active rules [1] -> status=inseparable rules=[1] others=[(a = 2, b = 1)] minimal=verified
+  global deletion check on the combined proof (rules=[1], others=NamedTuple[(a = 2, b = 1), (a = 2, n = 1)]):
+    drop (:rule, 1): needed; witness (a = 2, b = 2, n = Invalid(0))
+    drop (:other, (a = 2, b = 1)): needed; witness (a = 2, b = 1, n = Invalid(0))
+    drop (:other, (a = 2, n = 1)): NOT needed (still no isolating row of any kind)
