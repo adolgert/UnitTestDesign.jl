@@ -21,7 +21,7 @@
 # against both commits; a field that a commit lacks, such as `Followup.proofs`
 # before Stage E1, is not printed there. Nothing machine-dependent is printed:
 # no timings, object ids or file paths, and two runs print the same bytes. It
-# takes about two minutes and prints about 34 MB.
+# takes about two minutes and prints about 35 MB.
 #
 # The corpus, each part at the default limits and at tight ones:
 #
@@ -31,7 +31,10 @@
 #   groups that hold an invalid parameter, and ordinary and negative
 #   must-include rows (groups and must-include rows at strengths 1 and 2);
 #   and positional calls. One space has lazy and tabulated rules, their
-#   scopes out of parameter order, active in negative rows' sub-requests.
+#   scopes out of parameter order, active in negative rows' sub-requests. In
+#   another, a negative row's engine reaches a tight `feasibility_limit` after
+#   every classification succeeds, and at a tighter one so does a later
+#   invalid value's classification.
 # - Measurement: `coverage`, `missing_interactions`, `report` and
 #   `design_sizes` on those results, and `coverage` on hand-written rows with
 #   repeats, rejected rows and rows with two `Invalid` values, written as
@@ -154,7 +157,9 @@ generate at, and optional `stronger` groups, must-include rows and an
 excursion base. `measured` are the strengths at which hand-written rows are
 measured, and a result also one strength above its own. `limits` are the
 sets of limits each call runs under, and `sizes` says whether to run
-`design_sizes`, which generates every strategy.
+`design_sizes`, which generates every strategy. `enumerated` says whether to
+run the calls that read every row of the space, `full_factorial()` and the
+hand-written row sets, which print too many rows for a large space.
 """
 Base.@kwdef struct Case
     name::String
@@ -168,6 +173,7 @@ Base.@kwdef struct Case
     from::Any = nothing
     limits::Vector = LIMITS
     sizes::Bool = true
+    enumerated::Bool = true
 end
 
 space_of(case::Case) =
@@ -200,6 +206,10 @@ function fixed_cases()
     pigeons = [forbid((w, v, p, q) -> w == 1 && v == 1 && p == q, :w, :v, a, b)
                for (i, a) in enumerate(holes) for b in holes[(i + 1):end]]
     eight = NamedTuple{Tuple(Symbol(:x, i) for i in 1:8)}(Tuple(1:4 for _ in 1:8))
+    # Five pigeons, x to w, in four holes when a = b = 5.
+    five = (:x, :y, :z, :u, :w)
+    crowded = [forbid((a, b, p, q) -> a == 5 && b == 5 && p == q, :a, :b, h, k)
+               for (i, h) in enumerate(five) for k in five[(i + 1):end]]
     return [
         Case(name = "fable", domains = fable, constraints = fable_rules, must_include = fable_must,
              from = (mode = :exact, solver = :lu, tol = 1e-6)),
@@ -256,6 +266,27 @@ function fixed_cases()
              constraints = [forbid(n -> n == 1, :n),
                             forbid((a, b, c, d) -> !(a == b == c == d == 4), :x1, :x2, :x3, :x4)],
              strengths = [2], measured = [2], limits = [DEFAULT, (feasibility_limit = 1,), TIGHT], sizes = false),
+        # A negative row's engine at feasibility_limit (Stage D). Both engines
+        # place a = 5 beside b = 5 in a negative row at n, and the search that
+        # proves (a = 5, b = 5) leaves no valid row, five pigeons in four
+        # holes, takes 66 nodes; no pair needs that search. At
+        # feasibility_limit = 8 every pair is classified but
+        # (m = Invalid(0), e = 2), which takes 26 nodes: the rule on
+        # (e, x, y, z) leaves it one completion. n = 1 keeps a from 5 in
+        # ordinary rows and in negative rows at m, and m = 1 keeps e from 2 in
+        # ordinary rows and in negative rows at n. So at feasibility_limit = 40
+        # every classification succeeds and n's engine run fails; at 12, the
+        # classification of (m = Invalid(0), e = 2) fails too, after n's
+        # engine run in the order of the invalid values and before it in
+        # target order.
+        Case(name = "negative rows' engine at the limit",
+             domains = (n = [1, Invalid(0)], m = [1, Invalid(0)], a = 1:5, b = 1:5, x = 1:4, y = 1:4, z = 1:4,
+                        u = 1:4, w = 1:4, e = 1:2),
+             constraints = [crowded; forbid((n, a) -> n == 1 && a == 5, :n, :a);
+                            forbid((m, e) -> m == 1 && e == 2, :m, :e);
+                            forbid((e, x, y, z) -> e == 2 && !(x == y == z == 4), :e, :x, :y, :z)],
+             strengths = [2], measured = [2], limits = [DEFAULT, (feasibility_limit = 12,), (feasibility_limit = 40,)],
+             sizes = false, enumerated = false),
         # Two components that every search solves, each a few nodes deep: a
         # search that has one component's witness cached resolves at a limit
         # where a fresh search does not. So these figures change if two
@@ -399,7 +430,7 @@ function generators(case::Case, space::TestSpace)
                      limits -> excursions(space; from = case.from, distance = 2,
                                           must_include = case.must_include, limits...))
     end
-    push!(calls, "full_factorial()" => limits -> full_factorial(space; limits...))
+    case.enumerated && push!(calls, "full_factorial()" => limits -> full_factorial(space; limits...))
     isempty(case.must_include) ||
         push!(calls, "full_factorial(must_include)" =>
                      limits -> full_factorial(space; must_include = case.must_include, limits...))
@@ -456,7 +487,7 @@ function generate_and_measure(case::Case)
         end
         generated isa TestCases && measure_result(label, generated, case)
     end
-    for (description, rows) in hand_written(case.domains)
+    for (description, rows) in (case.enumerated ? hand_written(case.domains) : [])
         for s in unique(min.(case.measured, n)), limits in case.limits
             run_case("measure $(case.name) | coverage($description, space; strength = $s) | " *
                      limits_text(limits)) do
