@@ -576,7 +576,11 @@ labeled inclusion-minimal only under §3.16. No clause promises a
 minimum-size rule set.
 
 **8.6** `diagnose` returns hypotheses, not proofs. `followups` prefers small
-changes from a failing case, with no minimum-distance guarantee.
+changes from a failing case, with no minimum-distance guarantee. `diagnose`
+takes the cases and outcomes as observed. A case that breaks a rule, or
+holds more than one `Invalid` value, is ranked like any other. A failing
+case that broke the rules can leave a suspect that no valid case holds,
+which `followups` reports as `inseparable` with no other suspects.
 
 ## 9. Determinism
 

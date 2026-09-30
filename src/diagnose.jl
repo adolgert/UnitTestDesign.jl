@@ -162,6 +162,12 @@ domain by identity (§2.1). Give the labeled rows, before
 `realize`: a drawn value is not in the domain. A positional result's
 parameters are named `p1`, `p2`, ….
 
+`diagnose` takes the cases and outcomes as observed (§8.6). A case that
+breaks a rule, or holds more than one [`Invalid`](@ref) value, is ranked
+like any other. A failing case that broke the rules can leave a suspect
+that no valid case holds, which `followups` reports as `:inseparable` with
+no other suspects.
+
 `length(passed)` must equal the number of cases. Each row is counted once
 per appearance, so a case that ran twice and failed twice is in two
 failures. The result's `status` says how the comparison went:

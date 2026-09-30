@@ -297,7 +297,8 @@ end
                              "(b = 1, c = 2), under rule 1 ($reason)"
     @test fs[2].case == (a = 1, b = 1, c = 2)
 
-    # A failing case that broke the rules leaves a suspect no valid case holds.
+    # A failing case that broke the rules is ranked like any other, and leaves a
+    # suspect no valid case holds (§8.6).
     rows = [(a = 2, b = 2, c = 2), (a = 1, b = 1, c = 1), (a = 2, b = 1, c = 1), (a = 1, b = 2, c = 1)]
     d = diagnose(rows, [true, true, false, true]; space)
     fs = followups(d)
@@ -349,6 +350,7 @@ end
             (n = 1, m = Invalid(:z), k = :y),
             (n = Invalid(-1), m = :b, k = :y), (n = Invalid(-1), m = Invalid(:z), k = :y)]
     passed = [true, true, true, true, false, false]
+    # The last row holds two Invalid values and is ranked like any other (§8.6).
     d = diagnose(rows, passed; space)
     @test Dict(s.combination => s.failing for s in d.suspects) == oracle_suspects(rows, passed, 2)
     @test [s.combination for s in d.suspects] ==
