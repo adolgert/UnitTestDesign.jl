@@ -6,16 +6,16 @@
 # mixed-strength form that `generate(::IPOG, request)` uses otherwise.
 
 """
-    choose_last_parameter!(taller, allc, matcher = case_partial_cover)
+    choose_last_parameter!(taller, allc)
 
 Given a test set where the first k-1 parameters are chosen and the last parameter
 has not been chosen, this fills in the last parameters for each test case.
 """
-function choose_last_parameter!(taller, allc, matcher = case_partial_cover)
+function choose_last_parameter!(taller, allc)
     param_idx  = size(taller, 1)
     for set_col_idx in axes(taller, 2)
         if any(taller[:, set_col_idx] .== 0)
-            match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx, matcher)
+            match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx)
             if (any(match_hist .> 0))
                 # The argmax tie-breaks in a consistent manner.
                 taller[param_idx, set_col_idx] = argmax(match_hist)
@@ -45,15 +45,14 @@ Loop over remaining tuples instead of looping over each test.
 For each tuple, loop over tests where that tuple could go. If that fails,
 add the tuple at the end as its own test.
 """
-function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_tuple)
+function insert_tuple_into_tests(test_set, allc)
     add_tests = Array{eltype(allc), 1}[]
     for find_cover_idx in allc.remain:-1:1
         tuple = allc.allc[:, find_cover_idx]
         unmatched = true
         for test_idx in axes(test_set, 2)
             test_case = test_set[:, test_idx]
-            matches = matcher(test_case, tuple)
-            if matches
+            if case_compatible_with_tuple(test_case, tuple)
                 test_set[:, test_idx] = put_tuple_in_case(tuple, test_case)
                 unmatched = false
                 break
@@ -62,7 +61,7 @@ function insert_tuple_into_tests(test_set, allc, matcher = case_compatible_with_
         if unmatched
             for tc_idx in eachindex(add_tests)
                 test_case = add_tests[tc_idx]
-                if matcher(test_case, tuple)
+                if case_compatible_with_tuple(test_case, tuple)
                     add_tests[tc_idx] = put_tuple_in_case(tuple, test_case)
                     unmatched = false
                     break
@@ -198,7 +197,7 @@ function choose_last_parameter_filter!(test_set, allc, param_idx, dead)
     for col in axes(test_set, 2)
         test_set[param_idx, col] == 0 || continue  # set by a must-include row
         putative .= view(test_set, :, col)
-        match_hist = matches_from_missing(allc, putative, param_idx, case_partial_cover)
+        match_hist = matches_from_missing(allc, putative, param_idx)
         # sortperm is stable, so ties go to the lower value, as argmax does.
         for value in sortperm(match_hist; rev = true)
             match_hist[value] > 0 || break

@@ -204,16 +204,18 @@ end
 
 
 """
+    matches_from_missing(mc::MatrixCoverage, entry, missing_param)
+
 Given an entry in the test set that has missing values, which are
-zeros, find any matches that could be created by setting those
-missing values. Return a new version of the entry.
+zeros, count for each value of `missing_param` the uncovered tuples that
+hold that value and that the entry partially covers
+(`case_partial_cover`: some value in common and none in conflict).
 """
-function matches_from_missing(mc::MatrixCoverage, entry, missing_param, matcher = case_compatible_with_tuple)
+function matches_from_missing(mc::MatrixCoverage, entry, missing_param)
     hist = zeros(eltype(mc), mc.arity[missing_param])
     for tuple_idx in 1:mc.remain
         if mc.allc[missing_param, tuple_idx] != 0
-            # case_covers_tuple - variation.
-            if matcher(entry, mc.allc[:, tuple_idx])
+            if case_partial_cover(entry, mc.allc[:, tuple_idx])
                 hist[mc.allc[missing_param, tuple_idx]] += 1
             end
         end  # No matches unless the particular column is nonzero.
