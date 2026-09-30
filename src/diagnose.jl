@@ -152,11 +152,12 @@ Read the ranking as hypotheses (§8.6):
 Every suspect is unverified by passing cases by definition: each one's
 `passes` is 0.
 
-`cases` is a [`TestCases`](@ref) or a vector of rows. For a `TestCases`, the
-space is the result's, and `strength` defaults to the result's strength, or
-to `min(2, number of parameters)` for an excursion or a full factorial,
-which have none. For a vector of rows, pass the space they belong to as
-`space` (a [`TestSpace`](@ref)); `strength` then defaults to
+`cases` is a [`TestCases`](@ref), or any other collection of rows, such as a
+vector, read once. For a `TestCases`, the space is the result's, and
+`strength` defaults to the result's strength, or to
+`min(2, number of parameters)` for an excursion or a full factorial, which
+have none. For other rows, pass the space they belong to as `space` (a
+[`TestSpace`](@ref)); `strength` then defaults to
 `min(2, number of parameters)`. Rows are `NamedTuple`s naming every
 parameter, or tuples or vectors in parameter order, and values match the
 domain by identity (§2.1). Give the labeled rows, before
@@ -223,7 +224,7 @@ function _diagnosis_input(cases, strength, space)
     else
         cases isa TestSpace && throw(ArgumentError(
             "diagnose takes the cases first and their outcomes second: diagnose(cases, passed)"))
-        rows = _row_list(cases; what = "diagnose takes a collection of cases",
+        rows = _row_list(cases; what = "diagnose takes a collection of cases", noun = "case",
                          fix = row -> "diagnose([$(_fit(repr(row), 60))], passed; space)")
         space === nothing && throw(ArgumentError(
             "diagnose needs the space the cases belong to: diagnose(cases, passed; space, strength); " *

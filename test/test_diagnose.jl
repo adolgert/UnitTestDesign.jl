@@ -789,7 +789,7 @@ end
     @test message(() -> diagnose(cases, passed; strength = 5)) ==
         "strength 5 is larger than the number of parameters, 4 (contract §11.2)"
     @test occursin("strength must be a positive integer", message(() -> diagnose(cases, passed; strength = 0)))
-    @test occursin("wrap a single row in a vector", message(() -> diagnose(cases[1], [true]; space)))
+    @test occursin("wrap a single case in a vector", message(() -> diagnose(cases[1], [true]; space)))
     @test occursin("cases first and their outcomes second", message(() -> diagnose(space, passed)))
     rows = Any[c for c in cases]
     rows[3] = (n = 10, method = :newton, tol = 1e-3)

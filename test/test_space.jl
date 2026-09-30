@@ -331,6 +331,10 @@ end
     @test message(() -> rows_of([1, :x])) == "f takes rows; wrap a single row in a vector: f([Any[1, :x]])"
     @test message(() -> rows_of(x for x in (1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
     @test message(() -> rows_of(5)) == "f takes rows, such as a vector of NamedTuples or tuples; got 5 (contract §0)"
+    # The caller may call a row something else.
+    cases_of(input) = _row_list(input; what = "g takes cases", noun = "case", fix = row -> "g([$(repr(row))])")
+    @test message(() -> cases_of((a = 1,))) == "g takes cases; wrap a single case in a vector: g([(a = 1,)])"
+    @test message(() -> cases_of([1, :x])) == "g takes cases; wrap a single case in a vector: g([Any[1, :x]])"
 end
 
 

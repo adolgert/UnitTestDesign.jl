@@ -526,7 +526,7 @@ _cited(section) = section === nothing ? "" : " (contract $section)"
 _is_row(x) = x isa Union{Tuple, NamedTuple, AbstractVector}
 
 """
-    _row_list(input; what, fix, section = nothing) -> Vector
+    _row_list(input; what, fix, noun = "row", section = nothing) -> Vector
 
 The caller's collection of rows as a `Vector`, read once with `collect`, so
 an iterator that can be read only once gives all its rows. Each row is read
@@ -535,22 +535,23 @@ later, by `_row_indices`. Two input errors are worded here, each an
 collection of rows":
 
 - a single row, a `NamedTuple` or a collection none of whose elements is a
-  row: "WHAT; wrap a single row in a vector: " followed by the corrected
-  call that `fix(row)` writes;
+  row: "WHAT; wrap a single NOUN in a vector: " followed by the corrected
+  call that `fix(row)` writes, where `noun` is what the caller calls a row,
+  such as "case" for `diagnose`;
 - anything that is not a collection: "WHAT, such as a vector of NamedTuples
   or tuples; got …", ending with the contract `section` when it is given.
 
 A check that belongs to one caller, such as `coverage` given the space
 first, comes before this one, in the caller.
 """
-function _row_list(input; what::AbstractString, fix, section = nothing)
-    input isa NamedTuple && throw(ArgumentError("$what; wrap a single row in a vector: $(fix(input))"))
+function _row_list(input; what::AbstractString, fix, noun::AbstractString = "row", section = nothing)
+    input isa NamedTuple && throw(ArgumentError("$what; wrap a single $noun in a vector: $(fix(input))"))
     rows = applicable(iterate, input) ? collect(input) : nothing
     rows isa AbstractVector || throw(ArgumentError(
         "$what, such as a vector of NamedTuples or tuples; got $(repr(input))" * _cited(section)))
     if !isempty(rows) && !any(_is_row, rows)
         single = input isa Union{Tuple, AbstractVector} ? input : Tuple(rows)
-        throw(ArgumentError("$what; wrap a single row in a vector: $(fix(single))"))
+        throw(ArgumentError("$what; wrap a single $noun in a vector: $(fix(single))"))
     end
     return rows
 end
