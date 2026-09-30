@@ -153,9 +153,12 @@ function _classify!(record::_NegativeTargets, context::FeasibilityContext, t::Ve
     f, active = feasibility_for(context, t)
     target = _positions(request, t)
     e = _classify_target(request, f, active, target, t, "classifying the negative target")
-    e === nothing || (push!(record.excluded, e); return e.status)
-    push!(record.required, target)
-    return :required
+    if e === nothing
+        push!(record.required, target)
+        return :required
+    end
+    push!(record.excluded, e)
+    return e.status
 end
 
 """
