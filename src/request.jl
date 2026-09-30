@@ -325,7 +325,7 @@ function witness(request::Request, partial::AbstractVector{<:Integer})
         "completing the row $(from_indices(request.space, _space_indices(request, partial)))",
         request.feasibility_limit, :feasibility_limit))
     status == :infeasible && error("internal error: asked for a witness of an infeasible row $partial")
-    return _positions(request, w)
+    return _positions(request, w::Vector{Int})
 end
 
 isconstrained(request::Request) = !isempty(request.feasibility.tables)

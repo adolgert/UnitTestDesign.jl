@@ -673,7 +673,7 @@ function explain_partial(f::Feasibility, partial::AbstractVector{<:Integer};
     all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, key, nothing, cost()...)
     status, witness = _completable(f, key, f.limit)
     if status === :feasible
-        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness), nothing, cost()...)
+        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness::Vector{Int}), nothing, cost()...)
     elseif status === :unknown
         return IndexExplanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit, cost()...)
     end
