@@ -416,6 +416,38 @@ end
 end
 
 
+@testitem "followups: an isolation search that reaches its limit returns the limit that stopped it (§3.17)" setup=[DiagnoseSetup] begin
+    using UnitTestDesign: RuleTable, _isolate, _isolation_table, _Found, _Unknown, rule_memos
+    # c, d and e differ pairwise. (a = 2,) is the only suspect, so its search
+    # among ordinary cases in domain order is the search `explain` makes. That
+    # search and the one that starts from the failing case each take 3 nodes,
+    # so feasibility_limit 1 and 2 stop them. explanation_limit differs from
+    # both, so the limit named cannot be the wrong one.
+    space = TestSpace((a = [1, 2], c = 1:3, d = 1:3, e = 1:3);
+                      constraints = [forbid(:c, :d) do c, d; c == d end, forbid(:c, :e) do c, e; c == e end,
+                                     forbid(:d, :e) do d, e; d == e end])
+    rows = [(a = 1, c = 1, d = 2, e = 3), (a = 2, c = 1, d = 2, e = 3)]
+    d = diagnose(rows, [true, false]; space, strength = 1)
+    s = only(d.suspects)
+    isolation = RuleTable[_isolation_table(t.key) for t in d.suspects]
+    for feasibility_limit in 1:3
+        limits = (feasibility_limit, 100)
+        e = explain(space, s.combination; feasibility_limit, explanation_limit = 100)
+        @test e.outcome === (feasibility_limit < 3 ? :unknown : :completable)
+        # With no starts (domain order) and starting from the failing case.
+        for starts in (Int[], [2])
+            r = _isolate(d, s, (0, 0), Int[], isolation, rule_memos(space.tables), limits, starts)
+            if e.outcome === :unknown
+                @test r isa _Unknown && r.limit == e.limit == (:feasibility_limit => feasibility_limit)
+            else
+                @test r isa _Found
+            end
+        end
+        @test only(followups(d; feasibility_limit, explanation_limit = 100)).limit == e.limit
+    end
+end
+
+
 @testitem "followups: invalid suspects use negative rows; isolation conditions still apply (§5.5, §5.7)" setup=[DiagnoseSetup] begin
     # For an ordinary n, k must be :y; a negative row at n skips that rule.
     space = TestSpace((n = [1, 2, Invalid(-1)], m = [:a, :b, Invalid(:z)], k = [:x, :y]);
