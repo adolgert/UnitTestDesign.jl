@@ -301,13 +301,11 @@ no run-wide total.
 caches are local to one call. An exhausted search is never cached as
 infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
 context too: one generation request, or one call to `explain`, `classify`,
-`coverage`, `missing_interactions` or `followups`. `report` and
-`design_sizes` run several such operations: `report` measures the rows
-twice (for the guarantee, then for the bonus), and `design_sizes` generates
-each design and measures it at strengths 2 and 3. Each operation has its
-own memo. The operation's searches and its final validation share it, and
-it is released with the operation. A `TestSpace` retains nothing from any
-operation.
+`coverage`, `missing_interactions`, `report` or `followups`. `design_sizes`
+keeps one memo for all its measurements; each design it generates is a
+separate generation request with its own. The operation's searches and its
+final validation share it, and it is released with the operation. A
+`TestSpace` retains nothing from any operation.
 
 **3.6** Generation resolves every target classification, the whole-space
 feasibility check, every must-include completion, and every placement decision.
@@ -789,13 +787,12 @@ order.
 keyword, default `10^5` evaluations) is evaluated lazily with a memo. The
 package warns once per rule and suggests a narrower scope. A lazy rule's memo
 belongs to the operation context (§3.5): one generation request, or one call
-to `explain`, `classify`, `coverage`, `missing_interactions` or `followups`.
-`report` and `design_sizes` run several such operations: `report` measures
-the rows twice (for the guarantee, then for the bonus), and `design_sizes`
-generates each design and measures it at strengths 2 and 3. Each operation
-has its own memo. It is keyed by value indices, shared by all of that
-operation's feasibility searches, deletion trials, and final validation, and
-released with the operation. Within an operation it holds
+to `explain`, `classify`, `coverage`, `missing_interactions`, `report` or
+`followups`. `design_sizes` keeps one memo for all its measurements; each
+design it generates is a separate generation request with its own. The memo
+is keyed by value indices, shared by all of that operation's feasibility
+searches, deletion trials, and final validation, and released with the
+operation. Within an operation it holds
 at most one entry per combination of the scope's ordinary values (the full
 product of the ordinary domains for a whole-case rule), so a predicate is
 evaluated at most once per combination per operation. A `TestSpace` retains

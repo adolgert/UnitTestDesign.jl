@@ -263,9 +263,10 @@ whichever call reached it, such as a generation, `isallowed`, `explain`,
 
 A whole-case rule is always lazy (§12.20). Its predicate runs on complete
 cases as the searches reach them, and each answer is remembered until that
-one call returns: a generation, an `explain`, a `coverage` or a `followups`
-call. `report` and `design_sizes` run several of these, each with its own
-memo. The space keeps nothing (§12.19). The cost is in the searches: a
+one call returns: a generation, an `explain`, a `coverage`, a `report` or a
+`followups` call. `design_sizes` keeps one memo for all its measurements;
+each design it generates is a separate generation with its own. The space
+keeps nothing (§12.19). The cost is in the searches: a
 whole-case rule reads every parameter, so it joins them all into one
 search, and deciding whether a combination is feasible may
 explore up to the product of the unassigned domains, bounded by

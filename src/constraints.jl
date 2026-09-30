@@ -838,11 +838,12 @@ the predicate: a non-`Bool` result is an `ArgumentError` and an exception a
 `ConstraintError` (§12.15, §12.16), as in tabulation.
 
 It keeps no memo. The verdicts are memoized per operation by the
-`Feasibility` that asks (feasibility.jl: a request, or one call to
-`explain`, `classify`, `coverage`, `missing_interactions` or `followups`;
-`report` and `design_sizes` run several operations, each with its own
-memo), so the memo is released with the operation and a `TestSpace` retains
-nothing from any call (§3.5, §12.19).
+`Feasibility` that asks (feasibility.jl: one generation request, or one call
+to `explain`, `classify`, `coverage`, `missing_interactions`, `report` or
+`followups`; `design_sizes` keeps one memo for all its measurements, and
+each design it generates is a separate generation request with its own), so
+the memo is released with the operation and a `TestSpace` retains nothing
+from any call (§3.5, §12.19).
 """
 struct _LazyRule{N} <: Function
     rule::Constraint
