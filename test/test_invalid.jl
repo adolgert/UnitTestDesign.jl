@@ -551,3 +551,48 @@ end
     @test rule_label(pr.subspace, 1) == "rule 1 on (c, b)"
     @test occursin("rule 2 on (c, b) threw", message(() -> all_pairs(boom)))
 end
+
+
+@testitem "invalid: a negative sub-request shares its request's lazy-rule memos (§3.5, §12.19)" setup=[Checker, InvalidSetup] begin
+    using UnitTestDesign: Request, NegativeProjection, _negative_request, violates
+    calls = Tuple{Int, Symbol}[]
+    # Rule 2 reads c and b, 9 combinations above tabulation_limit = 8, so it
+    # is lazy; its scope omits a, so it applies to the negative rows at a.
+    space = quietly() do
+        TestSpace((a = [1, 2, Invalid(0)], b = [:x, :y, :z], c = [1, 2, 3], d = [true, false]);
+            constraints = [forbid((a = 2, d = false)),
+                           forbid(:c, :b) do c, b; push!(calls, (c, b)); c == 3 && b == :z end],
+            tabulation_limit = 8)
+    end
+    @test space.tables[2].lazy !== nothing
+    request = Request(space; strength = 2)
+    pr = NegativeProjection(space, 1)
+    sub = _negative_request(request, pr, zeros(Int, 3, 0))
+    @test pr.rules == [2]
+    # The memo dictionaries are the request's own.
+    @test sub.feasibility.rule_memo[1] === request.feasibility.rule_memo[2]
+    @test sub.context.memos[1] === request.context.memos[2]
+    # A combination the request evaluated is not evaluated again: b = :x beside each c.
+    @test !any(c -> violates(request.feasibility, [1, 1, c, 1]), 1:3)
+    @test calls == [(1, :x), (2, :x), (3, :x)]
+    @test !any(c -> violates(sub.feasibility, [1, c, 1]), 1:3)   # (b, c, d)
+    @test length(calls) == 3
+    # A combination new to the sub-request is evaluated once, however often
+    # it is asked, and the request then knows the verdict too.
+    for _ in 1:2, b in 2:3, c in 1:3
+        @test violates(sub.feasibility, [b, c, 1]) == (b == 3 && c == 3)
+    end
+    @test length(calls) == 9 && allunique(calls)
+    @test violates(request.feasibility, [1, 3, 3, 1]) && length(calls) == 9
+    # So one generation evaluates each combination at most once: target
+    # classification, the ordinary rows, each sub-request and validation
+    # share one memo, with and without a group holding a, and with a
+    # negative must-include row that the sub-request completes.
+    for strength in 1:3, engine in (IPOG(), GND(seed = 2)), stronger in ([], [(:a, :b, :c) => 3])
+        strength == 3 && !isempty(stronger) && continue
+        empty!(calls)
+        cases = covering(space; strength, engine, stronger, must_include = [(a = Invalid(0), c = 3)])
+        @test cases[1].a === Invalid(0) && cases[1].c == 3
+        @test !isempty(calls) && allunique(calls)
+    end
+end
