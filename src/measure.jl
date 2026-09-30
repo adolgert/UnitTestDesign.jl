@@ -8,9 +8,14 @@
 # witness, and is never searched (§1.10): each support gets the set of the
 # valid rows' projections onto it, and only the targets missing from that set
 # are classified, through the Phase 2 machinery (`IndexClassification` of
-# `explain_partial` on the `Feasibility` of the target's row kind, from one
-# `FeasibilityContext` per call, §3.5). Ordinary and negative targets are
-# measured separately, each against its own kind of row (§5.9–§5.11).
+# `explain_partial` on the `Feasibility` of the target's row kind). Ordinary
+# and negative targets are measured separately, each against its own kind of
+# row (§5.9–§5.11).
+#
+# A call reads its rows once (`PreparedRows`) and keeps one lazy-rule memo
+# for all its measurements; each measurement searches in a
+# `FeasibilityContext` of its own around that memo, so no answer cache
+# crosses from one measurement to another (§3.5).
 
 
 ## The result
@@ -156,26 +161,48 @@ that forbids a committed row passes unnoticed.
 iscomplete(c::Coverage) = all(p -> isempty(p.missing) && isempty(p.unknown), (c.ordinary, c.negative))
 
 
-## Reading the rows (contract §1.13, §1.14)
+## Preparing the rows (contract §1.11, §1.13, §1.14)
 
 """
-    _read_rows(context, rows) -> (kept, duplicates, rejected, slots)
+    PreparedRows
 
-Sort the rows by kind and validity (contract §1.11, §1.14, §5.3–§5.7): `kept`
-holds the distinct valid ordinary rows and the distinct valid negative rows,
-in first-seen order; `duplicates` counts repeats of each kind; `rejected`
-lists, per kind, the rows that break an applicable rule (judged under
-`active_rules`, so a negative row at `p` skips every rule that reads `p`) and
-the rows with more than one `Invalid` value (negative kind). `slots[1][k]`
-is the position in `kept[1]` of row `k` when it is the first appearance of a
-valid ordinary row, else 0, and `slots[2][k]` the same for `kept[2]` and
-valid negative rows: the prefix curves of `report` read them. Each row is
-read by `_row_indices`, complete (§1.13). Rules are checked through the
-call's `FeasibilityContext`, so a lazy rule's verdicts are memoized for the
-call and no longer (§3.5, §12.19).
+A call's rows, read and sorted once for every measurement the call makes
+(contract §1.11, §1.14, §5.3–§5.7), by `_prepare_rows`. Each field is a
+pair, the ordinary kind first and the negative kind second:
+
+- `kept`: the distinct valid rows of the kind, as value indices, in
+  first-seen order.
+- `duplicates`: how many valid rows of the kind repeat an earlier one.
+- `rejected`: the rows of the kind that break an applicable rule (judged
+  under `active_rules`, so a negative row at `p` skips every rule that reads
+  `p`), and, for the negative kind, the rows with more than one `Invalid`
+  value. Each record's `index` is the row's position among the caller's rows.
+- `slots`: `slots[i][k]` is the position in `kept[i]` of the caller's row
+  `k` when it is the first appearance of a valid row of kind `i`, else 0.
+  The prefix curves of `report` read them.
+
+Nothing here depends on the strength, the groups or a limit, so `report`'s
+base and bonus measurements share one, and so do `design_sizes`'
+measurements of one design at strengths 2 and 3.
 """
-function _read_rows(context::FeasibilityContext, rows::AbstractVector)
-    space = context.space
+struct PreparedRows
+    kept::Tuple{Vector{Vector{Int}}, Vector{Vector{Int}}}
+    duplicates::Vector{Int}
+    rejected::Tuple{Vector{_Rejected}, Vector{_Rejected}}
+    slots::Tuple{Vector{Int}, Vector{Int}}
+end
+
+"""
+    _prepare_rows(space, memos, rows) -> PreparedRows
+
+Read each row with `_row_indices`, complete (§1.13), and sort it by kind and
+validity (see `PreparedRows`). A row is checked with `violated_rules`, the
+direct check alone, through the call's lazy-rule memo `memos` (§3.5,
+§12.19). That check reads no answer cache and no limit bounds it, so the
+result serves every measurement of the call.
+"""
+function _prepare_rows(space::TestSpace, memos, rows::AbstractVector)
+    context = FeasibilityContext(space, memos)   # for each row kind's rule set; nothing is searched
     kept = (Vector{Int}[], Vector{Int}[])
     duplicates = [0, 0]
     rejected = (_Rejected[], _Rejected[])
@@ -201,7 +228,7 @@ function _read_rows(context::FeasibilityContext, rows::AbstractVector)
             slots[part][k] = length(kept[part])
         end
     end
-    return kept, duplicates, rejected, slots
+    return PreparedRows(kept, duplicates, rejected, slots)
 end
 
 
@@ -439,31 +466,34 @@ function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vec
 end
 
 """
-    _measure(rows, space; strength, stronger, feasibility_limit, explanation_limit)
+    _measure(prepared, space; strength, stronger, memos, feasibility_limit, explanation_limit, curves)
         -> (coverage, prefix, negative_prefix)
 
-The measurement behind every `coverage` method and `report`. Checks the
-request (§11), reads and sorts the rows (§1.13, §1.14), then measures the
-ordinary targets (§1.8) and, when the space has `Invalid` values, the
-negative targets (§6). The targets are those of `Request(space; strength,
-stronger)`, in the same order: `_supports(groups)`, each over its ordinary
-values.
+One measurement of prepared rows, behind every `coverage` method and
+`report`. Checks the request (§11), then measures the ordinary targets
+(§1.8) and, when the space has `Invalid` values, the negative targets (§6).
+The targets are those of `Request(space; strength, stronger)`, in the same
+order: `_supports(groups)`, each over its ordinary values. The searches run
+in a `FeasibilityContext` of this measurement's own, around `memos`, the
+call's lazy-rule memo (§3.5): a call's measurements may share the memo, never
+the answer caches.
 
-`prefix[k]` is the number of ordinary targets the first `k` rows cover, from
-the same pass (each row adds the targets it is the first to hold), so
-`prefix[end] == coverage.ordinary.covered`; `negative_prefix[k]` is the same
-for the negative targets, from the negative part's marking, so
-`negative_prefix[end] == coverage.negative.covered` (§5.9, §5.10).
+With `curves`, `prefix[k]` is the number of ordinary targets the first `k`
+rows cover, from the same pass (each row adds the targets it is the first
+to hold), so `prefix[end] == coverage.ordinary.covered`; `negative_prefix[k]`
+is the same for the negative targets, from the negative part's marking, so
+`negative_prefix[end] == coverage.negative.covered` (§5.9, §5.10). Without,
+both are `nothing`: only `report`'s base measurement reads them.
 """
-function _measure(rows::AbstractVector, space::TestSpace; strength, stronger,
-                  feasibility_limit, explanation_limit)
+function _measure(prepared::PreparedRows, space::TestSpace; strength, stronger, memos,
+                  feasibility_limit, explanation_limit, curves::Bool)
     strength = _check_strength(strength, length(space.names))
     groups = _groups(space, strength, stronger)
-    context = FeasibilityContext(space; feasibility_limit)
+    context = FeasibilityContext(space, memos; feasibility_limit)
     explanation_limit = _check_limit(:explanation_limit, explanation_limit)
-    kept, duplicates, rejected, slots = _read_rows(context, rows)
     supports = _supports(groups)
-    firsts = (zeros(Int, length(kept[1])), zeros(Int, length(kept[2])))
+    kept, duplicates, rejected = prepared.kept, prepared.duplicates, prepared.rejected
+    firsts = curves ? (zeros(Int, length(kept[1])), zeros(Int, length(kept[2]))) : (nothing, nothing)
     ordinary = _measure_part(context, groups, supports, kept[1], :ordinary; explanation_limit,
                              duplicates = duplicates[1], rejected = rejected[1], firsts = firsts[1])
     negative = _measure_part(context, groups, supports, kept[2], :negative; explanation_limit,
@@ -471,11 +501,18 @@ function _measure(rows::AbstractVector, space::TestSpace; strength, stronger,
     named = Pair{Tuple{Vararg{Symbol}}, Int}[Tuple(space.names[g]) => s for (g, s) in groups[2:end]]
     c = Coverage(ordinary, negative, space, strength, named,
                  (feasibility_limit = context.feasibility_limit, explanation_limit = explanation_limit))
-    curve(part) = cumsum(Int[slot == 0 ? 0 : firsts[part][slot] for slot in slots[part]])
+    curves || return c, nothing, nothing
+    curve(part) = cumsum(Int[slot == 0 ? 0 : firsts[part][slot] for slot in prepared.slots[part]])
     return c, curve(1), curve(2)
 end
 
-_coverage(rows::AbstractVector, space::TestSpace; kwargs...) = first(_measure(rows, space; kwargs...))
+"The measurement behind `coverage`: one call, so the rows are prepared for this one measurement and memo."
+function _coverage(rows::AbstractVector, space::TestSpace; strength, stronger, feasibility_limit,
+                   explanation_limit)
+    memos = rule_memos(space.tables)
+    return first(_measure(_prepare_rows(space, memos, rows), space; strength, stronger, memos,
+                          feasibility_limit, explanation_limit, curves = false))
+end
 
 
 ## The public functions

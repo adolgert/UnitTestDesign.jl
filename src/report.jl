@@ -8,10 +8,11 @@
 # GND's seed) are copied from the result (`_guarantee`), and recorded
 # exclusions are a fallback for targets the measurement leaves unknown
 # (`_recorded_exclusions`). `design_sizes` runs each strategy and measures
-# what it produced. Neither prints a percentage when a target is unresolved
-# (§3.10, §3.12), and neither calls a case count minimal (§8.3, §8.4). With
-# `Invalid` values every figure comes in two parts, ordinary and negative,
-# measured and printed apart (§5.9, §5.10).
+# what it produced. Each call reads a set of rows once and keeps one
+# lazy-rule memo for all its measurements (§3.5). Neither prints a percentage
+# when a target is unresolved (§3.10, §3.12), and neither calls a case count
+# minimal (§8.3, §8.4). With `Invalid` values every figure comes in two
+# parts, ordinary and negative, measured and printed apart (§5.9, §5.10).
 
 
 ## report
@@ -195,11 +196,14 @@ function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_lim
     covering = cases.strategy === :covering
     strength = covering ? cases.strength : min(2, n)
     stronger = covering ? cases.stronger : Pair[]
-    rows = collect(cases)
-    c, prefix, negative = _measure(rows, cases.space; strength, stronger, feasibility_limit,
-                                   explanation_limit)
+    # One call: the rows are read once, and the base and bonus measurements
+    # share one lazy-rule memo, each with its own answer caches (§3.5).
+    memos = rule_memos(cases.space.tables)
+    prepared = _prepare_rows(cases.space, memos, collect(cases))
+    c, prefix, negative = _measure(prepared, cases.space; strength, stronger, memos, feasibility_limit,
+                                   explanation_limit, curves = true)
     recorded = covering ? _recorded_exclusions(cases, c) : Exclusion[]
-    bonus = _bonus(rows, cases.space, strength; feasibility_limit, explanation_limit)
+    bonus = _bonus(prepared, cases.space, strength; memos, feasibility_limit, explanation_limit)
     return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c,
                   [c.ordinary.excluded; c.negative.excluded], recorded, bonus,
                   _prefix_points(prefix, c.ordinary), _prefix_points(negative, c.negative), cases.seed,
@@ -230,15 +234,16 @@ function _recorded_exclusions(cases::TestCases, c::Coverage)
                      if case_indices(space, e.target) in unresolved]
 end
 
-"Coverage of `rows` at `strength + 1`, ordinary and negative, or why there is none (§3.12)."
-function _bonus(rows, space::TestSpace, strength::Int; feasibility_limit, explanation_limit)
+"Coverage of the prepared rows at `strength + 1`, ordinary and negative, or why there is none (§3.12)."
+function _bonus(prepared::PreparedRows, space::TestSpace, strength::Int; memos, feasibility_limit,
+                explanation_limit)
     n = length(space.names)
     if strength + 1 > n
         return _BonusCounts((strength + 1, 0, 0, 0, _PartCounts((0, 0, 0)), false,
             "strength $(strength + 1) exceeds the number of parameters, $n"))
     end
-    b = _coverage(rows, space; strength = strength + 1, stronger = Pair[], feasibility_limit,
-                  explanation_limit)
+    b, _ = _measure(prepared, space; strength = strength + 1, stronger = Pair[], memos, feasibility_limit,
+                    explanation_limit, curves = false)
     return _BonusCounts((strength + 1, b.ordinary.covered, b.ordinary.feasible,
                          length(b.ordinary.unknown), _part_counts(b.negative), true, ""))
 end
@@ -575,15 +580,18 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     space, _ = _space(:design_sizes, input, constraints)
     n = length(space.names)
     limits = (; feasibility_limit, explanation_limit)
+    # Every measurement of the call shares one lazy-rule memo, each with its
+    # own answer caches; each generation is a request with its own (§3.5).
+    memos = rule_memos(space.tables)
     rows = _SizeRow[]
     none = (nothing, nothing, nothing)   # the negative figures of a row with no case count
     ff = _attempt(() -> full_factorial(space; limit, limits...))
     valid = ff isa TestCases ? length(ff) : nothing
-    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, n, limits))
+    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, n; memos, limits...))
     for s in strengths
         s <= n || continue
         design = _attempt(() -> covering(space; strength = s, engine, limits...))
-        push!(rows, _size_row("covering($s)", :covering, s, design, valid, n, limits))
+        push!(rows, _size_row("covering($s)", :covering, s, design, valid, n; memos, limits...))
     end
     for d in distances
         base = from === nothing ? _default_base(space) : nothing
@@ -594,7 +602,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
             continue
         end
         design = _attempt(() -> excursions(space; distance = d, from, limits...))
-        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, n, limits))
+        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, n; memos, limits...))
     end
     return DesignSizes(copy(space.names), length(space), valid, nameof(typeof(engine)), limit,
                        _has_invalid(space), rows)
@@ -620,22 +628,33 @@ function _attempt(f)
     end
 end
 
-"The design's (ordinary, negative) coverage at strength `s`, or `(nothing, nothing)` above `n`."
-function _size_counts(cases::TestCases, s::Int, n::Int, limits)
+"""
+    _size_counts(cases, prepared, s, n; memos, feasibility_limit, explanation_limit) -> (ordinary, negative)
+
+The design's coverage counts at strength `s`, at the strength and groups
+`coverage(cases; strength = s)` measures (`_measured_request`), or
+`(nothing, nothing)` above `n`.
+"""
+function _size_counts(cases::TestCases, prepared, s::Int, n::Int; memos, feasibility_limit,
+                      explanation_limit)
     s <= n || return nothing, nothing
-    c = coverage(cases; strength = s, limits...)
+    strength, stronger = _measured_request(cases, s, nothing)
+    c, _ = _measure(prepared, cases.space; strength, stronger, memos, feasibility_limit, explanation_limit,
+                    curves = false)
     return _part_counts(c.ordinary), _part_counts(c.negative)
 end
 
-function _size_row(strategy, kind, level, design, valid, n, limits)
+function _size_row(strategy, kind, level, design, valid, n; memos, feasibility_limit, explanation_limit)
     if design isa ResourceLimitError
         message = "$(design.keyword) = $(_grouped(design.limit)) reached: $(design.what)"
         return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing,
                          nothing, nothing, nothing))
     end
     share = valid === nothing ? nothing : (valid == 0 ? nothing : length(design) / valid)
-    pairs, negative_pairs = _size_counts(design, 2, n, limits)
-    triples, negative_triples = _size_counts(design, 3, n, limits)
+    # The rows are read once for both strengths, and only when one is measured.
+    prepared = n < 2 ? nothing : _prepare_rows(design.space, memos, collect(design))
+    pairs, negative_pairs = _size_counts(design, prepared, 2, n; memos, feasibility_limit, explanation_limit)
+    triples, negative_triples = _size_counts(design, prepared, 3, n; memos, feasibility_limit, explanation_limit)
     return _SizeRow((strategy, kind, level, :ok, "", length(design), share, pairs, triples,
                      count(hasinvalid, design), negative_pairs, negative_triples))
 end

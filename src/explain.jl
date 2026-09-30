@@ -5,17 +5,22 @@
 
 
 """
-    FeasibilityContext(space; feasibility_limit = 1_000_000)
+    FeasibilityContext(space, memos = rule_memos(space.tables); feasibility_limit = 1_000_000)
 
-The feasibility searches of one public call (contract §3.5: caches are local
-to one call). It holds one `Feasibility` per row kind: ordinary
-rows, and negative rows with a given invalid value at a given parameter.
-Each has its own candidates and active rule set (§5.5), so no cached answer
-crosses from one kind to another. The lazy-rule memo (§12.19), one dict per
-lazy rule of the space in `memos`, is the call's too: every row kind's
-`Feasibility` shares it, since a verdict depends on the rule alone. Build
-one context per call and pass it to `feasibility_for`; drop it when the
-call returns, and the memo goes with it.
+The feasibility searches of one public call, or of one measurement within
+it (contract §3.5: caches are local to one call). It holds one
+`Feasibility` per row kind: ordinary rows, and negative rows with a given
+invalid value at a given parameter. Each has its own candidates and active
+rule set (§5.5), so no cached answer crosses from one kind to another. The
+lazy-rule memo (§12.19), one dict per lazy rule of the space in `memos`, is
+the call's: every row kind's `Feasibility` shares it, since a verdict
+depends on the rule alone. A call that makes several measurements, `report`
+or `design_sizes`, passes each one's context the same `memos`, while the
+answer caches in `searches` stay the context's own: an answer cache shared
+between measurements could resolve a target that a measurement alone leaves
+unknown (`_completable` keeps a solved component's witness when a later
+component runs out of budget), and so change a figure. Pass the context to
+`feasibility_for`; drop it when the call returns, and the memo goes with it.
 """
 struct FeasibilityContext
     space::TestSpace
@@ -24,10 +29,11 @@ struct FeasibilityContext
     memos::Vector{Union{Nothing, Dict}}
 end
 
-function FeasibilityContext(space::TestSpace; feasibility_limit = 1_000_000)
+function FeasibilityContext(space::TestSpace, memos = rule_memos(space.tables);
+                            feasibility_limit = 1_000_000)
     _check_limit(:feasibility_limit, feasibility_limit)
     return FeasibilityContext(space, Int(feasibility_limit),
-        Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}(), rule_memos(space.tables))
+        Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}(), memos)
 end
 
 "The lazy-rule verdicts memoized by one call so far (see `memo_size(::Feasibility)`)."
