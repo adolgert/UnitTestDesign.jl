@@ -120,6 +120,7 @@ function _check_strength(strength, n::Integer)
     return strength
 end
 
+# Instrumentation, not called in src/: benchmark/run.jl reports it, and the tests read all three methods.
 "The lazy-rule verdicts memoized by this request so far (contract §12.19)."
 memo_size(request::Request) = memo_size(request.feasibility)
 
@@ -414,6 +415,7 @@ function Base.getindex(list::TargetList, i::Int)
     return row
 end
 
+# Production iterates `TargetList` directly; this stays as a convenience for the tests.
 """
     targets(request) -> Vector{Vector{Int}}
 

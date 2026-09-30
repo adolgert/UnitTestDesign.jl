@@ -738,6 +738,7 @@ function _plain_part(space::TestSpace, part::CoveragePart)
                                    rules = copy(r.rules)) for r in part.rejected])
 end
 
+# Not called in src/: `plain` is for users, who call it qualified, as the `Report` docstring says.
 """
     plain(r::Report)
     plain(c::Coverage)

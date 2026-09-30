@@ -241,6 +241,7 @@ function Base.show(io::IO, f::Feasibility)
         " tables, ", length(f.components), " components, limit = ", f.limit, ")")
 end
 
+# Production reads `f.components` directly; this stays as a convenience for the tests.
 """
     components(f::Feasibility) -> Vector{Vector{Int}}
 

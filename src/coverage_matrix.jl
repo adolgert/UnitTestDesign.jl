@@ -166,7 +166,7 @@ covers = all(matches | irrelevant)
 
 ignores(a, b) = a == 0 && b == 0
 skips(a, b) = a != 0 && b == 0
-misses(a, b) = a == 0 && b != 0
+misses(a, b) = a == 0 && b != 0  # no caller; kept as one of the five states, which a test checks are mutually exclusive
 matches(a, b) = a != 0 && b != 0 && a == b
 mismatch(a, b) = a != 0 && b != 0 && a != b
 
