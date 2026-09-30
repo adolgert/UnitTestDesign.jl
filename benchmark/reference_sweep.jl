@@ -1,12 +1,37 @@
-# AST sweep of UnitTestDesign.jl: every function/macro/type definition in src/,
-# and every reference to it in src/, test/, benchmark/, docs/, paper/, design/.
-# Read-only on the repository. Output goes to this script's directory.
+# A reference sweep of UnitTestDesign.jl, for a person to read at a review.
+#
+#     julia benchmark/reference_sweep.jl           # the names nothing public reaches
+#     julia benchmark/reference_sweep.jl TABLE     # one table, tab-separated
+#
+# It parses every .jl file under src/, test/, benchmark/ (except this one),
+# docs/, paper/ and design/, and finds each function, macro and type that
+# src/ defines at top level and each reference to it. From the public entry
+# points (exported names, names in a docs/src @docs block, methods added to
+# other modules' functions, and module-level code) it follows references
+# within src/, and it prints each name they never reach, with its
+# definitions and its reference counts by directory. It writes no files.
+#
+# The list is for a person to judge, not a gate. Julia reaches methods
+# through dispatch, iteration protocols, callbacks and operators with no
+# textual reference to the definition; a count per name cannot tell a used
+# method from an unused method of the same function; and a name bound
+# locally is told from the global one by a heuristic.
+#
+# TABLE is one of
+#     names      every top-level name in src/: kinds, definitions, whether it is
+#                exported, documented and reachable, and references by directory
+#     refs       every reference to such a name: file, line, kind, enclosing definition
+#     shadowed   the references left out because a local binding shadows the name
+#     locals     the functions src/ defines inside other definitions
+#     callgraph  for each top-level definition in src/, the src/ names it references
+#
+# First written as probe 05a for design/components_review_verification.md
+# (section 5), which wrote these tables to files beside the script.
 
-const ROOT = "/Users/adolgert/dev/UnitTestDesign.jl"
-const OUT = @__DIR__
+const ROOT = dirname(@__DIR__)
 
 jlfiles(dir) = sort([joinpath(r, f) for (r, _, fs) in walkdir(joinpath(ROOT, dir)) for f in fs
-                     if endswith(f, ".jl") && !occursin("/docs/build", r)])
+                     if endswith(f, ".jl") && !occursin("/docs/build", r) && joinpath(r, f) != @__FILE__])
 
 const AREAS = ["src", "test", "benchmark", "docs", "paper", "design"]
 const FILES = Dict(a => jlfiles(a) for a in AREAS)
@@ -423,7 +448,9 @@ end
 
 deffiles(name) = join(sort(unique("$(rel(d.file)):$(d.line)" for d in srcdefs if d.name == name && d.local_to == "")), " ")
 
-open(joinpath(OUT, "sweep_all.tsv"), "w") do io
+# ------------------------------------------------------------------- output
+
+function names_table(io)
     println(io, join(["name", "kinds", "defs", "exported", "documented", "reachable_from_public",
                       "src_refs", "src_self", "test_refs", "benchmark_refs", "docs_refs", "paper_refs", "design_refs"], '\t'))
     for n in names
@@ -435,38 +462,56 @@ open(joinpath(OUT, "sweep_all.tsv"), "w") do io
     end
 end
 
-open(joinpath(OUT, "refs_all.tsv"), "w") do io
+function refs_table(io)
+    println(io, join(["name", "file", "line", "kind", "context"], '\t'))
     for r in refs
         r.name in defset || continue
         println(io, join([r.name, rel(r.file), r.line, r.kind, r.context], '\t'))
     end
 end
 
-open(joinpath(OUT, "shadowed_refs.tsv"), "w") do io
+function shadowed_table(io)
+    println(io, join(["name", "file", "line", "kind", "context"], '\t'))
     for r in SHADOWED
         r.name in defset || continue
         println(io, join([r.name, rel(r.file), r.line, r.kind, r.context], '\t'))
     end
 end
 
-open(joinpath(OUT, "local_defs.tsv"), "w") do io
+function locals_table(io)
+    println(io, join(["name", "kind", "file", "line", "enclosing"], '\t'))
     for d in localdefs
         println(io, join([d.name, d.kind, rel(d.file), d.line, d.local_to], '\t'))
     end
 end
 
-open(joinpath(OUT, "callgraph_src.tsv"), "w") do io
+function callgraph_table(io)
+    println(io, "definition\treferences")
     for (k, v) in sort(collect(graph); by = first)
         println(io, k, '\t', join(sort(collect(v)), ","))
     end
 end
 
-println("src top-level names: ", length(names), "; exported: ", count(in(exports), names),
-        "; reachable: ", length(intersect(reach, defset)))
-println("unreachable from public entry points (by call graph):")
-for n in names
-    n in reach && continue
-    c, self = counts(n)
-    println("  ", rpad(n, 42), rpad(deffiles(n), 60), " src=", get(c, "src", 0), " test=", get(c, "test", 0),
-            " bench=", get(c, "benchmark", 0), " docs=", get(c, "docs", 0), " kinds=", join(string.(collect(kinds[n])), ","))
+function unreachable_list(io)
+    println(io, "src top-level names: ", length(names), "; exported: ", count(in(exports), names),
+            "; reachable: ", length(intersect(reach, defset)))
+    println(io, "unreachable from public entry points (by call graph):")
+    for n in names
+        n in reach && continue
+        c, self = counts(n)
+        println(io, "  ", rpad(n, 42), rpad(deffiles(n), 60), " src=", get(c, "src", 0), " test=", get(c, "test", 0),
+                " bench=", get(c, "benchmark", 0), " docs=", get(c, "docs", 0), " kinds=", join(string.(collect(kinds[n])), ","))
+    end
+end
+
+const TABLES = Dict("names" => names_table, "refs" => refs_table, "shadowed" => shadowed_table,
+                    "locals" => locals_table, "callgraph" => callgraph_table)
+
+if isempty(ARGS)
+    unreachable_list(stdout)
+elseif length(ARGS) == 1 && haskey(TABLES, ARGS[1])
+    TABLES[ARGS[1]](stdout)
+else
+    println(stderr, "usage: julia benchmark/reference_sweep.jl [", join(sort(collect(keys(TABLES))), " | "), "]")
+    exit(2)
 end

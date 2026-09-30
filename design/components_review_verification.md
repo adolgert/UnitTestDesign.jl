@@ -261,7 +261,7 @@ All in `design/components_review_probes/`, run from the repository root with `ju
 | `03c_bonus_profile.jl` | Where `_bonus` time goes on a 30 by 5 design |
 | `03d_tabulated_rule_contrast.jl` | The same predicate as a scoped rule: 8 calls at construction, 0 afterwards |
 | `04_proof_union.jl` | Examples A, B, B reversed, C, D for the proof union; global deletion check; brute-force cross-check |
-| `05a_reference_sweep.jl` | AST sweep of definitions and references (writes TSVs into its own directory) |
+| `05a_reference_sweep.jl` | AST sweep of definitions and references (writes TSVs into its own directory). Moved to `benchmark/reference_sweep.jl` in Stage B of `design/20260928_secondary_plan.md`, where it prints to standard output |
 | `05_dead_code_summary.tsv` | The sweep's summary table |
 | `05b_classic_vs_constrained_ipog.jl` | Classic `ipog` versus `ipog_multi_way(..., Returns(false))`: sizes, equality, timing |
 | `05c_nway_vs_generate.jl` | `n_way_coverage` output equals `generate(GND)` on unconstrained cases |
