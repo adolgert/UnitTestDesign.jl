@@ -845,6 +845,203 @@ test changes are the rewritten message pins listed in step 1.
 
 Size: two sessions.
 
+### Implementation notes, part 1 (2026-09-30)
+
+On `feature/stage-c-measurement`, stacked on `feature/stage-b-dead-code`.
+Part 1 is the snapshot and step 1; steps 2 to 6 follow.
+
+**The snapshot.** `benchmark/snapshot.jl`, committed before any code
+change. For each case it prints a header naming the case and the limits;
+then every field of the result in declaration order with `repr`, one per
+line (a vector one element per line, a small record such as an `Exclusion`
+or `FollowupProof` on one line, a `TestSpace` as its one-line summary);
+then the result's own one-line `show` beside it and its `text/plain`
+display. A call that throws prints the exception's type and message. The
+corpus:
+
+- Generation, on fourteen fixed spaces and twelve drawn from
+  `Xoshiro(seed)` for seeds 1 to 12: `covering` at strengths 1 to 3 with
+  IPOG and with `GND(seed = s)`, with `stronger` groups and with
+  must-include rows, both engines; `excursions` at distances 1 and 2, and
+  from a given base with must-include rows; `full_factorial`, with
+  must-include rows and at `limit = 3`; and positional calls with tuple and
+  vector must-include rows and bases. The fixed spaces are Fable's solver
+  space (tabulated, and with every rule lazy); an `Invalid` space of three
+  parameters; one of five parameters with two `Invalid` values, a
+  whole-case rule and a `stronger` group holding both invalid parameters
+  (tabulated and lazy); partitions, written by name in must-include rows
+  and bases; a two-rule implied exclusion with a lazy rule; a whole-case
+  rule beside an `Invalid` value; a one-parameter space; probe `08a`'s
+  pigeonhole space at `feasibility_limit` 6, 10 and 14; the eight-parameter
+  limit-exhaustion space; the `Invalid` space of `test/test_report.jl` that
+  leaves 90 negative targets unresolved at `feasibility_limit = 1`; and two
+  spaces of two independent components (below).
+- Measurement: for each result generated at the default limits,
+  `coverage`, `report` and `missing_interactions` at each of the case's
+  limits, and at the default limits `coverage` one strength higher and
+  without the `stronger` groups. For each space, `coverage` and
+  `missing_interactions` of three hand-written row sets: every row of the
+  product (every k-th for the large ones), which holds rule-breaking rows
+  and rows with two `Invalid` values; a third of those drawn with a fixed
+  seed and written in turn as a reversed `NamedTuple`, a `Tuple`, a
+  `Vector{Any}` and a `NamedTuple` with partitions by name, its first three
+  rows repeated; and no rows. `design_sizes` on the fixed spaces and a third
+  of the random ones.
+- Follow-ups: `diagnose` and `followups` (both `prefer` values) on probe
+  `04`'s Examples A, A with rule 1 only, B, B reversed, B with rule 1 only,
+  C at strengths 1 and 2, and D; on six seeded outcome vectors for each of
+  the three spaces of `test_diagnose`'s random sweep at strengths 1 and 2,
+  plus the same rows written as tuples and vectors; and on an `all_pairs`
+  and a `full_factorial` result with negative rows.
+- Limits: the default; `feasibility_limit = 2, explanation_limit = 1`; and
+  `explanation_limit = 1`. The random spaces use `feasibility_limit` 1 and
+  3 instead of the last; follow-ups also use `explanation_limit = 2` and
+  `feasibility_limit = 1`.
+
+The random spaces come from a small generator in the script, not from
+`test/random_problems.jl`: that file needs the checker loaded, and its
+problems have no `Invalid` values, whole-case rules or lazy rules.
+
+It prints 4,848 cases in 320,909 lines (29 MB) in about 95 seconds. 387
+cases throw: 313 `ResourceLimitError`s and 74 `ArgumentError`s, the latter
+all excursion bases that break a rule. 4,469 printed exclusions and proofs
+are unresolved, 223 coverage parts have unknown targets, and 16 follow-ups
+are `:unknown`. Two runs print the same bytes. The first version of the
+script (without the two-component spaces), run against a worktree of
+`4d9d424`, ran unchanged, and its output differed from the Stage B head's
+in 2,364 lines, every one a `proofs` line or an inseparable follow-up's
+printed line: Stage E1's change, and nothing from Stages A or B.
+`Manifest.toml` is not tracked, so a worktree needs a copy of it (the
+script's header says so).
+
+The two-component spaces were added after a check of the snapshot's reach.
+With `_measure` patched, in a throwaway worktree, to reuse the previous
+measurement's context, answer cache included, the first version's output
+did not change; probe `03b` likewise finds no difference among its 1,600
+random cases. Decision 7's hazard needs a search that finds one
+component's witness cached and so has budget left for another. In a space
+of two independent components of four parameters, each a few nodes deep,
+the patch changes `report`'s bonus at `feasibility_limit = 4` from 10
+unresolved triples to 14, and lets `missing_interactions` return where it
+throws: 28 lines. So an answer cache shared between measurements in step 2
+shows in the diff. The baseline for this stage is the extended script run
+at the Stage B head (`78d324b`), in a worktree.
+
+**Step 1.** `_row_indices` (`src/space.jl:459-514`) and `_row_list`
+(`:522-550`), beside `case_indices`, with the helper `_cited`, and
+`_is_row`, moved from `interface.jl`. Callers, each with the table's
+`what`, `section` and `complete`: `_read_rows` (`src/measure.jl:185`),
+`diagnose` (`src/diagnose.jl:194`), `_must_include_matrix`
+(`src/request.jl:205`), `excursion_base` (`src/excursions.jl:106`),
+`isallowed` (`src/explain.jl:140`), `explain` (`:244`) and `_classify_one`
+(`:382`); `_row_list` in `coverage` (`src/measure.jl:588`),
+`_diagnosis_input` (`src/diagnose.jl:226`) and `_must_include_rows`
+(`src/interface.jl:101`).
+`_coverage_rows`, `_coverage_row` and `_diagnosis_row` are gone, and so
+are the shape checks of `_from_row` and the reading half of
+`excursion_base`. Adjustments, and why:
+
+- **The name and value error has no section.** It is "WHAT: " and
+  `case_indices`'s message, unchanged. The step says each error ends with
+  the section, but it also lists `test/test_interface.jl:659-662` (at
+  `4d9d424`) among the pins that keep passing, and `:659-660` compares the
+  whole message, which has none. `case_indices`'s value message also ends
+  with a period and can cite §2.1 itself, so a suffix would read "…
+  (contract §2.1). (contract §7.6)". The other three errors end with the
+  section.
+- **`_row_list` takes `section` too**, so that `coverage`'s and
+  `must_include`'s "not a collection" messages keep their "(contract
+  §1.12)" and "(contract §10.1)". `fix` receives the row, not its text, so
+  `diagnose` keeps its 60-character cut inside its own `fix`.
+- **`diagnose`'s collection messages take the common form.** "Wrap a
+  single case in a vector" became "wrap a single row in a vector", the
+  phrase the step gives; "diagnose takes a TestCases or a vector of cases;
+  got …" became "diagnose takes a collection of cases, such as a vector of
+  NamedTuples or tuples; got …", no longer cut to 60 characters. The
+  shared reader also brings `coverage`'s rules: a tuple of rows is now a
+  collection (`diagnose` refused any `Tuple` as a single case), and a
+  vector none of whose elements is a row is a single row ("wrap …") rather
+  than "diagnose case 1 is a …".
+- **The missing-value message shows the whole row**, `repr(row)`, as
+  `coverage`'s did; `diagnose`'s cut it with `_fit`, which lives in
+  `testcases.jl`, and `space.jl` would have had to reach forward for it.
+- **`isallowed` loses its hint.** "… Use explain for a partial assignment"
+  is not in the common wording; the docstring still says it. Worth your
+  decision whether the reader should take a hint.
+- **`_from_row` keeps two rules and no shape checks**: a positional call
+  refuses a `NamedTuple`, and a vector becomes a `Tuple`, so that
+  `excursion_base` never reads a vector of values as engine positions. The
+  shape errors therefore now come from `excursion_base`, after the
+  `Request` has checked the must-include rows, where the name and value
+  errors already came from. Only a call with both a malformed `from` and a
+  bad must-include row sees a different first error.
+- **`excursion_base`** keeps `AbstractVector{<:Integer}` as engine positions
+  and passes anything else to the reader, so a vector of values of another
+  element type, reachable only through the internal `generate_excursion`,
+  is now read as values rather than refused. `excursions` passes tuples.
+- **`isallowed` and `explain` drop their argument types** rather than add
+  `AbstractVector`, so a non-row is the reader's `ArgumentError`, as for
+  every other caller, not a `MethodError`. This is decision 5, in its own
+  commit.
+- **`_classify_one` keeps its `NamedTuple` check**, the unexported
+  `classify`'s own rule, so for it the reader's first two errors never
+  arise.
+- **`coverage`'s space-first check** moved from `_coverage_rows` into
+  `coverage`, at the same point, after the space is built, so errors keep
+  their order.
+
+Rewritten pins, each deliberately, in the commit that changes the wording
+(lines in the current tree):
+- `test/test_interface.jl:691, 693` (`:652-655` at `4d9d424`), the wrong
+  length: "`from` has 2 values; the space has 3 parameters, p1, p2, p3, and
+  the base is a complete row (contract §7.6)" → "the excursion base `from`
+  has 2 values; the space has 3 parameters (p1, p2, p3) (contract §7.6)",
+  and the same for 4 values.
+- `test/test_interface.jl:701-703` (`:663-665`), not a row: "`from` is the
+  base row: a complete NamedTuple, or a tuple of values in parameter order;
+  got a Dict{Symbol, Int64} (contract §7.6)" → "the excursion base `from`
+  is a Dict{Symbol, Int64}; a row is a NamedTuple, or a tuple or vector with
+  one value per parameter (contract §7.6)".
+- `test/test_interface.jl:435` (`:435`): the fragment "`from` is the base
+  row" → "the excursion base `from` is a Symbol".
+- `test/test_interface.jl:432` and `test/test_excursions.jl:152`, a partial
+  base, not in the step's list: "the excursion base `from` must be a
+  complete row (contract §7.6); it has no value for b, c" → "the excursion
+  base `from`, (a = 1,), has no value for `b` and `c`; it must name every
+  parameter (contract §7.6)". The fragments were "complete row"; now "it
+  must name every parameter" and "has no value for `b` and `c`".
+- `test/test_explain.jl:193-194`, `isallowed` given a partial case, not in
+  the list: "isallowed takes a complete case, but (n = 1, m = :a) has no
+  value for k. Use explain for a partial assignment (contract §1.25)." →
+  "the case, (n = 1, m = :a), has no value for `k`; it must name every
+  parameter (contract §1.25)". The pin now compares the whole message.
+- `test/test_diagnose.jl:760`, not in the list: "wrap a single case in a
+  vector" → "wrap a single row in a vector".
+
+Every other pin the step lists still passes, and the full suite found no
+other.
+
+New items: "space: the row reader and its four input errors"
+(`test/test_space.jl:284`) checks the shapes, each error with and without a
+section, and `_row_list` on an iterator that can be read once, a single row
+in each form, and a non-collection. "every row a caller writes is read by
+one reader, whose errors read alike" (`test/test_interface.jl:724`) gives
+`coverage`, `diagnose`, `must_include`, `from`, `isallowed` and `explain`
+the same five malformed rows and checks the same five messages, with each
+caller's `what` and section, and the partial row only where it must be
+complete. "isallowed and explain: a vector is read as the tuple of the same
+values" (`test/test_explain.jl:216`) checks every row of a space with
+partitions, two `Invalid` values and a whole-case rule, tabulated and lazy:
+a vector, also with partitions by name, gives the tuple's and the
+`NamedTuple`'s `isallowed` answer and the tuple's `Explanation` field by
+field; a malformed vector is refused in the tuple's words; and a vector of
+integers is values, not positions, in a domain where the two differ.
+
+Verification: the snapshot at the step 1 head is byte-identical to the
+Stage B head's. The full suite passed with 343,899 passes and no failures
+(the count moves with the three time-boxed items), and the docs build exits
+0.
+
 ## Stage D: the negative sub-request projection and shared target order (after C)
 
 Goal: the negative sub-request has one owner and fails loudly when it is
