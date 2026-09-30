@@ -2,12 +2,16 @@
 # and 4; contract §1.12, §1.23, §3.10, §3.12, §7.7, §8.3, §8.4).
 #
 # `report` is where verification happens (§1.23): it measures a result's rows
-# with `coverage` machinery (measure.jl), never trusting the bookkeeping, and
-# adds bonus coverage at strength + 1 and the prefix curve. `design_sizes`
-# runs each strategy and measures what it produced. Neither prints a
-# percentage when a target is unresolved (§3.10, §3.12), and neither calls a
-# case count minimal (§8.3, §8.4). With `Invalid` values every figure comes in
-# two parts, ordinary and negative, measured and printed apart (§5.9, §5.10).
+# with `coverage` machinery (measure.jl) instead of reading the recorded
+# counts, and adds bonus coverage at strength + 1 and the prefix curve. The
+# guarantee line's other parts (must-include rows, an excursion's notes,
+# GND's seed) are copied from the result (`_guarantee`), and recorded
+# exclusions are a fallback for targets the measurement leaves unknown
+# (`_recorded_exclusions`). `design_sizes` runs each strategy and measures
+# what it produced. Neither prints a percentage when a target is unresolved
+# (§3.10, §3.12), and neither calls a case count minimal (§8.3, §8.4). With
+# `Invalid` values every figure comes in two parts, ordinary and negative,
+# measured and printed apart (§5.9, §5.10).
 
 
 ## report
@@ -26,9 +30,13 @@ coverage, the exclusions, bonus coverage, and the prefix curve.
 
 What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
 
-- `guarantee::String`: the claim the rows meet, checked by measuring them,
-  such as "5 cases cover all 11 feasible pairs of a 12-combination space (3
-  pairs forbidden, 2 impossible under the constraints)".
+- `guarantee::String`: the claim the rows meet, its coverage figures
+  measured from the rows, such as "5 cases cover all 11 feasible pairs of a
+  12-combination space (3 pairs forbidden, 2 impossible under the
+  constraints)". The rest of the line is what the result recorded at
+  generation (§1.19): the must-include rows kept first, an excursion's
+  distance, base, dropped rows and values that never appear, a full
+  factorial's "every valid row", and GND's seed.
 - `strategy::Symbol`, `n_cases::Int`, `engine::Symbol`, `seed`,
   `n_must_include::Int`: as the result recorded them.
 - `strength::Int`: the strength measured: the result's, or `min(2, number of
@@ -97,19 +105,19 @@ end
 
 """
 Use when you want to check what a generated result promises and see the
-evidence: the guarantee measured from the rows, what the rules excluded and why,
-bonus coverage at the next strength, and how coverage grows over the first
-cases.
+evidence: the guarantee, with its coverage figures measured from the rows, what
+the rules excluded and why, bonus coverage at the next strength, and how
+coverage grows over the first cases.
 
     report(cases::TestCases; feasibility_limit = 1_000_000,
            explanation_limit = 1_000_000) -> Report
 
 Check what a generated result promises and say it in one line, with the
-evidence (contract §1.23): the guarantee, measured from the rows; the targets
-excluded, each with the rules that exclude it; bonus coverage at the next
-strength; the prefix curve, how much the first rows cover, for suites that
-run only part of the cases; and the seed. `show` prints only what generation
-recorded; `report` recounts.
+evidence (contract §1.23): the guarantee, its coverage figures measured from
+the rows; the targets excluded, each with the rules that exclude it; bonus
+coverage at the next strength; the prefix curve, how much the first rows
+cover, for suites that run only part of the cases; and the seed. `show`
+prints only what generation recorded; `report` recounts.
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> space = TestSpace(

@@ -442,10 +442,10 @@ coverage(cases)
 iscomplete(coverage(cases))
 ```
 
-[`report`](@ref) is the full account: the guarantee, measured from the rows;
-each excluded combination with the rules that exclude it; the triples the
-pairwise design covers as a bonus; how much the first cases cover, for a suite
-that runs only some of them; and the seed.
+[`report`](@ref) is the full account: the guarantee, its coverage figures
+measured from the rows; each excluded combination with the rules that exclude
+it; the triples the pairwise design covers as a bonus; how much the first
+cases cover, for a suite that runs only some of them; and the seed.
 
 ```@example tutorial
 report(cases)
