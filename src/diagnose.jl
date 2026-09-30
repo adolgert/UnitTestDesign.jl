@@ -12,7 +12,8 @@
 # and negative at each invalid value the suspect leaves room for, §5.5).
 # Every other suspect becomes a temporary forbidden table, `RuleTable(scope,
 # Set([values]))`, for those searches; the space's own tables and its
-# lazy-rule memos are shared, never changed (§3.5).
+# lazy-rule memos are shared, never changed (§3.5). A suspect proven
+# inseparable keeps each kind's proof (`FollowupProof`) beside their union.
 
 
 ## diagnose
@@ -408,6 +409,40 @@ end
 ## followups
 
 """
+    FollowupProof
+
+One kind of case's proof in an `:inseparable`
+[`Followup`](@ref UnitTestDesign.Followup): no valid case of that kind holds
+the suspect without another suspect (§3.17). Fields:
+
+- `searched::NamedTuple`: the kind of case, as `Followup.searched` names it:
+  `NamedTuple()` for ordinary cases, and `(p = v,)` for negative cases with
+  the invalid value `v` at `p`.
+- `rules::Vector{Int}`, `labels::Vector{String}`: the space's rules in the
+  proof, as positions in its `constraints`, ascending, and their labels.
+  Only rules that apply to this kind of case appear (§5.5, §5.6).
+- `others::Vector{NamedTuple}`: the other suspects in the proof, in rank
+  order, of which every valid case of this kind holding the suspect holds
+  at least one.
+- `minimal::Symbol`: `:verified` when each rule and suspect in the proof
+  was shown to be needed for this kind of case (§3.16), `:unresolved` when
+  a limit stopped that check (the proof still stands, §3.15), and
+  `:not_applicable` when the proof is direct: the suspect's values, with
+  this kind's invalid value, already break each rule listed and hold each
+  suspect listed, so no deletion search ran.
+- `limit`: for `:unresolved`, the limit that stopped the check, as
+  `keyword => value`; otherwise `nothing`.
+"""
+struct FollowupProof
+    searched::NamedTuple
+    rules::Vector{Int}
+    labels::Vector{String}
+    others::Vector{NamedTuple}
+    minimal::Symbol
+    limit::Union{Nothing, Pair{Symbol, Int}}
+end
+
+"""
     Followup
 
 One suspect's follow-up from [`followups`](@ref). Fields:
@@ -425,23 +460,37 @@ One suspect's follow-up from [`followups`](@ref). Fields:
   parameters differ from it; 0 changes means that failing case already
   holds this suspect and no other. 0 and -1 otherwise.
 - `others::Vector{NamedTuple}`: for `:indistinguishable`, the suspects this
-  one contains; for `:inseparable`, the other suspects in the proof, of
-  which every valid case holding this one holds at least one. Otherwise
-  empty.
+  one contains; for `:inseparable`, the other suspects in any kind's proof,
+  in rank order, of which every valid case holding this one holds at least
+  one. Otherwise empty.
 - `rules::Vector{Int}`, `labels::Vector{String}`: for `:inseparable`, the
-  space's rules in the proof, as positions in its `constraints`, and their
-  labels.
-- `minimal::Symbol`: for `:inseparable`, `:verified` when each rule and
-  suspect in the proof was shown to be needed for the kind of case whose
-  search it is part of, `:unresolved` when a limit stopped that check (the
-  proof still stands, §3.15), and `:not_applicable` otherwise.
-- `limit`: `keyword => value` for the limit that made the status `:unknown`
-  or left an explanation `:unresolved`; otherwise `nothing`.
+  space's rules in any kind's proof, as positions in its `constraints`,
+  ascending, and their labels.
+- `minimal::Symbol`: for `:inseparable`, combined from `proofs`:
+  `:unresolved` when any proof is, `:verified` when every proof is, and
+  `:not_applicable` otherwise, so a kind with a direct proof
+  (`:not_applicable`) makes it `:not_applicable` unless another kind is
+  unresolved. Minimality is judged within each kind of case: `:verified`
+  says that each rule and suspect was shown to be needed for the kind whose
+  proof it is part of, not that the union is minimal. `:not_applicable`
+  when there are no proofs, and for every other status.
+- `limit`: `keyword => value` for the limit that made the status
+  `:unknown`, or, for `:inseparable`, that left a proof `:unresolved` (the
+  first such proof, in the order of `searched`); otherwise `nothing`.
 - `searched::Vector{NamedTuple}`: the kinds of case searched, in the order
   searched: `NamedTuple()` for ordinary cases, and `(p = v,)` for negative
   cases with the invalid value `v` at `p`. For `:inseparable`, every kind
   that could hold the suspect, each proven to hold no isolating case. Empty
   for `:indistinguishable` and for a suspect with two `Invalid` values.
+- `proofs::Vector{FollowupProof}`: for `:inseparable`, one
+  [`FollowupProof`](@ref UnitTestDesign.FollowupProof) per kind searched, in
+  the same order, so `proofs[i].searched == searched[i]`. `others`, `rules`
+  and `labels` above are the union of the proofs: sufficient for every kind,
+  but not necessarily minimal as a whole, since each kind's deletion search
+  runs on its own. Empty for every other status, and for a suspect with two
+  `Invalid` values, which is `:inseparable` without a search. A `:found`
+  suspect has none even when a kind searched before the case was found was
+  proven.
 """
 struct Followup
     suspect::NamedTuple
@@ -456,12 +505,15 @@ struct Followup
     minimal::Symbol
     limit::Union{Nothing, Pair{Symbol, Int}}
     searched::Vector{NamedTuple}
+    proofs::Vector{FollowupProof}
 end
 
 "A `Followup` with no case: every field but those given takes its empty value."
 _no_case(suspect::NamedTuple, status::Symbol; others = NamedTuple[], rules = Int[], labels = String[],
-         minimal = :not_applicable, limit = nothing, searched = NamedTuple[]) =
-    Followup(suspect, status, nothing, :none, 0, -1, others, rules, labels, minimal, limit, searched)
+         minimal = :not_applicable, limit = nothing, searched = NamedTuple[],
+         proofs = FollowupProof[]) =
+    Followup(suspect, status, nothing, :none, 0, -1, others, rules, labels, minimal, limit, searched,
+             proofs)
 
 "Failing cases each suspect's `:nearest` search starts from, at most."
 const _FOLLOWUP_STARTS = 5
@@ -497,12 +549,19 @@ rank order, and each has a `status`:
   The smaller suspect's follow-up is the case to run.
 - `:inseparable`: proven by exhausted searches: under the space's rules, no
   valid case of any kind, ordinary or negative, holds the suspect without
-  another suspect. `searched` lists the kinds of case proven. `others`
-  lists the suspects in the proof and `rules` and `labels` the space's
-  rules, found by the deletion search of `explain` (§3.13–§3.16), so the
-  pair of them is a sufficient reason, and `minimal` says whether each part
-  was verified necessary. With no `others`, no valid case holds the suspect
-  at all: the failing cases broke the rules.
+  another suspect. `searched` lists the kinds of case proven, and `proofs`
+  holds each kind's proof, a
+  [`FollowupProof`](@ref UnitTestDesign.FollowupProof): the other suspects
+  and the space's rules that suffice to exclude an isolating case of that
+  kind, as `explain` names them (§3.13–§3.16), and whether each part was
+  verified necessary for that kind. `others`, `rules` and `labels` are the
+  union of the proofs, sufficient for every kind but not necessarily
+  minimal as a whole, since each kind's search runs on its own. So
+  `minimal` is judged per kind of case: `:verified` says that every kind's
+  proof is minimal for that kind, not that the union is. When the kinds'
+  proofs differ, the printed line gives each one instead of the union. With
+  no `others`, no valid case holds the suspect at all: the failing cases
+  broke the rules.
 - `:unknown`: the search reached `feasibility_limit` before deciding
   (§3.17). Retry with a larger limit.
 
@@ -682,12 +741,15 @@ function _followup(d::Diagnosis, j::Int, isolation::Vector{RuleTable}, memos, li
     end
     if best !== nothing
         return Followup(s.combination, :found, from_indices(space, best.witness), best.kind, best.from,
-                        best.changes, NamedTuple[], Int[], String[], :not_applicable, nothing, searched)
+                        best.changes, NamedTuple[], Int[], String[], :not_applicable, nothing, searched,
+                        FollowupProof[])
     elseif length(proofs) < length(kinds)
         feasibility_limit = first(limits)
         return _no_case(s.combination, :unknown; limit = :feasibility_limit => feasibility_limit, searched)
     end
-    # Every kind is proven to hold no isolating case: the proof is the union of theirs.
+    # Every kind is proven to hold no isolating case, so `proofs[i]` is the proof of
+    # `searched[i]`. Each is kept, and the union of theirs is sufficient for every
+    # kind, though not necessarily minimal as a whole.
     rules = sort!(unique(Int[r for proof in proofs for r in proof.rules]))
     proof_others = sort!(unique(Int[i for proof in proofs for i in proof.others]))
     minimals = [proof.minimal for proof in proofs]
@@ -697,8 +759,15 @@ function _followup(d::Diagnosis, j::Int, isolation::Vector{RuleTable}, memos, li
     limit = unresolved === nothing ? nothing : proofs[unresolved].limit
     return _no_case(s.combination, :inseparable;
                     others = NamedTuple[suspects[i].combination for i in proof_others], rules,
-                    labels = [rule_label(space, k) for k in rules], minimal, limit, searched)
+                    labels = [rule_label(space, k) for k in rules], minimal, limit, searched,
+                    proofs = FollowupProof[_followup_proof(d, kind, proof)
+                                           for (kind, proof) in zip(searched, proofs)])
 end
+
+"One kind's proof from `_isolate`, with its rules labeled and its other suspects named."
+_followup_proof(d::Diagnosis, searched::NamedTuple, proof) =
+    FollowupProof(searched, proof.rules, [rule_label(d.space, k) for k in proof.rules],
+                  NamedTuple[d.suspects[i].combination for i in proof.others], proof.minimal, proof.limit)
 
 "`values` with `v` moved to the front when it is one of them; otherwise unchanged."
 function _value_first(values::Vector{Int}, v::Int)
@@ -716,6 +785,33 @@ function _kinds_phrase(io::IO, searched::Vector{NamedTuple})
     return join(parts, " and ")
 end
 
+"""
+    _print_proof(io, rules, labels, others, minimal, limit)
+
+One inseparable proof, after "inseparable; " or "in KIND, ": "no valid case
+holds it: …" when it names no other suspect, otherwise "every valid case
+holding it also holds …, under …", each followed by the limit that left it
+unresolved, if one did.
+"""
+function _print_proof(io::IO, rules, labels, others, minimal::Symbol, limit)
+    if isempty(others)
+        print(io, "no valid case holds it: ")
+        _print_exclusion(io, rules, labels, minimal, limit)
+        return nothing
+    end
+    print(io, "every valid case holding it also holds ",
+          _listed([_exact(io, o) for o in others]; conjunction = " or "))
+    if !isempty(rules)
+        print(io, ", under ", length(rules) == 1 ? _rule_phrase(only(rules), only(labels)) :
+                  _rule_numbers(rules) * " " * _rule_details(rules, labels))
+    end
+    if minimal === :unresolved
+        print(io, " (whether each is needed is unresolved: ", limit.first, " = ",
+              _grouped(limit.second), " reached)")
+    end
+    return nothing
+end
+
 function Base.show(io::IO, f::Followup)
     print(io, _exact(io, f.suspect), ": ")
     if f.status === :found
@@ -730,25 +826,21 @@ function Base.show(io::IO, f::Followup)
               _listed([_exact(io, o) for o in f.others]))
     elseif f.status === :inseparable
         print(io, "inseparable; ")
-        if isempty(f.others) && isempty(f.rules)
+        if isempty(f.proofs)
             print(io, "it has more than one Invalid value, and a case holds at most one")
-        elseif isempty(f.others)
-            print(io, "no valid case holds it: ")
-            _print_exclusion(io, f.rules, f.labels, f.minimal, f.limit)
+        elseif all(p -> length(p.rules) == length(f.rules) && length(p.others) == length(f.others),
+                   f.proofs)
+            # One proof, or several that each equal the union (each is part of it, so
+            # one as large is equal to it): the union's line, naming the kinds searched.
+            _print_proof(io, f.rules, f.labels, f.others, f.minimal, f.limit)
+            length(f.searched) > 1 && print(io, "; searched ", _kinds_phrase(io, f.searched))
         else
-            print(io, "every valid case holding it also holds ",
-                  _listed([_exact(io, o) for o in f.others]; conjunction = " or "))
-            if !isempty(f.rules)
-                print(io, ", under ", length(f.rules) == 1 ? _rule_phrase(only(f.rules), only(f.labels)) :
-                          _rule_numbers(f.rules) * " " * _rule_details(f.rules, f.labels))
-            end
-            if f.minimal === :unresolved
-                print(io, " (whether each is needed is unresolved: ", f.limit.first, " = ",
-                      _grouped(f.limit.second), " reached)")
+            # Proofs that differ: the union need not be minimal, so each kind's proof is printed.
+            for (i, p) in enumerate(f.proofs)
+                print(io, i == 1 ? "" : "; ", "in ", _kinds_phrase(io, NamedTuple[p.searched]), ", ")
+                _print_proof(io, p.rules, p.labels, p.others, p.minimal, p.limit)
             end
         end
-        # An ordinary suspect beside Invalid values: say which kinds of case the proof covers.
-        length(f.searched) > 1 && print(io, "; searched ", _kinds_phrase(io, f.searched))
     else
         print(io, "unknown; ", f.limit.first, " = ", _grouped(f.limit.second),
               " reached; retry with a larger limit")
