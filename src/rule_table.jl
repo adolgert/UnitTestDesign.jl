@@ -33,10 +33,12 @@ when its scope has at most `tabulation_limit` combinations of ordinary values
 a table holds at most 12.5 KB of bits. The table of a single tuple, such as
 the isolation tables of `followups`, holds one bit.
 
-A lazy table is a function `lazy` from an `NTuple{N,Int}` of value indices
-(in scope order) to `Bool` (`true` = forbidden); `low`, `radix` and
-`forbidden` are empty. A whole-case rule has `scope == 1:arity` and is always
-lazy (contract §12.20).
+A lazy table is a function `lazy` from the scope's value indices, a
+`Vector{Int}` in scope order, to `Bool` (`true` = forbidden); `low`, `radix`
+and `forbidden` are empty. A whole-case rule has `scope == 1:arity` and is
+always lazy (contract §12.20). `lazy` is the one field whose type is not
+concrete, so evaluating a lazy rule is one dynamic call; a space's lazy rules
+are `_LazyRule`s (constraints.jl), whose evaluation is concrete behind it.
 
 A table holds no state that an operation changes: `lazy` evaluates the
 predicate each time it is called. The memo of a lazy rule's verdicts
@@ -123,7 +125,7 @@ verdicts for the operation.
 """
 function forbids(table::RuleTable, partial::AbstractVector{<:Integer})
     table.lazy === nothing && return _forbidden_bit(table, partial)
-    return table.lazy(ntuple(k -> Int(partial[table.scope[k]]), length(table.scope)))::Bool
+    return table.lazy(Int[partial[p] for p in table.scope])::Bool
 end
 
 "A tabulated table's verdict on `partial`: its bit for the scoped values, `false` outside its box."

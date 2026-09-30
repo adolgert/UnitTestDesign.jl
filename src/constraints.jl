@@ -254,29 +254,6 @@ function Base.showerror(io::IO, e::ConstraintError)
 end
 
 
-"""
-    _evaluate_rule(rule, ref, argnames, args) -> Bool
-
-Evaluate one rule on the values it sees (`args`, in scope order, partitions
-as names). `argnames` are the names of those values, used for the whole-case
-`NamedTuple` and for error messages; `ref` names the rule. A non-`Bool` result
-is an `ArgumentError` (§12.15); an exception is rethrown as a
-[`ConstraintError`](@ref) (§12.16).
-"""
-function _evaluate_rule(c::Constraint, ref::String, argnames::Tuple{Vararg{Symbol}}, args::Tuple)
-    verdict = try
-        isempty(c.scope) ? c.predicate(NamedTuple{argnames}(args)) : c.predicate(args...)
-    catch err
-        err isa InterruptException && rethrow()
-        throw(ConstraintError(ref, NamedTuple{argnames}(args), err))
-    end
-    verdict isa Bool || throw(ArgumentError(
-        "$ref returned $(repr(verdict)), which is not a Bool, for $(NamedTuple{argnames}(args)). " *
-        "A rule must return true or false (contract §12.15)."))
-    return verdict
-end
-
-
 ## Checking rules against a space and tabulating them
 
 "The rules given as `constraints`, as a fresh `Vector{Constraint}`."
@@ -335,7 +312,8 @@ indices in scope order, so the first parameter of the scope varies fastest.
 A larger scope is evaluated lazily, memoized per operation by the
 `Feasibility` that asks (§12.19), and the package warns once for that rule.
 A whole-case rule is always lazy, with no warning; its table's scope is
-every parameter.
+every parameter. Tabulation and a lazy table evaluate the rule the same way,
+through its `_LazyRule`.
 
 Only ordinary values are tabulated, and predicates receive them as
 [`rule_value`](@ref)s (a partition by its name, never an `Invalid`: §5.8,
@@ -352,6 +330,7 @@ function _tabulate(c::Constraint, position::Int, names::Vector{Symbol}, values::
         return RuleTable(collect(1:length(names)), _LazyRule(c, ref, Tuple(names), values))
     end
     scope = [findfirst(==(name), names)::Int for name in c.scope]
+    rule = _LazyRule(c, ref, c.scope, values[scope])
     count = prod(BigInt(length(ordinary[p])) for p in scope)
     if count > tabulation_limit
         @warn("$(ref) reads $(join(c.scope, ", ")), whose $(count) combinations of values " *
@@ -359,28 +338,45 @@ function _tabulate(c::Constraint, position::Int, names::Vector{Symbol}, values::
               "lazily, as rows need it, which can be slow. A rule over fewer parameters is " *
               "cheaper: split it into narrower rules if you can, or raise tabulation_limit " *
               "(contract §12.19).")
-        return RuleTable(scope, _LazyRule(c, ref, c.scope, values[scope]))
+        return RuleTable(scope, rule)
     end
-    return RuleTable(scope, _forbidden_set(Val(length(scope)), c, ref, scope, values, ordinary))
+    return RuleTable(scope, _forbidden_set(Val(length(scope)), rule, ordinary[scope]))
 end
 
-function _forbidden_set(::Val{N}, c::Constraint, ref::String, scope::Vector{Int},
-                        values::Vector{AbstractVector}, ordinary::Vector{Vector{Int}}) where {N}
-    forbidden = Set{NTuple{N,Int}}()
-    domains = ntuple(k -> values[scope[k]], Val(N))
-    for key in Iterators.product(ntuple(k -> ordinary[scope[k]], Val(N))...)
-        args = ntuple(k -> rule_value(domains[k][key[k]]), Val(N))
-        _evaluate_rule(c, ref, c.scope, args) && push!(forbidden, key)
+# The combinations of the `ordinary` value indices of a rule's scope that
+# `rule`, its `_LazyRule`, forbids. Compiled once per scope length: each call
+# of `rule` is one dynamic call, into code specialized for the rule.
+function _forbidden_set(::Val{N}, @nospecialize(rule), ordinary::Vector{Vector{Int}}) where {N}
+    forbidden = Set{NTuple{N, Int}}()
+    key = zeros(Int, N)
+    for combination in Iterators.product(ntuple(k -> ordinary[k], Val(N))...)
+        key .= combination
+        rule(key)::Bool && push!(forbidden, combination)
     end
     return forbidden
 end
 
 
 """
-The lazy form of a rule (contract §12.19, §12.20): a function from a tuple of
-value indices, in scope order, to `true` when forbidden. Each call evaluates
-the predicate: a non-`Bool` result is an `ArgumentError` and an exception a
-`ConstraintError` (§12.15, §12.16), as in tabulation.
+    _LazyRule(rule, ref, names, domains)
+
+A rule as a function of value indices (contract §12.19, §12.20): called with
+the value indices of its scope, a `Vector{Int}` in scope order, it returns
+`true` when the rule forbids the values they index. `names` are the names of
+those `N` values and `domains` their parameters' domains; `ref` names the rule
+in errors. Each call evaluates the predicate on the values as rules see them
+(`rule_value`), positionally for a scoped rule and as one `NamedTuple` for a
+whole-case rule. A non-`Bool` result is an `ArgumentError` (§12.15) and an
+exception is rethrown as a [`ConstraintError`](@ref) (§12.16). An `Invalid`
+value is an internal error: rules never see one (§5.8).
+
+The names `Names`, whether the rule is a whole-case rule (`Whole`), the
+predicate's type `F` and the domains' types `D` are type parameters, so the
+one dynamic call that reaches a rule (`table.lazy(key)` on a memo miss, or
+one per combination when tabulating) lands in code that is concrete as far as
+the domains' element types are, and each rule compiles only the call it
+makes. That compilation, a few milliseconds per rule, is the price of a fast
+evaluation: under 10 ns for a predicate that allocates nothing.
 
 It keeps no memo. The verdicts are memoized per operation by the
 `Feasibility` that asks (feasibility.jl: one generation request, or one call
@@ -390,23 +386,50 @@ each design it generates is a separate generation request with its own), so
 the memo is released with the operation and a `TestSpace` retains nothing
 from any call (§3.5, §12.19).
 """
-struct _LazyRule{N} <: Function
-    rule::Constraint
+struct _LazyRule{N, Names, Whole, F, D <: Tuple} <: Function
+    predicate::F
     ref::String
-    names::NTuple{N,Symbol}
-    domains::Vector{AbstractVector}
+    domains::D
 end
 
-_LazyRule(c::Constraint, ref::String, names::NTuple{N,Symbol}, domains) where {N} =
-    _LazyRule{N}(c, ref, names, collect(AbstractVector, domains))
+function _LazyRule(c::Constraint, ref::String, names::NTuple{N, Symbol}, domains) where {N}
+    d = Tuple(domains)
+    return _LazyRule{N, names, isempty(c.scope), typeof(c.predicate), typeof(d)}(c.predicate, ref, d)
+end
 
-function (r::_LazyRule{N})(key::NTuple{N,Int}) where {N}
-    args = ntuple(Val(N)) do k
-        value = r.domains[k][key[k]]
-        value isa Invalid && throw(ArgumentError(
-            "internal error: $(r.ref) was consulted with the invalid value " *
-            "$(repr(value)) of `$(r.names[k])`; rules never see an Invalid (contract §5.8)"))
-        rule_value(value)
+function (r::_LazyRule{N, Names, Whole})(key::AbstractVector{<:Integer}) where {N, Names, Whole}
+    args = _rule_arguments(r.ref, Val(Names), r.domains, key)
+    verdict = try
+        Whole ? r.predicate(NamedTuple{Names}(args)) : r.predicate(args...)
+    catch err
+        err isa InterruptException && rethrow()
+        _threw(r.ref, NamedTuple{Names}(args), err)
     end
-    return _evaluate_rule(r.rule, r.ref, r.names, args)
+    verdict isa Bool || _not_a_bool(r.ref, NamedTuple{Names}(args), verdict)
+    return verdict
+end
+
+# The errors of a rule's evaluation, apart so that the code compiled for each
+# rule stays small.
+@noinline _threw(ref::String, @nospecialize(arguments::NamedTuple), @nospecialize(err)) =
+    throw(ConstraintError(ref, arguments, err))
+
+@noinline _not_a_bool(ref::String, @nospecialize(arguments::NamedTuple), @nospecialize(verdict)) =
+    throw(ArgumentError("$ref returned $(repr(verdict)), which is not a Bool, for $arguments. " *
+                        "A rule must return true or false (contract §12.15)."))
+
+# The values that `key` indexes, as rules see them. Apart from the rule's call,
+# and not specialized on the predicate, so that rules over the same parameters
+# share it.
+@noinline function _rule_arguments(ref::String, ::Val{Names}, domains::Tuple,
+                                   key::AbstractVector{<:Integer}) where {Names}
+    return ntuple(j -> _seen_value(ref, Names[j], domains[j][key[j]]), Val(length(Names)))
+end
+
+"What the rule `ref` sees for `value` of parameter `name`: its `rule_value`, never an `Invalid` (§5.8)."
+function _seen_value(ref::String, name::Symbol, value)
+    value isa Invalid && throw(ArgumentError(
+        "internal error: $(ref) was consulted with the invalid value " *
+        "$(repr(value)) of `$name`; rules never see an Invalid (contract §5.8)"))
+    return rule_value(value)
 end

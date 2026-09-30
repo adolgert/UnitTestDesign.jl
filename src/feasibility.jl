@@ -89,6 +89,25 @@ SearchStats() = SearchStats(0, 0, 0, 0, 0)
 
 
 """
+    RuleMemo(n)
+
+One operation's verdicts for one lazy table whose scope has `n` parameters
+(contract §3.5, §12.19): `verdicts` maps the scope's value indices, in scope
+order, to `true` when the rule forbids them. `key` is where `forbids(f, k,
+partial)` gathers those indices to look them up, so a check that finds its
+verdict allocates nothing; a verdict is stored under a copy of `key`. One key
+type serves every scope, however long, so the check has no dynamic dispatch,
+and `length(verdicts)` counts the tuples evaluated through the memo.
+"""
+struct RuleMemo
+    verdicts::Dict{Vector{Int}, Bool}
+    key::Vector{Int}
+end
+
+RuleMemo(n::Int) = RuleMemo(Dict{Vector{Int}, Bool}(), zeros(Int, n))
+
+
+"""
     Feasibility(candidates, tables; limit = 1_000_000)
 
 A run-local search context for one active rule set (contract §3.4, §3.5).
@@ -125,16 +144,16 @@ Fields: `candidates`, `tables`, `limit`, the component structure
 ⇒ the component's witness values, or `nothing`), `rule_memo`, and `stats`.
 
 The lazy-rule memo (contract §3.5, §12.19). `rule_memo[k]` is `nothing` for
-a tabulated table and, for a lazy one, a `Dict{NTuple{N,Int},Bool}` from the
-scope's value indices to the rule's verdict. Every rule check made through
-this object (`violates`, `violated_rules`, the searches, and a request's
-final validation) goes through `forbids(f, k, partial)`, which evaluates a
-lazy predicate at most once per tuple. A verdict depends on the table alone,
-not on the rule set, so the `Feasibility` objects of one operation may share
-the dicts: pass `memos`, aligned with `tables`, to reuse them (a deletion
-trial does, and so does each row kind of a `FeasibilityContext`). Otherwise
-each lazy table gets a fresh, empty dict. The memo lives as long as the
-operation that holds this object and never on the `TestSpace`.
+a tabulated table and, for a lazy one, a `RuleMemo` from the scope's value
+indices to the rule's verdict. Every rule check made through this object
+(`violates`, `violated_rules`, the searches, and a request's final
+validation) goes through `forbids(f, k, partial)`, which evaluates a lazy
+predicate at most once per tuple. A verdict depends on the table alone, not
+on the rule set, so the `Feasibility` objects of one operation may share the
+memos: pass `memos`, aligned with `tables`, to reuse them (a deletion trial
+does, and so does each row kind of a `FeasibilityContext`). Otherwise each
+lazy table gets a fresh, empty memo. The memo lives as long as the operation
+that holds this object and never on the `TestSpace`.
 """
 struct Feasibility
     candidates::Vector{Vector{Int}}
@@ -146,22 +165,21 @@ struct Feasibility
     param_tables::Vector{Vector{Int}}
     memo::Dict{Vector{Int}, Union{Nothing, Vector{Int}}}
     witness_cache::Vector{Dict{Vector{Int}, Union{Nothing, Vector{Int}}}}
-    rule_memo::Vector{Union{Nothing, Dict}}
+    rule_memo::Vector{Union{Nothing, RuleMemo}}
     stats::SearchStats
 end
 
 "An empty verdict memo for a lazy table, `nothing` for a tabulated one."
-_rule_memo(table::RuleTable) =
-    table.lazy === nothing ? nothing : Dict{NTuple{length(table.scope), Int}, Bool}()
+_rule_memo(table::RuleTable) = table.lazy === nothing ? nothing : RuleMemo(length(table.scope))
 
 """
-    rule_memos(tables) -> Vector{Union{Nothing, Dict}}
+    rule_memos(tables) -> Vector{Union{Nothing, RuleMemo}}
 
 One fresh verdict memo per table (`nothing` for a tabulated table), to pass
 as `memos` to every `Feasibility` of one operation over (subsets of) these
 tables.
 """
-rule_memos(tables::AbstractVector) = Union{Nothing, Dict}[_rule_memo(t) for t in tables]
+rule_memos(tables::AbstractVector) = Union{Nothing, RuleMemo}[_rule_memo(t) for t in tables]
 
 function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::Integer = 1_000_000,
                      memos = nothing)
@@ -186,7 +204,7 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
             "memos has $(length(memos)) entries for $(length(rules)) tables"))
         for (k, t) in enumerate(rules)
             memos[k] === nothing && t.lazy === nothing && continue
-            memos[k] isa Dict{NTuple{length(t.scope), Int}, Bool} && t.lazy !== nothing && continue
+            memos[k] isa RuleMemo && length(memos[k].key) == length(t.scope) && t.lazy !== nothing && continue
             throw(ArgumentError("memos[$k] does not fit table $k"))
         end
     end
@@ -204,7 +222,7 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
         component_tables, param_tables,
         Dict{Vector{Int}, Union{Nothing, Vector{Int}}}(),
         [Dict{Vector{Int}, Union{Nothing, Vector{Int}}}() for _ in components],
-        collect(Union{Nothing, Dict}, memos), SearchStats())
+        collect(Union{Nothing, RuleMemo}, memos), SearchStats())
 end
 
 "Union-find over table scopes. Components ordered by smallest member, members ascending."
@@ -259,31 +277,34 @@ Whether table `k` of `f` forbids the values assigned in `partial` (its scope
 must be assigned), through the operation's memo: a tabulated table is a bit
 test, and a lazy table's predicate is evaluated at most once per tuple of
 scoped value indices, then read from `f.rule_memo[k]` (contract §12.19). An
-evaluation that throws stores nothing. Callers count the check in
-`f.stats.evaluations`.
+evaluation that throws stores nothing. A check that finds its verdict in the
+memo allocates nothing; a miss evaluates the rule, one dynamic call, and
+stores a copy of the key. Callers count the check in `f.stats.evaluations`.
 """
 function forbids(f::Feasibility, k::Int, partial::AbstractVector{<:Integer})
     table = f.tables[k]
     table.lazy === nothing && return _forbidden_bit(table, partial)
-    return _memo_forbids(f.rule_memo[k], table, partial)
-end
-
-function _memo_forbids(memo::Dict{NTuple{N, Int}, Bool}, table::RuleTable,
-                       partial::AbstractVector{<:Integer}) where {N}
-    scope = table.scope
-    key = ntuple(j -> Int(partial[scope[j]]), Val(N))
-    return get!(() -> table.lazy(key)::Bool, memo, key)
+    memo = f.rule_memo[k]::RuleMemo
+    key = memo.key
+    for (j, p) in enumerate(table.scope)
+        key[j] = partial[p]
+    end
+    verdict = get(memo.verdicts, key, nothing)
+    verdict === nothing || return verdict
+    verdict = table.lazy(key)::Bool
+    memo.verdicts[copy(key)] = verdict
+    return verdict
 end
 
 """
     memo_size(f::Feasibility) -> Int
 
 The number of lazy-rule verdicts memoized in `f.rule_memo`, summed over its
-tables: `0` when every table is tabulated. Dicts shared with other
+tables: `0` when every table is tabulated. Memos shared with other
 `Feasibility` objects of the same operation (see `memos`) are counted as
 they stand. Not exported; the benchmarks and tests read it.
 """
-memo_size(f::Feasibility) = sum((length(m) for m in f.rule_memo if m !== nothing); init = 0)
+memo_size(f::Feasibility) = sum((length(m.verdicts) for m in f.rule_memo if m !== nothing); init = 0)
 
 "Whether component `c` has a table, so that it must be solved (§3.4)."
 _constrained(f::Feasibility, c::Int) = !isempty(f.component_tables[c])

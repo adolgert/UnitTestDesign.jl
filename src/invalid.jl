@@ -107,7 +107,7 @@ validated or tabulated again, and no predicate is called.
 
 It checks that `request`'s rule tables are the projection's space's, in
 order, so that `request`'s `k`-th memo is that of the space's rule `k`; and
-that the sub-request holds those memo dictionaries themselves.
+that the sub-request holds those memos themselves.
 `Feasibility` checks that each memo fits its table, but two lazy rules of
 the same arity could be swapped and share verdicts without a sign.
 """

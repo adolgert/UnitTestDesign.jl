@@ -12,7 +12,7 @@ it (contract §3.5: caches are local to one call). It holds one
 `Feasibility` per row kind: ordinary rows, and negative rows with a given
 invalid value at a given parameter. Each has its own candidates and active
 rule set (§5.5), so no cached answer crosses from one kind to another. The
-lazy-rule memo (§12.19), one dict per lazy rule of the space in `memos`, is
+lazy-rule memo (§12.19), one `RuleMemo` per lazy rule of the space in `memos`, is
 the call's: every row kind's `Feasibility` shares it, since a verdict
 depends on the rule alone. A call that makes several measurements, `report`
 or `design_sizes`, passes each one's context the same `memos`, while the
@@ -26,7 +26,7 @@ struct FeasibilityContext
     space::TestSpace
     feasibility_limit::Int
     searches::Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}
-    memos::Vector{Union{Nothing, Dict}}
+    memos::Vector{Union{Nothing, RuleMemo}}
 end
 
 function FeasibilityContext(space::TestSpace, memos = rule_memos(space.tables);
@@ -38,7 +38,7 @@ end
 
 "The lazy-rule verdicts memoized by one call so far (see `memo_size(::Feasibility)`)."
 memo_size(context::FeasibilityContext) =
-    sum((length(m) for m in context.memos if m !== nothing); init = 0)
+    sum((length(m.verdicts) for m in context.memos if m !== nothing); init = 0)
 
 """
     _check_integer(keyword, value, least, section) -> Int

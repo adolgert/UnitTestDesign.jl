@@ -680,7 +680,7 @@ function _isolate(d::Diagnosis, s::Suspect, (p, v)::Tuple{Int, Int}, others::Vec
     feasibility_limit, explanation_limit = limits
     active = active_rules(space, p)
     tables = RuleTable[space.tables[active]; isolation[others]]
-    table_memos = Union{Nothing, Dict}[memos[active]; fill(nothing, length(others))]
+    table_memos = Union{Nothing, RuleMemo}[memos[active]; fill(nothing, length(others))]
     base = _candidates(space, p, v)
     key = copy(s.key)
     p == 0 || (key[p] = v)
