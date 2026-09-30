@@ -436,22 +436,26 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
             witness[params] .= cached
         end
     end
-    search = _Search(f, witness, limit)
     status = :feasible
-    for c in pending
-        params = f.components[c]
-        status = _solve_component!(search, c)
-        if status === :feasible
-            f.witness_cache[c][key[params]] = witness[params]
-        elseif status === :infeasible
-            f.witness_cache[c][key[params]] = nothing
-            break
-        else
-            break  # :unknown, the budget is spent; store nothing
+    nodes = 0
+    if !isempty(pending)   # a query with no component left to solve builds no search state
+        search = _Search(f, witness, limit)
+        for c in pending
+            params = f.components[c]
+            status = _solve_component!(search, c)
+            if status === :feasible
+                f.witness_cache[c][key[params]] = witness[params]
+            elseif status === :infeasible
+                f.witness_cache[c][key[params]] = nothing
+                break
+            else
+                break  # :unknown, the budget is spent; store nothing
+            end
         end
+        nodes = search.nodes
     end
-    stats.last_nodes = search.nodes
-    stats.total_nodes += search.nodes
+    stats.last_nodes = nodes
+    stats.total_nodes += nodes
     if status === :feasible
         f.memo[key] = witness
         return (:feasible, witness)
