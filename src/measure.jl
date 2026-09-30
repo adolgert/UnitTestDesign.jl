@@ -302,10 +302,16 @@ function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{In
     return set
 end
 
-"Whether the target `t` over `support` is among the projections `seen`; with no rows (`nothing`), never."
-_contains(seen::_Marks, t, support) = seen.marks[_code(t, support, seen.radix) + 1]
-_contains(seen::Set{Vector{Int}}, t, support) = t[support] in seen
-_contains(::Nothing, t, support) = false
+"""
+    _is_covered(seen, t, support) -> Bool
+
+Whether some row holds the target `t` over `support` (contract §1.10): whether
+`t`'s projection onto `support` is among the rows' projections `seen`
+(`_projections`). With no rows, `seen === nothing`, never.
+"""
+_is_covered(seen::_Marks, t, support) = seen.marks[_code(t, support, seen.radix) + 1]
+_is_covered(seen::Set{Vector{Int}}, t, support) = t[support] in seen
+_is_covered(::Nothing, t, support) = false
 
 """
     _Record
@@ -403,7 +409,7 @@ function _measure_block!(record::_Record, context::FeasibilityContext,
     end
     c = m = x = u = 0
     while true
-        if _contains(seen, t, support)
+        if _is_covered(seen, t, support)
             c += 1
         else
             status = _classify!(record, context, t)
