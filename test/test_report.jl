@@ -632,8 +632,9 @@ end
     # above, with one lazy-rule memo and a fresh answer cache for each. So every
     # figure is that of a `coverage` call, which has a memo of its own, under
     # any limit (probe 03b). Its answer caches must stay apart: in the space of
-    # two components below, a bonus that could reuse the first measurement's
-    # cached components resolves more triples at feasibility_limit = 4.
+    # two components below, a bonus that shared the first measurement's answer
+    # caches would find other component witnesses cached, and at
+    # feasibility_limit = 4 would leave 14 triples unresolved, not 10.
     same_part(a, b) = (a.covered, a.feasible, a.rows, a.duplicates) == (b.covered, b.feasible, b.rows, b.duplicates) &&
         isequal(a.missing, b.missing) && isequal(a.unknown, b.unknown) && same_exclusions(a.excluded, b.excluded) &&
         a.groups == b.groups && isequal(a.rejected, b.rejected)
@@ -682,7 +683,7 @@ end
         end
     end
     # The space of two components is the one where a shared answer cache
-    # shows: its bonus at feasibility_limit = 4 leaves triples unresolved.
+    # shows (14 unresolved triples with one).
     r = report(covering(TestSpace(two; constraints = two_rules); strength = 2); feasibility_limit = 4)
     @test r.bonus.unknown == 10
 
