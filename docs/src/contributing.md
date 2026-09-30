@@ -29,7 +29,7 @@ or changes one updates the contract in the same pull request. The
 |:--|:--|
 | `src/` | The package. `space.jl`, `constraints.jl` and `feasibility.jl` hold the model and the search; `parameter_order.jl` (IPOG) and `greedy_tuples.jl` (GND) are the engines; `measure.jl` and `report.jl` measure coverage. |
 | `test/` | `@testitem`s run by TestItemRunner, the independent checker, and the fixtures. |
-| `benchmark/` | The performance baseline, `run.jl`, with its own environment. |
+| `benchmark/` | The performance baseline, `run.jl`, with its own environment, and `reference_sweep.jl`, which lists for reviews the definitions in `src/` that nothing public reaches. |
 | `docs/` | This manual, built with Documenter. |
 | `design/` | Design documents, phase reviews, and benchmark results. |
 
