@@ -98,6 +98,27 @@ using TestItemRunner
     excluding() = TestSpace((n = [1, 2, Invalid(-1)], m = [1, 2], k = [:x, :y, :z]);
         constraints = [@forbid(m == 1 && k == :x), @forbid(m == 1 && k == :y),
                        @forbid(n == 1 && m == 2), @forbid(k == :z)])
+
+    "A space built without the warning a lazily evaluated rule gives."
+    quietly(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
+
+    """
+    Invalid values at `a` and `c`, and every rule's scope written out of
+    parameter order. Rules 1 and 4 are lazy (above `tabulation_limit = 6`) and
+    read neither `a` nor `c`; rule 2 reads `c` and rule 3 reads `a`, both
+    tabulated; rule 5 reads every parameter. As `benchmark/snapshot.jl`'s
+    space "negative sub-requests, scopes out of order", with rule 5 added.
+    """
+    out_of_order() = quietly() do
+        TestSpace((a = [1, 2, 3, Invalid(0)], b = [:x, :y, :z], c = [1, 2, Invalid(-1)], d = [true, false],
+                   e = [1, 2, 3]);
+            constraints = [forbid(:e, :b) do e, b; e == 3 && b != :x end,
+                           forbid(:d, :c) do d, c; d && c == 2 end,
+                           forbid(:d, :a) do d, a; !d && a == 2 end,
+                           forbid(:e, :d, :b) do e, d, b; e == 3 && d && b == :x end,
+                           forbid(; reason = "whole-case") do r; r.a == 1 && r.b == :y && r.e == 2 end],
+            tabulation_limit = 6)
+    end
 end
 
 
@@ -445,4 +466,88 @@ end
         @test length(cases.negative_excluded) == 12 && all(e -> e.status == :implied, cases.negative_excluded)
         @test iscomplete(coverage(cases))
     end
+end
+
+
+@testitem "invalid: a negative row's projection is the space without its invalid parameter, field by field" setup=[Checker, InvalidSetup] begin
+    using UnitTestDesign: Request, NegativeProjection, parent_row, _negative_request
+    space = out_of_order()
+    n = length(space.names)
+    for p in 1:n
+        pr = NegativeProjection(space, p)
+        kept = [q for q in 1:n if q != p]
+        rules = [k for k in eachindex(space.tables) if !(p in space.tables[k].scope)]
+        @test pr.space === space && pr.p == p && pr.kept == kept && pr.rules == rules
+        @test pr.renumber[kept] == 1:(n - 1) && pr.renumber[p] == 0
+        @test !(5 in pr.rules)   # the whole-case rule reads p
+        # Every field of the sub-space: the space's own parts, over the kept
+        # parameters and the rules that omit p. A field added to TestSpace
+        # fails the first test.
+        expected = (names = space.names[kept], values = space.values[kept],
+                    constraints = space.constraints[rules], tables = space.tables[rules],
+                    tabulation_limit = space.tabulation_limit, ordinary = space.ordinary[kept],
+                    invalid = space.invalid[kept])
+        @test keys(expected) == fieldnames(TestSpace)
+        for field in fieldnames(TestSpace)
+            got, want = getfield(pr.subspace, field), expected[field]
+            if field == :tables
+                # A table keeps its forbidden set or predicate; its scope is
+                # renumbered one parameter at a time, in the rule's order.
+                @test length(got) == length(want) && all(zip(got, want)) do (t, u)
+                    kept[t.scope] == u.scope && t.forbidden === u.forbidden && t.lazy === u.lazy
+                end
+            elseif want isa Vector
+                @test length(got) == length(want) && all(splat(===), zip(got, want))
+            else
+                @test got === want
+            end
+        end
+    end
+    # Scopes are not sorted: at a, rule 1 on (e, b) reads sub-space parameters 4 and 1, in that order.
+    @test [t.scope for t in NegativeProjection(space, 1).subspace.tables] == [[4, 1], [3, 2], [4, 3, 1]]
+    @test [t.scope for t in NegativeProjection(space, 3).subspace.tables] == [[4, 2], [3, 1], [4, 3, 2]]
+    # A sub-request's row goes back with its invalid position at p.
+    @test parent_row(NegativeProjection(space, 1), [2, 3, 1, 2], 4) == [4, 2, 3, 1, 2]
+    @test parent_row(NegativeProjection(space, 3), [2, 3, 1, 2], 3) == [2, 3, 3, 1, 2]
+    # A request shares its memos only with a projection of its own space.
+    request = Request(space; strength = 2)
+    twin = NegativeProjection(out_of_order(), 1)   # the same rules, other tables
+    @test occursin("internal error: the request's rule tables are not the projected space's",
+                   message(() -> _negative_request(request, twin, zeros(Int, 4, 0))))
+end
+
+
+@testitem "invalid: a negative sub-request's rule numbers map back to the space's (§1.4, §5.5)" setup=[Checker, InvalidSetup] begin
+    using UnitTestDesign: Request, NegativeProjection, parent_rule, _negative_request, violates, rule_label
+    space = out_of_order()
+    request = Request(space; strength = 2)
+    for p in eachindex(space.names)
+        pr = NegativeProjection(space, p)
+        sub = _negative_request(request, pr, zeros(Int, length(space.names) - 1, 0))
+        # The sub-space holds the space's own rules, numbered again from 1.
+        @test length(sub.space.constraints) == length(sub.space.tables) == length(pr.rules)
+        @test all(i -> request.space.constraints[parent_rule(pr, i)] === sub.space.constraints[i],
+                  eachindex(sub.space.constraints))
+    end
+    # So a sub-space number is not the space's: at a, the sub-space's rule 3 is rule 4.
+    pr = NegativeProjection(space, 1)
+    @test parent_rule(pr, 3) == 4
+    @test rule_label(pr.subspace, 3) == "rule 3 on (e, d, b)" && rule_label(space, 4) == "rule 4 on (e, d, b)"
+    # An error from a lazy rule's predicate, the one way a rule leaves a
+    # sub-request today, names the rule as the space tabulated it.
+    boom = quietly() do
+        TestSpace((a = [1, Invalid(0)], b = [1, 2, 3], c = [1, 2, 3]);
+            constraints = [forbid((a = 1, b = 3)), forbid((c, b) -> c == b == 2 ? error("boom") : false, :c, :b)],
+            tabulation_limit = 8)
+    end
+    pr = NegativeProjection(boom, 1)
+    sub = _negative_request(Request(boom), pr, zeros(Int, 2, 0))
+    err = try
+        violates(sub.feasibility, [2, 2])
+    catch e
+        e
+    end
+    @test err isa ConstraintError && err.rule == rule_label(boom, parent_rule(pr, 1)) == "rule 2 on (c, b)"
+    @test rule_label(pr.subspace, 1) == "rule 1 on (c, b)"
+    @test occursin("rule 2 on (c, b) threw", message(() -> all_pairs(boom)))
 end

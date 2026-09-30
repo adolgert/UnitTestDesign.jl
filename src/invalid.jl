@@ -13,60 +13,129 @@
 # parameters under the active rules, and its targets `(p = v, a)` are the
 # targets `a` of a request over the other parameters: at strength `s - 1`,
 # with each `stronger` group `G` that contains `p` as `G \ {p}` at `s_G - 1`
-# (§6.1, §6.3); groups without `p` add nothing (§6.5). `_negative_request`
-# builds that request over a sub-space of the other parameters that reuses
-# the space's domains and its active rule tables, renumbered, and shares the
-# request's lazy-rule memo (§3.5). The engine covers the sub-request's
-# required targets, and `p = v` is inserted at its position. A base strength
-# of 1 gives the sub-request strength 0: its base group has no targets and
-# only its groups do (see `Request`). At strength 1 with no group containing
-# `p` there is no sub-request: the one target `(p = v)` takes one witness row
-# (§6.4), never a strength-0 public call.
+# (§6.1, §6.3); groups without `p` add nothing (§6.5). A `NegativeProjection`
+# is the space as those rows see it: a sub-space of the other parameters that
+# reuses the space's domains and its active rule tables, renumbered, with the
+# maps back to the space's parameters and rules. `_negative_request` builds
+# the request over it, sharing the request's lazy-rule memo (§3.5). The
+# engine covers the sub-request's required targets, and `parent_row` puts
+# `p = v` back into each row. A base strength of 1 gives the sub-request
+# strength 0: its base group has no targets and only its groups do (see
+# `Request`). At strength 1 with no group containing `p` there is no
+# sub-request: the one target `(p = v)` takes one witness row (§6.4), never a
+# strength-0 public call.
 #
 # Negative must-include rows count toward the negative targets they hold
 # (§10.6): those at `(p, v)` are the sub-request's must-include rows, so the
 # engine completes a partial one (§7.9) and covers only what they leave.
 
 
-"`row` (engine positions over the parameters other than `p`) with `p` at `position` inserted."
-function _with_invalid(row::AbstractVector{<:Integer}, p::Int, position::Int)
-    out = Vector{Int}(undef, length(row) + 1)
-    out[1:(p - 1)] .= view(row, 1:(p - 1))
-    out[p] = position
-    out[(p + 1):end] .= view(row, p:length(row))
+"""
+    NegativeProjection(space, p)
+
+The space as the negative rows with their invalid value at parameter `p`
+see it (see the file header), with the maps back to `space`. `subspace` has
+the parameters other than `p`, in order, and the rules whose scope omits `p`
+(`active_rules`, §5.5), in order. Its parameter `j` is `space`'s parameter
+`kept[j]`, and `space`'s parameter `q` is its parameter `renumber[q]` (`0`
+for `p`). Its rule `i` is `space`'s rule `rules[i]` (`parent_rule`). It
+reuses `space`'s names, domains, value indices, `Constraint`s and rule
+tables, each table's scope renumbered; nothing is validated, tabulated or
+evaluated again. A kept parameter has the same ordinary values in the same
+order, so a sub-request's engine positions are `space`'s, and `parent_row`
+puts the invalid position back at `p`.
+
+Building one checks that each projected scope is its rule's scope mapped
+elementwise, in the order the rule gave it. That order is the order of the
+predicate's arguments and of a tabulated rule's forbidden tuples
+(`_tabulate`), so a scope is never sorted. There is no check for a
+whole-case rule: its scope is every parameter, `p` included, so
+`active_rules` never keeps one; if it did, its projected scope would hold
+`0`, which fails the scope check here and `Feasibility`'s own.
+
+A rule number that leaves a sub-request is the sub-space's, and goes
+through `parent_rule` before a message or record names it. None leaves
+today: negative targets are classified on the space's own searches
+(`_classify_negative`), a sub-request's `ResourceLimitError` names values,
+not rules, and an error from a lazy rule's predicate names the rule as the
+space did when it tabulated it (`_LazyRule`).
+"""
+struct NegativeProjection
+    space::TestSpace
+    p::Int
+    kept::Vector{Int}
+    renumber::Vector{Int}
+    rules::Vector{Int}
+    subspace::TestSpace
+end
+
+function NegativeProjection(space::TestSpace, p::Int)
+    n = length(space.names)
+    kept = [q for q in 1:n if q != p]
+    renumber = zeros(Int, n)
+    renumber[kept] = eachindex(kept)
+    rules = active_rules(space, p)
+    tables = RuleTable[RuleTable(renumber[t.scope], t.forbidden, t.lazy) for t in space.tables[rules]]
+    for (i, t) in enumerate(tables)
+        scope = space.tables[rules[i]].scope
+        [get(kept, j, 0) for j in t.scope] == scope || error(
+            "internal error: rule $(rules[i]) reads parameters $scope, which became $(t.scope) without " *
+            "parameter $p; a projected scope keeps the rule's parameters in the rule's order")
+    end
+    subspace = TestSpace(Val(:parts), (names = space.names[kept], values = space.values[kept],
+        constraints = space.constraints[rules], tables = tables, tabulation_limit = space.tabulation_limit,
+        ordinary = space.ordinary[kept], invalid = space.invalid[kept]))
+    return NegativeProjection(space, p, kept, renumber, rules, subspace)
+end
+
+"The space's number for rule `i` of the projection's sub-space."
+parent_rule(pr::NegativeProjection, i::Integer) = pr.rules[i]
+
+"`row` (engine positions over the sub-space) as a row of the space, with `position` at `p`."
+function parent_row(pr::NegativeProjection, row::AbstractVector{<:Integer}, position::Int)
+    out = Vector{Int}(undef, length(pr.renumber))
+    out[pr.kept] = row
+    out[pr.p] = position
     return out
 end
 
 """
-    _negative_request(request, p, seeds) -> Request
+    _negative_request(request, projection, seeds) -> Request
 
 The request whose covering design gives the negative rows with their invalid
-value at `p` (see the file header): over the parameters other than `p`, in
-order; with the rules whose scope omits `p` (§5.5), their tables renumbered
-and their lazy-rule memo shared with `request` (§3.5); at base strength
-`request.strength - 1`, which may be 0; with each `stronger` group `G` that
-contains `p` as `G \\ {p}` at its strength less one. `seeds` are its
-must-include rows, engine positions over the other parameters. Nothing is
-validated or tabulated again, and no predicate is called.
+value at `projection.p` (see the file header): over the projection's
+sub-space, sharing the lazy-rule memos of its rules with `request` (§3.5);
+at base strength `request.strength - 1`, which may be 0; with each
+`stronger` group `G` that contains `p` as `G \\ {p}` at its strength less one.
+`seeds` are its must-include rows, engine positions over the other
+parameters. Nothing is validated or tabulated again, and no predicate is
+called.
+
+It checks that `request`'s rule tables are the projection's space's, in
+order, so that `request`'s `k`-th memo is that of the space's rule `k`; and
+that the sub-request holds those memo dictionaries themselves.
+`Feasibility` checks that each memo fits its table, but two lazy rules of
+the same arity could be swapped and share verdicts without a sign.
 """
-function _negative_request(request::Request, p::Int, seeds::AbstractMatrix{<:Integer})
-    space = request.space
-    n = length(space.names)
-    others = [q for q in 1:n if q != p]
-    renumber = zeros(Int, n)
-    renumber[others] = 1:(n - 1)
-    active = active_rules(space, p)
-    tables = RuleTable[RuleTable(renumber[t.scope], t.forbidden, t.lazy) for t in space.tables[active]]
-    subspace = TestSpace(Val(:parts), (names = space.names[others], values = space.values[others],
-        constraints = space.constraints[active], tables = tables, tabulation_limit = space.tabulation_limit,
-        ordinary = space.ordinary[others], invalid = space.invalid[others]))
-    stronger = [renumber[filter(!=(p), members)] => s - 1 for (members, s) in request.groups[2:end]
+function _negative_request(request::Request, pr::NegativeProjection, seeds::AbstractMatrix{<:Integer})
+    space, p, subspace = pr.space, pr.p, pr.subspace
+    tables, memos = request.feasibility.tables, request.feasibility.rule_memo
+    length(tables) == length(space.tables) && all(k -> tables[k] === space.tables[k], eachindex(tables)) ||
+        error("internal error: the request's rule tables are not the projected space's, in order, so the " *
+              "negative rows at $(space.names[p]) cannot share its lazy-rule memos")
+    stronger = [pr.renumber[filter(!=(p), members)] => s - 1 for (members, s) in request.groups[2:end]
                 if p in members]
     groups = _groups(subspace, request.strength - 1, stronger)
-    feasibility = Feasibility(_candidates(subspace, 0, 0), tables;
-                              limit = request.feasibility_limit, memos = request.feasibility.rule_memo[active])
-    return _request(subspace, request.strength - 1, groups, Matrix{Int}(seeds), feasibility,
-                    request.feasibility_limit, request.explanation_limit)
+    feasibility = Feasibility(_candidates(subspace, 0, 0), subspace.tables;
+                              limit = request.feasibility_limit, memos = memos[pr.rules])
+    sub = _request(subspace, request.strength - 1, groups, Matrix{Int}(seeds), feasibility,
+                   request.feasibility_limit, request.explanation_limit)
+    for i in eachindex(pr.rules)
+        sub.feasibility.rule_memo[i] === memos[parent_rule(pr, i)] || error(
+            "internal error: the negative rows at $(space.names[p]) do not share rule " *
+            "$(parent_rule(pr, i))'s lazy-rule memo with the request")
+    end
+    return sub
 end
 
 """
@@ -130,7 +199,6 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
     excluded = Excluded[]
     for p in 1:n, position in (request.arity[p] + 1):length(request.candidates[p])
         at = [j for j in columns if must[p, j] == position]
-        others = [q for q in 1:n if q != p]
         added = 0
         alone = nothing   # the target (p = v) at strength 1, when it is required
         if request.strength == 1
@@ -140,10 +208,11 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
             e === nothing ? (push!(required, t); alone = t) : push!(excluded, e)
         end
         if request.strength > 1 || any(g -> p in g.first, request.groups[2:end])
-            sub = _negative_request(request, p, must[others, at])
+            pr = NegativeProjection(space, p)
+            sub = _negative_request(request, pr, must[pr.kept, at])
             sub_required = Vector{Int}[]
             for target in TargetList(sub)
-                t = _with_invalid(target, p, position)
+                t = parent_row(pr, target, position)
                 e = _classify_negative(request, t)
                 if e === nothing
                     push!(required, t)
@@ -161,10 +230,10 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
                                          "$(repr(value)): $(err.what)", err.limit, err.keyword))
             end
             for (k, j) in enumerate(at)
-                seeds[j] = _with_invalid(matrix[:, k], p, position)
+                seeds[j] = parent_row(pr, matrix[:, k], position)
             end
             for k in (length(at) + 1):size(matrix, 2)
-                push!(rows, _with_invalid(matrix[:, k], p, position))
+                push!(rows, parent_row(pr, matrix[:, k], position))
                 added += 1
             end
         else
