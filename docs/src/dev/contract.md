@@ -318,8 +318,11 @@ does not carry a usable design.
 **3.8** To retry, call again with a larger limit, for example
 `all_pairs(space; feasibility_limit = 10_000_000)`. Raising the limit never
 changes a resolved answer; it can only resolve unknown ones. Two successful
-generation calls that differ only in `feasibility_limit` return identical
-results.
+generation calls that differ only in `feasibility_limit` return the same
+rows in the same order, the same `required`, `covered`, `negative_required`
+and `negative_covered` counts, and exclude the same targets with the same
+status. An implied exclusion's explanation may differ: which sufficient rule
+set it names, its `minimal`, and its `limit` depend on both limits (§3.14).
 
 **3.9** Entry points that search accept `feasibility_limit`: `covering` and its
 fixed-strength forms, `excursions`, `explain`, `coverage`,
@@ -350,7 +353,11 @@ accepts it.
 **3.14** The deletion search starts from the full applicable rule set, which is
 proven to exclude the target, and tries removing one rule at a time, in rule
 order. A rule is removed only when the target is proven infeasible without
-it. A trial that ends unknown keeps the rule.
+it. A trial that ends unknown keeps the rule. Each trial is a search bounded
+by `feasibility_limit` and by what remains of `explanation_limit`, whichever
+is smaller, so either limit can stop it. An unresolved explanation's
+`limit` names the keyword that stopped it: `explanation_limit` when that
+budget ran out, and otherwise `feasibility_limit`.
 
 **3.15** Proven infeasibility stays proven. Classifying a target as infeasible
 never depends on the explanation search. When `explanation_limit` runs out,

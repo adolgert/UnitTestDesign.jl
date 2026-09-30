@@ -358,19 +358,22 @@ result counts the two kinds of targets separately (§5.10).
   [`ResourceLimitError`](@ref) naming `feasibility_limit`, and no design is
   returned with an undecided combination (§1.20, §3.6, §3.7). Raise it when
   generation cannot finish, as in `all_pairs(space; feasibility_limit =
-  10_000_000)`; a larger value never changes a result that already
-  succeeded (§3.8).
+  10_000_000)`; a larger value never changes the rows of a result that
+  already succeeded, though an implied exclusion's explanation may differ
+  (§3.8).
 - `explanation_limit = 1_000_000`: the node budget of the search that finds
   which rules cause each implied exclusion, starting from a set of rules
-  already proven to exclude it (§3.13, §3.14). Running out never throws and
-  never changes the cases: the design is complete and certified as usual,
-  and the exclusion keeps its proven set of rules with
-  `minimal = :unresolved` and `limit = :explanation_limit => N`, which `show`
-  counts as "with an unresolved explanation" (§3.15, §3.16). Raise it only
-  when you want each implied exclusion's rules verified inclusion-minimal,
-  so that none of them can be dropped; only the attribution becomes more
-  precise. It also bounds the explanation in the error for a partial
-  must-include row with no valid completion.
+  already proven to exclude it (§3.13, §3.14). Each trial of that search is
+  also bounded by `feasibility_limit`. Running out never throws and never
+  changes the cases: the design is complete and certified as usual, and the
+  exclusion keeps its proven set of rules with `minimal = :unresolved`,
+  which `show` counts as "with an unresolved explanation" (§3.15, §3.16).
+  Its `limit` is `:explanation_limit => N` when this budget ran out, and
+  `:feasibility_limit => N` when a trial reached the feasibility limit
+  instead (§3.14). Raise it only when you want each implied exclusion's
+  rules verified inclusion-minimal, so that none of them can be dropped;
+  only the attribution becomes more precise. It also bounds the explanation
+  in the error for a partial must-include row with no valid completion.
 
 The 0.4 keywords `n_way` (now `strength`), `seeds` (now `must_include`) and
 `wayness` (now `stronger`, translated from its `Dict` of positions) are

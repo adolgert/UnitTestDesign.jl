@@ -534,6 +534,44 @@ end
 end
 
 
+@testitem "feasibility_limit: rows, counts and exclusion statuses do not depend on it; explanations may (§3.8, §3.14)" begin
+    # (w = 1, v = 1) is excluded twice over: by rule 1, which forward checking
+    # sees at once, and by rules 2 to 7, which, when w = 1 and v = 1, make
+    # x, y, z and u all different, four parameters with three values each.
+    # Proving that takes more nodes than the small limits below allow.
+    names4 = (:x, :y, :z, :u)
+    pigeons = [forbid((w, v, p, q) -> w == 1 && v == 1 && p == q, :w, :v, a, b)
+               for (i, a) in enumerate(names4) for b in names4[(i + 1):end]]
+    domains = (w = [1, 2], v = [1, 2], a = [1, 2], x = 1:3, y = 1:3, z = 1:3, u = 1:3)
+    space = TestSpace(domains; constraints = [forbid((w, v, a) -> w == 1 && v == 1, :w, :v, :a); pigeons])
+    counts(c) = (c.required, c.covered, c.negative_required, c.negative_covered)
+    statuses(c) = [(e.target, e.status) for e in [c.excluded; c.negative_excluded]]
+    "Brute force: every row of the product that holds the target breaks one of these rules."
+    function sufficient(e)
+        rules_only = TestSpace(domains; constraints = space.constraints[e.rules])
+        rows = (NamedTuple{keys(domains)}(v) for v in Iterators.product(domains...))
+        return all(r -> !isallowed(rules_only, r),
+                   Iterators.filter(r -> all(k -> r[k] == e.target[k], keys(e.target)), rows))
+    end
+
+    reference = all_pairs(space)
+    @test statuses(reference) == [((w = 1, v = 1), :implied)]
+    for limit in (6, 10, 14)
+        cases = all_pairs(space; feasibility_limit = limit)
+        @test collect(cases) == collect(reference)
+        @test counts(cases) == counts(reference)
+        @test statuses(cases) == statuses(reference)
+        # The explanation names a sufficient set, whichever set it is. Here a
+        # deletion trial stops at feasibility_limit, keeps its rule, and the
+        # explanation names that limit (§3.14).
+        e = only(cases.excluded)
+        @test sufficient(e)
+        @test (e.minimal, e.limit) == (:unresolved, :feasibility_limit => limit)
+    end
+    @test sufficient(only(reference.excluded))
+end
+
+
 @testitem "strength equal to the parameter count is the full factorial, as a set (§7.8, §11.2)" setup=[Checker, InterfaceSetup] begin
     space = TestSpace(fable_domains(); constraints = fable_rules())
     for engine in (IPOG(), GND())
