@@ -149,3 +149,18 @@ end
     @test allocated((s, r) -> _row_indices(s, r; what = "row", complete = true), space, row) <= vector
     @test allocated((s, r) -> _row_indices(s, r; what = "row", complete = true), space, Tuple(row)) <= vector
 end
+
+
+@testitem "stability: an excursion steps an odometer over each change set" setup=[StabilitySetup] begin
+    using UnitTestDesign: build_excursion
+    arity, base = fill(5, 14), ones(Int, 14)
+    ex = @inferred build_excursion(arity, 2, base, Returns(false))
+    n = size(ex.matrix, 2)
+    @test n == 1 + 14 * 4 + 91 * 16
+    # It allocates each row, the list of them and the matrix, and per change
+    # set a few small vectors: about 27 bytes a row beyond rows and matrix.
+    # Iterating a product of a tuple of runtime length took 263.
+    rows = allocated(k -> [ones(Int, 14) for _ in 1:k], n)
+    matrix = allocated(k -> zeros(Int, 14, k), n)
+    @test allocated(build_excursion, arity, 2, base, Returns(false)) <= rows + matrix + 64 * n
+end

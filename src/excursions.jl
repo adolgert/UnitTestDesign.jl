@@ -60,19 +60,20 @@ function build_excursion(choices::AbstractVector{<:AbstractVector{<:Integer}}, d
     kept = Vector{Int}[collect(Int, base)]
     dropped = 0
     for subset in excursion_subsets(n, distance)
-        # The last parameter of the subset varies fastest, as in 0.4.
-        ranges = Tuple(others[i] for i in reverse(subset))
-        for combo in Iterators.product(ranges...)
+        # An odometer over the subset's other values, the last parameter
+        # fastest, as in 0.4: `position[j]` indexes `others[subset[j]]`.
+        widths = [length(others[i]) for i in subset]
+        any(==(0), widths) && continue
+        position = ones(Int, length(subset))
+        while true
             row = collect(Int, base)
-            for (j, i) in enumerate(reverse(subset))
-                row[i] = combo[j]
+            for (j, i) in enumerate(subset)
+                row[i] = others[i][position[j]]
             end
-            skip(row) && continue
-            if dead(row)
-                dropped += 1
-            else
-                push!(kept, row)
+            if !skip(row)
+                dead(row) ? (dropped += 1) : push!(kept, row)
             end
+            _advance!(position, widths) || break
         end
     end
     return (matrix = reduce(hcat, kept), dropped = dropped)
