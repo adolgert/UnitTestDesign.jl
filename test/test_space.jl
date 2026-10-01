@@ -161,6 +161,23 @@ end
 end
 
 
+@testitem "space: a value the lookup misses is found by comparing it (§2.1)" begin
+    using UnitTestDesign: value_index, case_indices, _lookup
+    # A space finds a value by its identity key in a lookup built with the
+    # space. Should the key's hash no longer match, here because a domain
+    # value changed afterward, the value is compared with each domain value,
+    # as same_value does, before it is refused.
+    v = [1, 2]
+    space = TestSpace((a = [v, [3]], b = [:x, :y]))
+    @test space.lookup[1] == _lookup(space.values[1])
+    v[2] = 5
+    @test value_index(space, 1, [1, 5]) == 1
+    @test case_indices(space, (b = :y, a = [1, 5])) == [1, 2]
+    @test case_indices(space, ([1, 5], :x)) == [1, 1]
+    @test_throws ArgumentError value_index(space, 1, [1, 2])
+end
+
+
 @testitem "space: Invalid and Partition wrappers (§4.1, §4.12, §5.1, §5.2)" begin
     f = Returns(1e-9)
     # Nested wrappers are rejected when built (§4.12).

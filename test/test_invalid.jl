@@ -512,7 +512,7 @@ end
         expected = (names = space.names[kept], values = space.values[kept],
                     constraints = space.constraints[rules], tables = space.tables[rules],
                     tabulation_limit = space.tabulation_limit, ordinary = space.ordinary[kept],
-                    invalid = space.invalid[kept])
+                    invalid = space.invalid[kept], lookup = space.lookup[kept])
         @test keys(expected) == fieldnames(TestSpace)
         for field in fieldnames(TestSpace)
             got, want = getfield(pr.subspace, field), expected[field]

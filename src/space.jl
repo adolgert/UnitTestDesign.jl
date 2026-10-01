@@ -161,6 +161,23 @@ function _find_value(domain::AbstractVector, v)
     return k
 end
 
+"""
+    _lookup(domain) -> Dict{Any, Int}
+
+`_find_value` as one hash lookup: the index of each value of `domain` under
+its `_identity_key`, and of each partition also under its name's key
+(§2.11). A domain holds no Symbol that names one of its partitions (§4.4),
+so the two kinds of key never collide, and each key keeps its first index.
+"""
+function _lookup(domain::AbstractVector)
+    lookup = Dict{Any, Int}()
+    for (k, x) in enumerate(domain)
+        get!(lookup, _identity_key(x), k)
+        x isa Partition && get!(lookup, _identity_key(x.name), k)
+    end
+    return lookup
+end
+
 function _domain_text(domain::AbstractVector; limit::Integer = 10)
     shown = [repr(x) for x in Iterators.take(domain, limit)]
     length(domain) > limit && push!(shown, "… ($(length(domain)) values)")
@@ -234,6 +251,7 @@ struct TestSpace
     tabulation_limit::Int
     ordinary::Vector{Vector{Int}}  # per parameter, the indices of ordinary values
     invalid::Vector{Vector{Int}}   # per parameter, the indices of Invalid values
+    lookup::Vector{Dict{Any, Int}} # per parameter, `_lookup` of its domain
 
     function TestSpace(names::Vector{Symbol}, domains::AbstractVector, constraints,
                        tabulation_limit)
@@ -262,7 +280,7 @@ struct TestSpace
         end
         tables = RuleTable[_tabulate(c, k, names, values, ordinary, limit)
                            for (k, c) in enumerate(rules)]
-        return new(copy(names), values, rules, tables, limit, ordinary, invalid)
+        return new(copy(names), values, rules, tables, limit, ordinary, invalid, _lookup.(values))
     end
 
     # Internal: a space from parts that are already validated and tabulated,
@@ -408,11 +426,22 @@ The index of value `v` in the domain of parameter `i` (an index or a name),
 matched by identity (contract §2.1). A partition may be given as its wrapper or
 as its name (§2.11). A value that is not in the domain is an `ArgumentError`
 naming the parameter, the value, and the domain.
+
+The space's `lookup` finds `v` by its identity key, a lookup of one concrete
+type for every parameter. A value it misses is compared with each domain
+value (`_find_value`) before it is refused, so a value whose `hash`
+disagrees with `isequal` is found as before.
 """
 function value_index(space::TestSpace, i::Integer, v)
-    k = _find_value(space.values[i], v)
-    k === nothing && throw(ArgumentError(_not_in_domain(space.names[i], space.values[i], v)))
-    return k
+    k = get(space.lookup[i], _identity_key(v), 0)
+    return k == 0 ? _value_index_missed(space, i, v) : k
+end
+
+"`value_index` for a value its lookup missed: found by comparing, or refused."
+@noinline function _value_index_missed(space::TestSpace, i::Integer, v)
+    found = _find_value(space.values[i], v)
+    found === nothing && throw(ArgumentError(_not_in_domain(space.names[i], space.values[i], v)))
+    return found::Int
 end
 
 value_index(space::TestSpace, name::Symbol, v) = value_index(space, parameter_index(space, name), v)
@@ -444,7 +473,7 @@ function case_indices end
 
 function case_indices(space::TestSpace, partial::NamedTuple)
     idx = zeros(Int, length(space.names))
-    for (name, v) in pairs(partial)
+    _each_field(partial) do name, v
         i = parameter_index(space, name)
         idx[i] = value_index(space, i, v)
     end
@@ -456,7 +485,30 @@ function case_indices(space::TestSpace, case::Tuple)
     length(case) == n || throw(ArgumentError(
         "a positional case lists $(length(case)) values, but the space has $n parameters " *
         "($(join(space.names, ", "))), and a positional case is complete"))
-    return [value_index(space, i, case[i]) for i in 1:n]
+    idx = Vector{Int}(undef, n)
+    _each_field(case) do i, v
+        idx[i] = value_index(space, i, v)
+    end
+    return idx
+end
+
+"""
+    _each_field(f, row::NamedTuple)
+    _each_field(f, row::Tuple)
+
+`f(name, value)` for each field of a `NamedTuple`, or `f(i, value)` for each
+entry of a `Tuple`, in order. It is generated, so each call has its value
+with the field's own type, however many types the row holds, and `case_indices`
+reads each value without a dynamic call.
+"""
+@generated function _each_field(f, row::NamedTuple{names}) where {names}
+    calls = [:(f($(QuoteNode(names[k])), getfield(row, $k))) for k in eachindex(names)]
+    return :($(calls...); nothing)
+end
+
+@generated function _each_field(f, row::Tuple)
+    calls = [:(f($k, getfield(row, $k))) for k in 1:fieldcount(row)]
+    return :($(calls...); nothing)
 end
 
 """
@@ -510,9 +562,9 @@ function _row_indices(space::TestSpace, row; what::AbstractString, section = not
         err isa ArgumentError || rethrow()
         throw(ArgumentError("$what: " * err.msg))
     end
-    if complete
+    if complete && any(==(0), idx)
         unset = space.names[idx .== 0]
-        isempty(unset) || throw(ArgumentError(
+        throw(ArgumentError(
             "$what, $(repr(row)), has no value for $(join(("`$u`" for u in unset), ", ", " and ")); " *
             "it must name every parameter" * (hint === nothing ? "" : "; $hint") * _cited(section)))
     end

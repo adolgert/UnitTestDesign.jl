@@ -75,7 +75,7 @@ function NegativeProjection(space::TestSpace, p::Int)
     end
     subspace = TestSpace(Val(:parts), (names = space.names[kept], values = space.values[kept],
         constraints = space.constraints[rules], tables = tables, tabulation_limit = space.tabulation_limit,
-        ordinary = space.ordinary[kept], invalid = space.invalid[kept]))
+        ordinary = space.ordinary[kept], invalid = space.invalid[kept], lookup = space.lookup[kept]))
     return NegativeProjection(space, p, kept, renumber, rules, subspace)
 end
 

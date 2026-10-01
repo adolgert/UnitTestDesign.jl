@@ -129,3 +129,23 @@ end
     @test listed == 28 * 16
     @test allocated(s -> coverage(NamedTuple[], s; strength = 2), wide) <= 1100 * listed
 end
+
+
+
+@testitem "stability: a row is read with one lookup per value" setup=[StabilitySetup] begin
+    using UnitTestDesign: value_index, case_indices, _row_indices
+    # Eight types, more than inference splits a loop over the row's fields into.
+    space = TestSpace((a = 1:4, b = [:w, :x, :y, :z], c = [true, false], d = [1.0, 2.0, 3.0],
+                       e = ["p", "q", "r"], f = Int32[1, 2, 3, 4], g = ['a', 'b'], h = UInt8[1, 2]))
+    row = (a = 2, b = :x, c = false, d = 2.0, e = "q", f = Int32(3), g = 'b', h = 0x01)
+    @test (@inferred value_index(space, 5, "q")) == 2
+    @test (@inferred case_indices(space, row)) == [2, 2, 2, 2, 2, 3, 2, 1]
+    # Reading a row allocates its index vector, 128 bytes, and nothing per
+    # value. Before, case_indices took 608 bytes for this row, and
+    # _row_indices 736 to 1104.
+    vector = allocated(n -> zeros(Int, n), 8)
+    @test allocated(case_indices, space, row) <= vector
+    @test allocated(case_indices, space, Tuple(row)) <= vector
+    @test allocated((s, r) -> _row_indices(s, r; what = "row", complete = true), space, row) <= vector
+    @test allocated((s, r) -> _row_indices(s, r; what = "row", complete = true), space, Tuple(row)) <= vector
+end
