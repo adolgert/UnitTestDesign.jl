@@ -317,8 +317,8 @@ _is_covered(::Nothing, t, support) = false
     _Record
 
 What a walk of the targets (`_walk_support!`) does with each target that no
-row holds: `_classify!(record, context, t)` classifies it and returns its
-status. Measurement lists the targets (`_Lists`) or counts them
+row holds: `_classify!(record, context, support, t)` classifies it and
+returns its status. Measurement lists the targets (`_Lists`) or counts them
 (`_Counts`); negative generation keeps the required ones and the
 exclusions (`_NegativeTargets`, invalid.jl).
 """
@@ -330,15 +330,21 @@ abstract type _Record end
 What a measured part lists: its missing, excluded and unknown targets, in
 the order they are met (target order, §9.7). Each excluded target carries
 the rules the deletion search found within `explanation_limit` (§3.13).
+`named` holds the `_Named` that names the targets of each support met so
+far, built at its first listed target. It is keyed by the support vector
+itself, which a walk passes with each of the support's targets
+(`_walk_support!`).
 """
 struct _Lists <: _Record
     missing::Vector{NamedTuple}
     excluded::Vector{Exclusion}
     unknown::Vector{NamedTuple}
     explanation_limit::Int
+    named::IdDict{Vector{Int}, _Named}
 end
 
-_Lists(explanation_limit::Int) = _Lists(NamedTuple[], Exclusion[], NamedTuple[], explanation_limit)
+_Lists(explanation_limit::Int) =
+    _Lists(NamedTuple[], Exclusion[], NamedTuple[], explanation_limit, IdDict{Vector{Int}, _Named}())
 
 """
     _Counts()
@@ -351,39 +357,42 @@ support anyway.
 struct _Counts <: _Record end
 
 """
-    _classify!(record, context, t) -> Symbol
+    _classify!(record, context, support, t) -> Symbol
 
-Decide one target that no valid row contains, `t` a full-width index vector,
-on the `Feasibility` of its row kind (§5.5, §6.2), and return its status as
+Decide one target that no valid row contains, `t` a full-width index vector
+whose nonzero entries are those at `support`, on the `Feasibility` of its
+row kind (§5.5, §6.2), and return its status as
 `IndexClassification` gives it: `:required` (so missing, §1.9), `:forbidden`
 or `:implied` (excluded, §1.4), or `:unknown` (the search reached its limit,
 §1.7). `t` is not retained.
 
-- With `_Lists`, record the target: missing or unknown as a `NamedTuple`,
-  excluded as an `Exclusion` with its rules in the space's numbering and
-  their labels, from `explain_partial` with the deletion search bounded by
-  `lists.explanation_limit` (§3.13–§3.16).
+- With `_Lists`, record the target, named by its support's `_Named`:
+  missing or unknown as a `NamedTuple`, excluded as an `Exclusion` with its
+  rules in the space's numbering and their labels, from `explain_partial`
+  with the deletion search bounded by `lists.explanation_limit`
+  (§3.13–§3.16).
 - With `_Counts`, record nothing: `_status` finds the status without the
   deletion search.
 """
-function _classify!(lists::_Lists, context::FeasibilityContext, t::Vector{Int})
+function _classify!(lists::_Lists, context::FeasibilityContext, support::Vector{Int}, t::Vector{Int})
     space = context.space
     f, active = feasibility_for(context, t)
     c = IndexClassification(explain_partial(f, t; explanation_limit = lists.explanation_limit))
+    target = get!(() -> _Named(space, support), lists.named, support)(t)
     if c.status === :required
-        push!(lists.missing, from_indices(space, t))
+        push!(lists.missing, target)
     elseif c.status === :unknown
-        push!(lists.unknown, from_indices(space, t))
+        push!(lists.unknown, target)
     else
         rules = active[c.rules]
-        push!(lists.excluded, Exclusion(from_indices(space, t), c.status, rules,
+        push!(lists.excluded, Exclusion(target, c.status, rules,
             [rule_label(space, k) for k in rules], c.minimal,
             _limit_pair(c.limit, context.feasibility_limit, lists.explanation_limit)))
     end
     return c.status
 end
 
-_classify!(::_Counts, context::FeasibilityContext, t::Vector{Int}) =
+_classify!(::_Counts, context::FeasibilityContext, support::Vector{Int}, t::Vector{Int}) =
     _status(first(feasibility_for(context, t)), t)
 
 """
@@ -412,7 +421,7 @@ function _measure_block!(record::_Record, context::FeasibilityContext,
         if _is_covered(seen, t, support)
             c += 1
         else
-            status = _classify!(record, context, t)
+            status = _classify!(record, context, support, t)
             status === :required ? (m += 1) : status === :unknown ? (u += 1) : (x += 1)
         end
         i = 1   # the next assignment, first parameter fastest

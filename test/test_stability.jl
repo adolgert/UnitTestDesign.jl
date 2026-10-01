@@ -7,8 +7,12 @@ using TestItemRunner
 # one dynamic call a check may make, a lazy rule's evaluation on a memo miss,
 # lands in code that allocates nothing beyond what the predicate allocates,
 # when the domains' element types are concrete. The search's entry points
-# infer concrete return types. Allocation counts differ between Julia
-# versions, so these tests assert zero only where zero is the design.
+# infer concrete return types. Translating to the caller's vocabulary reads
+# values with their domains' types: a result's rows behind one barrier, and a
+# measurement's listed targets through one reading per support. Allocation
+# counts differ between Julia versions, so these tests assert zero only where
+# zero is the design, and bound the rest between the counts before and after
+# the change they guard, measured on Julia 1.10 and 1.13.
 
 @testsnippet StabilitySetup begin
     using UnitTestDesign: Feasibility, forbids, _violates, _candidates
@@ -79,4 +83,49 @@ end
     @test (@inferred explain_partial(f, key)) isa IndexExplanation
     @test (@inferred Union{Tuple{Symbol, Vector{Int}}, Tuple{Symbol, Nothing}} _completable(f, key, 100)) isa Tuple
     @test (@inferred TargetList(request)[3]) isa Vector{Int}
+end
+
+
+@testitem "stability: a result's rows are read with their domains' types" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, TestCases, generate_full_factorial, row_type, _cases, _pick
+    # Eight domains of eight types, more than a tuple built by ntuple or map
+    # is inferred for.
+    space = TestSpace((a = 1:4, b = [:w, :x, :y, :z], c = [true, false], d = [1.0, 2.0, 3.0],
+                       e = ["p", "q", "r"], f = Int32[1, 2, 3, 4], g = ['a', 'b'], h = UInt8[1, 2]);
+                      constraints = [forbid((a = 1, b = :y)), forbid((c, d) -> c && d == 2.0, :c, :d)])
+    domains = (space.values...,)
+    @test (@inferred _pick(domains, (2, 1, 1, 3, 2, 4, 1, 2))) === (2, :w, true, 3.0, "q", Int32(4), 'a', 0x02)
+    request = Request(space)
+    design = generate_full_factorial(request)
+    n = size(design.matrix, 2)
+    T = row_type(space, false)
+    # The rows take their vector and nothing more.
+    @test allocated(_cases, T, domains, request.candidates, design.matrix) <=
+          allocated(k -> Vector{T}(undef, k), n) + 1024
+    # The result takes about 55 bytes a row; reading each row with
+    # from_indices took 1.3 KB.
+    @test allocated(TestCases, request, design) <= 2 * sizeof(T) * n
+    # A full factorial takes about 470 bytes a row, generation included; 1.9 KB before.
+    @test allocated(full_factorial, space) <= 1000 * n
+end
+
+
+@testitem "stability: a measurement names a support's targets with one reading" setup=[StabilitySetup] begin
+    using UnitTestDesign: _Named, _values, from_indices
+    space = stability_space()
+    t = [2, 0, 1, 0, 2]
+    named = _Named(space, [1, 3, 5])
+    @test named(t) === from_indices(space, t) === (a = 2, c = true, e = :q)
+    @test (@inferred _values(named, t)) === (2, true, :q)
+    # A measurement holds the _Named of a support as an abstract type, so
+    # naming a target is one dynamic call, which allocates the NamedTuple:
+    # 64 bytes, where from_indices took 544.
+    @test allocated(n -> n[](t), Ref{Any}(named)) <= 128
+    # coverage of no rows lists every target as missing: about 780 bytes a
+    # target on Julia 1.13 and 930 on 1.10, where naming each with
+    # from_indices took 1.2 KB and 1.5 KB.
+    wide = TestSpace(NamedTuple{Tuple(Symbol(:x, i) for i in 1:8)}(Tuple(1:4 for _ in 1:8)))
+    listed = length(coverage(NamedTuple[], wide; strength = 2).ordinary.missing)
+    @test listed == 28 * 16
+    @test allocated(s -> coverage(NamedTuple[], s; strength = 2), wide) <= 1100 * listed
 end

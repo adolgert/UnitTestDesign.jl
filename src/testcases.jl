@@ -219,7 +219,7 @@ end
 # TestCases(request, design; positional = false)
 #
 # Build the public result from an engine's `Design`. Rows come from
-# `to_cases`; positional results drop the names (§1.18). Exclusions are
+# `_cases`; positional results drop the names (§1.18). Exclusions are
 # translated into names and labels, and an excursion's `base` and
 # `never_appear` from engine positions into values. `strength` is the
 # request's for a covering design and 0 for the strategies that have none.
@@ -228,8 +228,7 @@ end
 function TestCases(request::Request, design::Design; positional::Bool = false)
     space = request.space
     T = row_type(space, positional)
-    named = to_cases(request, design.matrix)
-    cases = positional ? T[Tuple(values(c)) for c in named] : T[c for c in named]
+    cases = _cases(T, (space.values...,), request.candidates, design.matrix)
     stronger = Pair{Tuple{Vararg{Symbol}}, Int}[
         Tuple(space.names[g]) => s for (g, s) in request.groups[2:end]]
     excluded = Exclusion[_exclusion(request, e) for e in design.excluded]
@@ -241,6 +240,26 @@ function TestCases(request::Request, design::Design; positional::Bool = false)
                         design.seed, design.n_must_include, design.required, design.covered,
                         excluded, positional, notes, design.negative_required, design.negative_covered,
                         negative_excluded)
+end
+
+"""
+    _cases(T, domains, candidates, matrix) -> Vector{T}
+
+The columns of `matrix`, engine positions, as rows of type `T` (a
+`row_type`): parameter `i` of column `j` has the value
+`domains[i][candidates[i][matrix[i, j]]]`, wrappers kept, as `to_cases`
+gives it. `domains` is the space's domains as a tuple, so this is the one
+function barrier of a result's rows: compiled for the domains' types, it
+reads each value with its domain's type (`_pick`) and builds each row as
+`T`.
+"""
+function _cases(::Type{T}, domains::Tuple{Vararg{AbstractVector, N}}, candidates::Vector{Vector{Int}},
+                matrix::Matrix{Int}) where {T, N}
+    cases = Vector{T}(undef, size(matrix, 2))
+    for j in axes(matrix, 2)
+        cases[j] = T(_pick(domains, ntuple(i -> candidates[i][matrix[i, j]], Val(N))))
+    end
+    return cases
 end
 
 "An engine's `Excluded` record in the caller's vocabulary: the target's values, the rules' labels."

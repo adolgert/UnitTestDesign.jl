@@ -576,6 +576,52 @@ function from_indices(space::TestSpace, idx::AbstractVector{<:Integer})
 end
 
 """
+    _pick(domains, positions) -> Tuple
+
+`(domains[1][positions[1]], domains[2][positions[2]], …)` for a tuple of
+domains and a tuple of value indices: each value is read with its domain's
+type, so the tuple is concrete when the domains' element types are. It is
+generated because a tuple that `ntuple` or `map` builds from more than a few
+types of domain, or from more than 31 domains, is inferred as a tuple of
+`Any`.
+"""
+@generated function _pick(domains::Tuple, positions::Tuple)
+    return :(($((:(domains[$k][positions[$k]]) for k in 1:fieldcount(domains))...),))
+end
+
+"""
+    _Named(space, support)
+
+`from_indices` for the index vectors of one support: `named(idx)` is
+`from_indices(space, idx)` when the nonzero entries of `idx` are those at
+`support`. Measurement names each target it lists with the `_Named` of the
+target's support (`_Lists`, measure.jl).
+
+The support's domains are held as a tuple, so `_values` reads each value
+with its domain's type (`_pick`), and the one call of a `_Named` is the
+barrier. The names are a field, not a type parameter: a `NamedTuple` type
+per support would make the result concrete as well, but compiling one costs
+milliseconds per support, and a measurement has a support for each
+combination of parameters.
+"""
+struct _Named{K, D <: NTuple{K, AbstractVector}}
+    names::NTuple{K, Symbol}
+    support::NTuple{K, Int}
+    domains::D
+end
+
+function _Named(space::TestSpace, support::AbstractVector{<:Integer})
+    domains = Tuple(space.values[support])
+    return _Named{length(support), typeof(domains)}(Tuple(space.names[support]), Tuple(support), domains)
+end
+
+"The values of `idx` at the support, in support order, each read with its domain's type."
+_values(named::_Named{K}, idx::AbstractVector{<:Integer}) where {K} =
+    _pick(named.domains, ntuple(k -> Int(idx[named.support[k]]), Val(K)))
+
+(named::_Named)(idx::AbstractVector{<:Integer}) = NamedTuple{named.names}(_values(named, idx))
+
+"""
     _code(idx, support, radix) -> Int
     _decode!(row, code, support, radix) -> row
 

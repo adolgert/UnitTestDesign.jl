@@ -148,7 +148,7 @@ struct _NegativeTargets <: _Record
     excluded::Vector{Excluded}
 end
 
-function _classify!(record::_NegativeTargets, context::FeasibilityContext, t::Vector{Int})
+function _classify!(record::_NegativeTargets, context::FeasibilityContext, support::Vector{Int}, t::Vector{Int})
     request = record.request
     f, active = feasibility_for(context, t)
     target = _positions(request, t)
