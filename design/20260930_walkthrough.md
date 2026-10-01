@@ -22,7 +22,8 @@ open.
 | D | `feature/stage-d-projection` | `eb1b0f9` | 14 | `NegativeProjection`; checked parts constructor; `_candidates`; generation classifies negative targets by coverage's walk; one mixed-radix code | Snapshot identical except two planned lines |
 | E2 | `feature/stage-e2-isolation` | `aa6e6c6` | 4 | `_isolate` returns `_Found`, `_Proof` or `_Unknown`, and reads its status from `IndexClassification` | Snapshot byte-identical |
 | F | `feature/stage-f-macros` | `4703234` | 5 | Macro walker moved to `constraint_macros.jl`; `_macro_rule` builds through `_function_rule` | Snapshot byte-identical; field check on 47 rules |
-| Review | `feature/review-fixes` | see `git log` | 8 | Fixes from an independent review of the whole stack; this guide | Snapshot byte-identical |
+| Review | `feature/review-fixes` | `5f5d2b3` | 8 | Fixes from an independent review of the whole stack; this guide | Snapshot byte-identical |
+| Stability | `feature/stability-and-display` | see `git log` | 10 | Type-stability fixes in the core (section 7), and every follow-up line notes an unresolved proof in parentheses | Snapshot byte-identical |
 
 Useful commands:
 
@@ -232,11 +233,12 @@ stage's implementation notes.
 3. **The `coverage` error order** in section 3.
 4. **`misses` is kept** (Stage B). It is one of a documented five-state
    partition that has an exclusivity test.
-5. **The display of an unresolved proof.** In the per-kind form, the
-   unresolved note is now in parentheses (`9e6c961`). The union's own line,
-   unchanged from before E1, still reads "…; whether each rule is needed is
-   unresolved: …; searched …", with the same "; " ambiguity. Changing it
-   would change a pre-existing display.
+5. **The display of an unresolved proof.** Settled: you said the old output
+   need not be kept. Every `Followup` line now gives the note in
+   parentheses, " (whether each rule is needed is unresolved: …)", both on
+   the union's line and in each kind's clause (`9e6c961`, `943790e`). So
+   "; " only ever separates clauses. `explain` and the must-include error
+   keep their own form, where nothing follows the note.
 6. **Stage B extras.** The `matches_from_missing` docstring was rewritten,
    since it described a return value the function doesn't have. A local
    `matches` that shadowed a function was removed. The reference sweep keeps
@@ -253,7 +255,11 @@ stage's implementation notes.
      tests.
    - `github_matrix` and `realize` read rows their own way and reject vector
      rows.
-   - `_print_exclusion` gained a keyword that only `diagnose` uses.
+   - `_print_exclusion` gained a keyword, `parenthesized`, that only
+     `diagnose` passes, and always as `true`.
+   - `to_cases` (`src/request.jl`) is no longer called from `src/`, since
+     `TestCases` builds its rows behind a barrier (section 7); only tests
+     call it.
    - `cover_negative` still scans the negative must-include columns once per
      invalid value.
 10. **Squash candidates.** Stage A's `5864721` corrects the wording of
@@ -275,3 +281,79 @@ stage's implementation notes.
   session's scratchpad, not the repository. The snapshot can be regenerated
   at any commit with `benchmark/snapshot.jl`. A worktree needs a copy of the
   gitignored `Manifest.toml`.
+
+## 7. Type stability
+
+None of the plan's gates tested type stability, so it was audited after the
+stack was built. The audit ran JET from a scratch directory: 0.12.2 on
+Julia 1.13 and 0.9.18 on 1.10. It also used `@code_warntype` on about 90
+method signatures, a scan for `Core.Box`, and profiles. It compared the code
+before the plan (`4d9d424`) with the code after it (`5f5d2b3`).
+
+**The stack introduced no hot-path instability.** The runtime-dispatch sites
+in the hot code were the same before and after it, on both Julia versions.
+The search's inner loops, IPOG, GND's rounds and the measurement walk were
+already clean. The audit found seven pre-existing instabilities, and
+`feature/stability-and-display` fixes them:
+
+| | Where | Fix | Before → after |
+|:--|:--|:--|:--|
+| A1 | The tabulated rule check, `forbids` | `RuleTable` is concrete: a `BitVector` over the smallest box that holds the forbidden tuples (`src/rule_table.jl:50`), so a check is arithmetic plus a bit test (`_forbidden_bit`, `:134`). `forbidden_tuples(t)` decodes it for inspection | 20 → 7 ns and 1 → 0 allocations per check; a space with a 64,000-combination rule builds in 0.78 ms instead of 6.8 |
+| A2 | The lazy-rule memo, typed `Vector{Union{Nothing, Dict}}` | One concrete `RuleMemo` (`src/feasibility.jl:102`): a `Dict{Vector{Int}, Bool}` looked up through a reused scratch key, so a hit allocates nothing | A scoped check 22 → 12 ns, a whole-case check 48 → 24 ns, 0 allocations |
+| A3 | `_LazyRule` and `_evaluate_rule` | `_LazyRule{N, Names, Whole, F, D<:Tuple}` (`src/constraints.jl:389`) holds the predicate and a tuple of domains, so evaluation is concrete behind the one dynamic call on a memo miss. Tabulation goes through the same type, and `_evaluate_rule` is gone | A whole-case miss 617 → 7.5 ns, a scoped one 147 → 3.5 ns |
+| A7 | `explain_partial`, `witness` | The witness is narrowed to `Vector{Int}`, which Julia 1.10 doesn't infer from the status | No cost; JET is clean on 1.10 |
+| A4 | `from_indices`, which built every NamedTuple with names known only at run time | In measurement, a listed target is named by one `_Named` per support (`src/space.jl:659-674`). `TestCases` builds its rows as their element type behind one barrier (`_cases`, `src/testcases.jl:231`) | A listed target ~1 µs → 0.1–0.16 µs; listing ~2× faster; `full_factorial` of 276,000 rows 459 → ~45 ms |
+| A5 | Reading a row's values, one dispatch per value | The space keeps one lookup per parameter, by identity key and by partition name (`_lookup`, `src/space.jl:172`; field `lookup`). A miss falls back to today's comparison, so results and messages are unchanged | An 8-parameter row 337 → 107 ns; `isallowed` on every case of a design 0.27 → 0.06 s |
+| A6 | `build_excursion`, product iteration over a tuple whose length is known only at run time | An odometer, as in `full_factorial` (`src/excursions.jl:65-76`) | `excursions` of a 14×5 space at distance 2: 3.96 → 0.61 ms |
+
+**Gates.**
+- The snapshot is byte-identical to the one from before the stability work.
+- The suite passes on Julia 1.13 and 1.10, and the docs build passes.
+- The fingerprint and every benchmark count are unchanged.
+- The dispatch sites left on hot paths are deliberate barriers, each hit once
+  per operation, not once per step of the inner loop:
+  - a lazy-rule memo miss (`src/feasibility.jl:294`);
+  - one call per listed target (`src/measure.jl:381`);
+  - building a `_Named`, once per support (`src/space.jl:667`);
+  - `_cases`, once per result (`src/testcases.jl:231`).
+
+**Guards** are in `test/test_stability.jl`, using only `Test` and Base, as you
+decided: no JET in the repository.
+- Zero-allocation assertions on the rule check and `_violates`. These fail on
+  the old code, because `@inferred` alone can't see a dispatch inside a
+  function whose return type still infers.
+- Allocation bounds on naming a listed target, reading a row and building a
+  result's rows.
+- `@inferred` on the search's entry points, `TargetList` and `value_index`.
+
+**Decisions for you.**
+1. **Compile latency.** Typing the rules and the domains moves cost from run
+   time to compile time:
+   - about 2.5 ms per tabulated rule when a space is built (40 rules:
+     72 → 171 ms);
+   - about 10 ms per lazy rule on first use;
+   - about 14 ms per distinct tuple of domain types for `_Named`: +70 ms on
+     the first `coverage` of the Fable space, and +550 ms on a space with
+     nine domain types at strength 3.
+
+   The alternatives are an untyped tabulation path, which brings back a
+   second evaluation routine, and domains held as `NTuple{K, AbstractVector}`,
+   which keeps first-call latency at today's level but makes listing 10–15%
+   slower and leaves `_values` uninferred.
+2. **The memo's key type.** A `Vector{Int}` key has one code path and never
+   overflows. An `Int` mixed-radix code is faster on a hit (9.6 against
+   11.2 ns over 3 parameters, and 12.9 against 23.7 ns over 10), but a
+   whole-case rule over many parameters overflows it, so it needs a second
+   path.
+3. **The space is bigger.** It holds a value lookup per parameter, roughly
+   doubling `summarysize` for small spaces, and it takes 3–15% longer to
+   build.
+4. **Not stability, but visible in profiles:**
+   - Each row read formats a "coverage row k" label (27% of `coverage` of a
+     full factorial). `lazy"…"` would remove that.
+   - The 17 GB that fixture 1's classic IPOG allocates comes from the
+     coverage-matrix code copying columns (`mc.allc[:, col]`). That code is
+     concrete; it is simply allocation-heavy.
+5. **A lazy table's function now receives a `Vector{Int}`,** which may be the
+   memo's scratch key, so it must not keep it. This is internal, and the
+   docstring says so.
