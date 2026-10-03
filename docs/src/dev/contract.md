@@ -339,7 +339,8 @@ hides uncertainty.
 
 **3.12** `report` applies §3.10 to bonus coverage and to the prefix curve.
 `design_sizes` reports a strategy's resource-limit status in place of a case
-count or share.
+count or share. Both apply §3.10 to the ordinary and the negative figures
+separately (§5.10).
 
 **3.13** Explanation of implied exclusions has its own budget, the keyword
 `explanation_limit::Int`, default `1_000_000` nodes, shared by all deletion
@@ -360,7 +361,14 @@ unresolved.
 its rules was verified to make the target feasible, with a witness.
 
 **3.17** `followups` reports `unknown` for a suspect whose isolation search
-reaches the limit.
+reaches the limit. The search covers every kind of row that could hold the
+suspect: for a suspect with no `Invalid` value, ordinary rows and the
+negative rows at each invalid value of each parameter it leaves out (§5.5);
+for a suspect with one, the negative rows at that value. The isolation
+conditions (no other suspect) apply to every kind, including rules that
+name the invalid parameter. A suspect is `inseparable` only when every kind
+is proven to hold no isolating row, and `unknown` when no kind yields one
+and some kind's search reaches the limit.
 
 ## 4. Partitions
 
@@ -439,7 +447,12 @@ negative rows contribute to negative coverage. A negative row never increases
 ordinary coverage, including for the combinations among its ordinary values.
 
 **5.10** Ordinary and negative coverage are reported separately in `coverage`,
-`report`, and the `TestCases` bookkeeping.
+`report`, and the `TestCases` bookkeeping. Every progress and planning figure
+separates the two parts: `report`'s guarantee, bonus coverage and prefix
+curve, and `design_sizes`'s case counts and pair and triple coverage. For a
+space with `Invalid` values an ordinary figure is labeled as ordinary and
+printed beside its negative figure, so no ordinary figure reads as the
+whole.
 
 **5.11** A row that violates its applicable rules contributes to neither kind of
 coverage.
@@ -695,7 +708,9 @@ the variables of generators and comprehensions. Any other form that binds or
 assigns a name or runs statements (an assignment outside a `let` binding,
 `for`, `while`, `try`, `global`, `local`, a quoted expression, a macro call)
 is an error when the macro expands, and the message points to the function
-form `forbid(f, names...)`.
+form `forbid(f, names...)`. The subtype operators `<:` and `>:` are syntax,
+not calls, and are an error too; the message suggests the call form,
+`(<:)(T, $S)`, which the macro reads, and the function form.
 
 **12.7** In a macro rule, `nothing` and `missing` denote those values, not
 parameter names. A parameter may not be named `nothing` or `missing`.
@@ -758,7 +773,8 @@ evaluated at most once per combination per operation. A `TestSpace` retains
 nothing from any operation: its size is the same before and after any call.
 `isallowed`, which checks one row, may evaluate lazy rules without a memo.
 
-**12.20** Whole-case rules are always evaluated lazily, memoized per row.
+**12.20** Whole-case rules are always evaluated lazily, memoized within the
+operation (§12.19).
 
 **12.21** Cost of whole-case rules, documented in their docstring: they connect
 every parameter into one component, and deciding feasibility may search up to
@@ -776,10 +792,13 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 
 | Name | Kind | Status | Notes |
 |:--|:--|:--|:--|
-| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `arity(space)`, `length(space)` (full product). |
+| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `length(space)` (full product); `arity(space)` is internal. |
+| `parameters` | function | new | `parameters(space)`: the parameter names, in order. |
 | `constraints` | keyword | new | Rules for a space. |
 | `forbid`, `require` | functions | new | Pattern, listed-names, and whole-case forms (§12). |
 | `@forbid`, `@require` | macros | new | Bare-name rules (§12.6). |
+| `Constraint` | type | new | The one rule form that all four surface forms build (§12.1). |
+| `ConstraintError` | exception | new | A rule's predicate threw (§12.16). |
 | `must_include` | keyword | new | Replaces `seeds`. |
 | `seeds` | keyword | deprecated | Alias for `must_include`. |
 | `strength` | keyword | new | Replaces `n_way`. |
@@ -787,6 +806,7 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `stronger` | keyword | new | Replaces `wayness` (§11). |
 | `wayness` | keyword | deprecated | Translated to `stronger`. |
 | `TestCases` | type | new | Result of every generator. |
+| `Exclusion` | type | new | One excluded target and the rules that exclude it (§1.4). |
 | `covering` | function | new | General entry point. |
 | `all_tuples` | function | deprecated | Alias for `covering`. |
 | `all_values`, `all_pairs`, `all_triples` | functions | kept | `covering` at strength 1, 2, 3. |
@@ -794,10 +814,14 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `values_excursion`, `pairs_excursion`, `triples_excursion` | functions | deprecated | Thin aliases for `excursions` at distance 1, 2, 3. |
 | `full_factorial` | function | kept | Size guard (§7.3). |
 | `coverage` | function | new | Measurement (§1.12). |
+| `Coverage` | type | new | What `coverage` returns. |
+| `iscomplete` | function | new | §1.16. |
 | `missing_interactions` | function | new | §3.11. |
 | `explain`, `isallowed` | functions | new | §1.25–§1.27. |
 | `report` | function | new | Verification, excluded list, bonus coverage, prefix curve, seed. |
+| `Report` | type | new | What `report` returns. |
 | `design_sizes` | function | new | Cases per strategy before committing. |
+| `DesignSizes` | type | new | What `design_sizes` returns. |
 | `diagnose` | function | experimental | `diagnose(cases, passed)`: ranked suspects; a pure function of cases and outcomes. |
 | `followups` | function | experimental | Isolating cases per suspect: found, inseparable, or unknown. |
 | `github_matrix` | function | new | JSON for a workflow `include:` list; validates every row before writing. |

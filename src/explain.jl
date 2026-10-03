@@ -105,6 +105,9 @@ feasibility_for(space::TestSpace, idx::AbstractVector{<:Integer}; feasibility_li
 ## isallowed
 
 """
+Use when you have one complete case and want to know whether the space's rules
+allow it; it evaluates the rules on that case and never searches.
+
     isallowed(space::TestSpace, case) -> Bool
 
 Whether the complete `case` is a valid row of `space` (contract §1.25). `case`
@@ -198,13 +201,16 @@ struct Explanation
 end
 
 """
+Use when you want to know whether some values can appear together in a valid
+case, and, when they cannot, which rules exclude them.
+
     explain(space::TestSpace, assignment; feasibility_limit = 1_000_000,
             explanation_limit = 1_000_000) -> Explanation
 
 Say whether `assignment` can appear in a valid row of `space`, and why not
 when it cannot (contract §1.26). `assignment` is a `NamedTuple` naming some
 or all parameters, or a complete `Tuple` in parameter order. The result is an
-`Explanation`, which prints as a sentence:
+[`Explanation`](@ref UnitTestDesign.Explanation), which prints as a sentence:
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> space = TestSpace(

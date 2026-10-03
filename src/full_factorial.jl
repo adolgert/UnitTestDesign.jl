@@ -1,10 +1,16 @@
-# Full factorial: every valid row (plan Phase 3 step 5; contract §7.2–§7.4).
+# Full factorial: every valid row (plan Phase 3 step 5, Phase 6 step 1;
+# contract §7.2–§7.4).
 #
 # The candidate count is checked against `limit` before anything is
-# enumerated (§7.3). Candidates are then visited one at a time, in the 0.4
-# order (the last parameter varies fastest), and only the rows that pass
-# every rule are kept (§7.4); a rejected row is never stored. The result is a
-# materialized matrix. Phase 6 adds the single-invalid products to the count.
+# enumerated (§7.3): the ordinary product plus, for each parameter, its
+# invalid values times the product of the other parameters' ordinary values.
+# Candidates are then visited one at a time, in the 0.4 order (the last
+# parameter varies fastest): the ordinary rows, kept when they pass every
+# rule, then for each parameter in order and each of its invalid values in
+# domain order, the rows holding that value beside ordinary values, kept
+# when they pass the rules whose scope omits the parameter (§5.5). A
+# multiple-invalid row is never a candidate (§5.7), and a rejected row is
+# never stored (§7.4). The result is a materialized matrix.
 
 """
     _advance!(row, arity) -> Bool
@@ -73,24 +79,71 @@ function _accept_rows!(kept::Vector{Int}, request::Request, seen::Set{Vector{Int
     return accepted
 end
 
-"""
-    check_full_factorial_limit(arity, limit) -> BigInt
+# Append to `kept` each negative candidate row (one invalid value, ordinary
+# values elsewhere) that its applicable rules allow and that is not in `seen`;
+# return how many its rules allow. For each parameter `p`, in order, and each
+# invalid value of `p`, in domain order, the other parameters run through
+# their ordinary values, the last fastest, under the negative-row search of
+# that value, which omits every rule that reads `p` (§5.5).
+function _accept_negative_rows!(kept::Vector{Int}, request::Request, seen::Set{Vector{Int}})
+    arity = request.arity
+    n = length(arity)
+    idx = zeros(Int, n)
+    accepted = 0
+    for p in 1:n, position in (arity[p] + 1):length(request.candidates[p])
+        widths = copy(arity)
+        widths[p] = 1
+        odometer = ones(Int, n)
+        t = zeros(Int, n)
+        t[p] = request.candidates[p][position]
+        f, _ = feasibility_for(request.context, t)
+        while true
+            for i in 1:n
+                idx[i] = i == p ? request.candidates[p][position] : request.candidates[i][odometer[i]]
+            end
+            if !violates(f, idx)
+                accepted += 1
+                row = copy(odometer)
+                row[p] = position
+                (isempty(seen) || !(row in seen)) && append!(kept, row)
+            end
+            _advance!(odometer, widths) || break
+        end
+    end
+    return accepted
+end
 
-The number of candidate rows of a full factorial over parameters with
-`arity[i]` ordinary values, their product, counted as a `BigInt` so that it
-never overflows. A count above `limit` throws the `ResourceLimitError` that
-gives the count and the keyword `limit` (contract §7.3). `limit` is checked
-first: a positive integer within `Int`. `full_factorial` calls this with the
-space's ordinary arities before it builds the request, so the refusal comes
-before any must-include search; `generate_full_factorial` calls it again
-for callers that build the request themselves. Phase 6 adds the
-single-invalid products to the count.
 """
-function check_full_factorial_limit(arity::AbstractVector{<:Integer}, limit)
+    check_full_factorial_limit(space, limit) -> BigInt
+
+The number of candidate rows of a full factorial of `space` (contract §7.3):
+the product of the parameters' ordinary value counts, plus, for each
+parameter, its number of `Invalid` values times the product of the other
+parameters' ordinary value counts. Multiple-invalid rows are no candidates
+(§5.7). It is counted as a `BigInt`, so it never overflows. A count above
+`limit` throws the `ResourceLimitError` that gives the count, split into
+ordinary and negative candidates when the space has `Invalid` values, and
+the keyword `limit`. `limit` is checked first: a positive integer within
+`Int`. `full_factorial` calls this before it builds the request, so the
+refusal comes before any must-include search; `generate_full_factorial` calls
+it again for callers that build the request themselves.
+"""
+function check_full_factorial_limit(space::TestSpace, limit)
     limit = _check_integer(:limit, limit, 1, "§7.3")
-    candidates = prod(BigInt, arity; init = big(1))
-    candidates > limit && throw(ResourceLimitError(
-        "enumerating a full factorial of $(_grouped(candidates)) candidate rows", limit, :limit))
+    ordinary = [big(length(ordinary_indices(space, i))) for i in eachindex(space.names)]
+    count = prod(ordinary; init = big(1))
+    negative = big(0)
+    for p in eachindex(ordinary)
+        others = prod((ordinary[q] for q in eachindex(ordinary) if q != p); init = big(1))
+        negative += length(invalid_indices(space, p)) * others
+    end
+    candidates = count + negative
+    if candidates > limit
+        split = negative == 0 ? "" :
+            " ($(_grouped(count)) ordinary and $(_grouped(negative)) with one Invalid value)"
+        throw(ResourceLimitError(
+            "enumerating a full factorial of $(_grouped(candidates)) candidate rows$split", limit, :limit))
+    end
     return candidates
 end
 
@@ -98,19 +151,22 @@ end
     generate_full_factorial(request; limit = 10^6) -> Design
 
 The must-include rows, in the order given with duplicates kept (contract
-§10.5), then every other valid row of the request's space once (§7.2): a
-valid row equal to a must-include row is not repeated. Before enumerating,
-a candidate product above `limit` throws `ResourceLimitError` giving the
-count and the keyword `limit` (§7.3, `check_full_factorial_limit`).
-Candidates are enumerated one at a time, the last parameter fastest, and
-only valid rows are kept (§7.4). `notes` reports `candidates` (the product)
-and `accepted` (the valid rows found) separately. A partial must-include
-row is completed by its feasibility witness.
+§10.5), then every other valid row of the request's space once (§7.2): the
+valid ordinary rows, then the valid negative rows, for each parameter in
+order and each of its invalid values in domain order; a valid row equal to
+a must-include row is not repeated, and no row holds two invalid values.
+Before enumerating, a candidate count above `limit` throws
+`ResourceLimitError` giving the count and the keyword `limit` (§7.3,
+`check_full_factorial_limit`). Candidates are enumerated one at a time, the
+last parameter fastest, and only valid rows are kept (§7.4). `notes` reports
+`candidates` (ordinary and single-invalid) and `accepted` (the valid rows
+found, ordinary and negative) separately. A partial must-include row is
+completed by its feasibility witness, as a negative row when it holds an
+`Invalid` (§7.9).
 """
 function generate_full_factorial(request::Request; limit = 10^6)
-    arity = request.arity
-    n = length(arity)
-    candidates = check_full_factorial_limit(arity, limit)
+    n = length(request.arity)
+    candidates = check_full_factorial_limit(request.space, limit)
     must = Vector{Int}[]
     for s in axes(request.must_include, 2)
         row = request.must_include[:, s]
@@ -120,6 +176,7 @@ function generate_full_factorial(request::Request; limit = 10^6)
     seen = Set(must)
     kept = reduce(vcat, must; init = Int[])
     accepted = _accept_rows!(kept, request, seen)
+    accepted += _accept_negative_rows!(kept, request, seen)
     matrix = reshape(kept, n, :)
     validate_design(request, matrix, Vector{Int}[]; strategy = :full_factorial)
     # Completeness (plan Phase 3 step 6): the distinct rows are the accepted rows.

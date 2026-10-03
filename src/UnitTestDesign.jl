@@ -1,5 +1,13 @@
 """
-Generates test cases, which are sets of arguments to use for testing functions.
+Use when a function or a configuration has several options and you want to
+test their combinations: describe the configurations your code must handle;
+it tells you which combinations your tests exercise, and supplies a compact
+set of additional cases covering the rest.
+
+    UnitTestDesign
+
+Start with [`TestSpace`](@ref) and [`all_pairs`](@ref), and measure any set
+of cases with [`coverage`](@ref).
 """
 module UnitTestDesign
 
@@ -14,6 +22,9 @@ export ResourceLimitError
 export isallowed, explain
 export coverage, missing_interactions, Coverage, iscomplete
 export report, Report, design_sizes, DesignSizes
+export diagnose, followups
+export github_matrix
+export realize
 
 include("rule_table.jl")
 include("constraints.jl")
@@ -31,6 +42,10 @@ include("greedy_tuples.jl")
 include("parameter_order.jl")
 include("full_factorial.jl")
 include("excursions.jl")
+include("invalid.jl")
+include("partition.jl")
 include("interface.jl")
+include("diagnose.jl")
+include("export.jl")
 
 end

@@ -191,15 +191,28 @@ end
 end
 
 
-@testitem "request: limits are positive, wrappers wait for Phase 6 (§3.3, §0.2)" setup=[RequestSetup] begin
+@testitem "request: limits are positive, and wrappers are values (§3.3, §4.2, §5)" setup=[RequestSetup] begin
     space = solver_space()
     @test_throws ArgumentError Request(space; feasibility_limit = 0)
     @test_throws ArgumentError Request(space; explanation_limit = -1)
     @test Request(space; feasibility_limit = 5).feasibility_limit == 5
-    msg = message(() -> Request(TestSpace((a = [1, Invalid(0)], b = [1, 2]))))
-    @test occursin("parameter `a` has an Invalid value", msg) && occursin("§0.2", msg)
-    msg = message(() -> Request(TestSpace((a = [Partition(:tiny, Returns(1)), 2], b = [1, 2]))))
-    @test occursin("parameter `a` has a Partition value", msg)
+    # Invalid values follow the ordinary ones in engine positions; an engine
+    # sees only the ordinary positions, 1:arity (Phase 6).
+    r = Request(TestSpace((a = [1, Invalid(0), 2], b = [1, 2])))
+    @test r.candidates == [[1, 3, 2], [1, 2]] && r.arity == [2, 2]
+    @test r.feasibility.candidates == [[1, 3], [1, 2]]
+    @test length(targets(r)) == 4
+    # A Partition is an ordinary value.
+    r = Request(TestSpace((a = [Partition(:tiny, Returns(1)), 2], b = [1, 2])))
+    @test r.candidates == [[1, 2], [1, 2]] && r.arity == [2, 2]
+    # A negative must-include row is validated under the negative policy and
+    # holds its invalid position (§7.9).
+    s = TestSpace((a = [1, Invalid(0)], b = [1, 2]); constraints = [@forbid(a == 1 && b == 2)])
+    r = Request(s; must_include = [(a = Invalid(0), b = 2), (a = Invalid(0),)])
+    @test r.must_include == [2 2; 2 0]
+    @test occursin("breaks rule 1", message(() -> Request(s; must_include = [(a = 1, b = 2)])))
+    # Strength 0 is refused at the keyword constructor, the public floor (§11.1).
+    @test_throws ArgumentError Request(s; strength = 0)
 end
 
 

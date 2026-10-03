@@ -1,40 +1,47 @@
 using Test
 using TestItemRunner
 
-# The guard on generation over wrapper values (plan Phase 2 step 2, contract
-# §0.2): generation over a domain with an Invalid or Partition value is an
-# explicit unsupported-feature error until negative generation lands. Every
-# generation call reaches it through the Request, which names the parameter:
-# `p2` for a positional call, the parameter's name otherwise.
-# Pending Phase 6: negative generation replaces this guard, and these tests,
-# with real generation over wrapper values (the Phase 6 pending lines of
-# test_fixtures.jl).
+# The former guard on generation over wrapper values (plan Phase 2 step 2,
+# contract §0.2): until Phase 6, generation over a domain with an Invalid or
+# Partition value was an explicit unsupported-feature error. Negative
+# generation and partitions replaced it (plan Phase 6 steps 1 and 2); the
+# calls the guard refused now generate. Before the guard, the 0.4 engines
+# returned rows with two Invalid values; none of these calls may (§5.7).
 
-@testitem "legacy guard: generation rejects Invalid and Partition values (§0.2)" begin
-    message(g) = try g(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $(typeof(e))" end
+@testitem "legacy guard: generation over Invalid and Partition values now works (§4, §5, §6)" begin
     invalid = Any[1, Invalid(0)]
     tiny = Any[Partition(:tiny, Returns(1e-9)), 1.0]
-    cases = [
-        # Before the guard, this returned rows with two Invalid values.
-        (() -> all_pairs(invalid, invalid), "parameter `p1` has an Invalid value"),
-        (() -> all_pairs([1, 2], [3, 4], invalid; engine = GND()), "parameter `p3` has an Invalid value"),
-        (() -> all_values([1, 2], tiny), "parameter `p2` has a Partition value"),
-        (() -> all_triples([1, 2], invalid, [3, 4]), "parameter `p2` has an Invalid value"),
-        (() -> covering([1, 2], invalid; strength = 1), "parameter `p2` has an Invalid value"),
-        (() -> full_factorial([1, 2], [3, 4], invalid), "parameter `p3` has an Invalid value"),
-        (() -> full_factorial(tiny, [3, 4]), "parameter `p1` has a Partition value"),
-        (() -> excursions([1, 2], invalid, [:a, :b]; distance = 2), "parameter `p2` has an Invalid value"),
-        (() -> excursions(tiny, [1, 2]), "parameter `p1` has a Partition value"),
-        # Named spaces name the parameter.
-        (() -> all_pairs((n = invalid, m = [1, 2])), "parameter `n` has an Invalid value"),
-        (() -> all_pairs(TestSpace((size = tiny, m = [1, 2]))), "parameter `size` has a Partition value"),
+    calls = [
+        () -> all_pairs(invalid, invalid),
+        () -> all_pairs([1, 2], [3, 4], invalid; engine = GND()),
+        () -> all_values([1, 2], tiny),
+        () -> all_triples([1, 2], invalid, [3, 4]),
+        () -> covering([1, 2], invalid; strength = 1),
+        () -> full_factorial([1, 2], [3, 4], invalid),
+        () -> full_factorial(tiny, [3, 4]),
+        () -> excursions([1, 2], invalid, [:a, :b]; distance = 2),
+        () -> excursions(tiny, [1, 2]),
+        () -> all_pairs((n = invalid, m = [1, 2])),
+        () -> all_pairs(TestSpace((size = tiny, m = [1, 2]))),
     ]
-    for (call, expected) in cases
-        msg = message(call)
-        @test occursin(expected, msg)
-        @test occursin("generation with Invalid or Partition values is not supported yet", msg)
-        @test occursin("(contract §0.2)", msg)
+    for call in calls
+        cases = call()
+        @test !isempty(cases)
+        @test all(row -> count(x -> x isa Invalid, values(row)) <= 1, cases)
+        @test all(row -> isallowed(cases.space, row), cases)
+        # Covering results cover both parts; the others are measured at strength 1.
+        c = cases.strategy === :covering ? coverage(cases) : coverage(cases; strength = 1)
+        @test iscomplete(c) || cases.strategy === :excursion
     end
+    # Two invalid parameters: every negative target at strength 2, never both at once.
+    pairs = all_pairs(invalid, invalid)
+    @test collect(pairs) == [(1, 1), (Invalid(0), 1), (1, Invalid(0))]
+    @test pairs.negative_required == 2
+    # Partition rows hold the wrapper; realize draws it.
+    @test any(r -> r[2] isa Partition, all_values([1, 2], tiny))
+    # Named spaces, a full factorial with its negative rows last (§7.2).
+    @test collect(full_factorial((n = invalid, m = [1, 2]))) ==
+          [(n = 1, m = 1), (n = 1, m = 2), (n = Invalid(0), m = 1), (n = Invalid(0), m = 2)]
 end
 
 

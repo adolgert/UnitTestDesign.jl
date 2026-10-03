@@ -5,6 +5,9 @@
 using Random: AbstractRNG, Xoshiro
 
 """
+Use when you want the default engine: deterministic and free of randomness, so
+the same inputs always give the same cases.
+
     IPOG()
 
 In-parameter-order General (IPOG): deterministic, no randomness (contract
@@ -18,6 +21,11 @@ struct IPOG
 end
 
 """
+Use when you want a seeded, randomized alternative to [`IPOG`](@ref), for
+instance to compare design sizes at a high strength, where it sometimes finds
+fewer cases; the same `seed` gives the same cases, and neither engine promises
+the smaller design.
+
     GND(; seed = 0, candidates = 50, rng = nothing)
 
 Greedy Non-deterministic (GND). Builds each case by drawing `candidates`
@@ -69,11 +77,50 @@ engine_rng(engine::GND) = engine.rng === nothing ? Xoshiro(engine.seed) : copy(e
 """
     generate(engine, request::Request) -> Design
 
-The one engine entry point (plan Phase 3 step 1): a design for `request` in
-index space, certified by `validate_design` before it returns (contract
-§1.21). `IPOG()` and `GND()` build covering designs (§1.3). Every target
-classification, must-include completion and placement decision is resolved or
-the call throws `ResourceLimitError` (§3.6); a design is never returned with a
-target unresolved or dropped.
+The one engine entry point (plan Phase 3 step 1): a covering design for
+`request` in index space, certified by `validate_design` before it returns
+(contract §1.21). `IPOG()` and `GND()` build covering designs (§1.3). Every
+target classification, must-include completion and placement decision is
+resolved or the call throws `ResourceLimitError` (§3.6); a design is never
+returned with a target unresolved or dropped.
+
+The ordinary design is built first, over ordinary values only, from the
+classified ordinary targets (`classify_targets`) and the ordinary
+must-include rows (`cover_ordinary`). When the space has
+[`Invalid`](@ref) values, negative generation (`cover_negative`,
+invalid.jl) then covers the negative targets of §6 with the same engine.
+The rows are the must-include rows in the order given, each completed under
+its own row policy (§7.9), then the generated ordinary rows, then the
+generated negative rows (§5.12). The two kinds' bookkeeping is kept apart
+(§1.19).
 """
-function generate end
+function generate(engine::Union{IPOG, GND}, request::Request)
+    required, excluded = classify_targets(request)
+    name, seed = _engine_name(engine), _engine_seed(engine)
+    if !_has_invalid(request.space)
+        matrix = cover_ordinary(engine, request, required)
+        covered = validate_design(request, matrix, required)
+        return Design(matrix, :covering, name, seed, length(required), covered, excluded,
+                      n_must_include(request), (;))
+    end
+    must = request.must_include
+    negative_columns = [j for j in axes(must, 2) if _holds_invalid(request, view(must, :, j))]
+    ordinary_columns = [j for j in axes(must, 2) if !(j in negative_columns)]
+    ordinary = cover_ordinary(engine, _with_must_include(request, must[:, ordinary_columns]), required)
+    negative = cover_negative(engine, request, negative_columns)
+    # Must-include rows in the order given, each completed by its kind's step.
+    rows = Vector{Vector{Int}}(undef, size(must, 2))
+    for (k, j) in enumerate(ordinary_columns)
+        rows[j] = ordinary[:, k]
+    end
+    for j in negative_columns
+        rows[j] = negative.seeds[j]
+    end
+    append!(rows, (ordinary[:, k] for k in (length(ordinary_columns) + 1):size(ordinary, 2)))
+    append!(rows, negative.rows)
+    matrix = isempty(rows) ? zeros(Int, length(request.arity), 0) : reduce(hcat, rows)
+    covered = validate_design(request, matrix, required; negative = negative.required)
+    return Design(matrix, :covering, name, seed, length(required), covered, excluded,
+                  n_must_include(request), (;), length(negative.required), length(negative.required),
+                  negative.excluded)
+end

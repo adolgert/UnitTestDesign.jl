@@ -30,6 +30,9 @@
 # table, and the initial prune the same sum once per component.
 
 """
+Use when a call may stop at a search or size limit: catch this error, or retry
+with the keyword it names set higher; it never carries a partial result.
+
     ResourceLimitError(what, limit, keyword)
 
 A search or enumeration stopped at a resource limit before reaching a

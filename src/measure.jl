@@ -69,12 +69,17 @@ struct CoveragePart
 end
 
 """
+Use when you read what [`coverage`](@ref) measured: the covered, missing,
+excluded and unresolved combinations, with ordinary and negative targets kept
+apart.
+
     Coverage
 
 What [`coverage`](@ref) measured: which of the requested combinations the
 supplied rows contain (contract §1.12–§1.17). Fields:
 
-- `ordinary`, `negative`: a `CoveragePart` each (see its docstring), measured
+- `ordinary`, `negative`: a
+  [`CoveragePart`](@ref UnitTestDesign.CoveragePart) each, measured
   separately (§5.10). The negative part is empty unless the space has
   [`Invalid`](@ref) values.
 - `space`: the [`TestSpace`](@ref) measured against.
@@ -132,12 +137,21 @@ struct Coverage
 end
 
 """
+Use when a test should assert that a set of cases covers every feasible
+combination, as in `@test iscomplete(coverage(cases, space))`; it is `false`
+when anything is missing or unresolved.
+
     iscomplete(c::Coverage) -> Bool
 
 `true` when every feasible target, ordinary and negative, is covered and no
 target is unresolved (contract §1.16). An unknown target makes it `false`:
 coverage is never claimed complete under an exhausted limit (§1.7, §3.10).
 Rejected rows do not change it; they are listed in the result (§1.14).
+
+A rejected row does not make a result incomplete. To test that committed
+cases are still valid, check the rows with [`isallowed`](@ref) as well,
+`@test all(case -> isallowed(space, case), cases)`; otherwise a new rule
+that forbids a committed row passes unnoticed.
 """
 iscomplete(c::Coverage) = all(p -> isempty(p.missing) && isempty(p.unknown), (c.ordinary, c.negative))
 
@@ -212,9 +226,10 @@ holds the distinct valid ordinary rows and the distinct valid negative rows,
 in first-seen order; `duplicates` counts repeats of each kind; `rejected`
 lists, per kind, the rows that break an applicable rule (judged under
 `active_rules`, so a negative row at `p` skips every rule that reads `p`) and
-the rows with more than one `Invalid` value (negative kind). `slots[k]` is
-the position in `kept[1]` of row `k` when it is the first appearance of a
-valid ordinary row, else 0: the prefix curve of `report` reads it. Rules are
+the rows with more than one `Invalid` value (negative kind). `slots[1][k]`
+is the position in `kept[1]` of row `k` when it is the first appearance of a
+valid ordinary row, else 0, and `slots[2][k]` the same for `kept[2]` and
+valid negative rows: the prefix curves of `report` read them. Rules are
 checked through the call's `FeasibilityContext`, so a lazy rule's verdicts
 are memoized for the call and no longer (§3.5, §12.19).
 """
@@ -223,7 +238,7 @@ function _read_rows(context::FeasibilityContext, rows::AbstractVector)
     kept = (Vector{Int}[], Vector{Int}[])
     duplicates = [0, 0]
     rejected = (_Rejected[], _Rejected[])
-    slots = zeros(Int, length(rows))
+    slots = (zeros(Int, length(rows)), zeros(Int, length(rows)))
     seen = Set{Vector{Int}}()
     for (k, row) in enumerate(rows)
         idx = _coverage_row(space, row, k)
@@ -242,7 +257,7 @@ function _read_rows(context::FeasibilityContext, rows::AbstractVector)
         else
             push!(seen, idx)
             push!(kept[part], idx)
-            part == 1 && (slots[k] = length(kept[1]))
+            slots[part][k] = length(kept[part])
         end
     end
     return kept, duplicates, rejected, slots
@@ -277,10 +292,15 @@ the buffer `codes`; a larger one gets a `Set` of value-index vectors.
 
 `firsts`, when it is a vector, gains one at row `j` for each projection that
 row `j` is the first to hold: summed over the supports, the targets each row
-adds to the rows before it, which is the prefix curve of `report`.
+adds to the rows before it, which is the prefix curve of `report`. For
+negative rows, `at[j]` is row `j`'s invalid parameter, and a projection
+counts only when the support holds it: a negative row's projection onto
+other parameters is ordinary values alone, no negative target (§5.9).
 """
 function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{Int},
-                      codes::Vector{Int}, firsts::Union{Nothing, Vector{Int}} = nothing)
+                      codes::Vector{Int}, firsts::Union{Nothing, Vector{Int}} = nothing,
+                      at::Union{Nothing, Vector{Int}} = nothing)
+    counts(j) = firsts !== nothing && (at === nothing || at[j] in support)
     if prod(BigInt, (radix[p] for p in support); init = big(1)) <= _MAX_MARKS
         fill!(codes, 0)
         stride = 1
@@ -295,7 +315,7 @@ function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{In
         for (j, code) in enumerate(codes)
             marks[code + 1] && continue
             marks[code + 1] = true
-            firsts === nothing || (firsts[j] += 1)
+            counts(j) && (firsts[j] += 1)
         end
         return marks
     end
@@ -304,7 +324,7 @@ function _projections(table::Matrix{Int}, support::Vector{Int}, radix::Vector{In
         key = table[j, support]
         key in set && continue
         push!(set, key)
-        firsts === nothing || (firsts[j] += 1)
+        counts(j) && (firsts[j] += 1)
     end
     return set
 end
@@ -401,7 +421,7 @@ function _measure_block!(lists::_Lists, context::FeasibilityContext, support::Ve
 end
 
 """
-    _measure_support!(lists, context, support, kind, table, codes, radix, explanation_limit, firsts)
+    _measure_support!(lists, context, support, kind, table, codes, radix, explanation_limit, firsts, at)
         -> (covered, missing, excluded, unknown)
 
 The targets of `kind` on one support, in a fixed order (contract §9.7):
@@ -412,16 +432,18 @@ The targets of `kind` on one support, in a fixed order (contract §9.7):
   order, each invalid value `v` of `p`, in domain order, every assignment of
   ordinary values to the rest of the support, the first parameter fastest.
   At strength 1 the rest is empty and the target is `(p = v)` alone.
+
+`firsts` and `at` are passed to `_projections` for the prefix curves.
 """
 function _measure_support!(lists::_Lists, context::FeasibilityContext, support::Vector{Int},
                            kind::Symbol, table::Matrix{Int}, codes::Vector{Int}, radix::Vector{Int},
-                           explanation_limit::Int, firsts)
+                           explanation_limit::Int, firsts, at)
     space = context.space
     t = zeros(Int, length(space.names))
     kind === :negative && all(p -> isempty(space.invalid[p]), support) && return (0, 0, 0, 0)
-    # Only ordinary rows have firsts: a negative row's projection onto a
-    # support without its invalid parameter is no negative target.
-    seen = _projections(table, support, radix, codes, kind === :ordinary ? firsts : nothing)
+    # A negative row's projection onto a support without its invalid
+    # parameter is no negative target, so `at` keeps it out of `firsts`.
+    seen = _projections(table, support, radix, codes, firsts, at)
     kind === :ordinary &&
         return _measure_block!(lists, context, support, support, t, seen, radix, explanation_limit)
     total = (0, 0, 0, 0)
@@ -441,14 +463,16 @@ end
 
 Measure the targets of `kind` (`:ordinary` or `:negative`) against `rows`,
 the distinct valid rows of that kind, support by support, and sum each
-group's supports for its breakdown (§1.15). For the ordinary part, `firsts`,
-a vector of zeros aligned with `rows`, receives the number of targets each
-row is the first to cover (see `_projections`).
+group's supports for its breakdown (§1.15). `firsts`, a vector of zeros
+aligned with `rows`, receives the number of targets of `kind` each row is
+the first to cover (see `_projections`), so `sum(firsts)` is the part's
+`covered`.
 """
 function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vector{Int}},
                        rows::Vector{Vector{Int}}, kind::Symbol; explanation_limit::Int,
                        duplicates::Int, rejected::Vector{_Rejected}, firsts = nothing)
     space = context.space
+    at = kind === :negative ? Int[only(_invalid_parameters(space, r)) for r in rows] : nothing
     radix = [length(v) for v in space.values]
     lists = _Lists()
     table = Int[r[p] for r in rows, p in eachindex(space.names)]   # cases × parameters
@@ -456,7 +480,7 @@ function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vec
     counts = Dict{Vector{Int}, NTuple{4, Int}}()   # support => (covered, missing, excluded, unknown)
     for support in supports
         counts[support] = _measure_support!(lists, context, support, kind, table, codes, radix,
-                                            explanation_limit, firsts)
+                                            explanation_limit, firsts, at)
     end
     breakdown = _GroupCounts[]
     for (members, s) in groups
@@ -475,7 +499,7 @@ end
 
 """
     _measure(rows, space; strength, stronger, feasibility_limit, explanation_limit)
-        -> (coverage, prefix)
+        -> (coverage, prefix, negative_prefix)
 
 The measurement behind every `coverage` method and `report`. Checks the
 request (§11), reads and sorts the rows (§1.13, §1.14), then measures the
@@ -486,7 +510,9 @@ values.
 
 `prefix[k]` is the number of ordinary targets the first `k` rows cover, from
 the same pass (each row adds the targets it is the first to hold), so
-`prefix[end] == coverage.ordinary.covered`.
+`prefix[end] == coverage.ordinary.covered`; `negative_prefix[k]` is the same
+for the negative targets, from the negative part's marking, so
+`negative_prefix[end] == coverage.negative.covered` (§5.9, §5.10).
 """
 function _measure(rows::AbstractVector, space::TestSpace; strength, stronger,
                   feasibility_limit, explanation_limit)
@@ -496,15 +522,16 @@ function _measure(rows::AbstractVector, space::TestSpace; strength, stronger,
     explanation_limit = _check_limit(:explanation_limit, explanation_limit)
     kept, duplicates, rejected, slots = _read_rows(context, rows)
     supports = _supports(groups)
-    firsts = zeros(Int, length(kept[1]))
+    firsts = (zeros(Int, length(kept[1])), zeros(Int, length(kept[2])))
     ordinary = _measure_part(context, groups, supports, kept[1], :ordinary; explanation_limit,
-                             duplicates = duplicates[1], rejected = rejected[1], firsts)
+                             duplicates = duplicates[1], rejected = rejected[1], firsts = firsts[1])
     negative = _measure_part(context, groups, supports, kept[2], :negative; explanation_limit,
-                             duplicates = duplicates[2], rejected = rejected[2])
+                             duplicates = duplicates[2], rejected = rejected[2], firsts = firsts[2])
     named = Pair{Tuple{Vararg{Symbol}}, Int}[Tuple(space.names[g]) => s for (g, s) in groups[2:end]]
     c = Coverage(ordinary, negative, space, strength, named,
                  (feasibility_limit = context.feasibility_limit, explanation_limit = explanation_limit))
-    return c, cumsum(Int[slot == 0 ? 0 : firsts[slot] for slot in slots])
+    curve(part) = cumsum(Int[slot == 0 ? 0 : firsts[part][slot] for slot in slots[part]])
+    return c, curve(1), curve(2)
 end
 
 _coverage(rows::AbstractVector, space::TestSpace; kwargs...) = first(_measure(rows, space; kwargs...))
@@ -513,6 +540,10 @@ _coverage(rows::AbstractVector, space::TestSpace; kwargs...) = first(_measure(ro
 ## The public functions
 
 """
+Use when you have test cases from anywhere (hand-written, generated, or an older
+design) and want to know which combinations of values they cover and which they
+miss.
+
     coverage(cases, space; strength = 2, stronger = [],
              feasibility_limit = 1_000_000, explanation_limit = 1_000_000) -> Coverage
     coverage(cases, domains::NamedTuple; constraints = [], kwargs...)
@@ -656,6 +687,10 @@ _strategy_phrase(cases::TestCases) =
     cases.strategy === :full_factorial ? "a full factorial" : "this $(cases.strategy) result"
 
 """
+Use when you want the list of feasible combinations your cases miss, to add
+cases for them; it throws rather than return a list that a search limit left
+uncertain.
+
     missing_interactions(cases, space; strength = 2, stronger = [],
                          feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     missing_interactions(cases::TestCases; kwargs...)
@@ -748,8 +783,6 @@ function _print_part(io::IO, part::CoveragePart, noun::AbstractString, limit; li
     end
     return nothing
 end
-
-_has_invalid(space::TestSpace) = any(!isempty, space.invalid)
 
 function _rejection_phrase(space::TestSpace, r::_Rejected)
     r.reason === :multiple_invalid && return "row $(r.index) has more than one Invalid value"

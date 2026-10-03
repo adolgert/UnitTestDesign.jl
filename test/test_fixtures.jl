@@ -7,10 +7,8 @@ using TestItemRunner
 # the "Phase 2" lines ask the production model the fixture's question. The
 # "Phase 3" lines generate with both engines through the internal request,
 # `gen(engine, space; kwargs...)` below, until Phase 4 brings `all_pairs` and
-# `covering` over a `TestSpace`. Each `@test_skip` line is an engine or
-# production test waiting for a later phase; its comment says which. The
-# skipped expressions sketch the future call and are never evaluated;
-# `throws(T, f)` stands for `@test_throws`.
+# `covering` over a `TestSpace`. The "Phase 6" lines, pending until
+# negative generation and partitions landed, now run.
 
 @testsnippet FixtureGen begin
     using UnitTestDesign: Request, generate, to_cases
@@ -276,6 +274,7 @@ end
 
 
 @testitem "fixtures: wrappers" setup=[Checker] begin
+    using Random: Xoshiro
     f = invalid_beside_ordinary
     s = f.space
     bad = CheckInvalid(1)
@@ -290,10 +289,12 @@ end
     @test length(filter(row -> same_value(row.n, seed.n), negative_rows(s))) == 3
     # Phase 2 — TestSpace accepts 1 and Invalid(1) in one domain
     @test length(test_space(invalid_beside_ordinary).values[1]) == 3
-    # pending: Phase 6 — all_pairs covers 9 ordinary pairs and 4 negative targets, reported separately
-    @test_skip coverage(all_pairs(test_space(invalid_beside_ordinary))).negative.covered == 4
-    # pending: Phase 6 — must_include = [(n = Invalid(1),)] completes as a negative row
-    @test_skip hasinvalid(first(all_pairs(test_space(invalid_beside_ordinary); must_include = f.request.negative_seed)))
+    # Phase 6 — all_pairs covers 9 ordinary pairs and 4 negative targets, reported separately
+    c = coverage(all_pairs(test_space(invalid_beside_ordinary)))
+    @test (c.ordinary.covered, c.ordinary.feasible, c.negative.covered, c.negative.feasible) == (9, 9, 4, 4)
+    # Phase 6 — must_include = [(n = Invalid(1),)] completes as a negative row
+    negative_seed = [(n = Invalid(1),)]   # f.request.negative_seed in production values
+    @test hasinvalid(first(all_pairs(test_space(invalid_beside_ordinary); must_include = negative_seed)))
 
     f = partition_names
     s = f.space
@@ -304,8 +305,11 @@ end
     @test classify_target(s, (size = :tiny, mode = :tiny)).status == :required
     # Phase 2 — TestSpace accepts the space and the rule receives :tiny
     @test explain(test_space(partition_names), (size = :tiny, mode = :b)).outcome == :forbidden
-    # pending: Phase 6 — generated rows hold the Partition wrappers; realize draws each once
-    @test_skip all(r -> !(r.size isa Symbol), all_pairs(test_space(partition_names)))
+    # Phase 6 — generated rows hold the Partition wrappers; realize draws each once
+    cases = all_pairs(test_space(partition_names))
+    @test all(r -> !(r.size isa Symbol), cases) && any(r -> r.size isa Partition, cases)
+    @test all(((c, r),) -> c.size isa Partition ? r.size === c.size.name : r.size === c.size,
+              zip(cases, realize(cases; rng = Xoshiro(1))))   # the model draws Returns(name)
 end
 
 
@@ -328,10 +332,12 @@ end
     r = check_design(f.request.ordinary_seed, s)
     @test only(r.ordinary.rejected).reason == :violates_rule
     @test only(r.ordinary.rejected).rules == [1]
-    # pending: Phase 6 — the negative must-include row is accepted: it is the whole result
-    @test_skip collect(all_pairs(test_space(f); must_include = [(a = Invalid(0), b = 1)])) == [(a = Invalid(0), b = 1)]
-    # pending: Phase 6 — the ordinary must-include row is an error naming rule 1
-    @test_skip throws(ArgumentError, () -> all_pairs(test_space(f); must_include = f.request.ordinary_seed))
+    # Phase 6 — the negative must-include row is accepted: it is the whole result
+    @test collect(all_pairs(test_space(f); must_include = [(a = Invalid(0), b = 1)])) == [(a = Invalid(0), b = 1)]
+    # Phase 6 — the ordinary must-include row is an error naming rule 1
+    @test_throws ArgumentError all_pairs(test_space(f); must_include = f.request.ordinary_seed)
+    err = try all_pairs(test_space(f); must_include = f.request.ordinary_seed) catch e; e end
+    @test occursin("breaks rule 1", err.msg)
 end
 
 
