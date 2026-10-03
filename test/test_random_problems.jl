@@ -1,0 +1,228 @@
+using Test
+using TestItemRunner
+
+# The random-problem gate (plan Phase 1 step 4, mandatory from Phase 3 step 8).
+# Random constrained problems go through `generate` with IPOG and with GND, at
+# strengths 2 and 3, and every design is checked by the independent oracle
+# (checker.jl): every row valid and every feasible target covered (contract
+# §1.3). The design's bookkeeping must agree with the oracle too: its required
+# count is the oracle's feasible count, and each excluded target has the
+# oracle's status, with the same rules when it is directly forbidden (§1.4).
+#
+# There is no expected failure. Every problem must return a certified design
+# from both engines; an exception from either engine is logged with its
+# problem and fails the gate. Before Phase 3 the 0.4 IPOG crashed on about 40%
+# of these problems and the 0.4 GND never returned on those with an implied
+# target (issue #51).
+
+@testsnippet RandomGate begin
+    using Random
+    using UnitTestDesign: Request, generate, to_cases
+
+    """
+    Run `n_problems` problems at `strength` through IPOG and GND and check each
+    design with the oracle. Returns the tallies and the stream `seed`. Problem
+    `index` is the `index`-th draw of the stream; `gate_problem` redraws it.
+    """
+    function random_gate(strength, seed, n_problems)
+        rng = Xoshiro(seed)
+        tally = Dict(k => 0 for k in (
+            :problems, :implied, :planted, :empty,
+            :ipog_checked, :ipog_error, :ipog_rows,
+            :gnd_checked, :gnd_error, :gnd_rows))
+        for index in 1:n_problems
+            problem = random_problem(rng; strength)
+            gnd_seed = Int(rand(rng, UInt64) >> 1)  # one draw per problem, as gate_problem expects
+            tally[:problems] += 1
+            tally[:implied] += problem.implied > 0
+            tally[:planted] += problem.planted
+            tally[:empty] += problem.feasible == 0
+            space = test_space(problem.space)
+            for (key, engine) in ((:ipog, IPOG()), (:gnd, GND(seed = gnd_seed)))
+                request = Request(space; strength)
+                design = try
+                    generate(engine, request)
+                catch err
+                    err isa InterruptException && rethrow()
+                    # Any exception fails the gate; gate_verdicts asserts the count is 0.
+                    @error("$engine threw on random problem $index; redraw it with " *
+                           "gate_problem($strength, $(repr(seed)), $index)",
+                           problem, exception = (err, catch_backtrace()))
+                    tally[Symbol(key, :_error)] += 1
+                    continue
+                end
+                tally[Symbol(key, :_checked)] += 1
+                tally[Symbol(key, :_rows)] += size(design.matrix, 2)
+                check_returned(design, request, problem, engine, (strength, seed, index))
+            end
+        end
+        return (; tally, seed)
+    end
+
+    "Problem `index` of the stream that `random_gate(strength, seed, n)` draws."
+    function gate_problem(strength, seed, index)
+        rng = Xoshiro(seed)
+        for _ in 1:(index - 1)
+            random_problem(rng; strength)
+            rand(rng, UInt64)  # the GND seed random_gate draws after each problem
+        end
+        return random_problem(rng; strength)
+    end
+
+    "A target in engine positions as the oracle writes it: assigned names and their values."
+    function checker_target(problem, t)
+        assigned = findall(!=(0), t)
+        return NamedTuple{Tuple(problem.names[assigned])}(Tuple(problem.domains[p][t[p]] for p in assigned))
+    end
+
+    """
+    Assert that the design is complete by the oracle and that its bookkeeping
+    agrees with the oracle's classification of every target.
+    """
+    function check_returned(design, request, problem, engine, where)
+        cases = to_cases(request, design.matrix)
+        result = check_design(cases, problem.space; strength = problem.strength)
+        ok = complete(result)
+        ok || @error "$engine returned a design that fails the checker" where problem result
+        @test ok
+
+        part = result.ordinary
+        verdict = Dict{NamedTuple, Tuple{Symbol, Vector{Int}}}()
+        for (t, rules) in part.forbidden
+            verdict[t] = (:forbidden, rules)
+        end
+        for t in part.implied
+            verdict[t] = (:implied, Int[])
+        end
+        counted = design.required == design.covered == part.counts.feasible &&
+                  length(design.excluded) == part.counts.forbidden + part.counts.implied
+        disagree = filter(design.excluded) do e
+            v = get(verdict, checker_target(problem, e.target), nothing)
+            v === nothing || v[1] != e.status || (e.status == :forbidden && v[2] != e.rules)
+        end
+        agree = counted && isempty(disagree)
+        agree || @error("$engine's bookkeeping disagrees with the checker", where, problem,
+                        required = design.required, covered = design.covered,
+                        excluded = length(design.excluded), checker = part.counts,
+                        disagree = [(checker_target(problem, e.target), e.status, e.rules) for e in disagree])
+        @test agree
+        return nothing
+    end
+
+    "Assert the tallies: every problem gave both engines a design the oracle accepts."
+    function gate_verdicts(gate, n_problems)
+        tally = gate.tally
+        @test tally[:problems] == n_problems
+        @test tally[:ipog_error] == 0
+        @test tally[:gnd_error] == 0
+        @test tally[:ipog_checked] == n_problems
+        @test tally[:gnd_checked] == n_problems
+    end
+
+    "500 problems at multiplier 1.0, and at least 50."
+    gate_count() = max(50, round(Int, 500 * test_run_multiplier()))
+end
+
+
+@testitem "random problems: generator" setup=[UTSetup, Checker, RandomGate] begin
+    using Random
+    # Deterministic from the rng.
+    a = [random_problem(Xoshiro(17); strength = 2) for _ in 1:3]
+    b = [random_problem(Xoshiro(17); strength = 2) for _ in 1:3]
+    @test all(repr(x) == repr(y) for (x, y) in zip(a, b))
+
+    # gate_problem redraws a problem from the gate's stream.
+    rng = Xoshiro(0x99)
+    stream = [(random_problem(rng; strength = 3), rand(rng, UInt64))[1] for _ in 1:3]
+    @test repr(gate_problem(3, 0x99, 3)) == repr(stream[3])
+
+    rng = Xoshiro(0x51 ⊻ seed_mod())
+    for _ in 1:100
+        problem = random_problem(rng; strength = 2)
+        @test 3 <= length(problem.names) <= 8
+        @test all(d -> 2 <= length(d) <= 4 && allunique(d), problem.domains)
+        @test 1 <= length(problem.rules) <= 4
+        @test all(r -> 2 <= length(r.scope) <= 3 && allunique(r.scope), problem.rules)
+        # The 0.4 form of the rules, kept as a record, agrees with the checker
+        # on every complete row.
+        valid = Set(Tuple(r) for r in valid_rows(problem.space))
+        @test all(problem.disallow(row...) == !(row in valid)
+                  for row in Iterators.product(problem.domains...))
+    end
+
+    # The 0.4 form never shows a rule a partial case.
+    space = CheckSpace([:a, :b, :c], [[1, 2], [1, 2], [1, 2]],
+        [((:a, :b), (a, b) -> (a === nothing || b === nothing) ? error("saw nothing") : a < b),
+         ((:c, :a, :b), (c, a, b) -> any(isnothing, (a, b, c)) ? error("saw nothing") : c == a + b)])
+    disallow = legacy_disallow(space)
+    @test all(disallow(row...) isa Bool for row in Iterators.product(([nothing, 1, 2] for _ in 1:3)...))
+    @test disallow(1, 2, nothing) == true    # rule 1 has its whole scope
+    @test disallow(2, 1, nothing) == false   # rule 2 is not applied yet
+    @test disallow(1, 1, 2) == true
+    @test_throws ArgumentError legacy_disallow(CheckSpace((a = [nothing, 1], b = [1, 2])))
+
+    # A share of problems have implied targets, some of them planted.
+    rng = Xoshiro(0x77)
+    problems = [random_problem(rng; strength = 2) for _ in 1:200]
+    @test 0 < count(p -> p.implied > 0, problems) < 200
+    @test any(p -> p.planted, problems)
+end
+
+
+@testitem "random problems: pairwise through IPOG and GND" setup=[UTSetup, Checker, RandomGate] begin
+    n_problems = gate_count()
+    gate = random_gate(2, 0x2026_0926_0000_0002 ⊻ seed_mod(), n_problems)
+    @info "Random pairwise problems" seed = gate.seed tally = (; sort(collect(gate.tally))...)
+    gate_verdicts(gate, n_problems)
+end
+
+
+@testitem "random problems: three-way through IPOG and GND" setup=[UTSetup, Checker, RandomGate] begin
+    n_problems = gate_count()
+    gate = random_gate(3, 0x2026_0926_0000_0003 ⊻ seed_mod(), n_problems)
+    @info "Random three-way problems" seed = gate.seed tally = (; sort(collect(gate.tally))...)
+    gate_verdicts(gate, n_problems)
+end
+
+
+@testitem "random problems: one Invalid value, pairwise through IPOG and GND, both parts (§5, §6)" setup=[UTSetup, Checker] begin
+    using Random
+    # Plan Phase 6 step 5: each problem gives one random parameter the value
+    # Invalid(-1) (domains hold 0:9, so it is a new choice). Both engines
+    # generate at strength 2, and the oracle judges the ordinary and the
+    # negative part; the negative bookkeeping must match its counts.
+    as_check(x::Invalid) = CheckInvalid(x.value)
+    as_check(x) = x
+    rng = Xoshiro(0x2026_0927_0006 ⊻ seed_mod())
+    checked = Ref(0)
+    for index in 1:100
+        problem = random_problem(rng; strength = 2)
+        p = rand(rng, eachindex(problem.names))
+        domains = [collect(Any, d) for d in problem.space.domains]
+        push!(domains[p], CheckInvalid(-1))
+        cs = CheckSpace(problem.space.names, domains, problem.space.rules)
+        space = test_space(cs)
+        for engine in (IPOG(), GND(seed = index))
+            cases = try
+                covering(space; strength = 2, engine)
+            catch err
+                err isa InterruptException && rethrow()
+                @error("$engine threw on random problem $index with an Invalid value at $(problem.names[p])",
+                       problem, exception = (err, catch_backtrace()))
+                @test false
+                continue
+            end
+            check = check_design([map(as_check, row) for row in cases], cs; strength = 2)
+            ok = complete(check.ordinary) && complete(check.negative) &&
+                 cases.required == check.ordinary.counts.feasible &&
+                 cases.negative_required == cases.negative_covered == check.negative.counts.feasible &&
+                 length(cases.negative_excluded) == check.negative.counts.forbidden + check.negative.counts.implied &&
+                 issorted(hasinvalid.(collect(cases)))
+            ok || @error("$engine's design with an Invalid value fails the checker", index, problem,
+                         invalid_at = problem.names[p], check)
+            @test ok
+            checked[] += ok
+        end
+    end
+    @test checked[] == 200
+end

@@ -1,0 +1,1303 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------- packages
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{libertine}
+\usepackage[varqu,varl,scaled=0.95]{zi4}
+\usepackage{amsmath}
+\usepackage[margin=1in,headheight=14pt]{geometry}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xspace}
+\usepackage{float}
+
+% ---------------------------------------------------------------- colors
+\definecolor{ink}{HTML}{1B1F24}
+\definecolor{accent}{HTML}{1F4E79}
+\definecolor{finding}{HTML}{9C3D10}
+\definecolor{findingbg}{HTML}{FBF1EB}
+\definecolor{proposal}{HTML}{1B6B5A}
+\definecolor{proposalbg}{HTML}{ECF6F3}
+\definecolor{codebg}{HTML}{F5F6F8}
+\definecolor{rule}{HTML}{C9CED6}
+\definecolor{good}{HTML}{1B6B3A}
+\definecolor{part}{HTML}{8A6100}
+\definecolor{bad}{HTML}{A8261B}
+\definecolor{comment}{HTML}{6A737D}
+\definecolor{kw}{HTML}{6F2DA8}
+\definecolor{str}{HTML}{0B6B3A}
+
+\color{ink}
+\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent,citecolor=accent}
+
+% ---------------------------------------------------------------- headings
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{accent}}{\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{2.2ex plus 1ex}{1.0ex}
+\titlespacing*{\subsection}{0pt}{1.8ex plus 0.8ex}{0.7ex}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{comment}Who Reaches for Combinatorial Testing}
+\fancyhead[R]{\small\color{comment}UnitTestDesign.jl review}
+\fancyfoot[C]{\small\color{comment}\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\setlist{itemsep=0.25ex,topsep=0.6ex}
+\setlength{\parskip}{0.55ex}
+
+% ---------------------------------------------------------------- code
+\lstdefinelanguage{Julia}{
+  morekeywords={abstract,break,catch,const,continue,do,else,elseif,end,export,
+    false,for,function,if,import,in,let,macro,module,mutable,nothing,quote,
+    return,struct,true,try,using,while,begin},
+  sensitive=true,
+  morecomment=[l]\#,
+  morestring=[b]",
+}
+\lstset{
+  language=Julia,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{kw},
+  commentstyle=\color{comment},
+  stringstyle=\color{str},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  upquote=true,
+  breaklines=true,
+  aboveskip=0.6ex,
+  belowskip=0.2ex,
+}
+\newtcblisting{jlcode}[1][]{
+  listing only, breakable, enhanced,
+  colback=codebg, colframe=codebg, boxrule=0pt, arc=2pt,
+  left=6pt, right=6pt, top=3pt, bottom=3pt,
+  listing options={language=Julia,basicstyle=\ttfamily\small},
+  #1
+}
+\newtcblisting{term}[1][]{
+  listing only, breakable, enhanced,
+  colback=white, colframe=rule, boxrule=0.5pt, arc=2pt,
+  left=6pt, right=6pt, top=3pt, bottom=3pt,
+  listing options={language={},basicstyle=\ttfamily\footnotesize,columns=fixed,keepspaces=true},
+  #1
+}
+
+% ---------------------------------------------------------------- boxes
+\newtcolorbox{findingbox}[1]{
+  breakable, enhanced, colback=findingbg, colframe=finding, boxrule=0pt,
+  leftrule=3pt, arc=0pt, left=8pt, right=8pt, top=4pt, bottom=4pt,
+  fonttitle=\bfseries\color{finding}, coltitle=finding, colbacktitle=findingbg,
+  title={#1}, attach title to upper={\ \ }
+}
+\newtcolorbox{proposalbox}[1]{
+  breakable, enhanced, colback=proposalbg, colframe=proposal, boxrule=0pt,
+  leftrule=3pt, arc=0pt, left=8pt, right=8pt, top=4pt, bottom=4pt,
+  fonttitle=\bfseries\color{proposal}, coltitle=proposal, colbacktitle=proposalbg,
+  title={#1}, attach title to upper={\ \ }
+}
+
+% ---------------------------------------------------------------- shorthands
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\utd}{\textsf{UnitTestDesign.jl}\xspace}
+\newcommand{\met}{\textcolor{good}{\textbf{Met}}}
+\newcommand{\partly}{\textcolor{part}{\textbf{Partly}}}
+\newcommand{\notyet}{\textcolor{bad}{\textbf{Not yet}}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\renewcommand{\arraystretch}{1.18}
+
+% =====================================================================
+\begin{document}
+
+\begin{titlepage}
+\setlength{\parindent}{0pt}
+\vspace*{1.2in}
+{\color{accent}\rule{\linewidth}{1.2pt}}\\[1.2ex]
+{\fontsize{24}{29}\selectfont\bfseries\color{accent} Who Reaches for Combinatorial Testing,\\[0.3ex] and What They Need From It}\\[2ex]
+{\Large A user-centered review of \utd, with experiments and a roadmap}\\[1.2ex]
+{\color{accent}\rule{\linewidth}{0.6pt}}
+
+\vspace{2.2em}
+\begin{tabular}{@{}ll@{}}
+Prepared for & Andrew Dolgert \\
+Prepared by  & Claude (Opus 5.5), working in the repository \\
+Date         & September 23, 2026 \\
+Reviewed     & \utd v0.4.0, commit \code{e0504d6}, branch \code{feature/upgrade} \\
+Environment  & Julia 1.12.5 on macOS \\
+\end{tabular}
+
+\vspace{3em}
+\begin{minipage}{0.9\linewidth}
+\small\color{comment}
+Statements marked \emph{measured} come from experiments I ran during this
+review; Appendix~\ref{app:repro} lists them. Function names in the proposal
+sections (\code{TestSpace}, \code{coverage}, \code{diagnose}, and so on) are
+sketches of a possible interface, not existing API. I did not read the
+earlier \code{interface_*} analyses in the repository.
+\end{minipage}
+\vfill
+\end{titlepage}
+
+{\small\setlength{\parskip}{0pt}\tableofcontents}
+\newpage
+
+% =====================================================================
+\section*{Summary}
+\addcontentsline{toc}{section}{Summary}
+
+\utd answers one question well: \emph{given a list of values for each
+parameter, which few combinations should I test so that every pair (or
+triple, or $t$-tuple) of values appears somewhere?} Its default engine, IPOG, is
+fast. Fifteen four-valued parameters at strength four take about four seconds
+and produce 958 tests, within 4\% of the 924 reported in the IPOG paper~\cite{lei2008}. In each
+of the 888 constrained random problems where IPOG returned a result, an
+independent checker confirmed that the result was valid and complete. The core
+algorithms are sound wherever they finish.
+
+The package's limits lie around generation rather than in it. People reach
+for combinatorial testing at a particular moment: a nested loop over options
+has just exploded, or each run costs an hour of cluster time, or a bug arrived
+from a combination nobody tried. At that moment they have questions. How many
+tests will this be? Did it really cover everything? What did it leave out,
+and why? When test 7 fails, which combination is to blame? What would it cost
+to go further? Today the package returns a \code{Vector{Vector{Any}}} and says
+nothing more. Users have to work out everything else themselves.
+
+What I found, in order of consequence:
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Constraints are where users get hurt.} With a \code{disallow}
+  rule, IPOG crashed with \code{BoundsError: attempt to access ... at index [0]}
+  on 8.6\% of random pairwise problems and 13.8\% of three-way problems
+  (\emph{measured}). Every problem that contained an \emph{implicit}
+  constraint crashed. An implicit constraint arises when two innocent rules
+  together make some pair impossible. On the same kind of input GND does
+  not crash; it loops forever. And because unassigned parameters reach the rule
+  as \code{nothing}, a parameter whose real values include \code{nothing} (a
+  common Julia default) silently loses required coverage.
+\item \textbf{GND has a one-token bug.} One comparison uses \code{n_way} where
+  it needs \code{n_way - 1}. As a result, once as many parameters are set as
+  the strength (two, for pairwise), GND picks every remaining value at random.
+  Fixing it shrinks GND's designs by 17--35\%, and GND then beats IPOG when parameters have eight values
+  (\emph{measured}). The documentation describes GND as the engine that finds
+  shorter designs, but the shipped code finds longer ones.
+\item \textbf{Parameters have positions but no names.} That single decision
+  makes constraints positional, makes forty-parameter configurations
+  unreadable, and makes a failing case print as
+  \code{Any[1000, :newton, 0.001, true]}.
+\item \textbf{Several natural users are not served at all.} These include the
+  maintainer who wants to know what their existing hand-written tests cover,
+  the developer debugging a failure, the engineer sizing a CI matrix, the
+  tester of invalid inputs, and the AI agent writing tests on someone's behalf.
+\end{enumerate}
+
+The recommendation, in one sentence: \textbf{turn the package from a
+generator that returns a list into a short conversation about a test space}.
+That conversation runs: plan, generate with a stated guarantee, run with
+names, diagnose, extend. Each step reports what it did and what is possible
+next. Table~\ref{tab:top} lists the ten changes I would make first.
+
+\begin{table}[H]
+\centering\small
+\caption{The ten changes I would make first.}\label{tab:top}
+\begin{tabularx}{\linewidth}{@{}r L{0.50\linewidth} L{0.11\linewidth} Y@{}}
+\toprule
+ & Change & Effort & Who benefits \\
+\midrule
+1 & Fix GND's match condition (one token); seed GND by default and record the seed. & Hours & Everyone using GND \\
+2 & Make constraints safe: drop and report impossible tuples, keep every row completable, never loop without progress. & Days & Everyone with rules \\
+3 & Return a design object that prints its guarantee, exclusions, and next steps, while still iterating like today's vector. & Days & Everyone; reviewers; agents \\
+4 & Named parameters; each case a \code{NamedTuple}. & Days & Everyone \\
+5 & Constraints scoped by argument names, so rules never see \code{nothing}. & Days & Everyone with rules \\
+6 & \code{coverage(cases, space)} to measure any test set, including hand-written ones; \code{topup} to fill the gaps. & Days & Maintainers, auditors \\
+7 & \code{run_cases} and \code{diagnose}: name cases in test output, rank suspect combinations, propose follow-ups. & 1--2 weeks & Anyone with a failure \\
+8 & Error messages in the user's vocabulary (parameter names and values), checked before generation. & Days & Everyone; especially agents \\
+9 & Export to Tables.jl, CSV/TOML, a GitHub Actions matrix, and literal test code. & Days each & CI, simulation, agents \\
+10 & Organize docs by job, run examples as doctests, correct the engine guidance, add a one-page agent guide. & Days & First-time users \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =====================================================================
+\section{How I did this review}
+
+I read all of the source, tests, and documentation, plus the JuliaCon paper.
+Then I used the package the way a newcomer would, in a scratch environment,
+and ran experiments whose results appear throughout this report:
+
+\begin{itemize}[leftmargin=1.5em]
+\item An \textbf{independent coverage checker} enumerates every feasible
+  $t$-tuple by brute force and shares no code with the package. A tuple is
+  \emph{feasible} if at least one complete, allowed test contains it.
+\item \textbf{1,000 random constrained problems} (500 at strength 2 and 500
+  at strength 3). Each had 4--6 parameters with 2--4 values, and 1--3 forbidden
+  partial assignments over 2--3 parameters. A fixed seed makes the run
+  repeatable.
+\item \textbf{Other checks:} timing and allocation across problem sizes, GND
+  under a watchdog, verification of mixed strength, stability under small
+  edits, and the printed output of failing tests.
+\item A \textbf{throwaway prototype} of about 50 lines, to check that the
+  constraint fix I recommend in Section~\ref{sec:solvers} actually works.
+\end{itemize}
+
+The scripts are small enough to become regression tests.
+
+% =====================================================================
+\section{The moment someone reaches for combinatorial testing}\label{sec:moment}
+
+\subsection{The situation it fits}
+
+Combinatorial testing fits when three conditions hold at once.
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{The inputs are, or can be made into, discrete choices:}
+  options, modes, flags, algorithms, element types, container types,
+  platforms, or representative values of equivalence classes.
+\item \textbf{Failures come from interactions among a few choices.} Kuhn,
+  Wallace, and Gallo found that the failures they studied were triggered by
+  at most six interacting parameters, and most by one or
+  two~\cite{kuhn2004}. Covering every $t$-way combination therefore comes
+  close to exhaustive testing at a small fraction of the cost.
+\item \textbf{Exhaustive testing is unaffordable.} Either the product is huge
+  (twenty four-valued options give about $10^{12}$ combinations), or each test is
+  expensive (a simulation that runs for an hour).
+\end{enumerate}
+
+\subsection{The moments that trigger it}
+
+Nobody sets out to do combinatorial testing. People arrive at it from a few
+recognizable situations, and the package's first page should name them.
+
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[The loop that exploded.] Someone writes
+  \code{for T in types, A in arrays, alg in algorithms, ...}, and the suite goes
+  from seconds to an hour. Or they quietly comment out half the loop.
+\item[The expensive run.] Each case is a cluster job. The budget is thirty
+  runs, not three thousand.
+\item[The bug from nowhere.] A user reports a crash with a combination of
+  options nobody tried, and the maintainer wonders which other combinations
+  have never run.
+\item[The matrix bill.] The CI matrix of operating systems, Julia versions,
+  architectures, thread counts, and dependency versions costs too much. Or it
+  hits GitHub Actions' limit of 256 jobs per matrix~\cite{ghmatrix}.
+\item[The audit.] A reviewer, funder, or regulator asks how thoroughly the
+  options have been exercised.
+\end{description}
+
+Generation serves the first four situations. The audit needs
+\emph{measurement}, which the package does not yet offer. And every situation
+eventually leads to a failure that needs \emph{diagnosis}, which it also
+doesn't offer.
+
+\subsection{Where it does not fit}
+
+Part of serving users is telling them when another tool is better. The
+documentation says little about this today.
+
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{Finding the one value that breaks a numerical routine} calls for
+  property-based testing or fuzzing, for example
+  Supposition.jl~\cite{supposition}. It explores values within domains and
+  shrinks failures to minimal examples.
+\item \textbf{Estimating how much each factor affects an outcome} is design of
+  experiments. Orthogonal arrays and fractional factorials are balanced for
+  estimation, while covering arrays are not. A scientist planning a
+  sensitivity study should be pointed elsewhere.
+\item \textbf{Sweeps over continuous parameters} call for space-filling
+  samples such as Sobol sequences or Latin hypercubes.
+\end{itemize}
+
+Property-based testing is a partner, not a rival. Combinatorial testing
+decides \emph{which partitions to combine}; property-based testing decides
+\emph{which values to draw within each partition}. The package's Testing
+Methods page already hints at this, and it could become a first-class feature
+(Section~\ref{sec:api}).
+
+% =====================================================================
+\section{Who the users are}\label{sec:users}
+
+Table~\ref{tab:personas} lists eight kinds of users. The first four are
+implied by the current documentation. The last four are not addressed at
+all, though each has a well-established counterpart in the testing
+literature or in other tools.
+
+\begin{table}[h]
+\centering\small
+\caption{Who reaches for this package, and whether it serves them today.}\label{tab:personas}
+\begin{tabularx}{\linewidth}{@{}L{0.20\linewidth} Y L{0.14\linewidth}@{}}
+\toprule
+User & What they need most & Served today \\
+\midrule
+Generic-code author & Combinations of types and options; readable failures; fast generation inside \code{runtests.jl} & \partly \\
+Simulation developer & Few expensive runs; constraints; reference runs included; cases as files for a scheduler & \partly \\
+CI / release engineer & Matrix output; rules such as ``no arm64 on Windows''; the same jobs from commit to commit & \notyet \\
+Test-data builder & Tables with named columns that cover value combinations & \partly \\
+\midrule
+Maintainer / auditor & Measure the interaction coverage of existing tests; add only what is missing & \notyet \\
+Debugger & Which combination caused this failure, and what to run next & \notyet \\
+Robustness tester & Invalid values tested one at a time, so one does not mask another & \notyet \\
+AI coding agent & Knowing when to use it; results that describe themselves; checkable claims; actionable errors & \notyet \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Users the documentation already imagines}
+
+\paragraph{The generic-code author.}
+This user is especially common in Julia. Multiple dispatch means that
+combinations of element type, container type, dimension, and option really
+are different compiled methods. The extended Hilbert-curve example in the
+documentation is this user's story, and combinatorial testing found a real
+bug there. They run generation at test time, so it must be quick and
+deterministic. They need failures they can read. They care about stability,
+so that a failure on Tuesday can be compared with Wednesday's. Positional,
+unnamed parameters and \code{Vector{Any}} results work against all of these.
+
+\paragraph{The simulation developer.}
+This is the user in the paper's statement of need. They have a configuration
+file with dozens of options, and each run takes minutes to hours, often on a
+cluster. Their ``tests'' are rarely \code{@test} calls. They are jobs, so they
+need the cases as data (TOML, CSV, JSON) to hand to a scheduler. Their options
+come with many rules, since some settings only make sense together, and that
+is exactly where the package is most fragile today. They have reference runs
+that must be included. They want stronger coverage on risky subsystems, which
+the \code{wayness} option provides. When a campaign is half done and some runs
+crashed, they need to know what remains untested, and the package cannot tell
+them. Forty positional parameters are also hard to maintain.
+
+\paragraph{The CI and release engineer.}
+Their space is operating system $\times$ Julia version $\times$ architecture
+$\times$ threads $\times$ dependency versions. They need the design as a
+GitHub Actions \code{include:} list and rules that express what is
+impossible. They also need stability: if adding a Julia version reshuffles
+every job, yesterday's failure can no longer be compared with today's. There
+is also an opportunity. A randomized engine seeded with the run number
+would give a different pairwise matrix on each CI run, so higher-order
+coverage accumulates across runs at no extra cost.
+
+\paragraph{The test-data builder.}
+The documentation's DataFrame example builds rows that cover value
+combinations for testing a data pipeline. Today the user has to convert
+positional vectors into named columns by hand.
+
+\subsection{Users no one has addressed}
+
+\paragraph{The maintainer or auditor of an existing suite.}
+Most projects already have tests. The first question a thoughtful maintainer
+asks is not ``generate new tests'' but ``what do my current tests cover, and
+what is the smallest set I could add?'' NIST built a tool, CCM, for exactly
+this question~\cite{ccm}. \utd already has the internal machinery: coverage
+structures, and seeds that count toward coverage. It exposes none of it. A
+\code{coverage} function and a \code{topup} function would serve this user
+without disturbing how they already test, and this is the gentlest way to
+bring combinatorial testing into a project.
+
+\paragraph{The debugger.}
+After a failure, the natural question is \emph{which combination caused
+it?} A covering design is unusually good at answering this. Candidate causes
+are combinations that appear in failing cases but never in passing ones, and
+a few follow-up tests can separate them. Tools such as BEN build on this
+idea~\cite{ben}. There is a second point, known as \emph{masking}. Tuples
+that appeared only in failing cases have not been shown to work, so the
+coverage guarantee is weaker than it looks until they are re-tested
+elsewhere~\cite{yilmaz2014}. Section~\ref{sec:ev-failure} shows what such a
+report could say for a real run.
+
+\paragraph{The robustness tester.}
+Invalid inputs (negative sizes, empty strings, \code{NaN} tolerances) should
+appear \emph{one per test case}. Otherwise the first invalid value triggers
+an error and hides the others. Microsoft's PICT supports this by letting
+users mark values as invalid~\cite{pict}. It is a small addition that
+changes what the package is good for.
+
+\paragraph{The AI coding agent.}
+Agents now write a large share of tests. Left alone, they tend either to
+write the Cartesian loop that explodes or to hand-pick three cases, and this
+package is the principled middle path. An agent needs the package to
+(i)~state in its docstrings the situation it is for, so the agent knows to
+reach for it; (ii)~return results that describe themselves in text, so the
+agent can report accurately; (iii)~be deterministic, so reruns match;
+(iv)~produce errors that name the parameter and suggest a fix, because agents
+act on messages literally; (v)~offer a \code{verify} or \code{coverage}
+function, so claims can be checked rather than trusted; and (vi)~optionally
+emit the design as literal test code, so a human reviewer sees every case in
+the diff. The human who reviews an agent's tests needs (ii) and (v) just as
+much.
+
+% =====================================================================
+\section{What users worry about, and how the package does today}\label{sec:concerns}
+
+Whatever brings them to the package, users share a common set of concerns.
+Table~\ref{tab:concerns} lists each one with an assessment and a pointer to
+the evidence.
+
+{\small
+\begin{xltabular}{\linewidth}{@{}L{0.25\linewidth} L{0.08\linewidth} Y@{}}
+\caption{Users' concerns, rated against version 0.4.0.}\label{tab:concerns}\\
+\toprule
+The user's question & Today & Evidence \\
+\midrule
+\endfirsthead
+\toprule
+The user's question & Today & Evidence \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+Is everything really covered? & \partly & Whenever a design is returned, the guarantee holds: 888 of 888 constrained designs, and mixed strength (\S\ref{sec:ev-mixed}). But nothing lets the user see or check that; no coverage function is exported. \\
+How many tests will this be, and is that good? & \notyet & There is no preview, no comparison with the full factorial, and no lower bound. \code{full_factorial} allocates before checking size: sixteen four-valued parameters would need 550\,GB. \\
+Will it respect what my function accepts? & \notyet & IPOG crashes on 8.6\% and 13.8\% of constrained problems; GND hangs; natural rule code throws; a real \code{nothing} value silently loses coverage (\S\ref{sec:ev-constraints}). \\
+Will my must-run cases be included? & \partly & Yes. But a typo in a value produces \code{MethodError: Cannot convert ... Nothing to ... Int64}; must-run cases that break the rules are kept silently; a forbidden excursion base case silently disappears. \\
+Will I get the same tests tomorrow? & \partly & IPOG is deterministic. GND is unseeded by default, so two calls differ. Adding one value to one parameter kept only 3 of 10 IPOG cases (\S\ref{sec:ev-stability}). \\
+When a case fails, which one was it? & \notyet & The README loop reports ``2 errors'' with no parameters. The per-case pattern prints \code{Any[1000, :newton, 0.001, true]} (\S\ref{sec:ev-failure}). \\
+Which combination caused it? & \notyet & Nothing is provided, although the data to answer it is already in hand. \\
+Can I fit this in my budget? & \partly & IPOG puts most coverage early (16 of 28 cases reach 90\% of pairs), but this isn't documented, and there is no \code{max_cases} (\S\ref{sec:ev-curve}). \\
+Can I test the risky parts harder? & \partly & Mixed strength works and is verified. But the documented example throws, the user's \code{Dict} is modified, and GND fails an assertion in one case (\S\ref{sec:ev-mixed}). \\
+Can I test invalid inputs properly? & \notyet & There is no notion of invalid values. \\
+Which engine should I use? & \notyet & The documentation says GND is shorter. It is 26--38\% longer, because of a bug (\S\ref{sec:ev-gnd}). \\
+Is it light and fast? & \met & Two dependencies. IPOG runs in well under a second for typical sizes (\S\ref{sec:ev-perf}). \\
+Will it fit my tools? & \partly & It works inside a \code{for} loop. It has no names, no Tables.jl support, no file or matrix export, and no Test.jl integration. \\
+\end{xltabular}
+}
+
+% =====================================================================
+\section{Evidence}\label{sec:evidence}
+
+\subsection{Constraints}\label{sec:ev-constraints}
+
+\subsubsection*{The \code{nothing} convention}
+
+Rules are ordinary Julia functions over all parameters. During generation,
+the package calls a rule on partial test cases and passes \code{nothing} for
+parameters it has not chosen yet (\code{src/factorial_interface.jl:85}). The
+guide warns about this, but natural rule code still breaks:
+
+\begin{jlcode}
+all_pairs([1,2,3], [0.0, 1.0, 10.0], [:a,:b];
+          disallow = (n, x, s) -> n > 2 && x > 1.0)
+# MethodError: no method matching isless(::Float64, ::Nothing)
+\end{jlcode}
+
+The convention has a subtler cost as well. In Julia, \code{nothing} is a
+common \emph{real} value, as in \code{maxiter = nothing}. When a parameter
+takes \code{nothing} as one of its values, the package cannot tell ``not yet
+chosen'' from ``chosen to be \code{nothing}''. It then drops required tuples
+without saying so:
+
+\begin{jlcode}
+maxiter = [nothing, 10, 100]; mode = [:fast, :slow]
+verbose = [true, false];      scale = [1.0, 2.0, 3.0]
+dis = (m, md, v, s) -> m === nothing && md === :slow
+cases = all_pairs(maxiter, mode, verbose, scale; disallow = dis)
+# Independent check: 35 of 36 feasible pairs covered.
+# Never tested: mode = :slow, scale = 1.0   (a perfectly valid pair)
+\end{jlcode}
+
+\subsubsection*{Random constrained problems}
+
+Table~\ref{tab:random} summarizes 1,000 random problems. IPOG never
+returned a wrong answer. It either returned a correct one or crashed. For
+every crash I checked whether some tuple that the rule permits in isolation
+is impossible in any complete, allowed test, which is the definition of an
+implicit constraint. The rates depend on how tightly the rules bind, and
+these small, fairly constrained problems are not a sample of real projects.
+The failure classes are real and easy to hit, as the next example shows.
+
+\begin{table}[h]
+\centering\small
+\caption{IPOG on 1,000 random constrained problems (\emph{measured}).}\label{tab:random}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+ & Strength 2 & Strength 3 \\
+\midrule
+Problems & 500 & 500 \\
+Returned; independently verified valid and complete & 457 & 431 \\
+Returned but invalid or incomplete & 0 & 0 \\
+Crashed with \code{BoundsError} & 43 (8.6\%) & 69 (13.8\%) \\
+\quad of which contained an implicit constraint & 28 & 65 \\
+\quad of which were greedy dead ends (no implicit constraint) & 15 & 4 \\
+Problems with an implicit constraint that did \emph{not} crash & 0 & 0 \\
+\midrule
+Prototype with completion checks (\S\ref{sec:solvers}): valid and complete & 500 & 500 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Implicit constraints are ordinary in practice. Here is a three-parameter
+example:
+
+\begin{jlcode}
+os = [:linux, :mac, :windows]; gpu = [false, true]; driver = [:cuda, :none]
+dis(o, g, d) = (g === true && d === :none) || (o === :windows && d === :cuda)
+all_pairs(os, gpu, driver; disallow = dis)
+# BoundsError: attempt to access 2-element Vector{Symbol} at index [0]
+all_pairs(os, gpu, driver; disallow = dis, engine = GND())
+# never returns (killed by a 45-second watchdog; 12 combinations in total)
+\end{jlcode}
+
+Neither rule mentions Windows together with a GPU. But a GPU needs CUDA and
+Windows forbids CUDA, so no valid test can pair \code{os = :windows} with
+\code{gpu = true}. The user sees an index error that points into the
+package's internals, or a process that never finishes.
+
+\begin{findingbox}{Why it happens.}
+IPOG keeps any tuple that the rule does not reject on its own. When the tuple
+fits nowhere, IPOG appends it as a new row (\code{src/parameter_order.jl:170}).
+The final fill then finds no allowed value for some slot and leaves a zero
+(lines 224--226). Converting back to values then indexes \code{p[0]}. GND's
+outer loop (\code{src/greedy_tuples.jl:195}) waits forever for a tuple no
+candidate can cover. Its inner loop (line 201) can also spin if every
+candidate is forbidden. The greedy dead ends have a related cause: values
+are placed after checking only that the row is not \emph{yet} forbidden, not
+that it can still be completed. The test suite exercises only simple rules
+over two parameters, so neither failure is caught.
+\end{findingbox}
+
+\subsubsection*{Silent acceptance}
+
+Two more behaviors pass without a word. Must-run cases (\code{seeds}) that
+violate the rules are included in the output anyway. And when the base case
+of an excursion is forbidden, it is dropped, even though the base case is
+the whole point of an excursion.
+
+\subsection{GND picks most values at random}\label{sec:ev-gnd}
+
+\code{most_matches_existing} (\code{src/coverage_matrix.jl:193}) scores each
+candidate value by how many uncovered tuples it would complete. The
+comment above it says a tuple can match at most $n-1$ known values, because
+the parameter being chosen is still unset. The code, however, tests
+\code{match_cnt == min(max_known, n_way)}. Once the number of set parameters
+reaches the strength (two, for pairwise), no tuple satisfies this, every score is zero, and the tie-breaker picks a
+random value. GND then relies on its \code{M} random restarts to find
+anything good.
+
+\begin{table}[h]
+\centering\small
+\caption{Number of test cases: IPOG, GND as shipped, and GND with \code{n_way - 1} (three seeds each; \emph{measured}).}\label{tab:gnd}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Parameters $\times$ values, strength & IPOG & GND as shipped & GND patched \\
+\midrule
+$10\times4$, $t=2$ & 28 & 36--38 & 30 \\
+$10\times8$, $t=2$ & 113 & 151--153 & \textbf{100} \\
+$20\times4$, $t=2$ & 37 & 48--51 & 37 \\
+$10\times4$, $t=3$ & 143 & 180--186 & 144--150 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Increasing \code{M} does not close the gap. On the $10\times4$ problem, GND
+as shipped gave 40--41 cases at \code{M=10}, 36--38 at 50, 32--34 at 200, and
+32--33 at 1000 (1.2\,s). Even twenty times the default effort did not reach
+IPOG's 28. The patched version still covered all 720 pairs when checked
+independently.
+
+\subsection{Mixed strength works, but its interface is fragile}\label{sec:ev-mixed}
+
+\code{all_pairs(fill(1:4, 10)...; wayness = Dict(3 => [[3,4,5,6]]))} produced
+64 cases (IPOG) and 84 (GND). The independent check confirmed all 720 pairs
+and all 256 triples on parameters 3--6. The feature itself is sound. Around
+it:
+
+\begin{itemize}[leftmargin=1.5em]
+\item The guide's own example, \code{Dict(3 => [[3:6], [25:30]])}, throws
+  \code{MethodError: Cannot convert an object of type Int64 to an object of
+  type UnitRange{Int64}}.
+\item The user's dictionary is modified. After a call it has gained an entry
+  \code{2 => [[1, 2, 3, 4]]} (\code{src/parameter_order.jl:436},
+  \code{src/excursions.jl:32}), so reusing it in a later call changes that
+  call's meaning.
+\item GND fails with \code{AssertionError: minimum(orders) > base_wayness} if
+  any listed strength equals the base strength
+  (\code{src/coverage_matrix.jl:426}).
+\end{itemize}
+
+\subsection{Performance}\label{sec:ev-perf}
+
+IPOG is fast enough that generation can run inside a test suite
+(Table~\ref{tab:perf}). Allocation is heavy because hot loops slice matrix
+columns, but it isn't a practical problem at these sizes. The one real risk
+is \code{full_factorial}, which allocates its whole result before checking
+whether the size is reasonable.
+
+\begin{table}[H]
+\centering\small
+\caption{Generation time and total allocation (\emph{measured}; times include some compilation; allocation is cumulative, not peak).}\label{tab:perf}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Problem & IPOG cases & IPOG time & Allocated & GND cases & GND time \\
+\midrule
+$10\times4$, $t=2$  & 28  & 0.12\,s & 42\,MB  & 36--38 & 0.08\,s \\
+$20\times4$, $t=2$  & 37  & 0.11\,s & 42\,MB  & 48--51 & 0.21\,s \\
+$50\times5$, $t=2$  & 75  & 0.24\,s & 0.4\,GB & -- & -- \\
+$100\times3$, $t=2$ & 33  & 0.37\,s & 0.5\,GB & -- & -- \\
+$10\times4$, $t=3$  & 143 & 0.11\,s & 87\,MB  & 180--186 & 1.02\,s \\
+$30\times4$, $t=3$  & 256 & 1.55\,s & 5.7\,GB & -- & -- \\
+$50\times3$, $t=3$  & 136 & 1.87\,s & 8.6\,GB & -- & -- \\
+$15\times4$, $t=4$  & 958 & 4.06\,s & 17\,GB  & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{What a failure looks like}\label{sec:ev-failure}
+
+Here is a solver with a two-way bug. It fails only when
+\code{method = :newton} and \code{sparse = true}.
+
+\begin{jlcode}
+solve(n, method, tol, sparse) =
+    (method == :newton && sparse) ? error("singular factorization") : n * tol
+cases = all_pairs([10, 100, 1000], [:newton, :bicg, :gmres], [1e-3, 1e-6], [false, true])
+\end{jlcode}
+
+With the README's loop, Test.jl reports \code{solver | Pass 8 Error 2} and two
+stack traces for the expression \code{solve(tc...) > 0}. The output never
+says which parameters failed. With the documentation's per-case pattern
+(\code{@testset "solver $tc" for tc in cases}), the failing case prints as
+\code{solver Any[1000, :newton, 0.001, true]}, which a reader has to decode by
+position.
+
+The design and the outcomes already contain the answer. About twenty lines of
+code, run on this very output, find the combinations that appear in failing
+cases but never in passing ones:
+
+\begin{term}
+suspicious: method=:newton, sparse=true   (in 2 of 2 failures, 0 of 8 passes)
+suspicious: n=1000, method=:newton        (in 1 of 2 failures, 0 of 8 passes)
+suspicious: n=100, sparse=true            (in 1 of 2 failures, 0 of 8 passes)
+\end{term}
+
+The true cause ranks first. The other two pairs are \emph{masked}: they
+appeared only in failing cases, so nobody knows whether they work. Two
+follow-up cases would settle all three:
+\code{(1000, :newton, 0.001, false)} and \code{(100, :gmres, 1e-6, true)}.
+Section~\ref{sec:communicate} turns this into a proposed feature.
+
+\subsection{Reproducibility and stability}\label{sec:ev-stability}
+
+\code{GND()} seeds itself from the global \code{MersenneTwister()}
+(\code{src/factorial_interface.jl:61}). Two calls with identical arguments
+gave different designs, so a failure found with GND cannot be reproduced
+unless the user thought to pass an RNG in advance. IPOG is deterministic but
+not stable: adding one value to one of five parameters changed the design
+from 10 to 14 cases, and only 3 of the original rows survived. This matters
+to anyone who compares failures across commits. Passing the old design as
+\code{seeds} would preserve it, but nothing suggests doing so.
+
+\subsection{Coverage accumulates early, and higher coverage comes free}\label{sec:ev-curve}
+
+The order of the cases matters for anyone on a budget. On $10\times4$
+pairwise, IPOG's first cases cover pairs quickly:
+
+\begin{center}\small
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+First $j$ cases & 4 & 8 & 12 & 16 & 20 & 24 & all \\
+\midrule
+IPOG, share of pairs covered & 25\% & 47\% & 68\% & 90\% & 93\% & 97\% & 100\% (28) \\
+GND as shipped & 25\% & 47\% & 64\% & 77\% & 86\% & 92\% & 100\% (37) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A pairwise design also covers a good share of triples as a side effect: 25\%
+for $5\times4$, 40\% for $10\times4$, 54\% for $10\times3$, and 61\% for
+$20\times3$ (\emph{measured}). Users never see either number, yet both
+answer the questions ``can I stop early?'' and ``how much am I getting?''
+
+\subsection{Error messages}\label{sec:ev-errors}
+
+Most error messages come from deep inside the algorithms and use the
+algorithms' vocabulary, not the user's (Table~\ref{tab:errors}).
+
+{\small
+\begin{xltabular}{\linewidth}{@{}L{0.25\linewidth} L{0.33\linewidth} Y@{}}
+\caption{What users see, and what would help (\emph{measured}).}\label{tab:errors}\\
+\toprule
+Input & What the user sees & What would help \\
+\midrule
+\endfirsthead
+\toprule
+Input & What the user sees & What would help \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+A parameter with one value, \code{[true]} & \code{DomainError with Bool[1]: Each argument should be a list of parameter values} & Accept it; a fixed setting is legitimate. \\
+Strength 3 with two parameters & \code{BoundsError: attempt to access 2-element Vector{Int64} at index [1:3]} & ``Strength 3 needs at least 3 parameters; you gave 2.'' \\
+Must-run case with \code{"medium"}, which is not a listed value & \code{MethodError: Cannot `convert` an object of type Nothing to an object of type Int64} & ``must\_include case 1: \code{"medium"} is not a value of \code{level} (values: \code{"low"}, \code{"mid"}, \code{"high"}).'' \\
+Rule \code{(n, x, s) -> n > 2 && x > 1.0} & \code{MethodError: no method matching isless(::Float64, ::Nothing)} & Unreachable with scoped rules (\S\ref{sec:solvers}). \\
+Implicit constraint & \code{BoundsError: attempt to access 2-element Vector{Symbol} at index [0]} & ``\code{os = :windows, gpu = true} cannot appear in any valid case (rules 1 and 2 together); left out.'' \\
+Same, with GND & Never returns & The same message. \\
+The guide's \code{wayness} example & \code{MethodError: Cannot `convert` an object of type Int64 to an object of type UnitRange{Int64}} & Accept ranges. \\
+\code{wayness} at the base strength, GND & \code{AssertionError: minimum(orders) > base_wayness} & Ignore the redundant entry, or explain it. \\
+\end{xltabular}
+}
+
+% =====================================================================
+\section{Communicating what it does, that it did it, and what is possible next}\label{sec:communicate}
+
+This is the center of your question. A user passes through four stages, and
+at each one they have a question the package can answer better than they
+can. The design principle is simple: \textbf{answer the question at the
+moment it arises, in the user's own vocabulary, and point to the next useful
+step.}
+
+\begin{table}[h]
+\centering\small
+\caption{The user's question at each stage, and who answers it.}\label{tab:stages}
+\begin{tabularx}{\linewidth}{@{}L{0.12\linewidth} L{0.36\linewidth} Y@{}}
+\toprule
+Stage & The user's question & Answered today by \\
+\midrule
+Before & Is this the right tool? What will it cost? Which strength should I choose? & The user's own arithmetic \\
+Generate & Did it keep its promise? What did it leave out, and why? Can I reproduce it? & Nothing \\
+Run & Which case is this? Which cases failed, by name? & A positional \code{Vector{Any}} \\
+After & What caused the failure? What remains unverified? What would it cost to go further? & Nothing \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Before: a preview that helps choose a strength}
+
+The decision a user struggles with is the strength $t$. The package can make
+it concrete, because IPOG is fast enough to simply try each option. For a CI
+space of five parameters with two rules, the numbers below are real
+(\emph{measured}). Only the presentation is a proposal.
+
+\begin{term}
+julia> compare_strengths(space; forbid = rules)
+5 parameters (2-3 values each): 72 combinations, 48 allowed by the rules.
+
+ strength  cases  share of allowed  pairs covered  triples covered
+    1        3          6%              49%             24%
+    2       10         21%             100%             69%
+    3       20         42%             100%            100%
+    4       39         81%             100%            100%
+
+Most failures involve 1-2 parameters (Kuhn et al. 2004); strength 2 is
+the usual start. Raise strength for risky subsets with `stronger = ...`.
+\end{term}
+
+\subsection{Generate: a result that states its guarantee}
+
+The most valuable single change is to return an object that is still an
+\code{AbstractVector}, so every existing \code{for} loop keeps working, but
+that prints a summary. Here is the same CI example. Every number comes from
+the real run.
+
+\begin{term}
+julia> design = all_pairs(space; forbid = [
+           (os, gpu)  -> os == :mac && gpu,
+           (os, arch) -> os == :windows && arch == :arm64])
+TestDesign: 10 cases over 5 parameters (strength 2, IPOG, deterministic)
+  Guarantee  every feasible pair of values appears in at least one case
+             55 of 55 feasible pairs covered (checked)
+  Space      72 combinations in full; 48 satisfy the rules
+  Left out   2 pairs forbidden by rules:
+               os = :mac,     gpu = true       rule 1
+               os = :windows, arch = :arm64    rule 2
+  Bonus      83 of 120 feasible triples also covered (69%)
+  Budget     first 5 cases cover 73% of pairs; first 8 cover 95%
+  Next       strength 3 needs 20 cases: extend(design; strength = 3)
+
+   #  os        julia   threads  gpu    arch
+   1  :linux    "1.10"  1        false  :x64
+   2  :linux    "1.11"  4        true   :arm64
+   3  :linux    "1.12"  1        true   :x64
+   4  :mac      "1.10"  4        false  :arm64
+   5  :mac      "1.11"  1        false  :x64
+      ... 5 more
+\end{term}
+
+When the rules make a pair impossible, the ``Left out'' section says so and
+says why. It distinguishes pairs a rule forbids directly from pairs that are
+impossible only because rules combine. The prototype already produces this
+list for the three-parameter driver example:
+
+\begin{term}
+  Left out   3 pairs cannot appear in any valid case:
+               os = :windows, driver = :cuda    rule 2
+               gpu = true, driver = :none       rule 1
+               os = :windows, gpu = true        impossible: rules 1 and 2 together
+\end{term}
+
+This one screen answers ``did it keep its promise'', ``what did it leave
+out'', ``can I stop early'', and ``what next''. The user does not have to
+ask.
+
+\subsection{Run: cases with names, outcomes that are kept}
+
+With named parameters, each case is a \code{NamedTuple}, so test output reads
+\code{(n = 1000, method = :newton, tol = 0.001, sparse = true)}. A small
+helper can run the body for every case. It gives each case its own named
+testset, keeps going after failures, and keeps each outcome next to the
+design:
+
+\begin{jlcode}
+@testset "solver" begin
+    global results = run_cases(design) do c
+        @test solve(c.n, c.method, c.tol, c.sparse) > 0
+    end
+end
+\end{jlcode}
+
+Simulation developers do not run cases inside Test.jl, so the same idea
+needs a file form. They write the design out, run the jobs, and read the
+outcomes back in (\code{record_outcomes(design, "results.csv")}), so that
+\code{diagnose} and \code{coverage} work on campaigns as well as unit tests.
+
+\subsection{After: diagnosis, masking, and the next step}
+
+This output is again computed from the real run in
+Section~\ref{sec:ev-failure}:
+
+\begin{term}
+julia> diagnose(results)
+2 of 10 cases failed, both with ErrorException("singular factorization").
+
+Combinations present only in failing cases:
+  method = :newton, sparse = true     2 of 2 failures, 0 of 8 passes   <- prime suspect
+  n = 1000, method = :newton          1 of 2 failures
+  n = 100,  sparse = true             1 of 2 failures
+
+Not yet verified: the last two pairs appeared only in failing cases.
+Two follow-up cases would settle all three:
+  (n = 1000, method = :newton, tol = 0.001,  sparse = false)
+  (n = 100,  method = :gmres,  tol = 1.0e-6, sparse = true)
+Run them with: run_cases(followups(results)) do c ... end
+\end{term}
+
+Three more functions complete the loop after a run:
+
+\begin{itemize}[leftmargin=1.5em]
+\item \code{extend(design; strength = 3)} keeps the existing cases and adds
+  only what the higher strength needs. The seed mechanism already does this
+  internally.
+\item \code{coverage(cases, space; strength = 2)} measures \emph{any} list of
+  cases, including hand-written ones, and lists what is missing by name.
+\item \code{topup(cases, space)} returns only the new cases needed to reach
+  full coverage, for maintainers adopting the package gradually.
+\end{itemize}
+
+\subsection{For AI agents in particular}
+
+Everything above helps agents, and a few further things matter especially
+to them:
+
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{A machine-readable summary.} \code{summary(design)} returns a
+  \code{NamedTuple} (cases, strength, engine, seed, required, covered,
+  forbidden, impossible, full size) that serializes to JSON, so an agent can
+  report exact figures instead of paraphrasing.
+\item \textbf{Checkable claims.} \code{coverage} is independent of the
+  generator, so an agent, or the human reviewing its work, can verify the
+  guarantee in one line.
+\item \textbf{Docstrings that begin with the situation.} For example: ``Use
+  when a function or system has several discrete options and testing every
+  combination is too slow.'' Agents choose tools by matching situations.
+\item \textbf{Errors that name things and suggest a fix.} Agents repair code
+  from messages, and a message that names \code{level} and lists its values
+  gets fixed on the first try.
+\item \textbf{Literal output.} \code{as_code(design)} prints the cases as a
+  Julia literal, or as a \code{@testset} block, so the committed test file
+  shows every case. Reviewers see exactly what runs, and the test has no
+  hidden generation step.
+\item \textbf{A one-page guide in the repository} (an \code{llms.txt}-style
+  file) giving the decision rule and three canonical patterns: test a
+  function, plan a CI matrix, audit existing tests.
+\end{itemize}
+
+\subsection{Words matter}
+
+Some of the current names get in the way of understanding
+(Table~\ref{tab:vocab}). The old names can stay as aliases.
+
+\begin{table}[h]
+\centering\small
+\caption{Suggested vocabulary.}\label{tab:vocab}
+\begin{tabularx}{\linewidth}{@{}L{0.25\linewidth} Y L{0.26\linewidth}@{}}
+\toprule
+Today & Problem & Suggested \\
+\midrule
+\code{seeds} & Collides with random-number seeds. The package itself uses both, and so does its test suite (\code{seed_mod}). & \code{must_include} \\
+\code{n_way} & Fine for experts; the literature says ``strength''. & \code{strength} (keep \code{n_way}) \\
+\code{wayness = Dict(3 => [[3,4,5,6]])} & Dictionary of lists of lists of positions. & \code{stronger = [(:a, :b, :c) => 3]} \\
+\code{disallow} over all positions & Must handle \code{nothing}; the scope is invisible. & \code{forbid} rules over named arguments \\
+``coverage'' & Collides with line coverage. & ``interaction coverage'' \\
+\code{IPOG}, \code{GND} & Named by algorithm, not by behavior. & Keep, but document as ``deterministic'' and ``randomized, varies by seed'' \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% =====================================================================
+\section{A sketch of the interface}\label{sec:api}
+
+The sketch follows four principles. It stays backward compatible: today's
+positional calls keep working. It prefers names over positions. The result
+\emph{is} the vector, so loops keep working. And every function returns
+something that prints a useful summary.
+
+\begin{jlcode}
+using UnitTestDesign
+
+space = TestSpace(
+    os      = [:linux, :mac, :windows],
+    julia   = ["1.10", "1.11", "1.12"],
+    threads = [1, 4],
+    gpu     = [false, true],
+    arch    = [:x64, :arm64],
+)
+
+design = all_pairs(space;
+    forbid       = [(os, gpu)  -> os == :mac && gpu,             # scope = argument names
+                    (os, arch) -> os == :windows && arch == :arm64],
+    must_include = [(os = :linux, julia = "1.12", threads = 4, gpu = true, arch = :x64)],
+    stronger     = [(:julia, :threads, :gpu) => 3],
+)
+
+design[3]                         # (os = :linux, julia = "1.12", threads = 1, ...)
+coverage(design)                  # checked independently of the generator
+coverage(handwritten, space)      # audit an existing suite
+topup(handwritten, space)         # only the cases needed to complete it
+extend(design; strength = 3)      # keep these cases, add the rest
+
+github_matrix(design)             # JSON for a workflow's `include:` list
+write_design("campaign.toml", design); read_design("campaign.toml")
+as_code(design)                   # literal cases for a reviewable test file
+\end{jlcode}
+
+\paragraph{Invalid values.}
+A value wrapped as \code{Invalid(-1)} would be placed with only valid values
+around it, and every invalid value would still be paired with every valid
+value of the other parameters~\cite{pict}. The summary would report the two
+guarantees separately.
+
+\paragraph{Partitions with random representatives.}
+This makes the equivalence-class idea from the paper a first-class feature.
+A value can be a named partition that draws a concrete value at run time
+from a recorded seed:
+
+\begin{jlcode}
+space = TestSpace(
+    x   = [Partition(:negative, rng -> -1e3 * rand(rng)),
+           Partition(:tiny,     rng -> 1e-12 * rand(rng)),
+           0.0, Inf],
+    alg = [:rk4, :midpoint],
+)
+\end{jlcode}
+
+Coverage is guaranteed over partitions, while values vary from run to run.
+This is the partnership with property-based testing described in
+Section~\ref{sec:moment}, and a package extension could accept Supposition.jl generators
+directly.
+
+\paragraph{Budgets and rolling coverage.}
+\code{all_pairs(space; max_cases = 12)} would return the best 12 cases in
+coverage order and report the share covered. \code{GND(seed = run_number)} in
+CI would give a different valid pairwise matrix on each run. The summary
+could then report how much three-way coverage has built up across recorded
+runs.
+
+% =====================================================================
+\section{Making the solvers reliable}\label{sec:solvers}
+
+\subsection{Two ways generation fails}
+
+Constrained generation fails in two ways, and one design fixes both.
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Implicit constraints.} A tuple passes the rule on its own, but
+  no complete, allowed test contains it. The engines treat it as required.
+  IPOG then crashes, and GND waits forever. This accounts for 28 of 43
+  pairwise crashes and 65 of 69 three-way crashes.
+\item \textbf{Greedy dead ends.} Every required tuple is feasible, but values
+  are placed after checking only that the row is not \emph{yet} forbidden. A
+  row can become impossible to complete. This accounts for 15 and 4
+  crashes.
+\end{enumerate}
+
+\subsection{The fix: feasibility first, then keep every row completable}
+
+\begin{proposalbox}{Four parts.}
+\begin{enumerate}[leftmargin=1.3em]
+\item \textbf{Feasibility pass.} A tuple is required only if some complete,
+  allowed test contains it. Check each tuple once, before generation.
+  Report the rest by name, and distinguish ``forbidden by rule $k$'' from
+  ``impossible because rules combine''.
+\item \textbf{Completability invariant.} Whenever an engine sets a value,
+  require that the row can still be completed. In IPOG that means three
+  sites: \code{choose_last_parameter_filter!} (line 34),
+  \code{insert_tuple_into_tests_filter}, and
+  \code{fill_remaining_missing_values_filter!} (line 226). In GND it means
+  candidate construction.
+\item \textbf{Guaranteed progress.} With parts 1 and 2, IPOG cannot reach a
+  dead end. GND always has a covering candidate, because the first uncovered
+  tuple is itself completable. Every remaining loop should still stop, with
+  a diagnosis, if a pass makes no progress.
+\item \textbf{Final validation.} Check every complete row, including
+  must-run cases, and report any case that breaks a rule. Reject it unless
+  the user insists.
+\end{enumerate}
+\end{proposalbox}
+
+My prototype implements parts 1--3 around a simple greedy generator. It uses
+a depth-first search to check completability. It returned valid, fully
+covering designs for all 1,000 random problems, including every problem that
+crashed IPOG, and it produced the ``impossible: rules 1 and 2 together''
+report shown earlier. It is not tuned for design size. Its purpose is to
+show that the completability invariant alone removes both failure classes.
+
+\paragraph{Cost.}
+The completability check is a backtracking search over unassigned
+parameters. In the worst case it is exponential, but in practice it is cheap,
+because rules are local. With scoped rules, only parameters connected to the
+row's assigned parameters through the rule graph need to be searched.
+Unconstrained parameters can be filled in freely, and results can be cached
+on the constrained part of the row. This mirrors the optimizations in IPOG-C,
+which reduced constraint-checking cost by one to two orders of magnitude and
+ships in NIST's ACTS~\cite{yu2013}. IPOG-C is the closest published model for
+this change.
+
+\subsection{Rules the solver can understand}
+
+Scoped rules, meaning functions whose argument names are parameter names,
+fix several problems at once:
+
+\begin{itemize}[leftmargin=1.5em]
+\item The engine calls a rule only when all of its parameters are assigned,
+  so \code{nothing} never appears. A real \code{nothing} value is just a
+  value.
+\item The scope is known, which the cheap completability check above
+  depends on.
+\item Messages can name the rule (``rule 2: \code{os}, \code{arch}''), and a
+  label can be attached by writing a rule as a pair,
+  \code{"no CUDA on Windows" => rule}.
+\end{itemize}
+
+\code{Base.method_argnames} recovers the names. I checked that it works on
+Julia 1.12 for both anonymous and named functions. It is internal to Base,
+however, so the package should also accept an explicit form such as
+\code{(:os, :gpu) => (o, g) -> o == :mac && g}. The current whole-row
+\code{disallow} can stay for compatibility. For it, the engine would check
+complete rows only and search over all parameters, which is slower but
+correct.
+
+\subsection{Where Z3 fits}
+
+The \code{z3_example.jl} draft translates one kind of expression: a parameter
+compared with a literal, combined with \code{&&} and \code{||}. That is
+narrower than what users can write today, which is any Julia predicate. It
+also adds a large binary dependency, for domains of a handful of values where
+a short search is enough. I would keep Z3 out of the core. If very large
+constrained spaces appear, an optional package extension could translate
+scoped rules into SMT and speed up the same completability question.
+
+\subsection{Smaller fixes}
+
+\begin{itemize}[leftmargin=1.5em]
+\item Change \code{n_way} to \code{n_way - 1} in the GND match condition
+  (\code{src/coverage_matrix.jl:193}). Give GND a fixed default seed, record
+  it in the design, and print it when a test fails.
+\item Copy the \code{wayness} dictionary rather than modifying it. Accept
+  ranges and tuples in it. Ignore, or explain, entries at the base strength
+  instead of asserting.
+\item Allow single-valued parameters, and a single parameter at strength 1.
+  Check that the strength does not exceed the number of parameters.
+\item Validate must-run cases by name and value before generating.
+\item Have \code{full_factorial} estimate its size and refuse beyond a limit
+  unless asked.
+\item Say when an excursion's base case is forbidden.
+\item Replace column slices in hot loops with views or explicit loops, which
+  would remove most of the multi-gigabyte allocation.
+\item Add the random constrained problems and the independent checker to the
+  test suite. They would have caught both failure classes and the GND bug.
+\end{itemize}
+
+% =====================================================================
+\section{Documentation and first contact}
+
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{The README's first screen} should state the situation (``many
+  options; too many combinations to test all''), the guarantee in one
+  sentence, one example with named parameters and its printed summary, and a
+  line on when to use something else.
+\item \textbf{Organize the manual by job, not by algorithm.} Useful recipes:
+  test a function with many options; test generic code across types; plan a
+  CI matrix; run a simulation campaign from files; audit an existing suite;
+  diagnose a failure; test invalid inputs; combine with property-based
+  testing. Algorithm pages can stay, further down.
+\item \textbf{Move the advice on choosing values into the manual.}
+  Equivalence classes, boundary values, and how many values to list are the
+  most important human decisions in combinatorial testing, and today they
+  are explained well only in the paper.
+\item \textbf{Correct the engine page.} Make every example a doctest; that
+  alone would have caught the broken \code{wayness} example.
+\item \textbf{Add the one-page agent guide} described in
+  Section~\ref{sec:communicate}.
+\end{itemize}
+
+% =====================================================================
+\section{Roadmap}
+
+\begin{table}[h]
+\centering\small
+\caption{A phased plan. Each phase is useful by itself.}\label{tab:roadmap}
+\begin{tabularx}{\linewidth}{@{}L{0.17\linewidth} Y L{0.12\linewidth}@{}}
+\toprule
+Phase & Work & Scale \\
+\midrule
+0. Correct & GND one-token fix and default seed; feasibility pass and completability checks; no loops without progress; must-run case validation; \code{wayness} fixes; user-vocabulary errors; engine documentation; random-rule regression tests. & 1--2 weeks \\
+1. Speak up & Design object with a printed summary; named parameters and \code{NamedTuple} cases; scoped rules; \code{coverage}; \code{must_include} and \code{strength} names, with aliases. & 2--4 weeks \\
+2. Close the loop & \code{run_cases} and file-based outcomes; \code{diagnose} and \code{followups}; \code{extend} and \code{topup}; \code{max_cases} and coverage ordering. & 3--4 weeks \\
+3. Reach & Tables.jl extension; CSV/TOML; GitHub matrix; \code{as_code}; \code{Invalid}; \code{Partition}; rolling coverage; agent guide; job-oriented recipes. & Ongoing \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Phase 0 is the one I would not postpone. A user with rules is exactly the
+user who needs this package most, and in my random constrained problems about
+one in nine ended in a confusing crash; GND users get a process that never ends.
+
+% =====================================================================
+\section{Closing}
+
+The hard part of this package, the covering algorithms, is already done and
+largely correct. It is fast, it has few dependencies, and its documentation
+and paper explain the ideas generously. What it lacks is a voice while it
+runs. It never tells users what it promised, what it left out, what
+happened, or what they could do next.
+
+The users this package could serve best are people who already know that
+some combinations matter and cannot afford all of them: scientists with
+expensive runs, maintainers of generic code, engineers paying for CI, and
+agents writing tests for them. Each of them would trust the tool more if it
+showed its work, and would get more from it if it helped with the step after
+generation. Named parameters, a summary that states the guarantee, reliable
+rules, and a diagnosis after failure would make \utd the tool people reach
+for at the moment the loop explodes.
+
+% =====================================================================
+\appendix
+\section{Reproducing the experiments}\label{app:repro}
+
+All scripts ran against the working tree (v0.4.0, commit \code{e0504d6}),
+with the package added by \code{Pkg.develop} to a scratch environment. The
+experiments changed no repository files, and the scripts live outside the
+repository; the constraint and GND scripts are the ones worth turning into
+regression tests. The checker in \code{verify.jl} enumerates the
+full factorial to find feasible tuples, so it is limited to small problems
+by design.
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}L{0.14\linewidth} Y@{}}
+\toprule
+Script & What it measures \\
+\midrule
+\code{e1.jl} & First contact: REPL output, exported names, edge-case errors \\
+\code{e2.jl}, \code{e3.jl} & 1,000 random constrained problems; classification of crashes \\
+\code{e4.jl} & GND on the implicit-constraint example under a 45-second watchdog \\
+\code{e5.jl} & \code{wayness} example, dictionary mutation, GND reproducibility, IPOG stability \\
+\code{e6.jl} & Mixed-strength verification; triples covered by pairwise designs; coverage by prefix \\
+\code{e7.jl}, \code{e8.jl} & Time, allocation, and size for IPOG and GND; GND sensitivity to \code{M} \\
+\code{e9.jl} & GND sizes before and after the one-token patch (patched in-session only) \\
+\code{e10.jl}, \code{e16.jl} & Test.jl output for a failing design; localization and masked pairs \\
+\code{e11.jl} & Excursion base case, rule-violating must-run cases, value types \\
+\code{e12.jl}, \code{proto.jl} & Constraint-safe prototype on the same 1,000 problems \\
+\code{e14.jl}, \code{e17.jl} & Figures for the CI example and the strength comparison \\
+\code{e15.jl} & Silent coverage loss when \code{nothing} is a real value \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Findings by location}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}L{0.36\linewidth} Y@{}}
+\toprule
+Location & Finding \\
+\midrule
+\code{src/coverage_matrix.jl:193} & GND scoring uses \code{n_way}; needs \code{n_way - 1}. \\
+\code{src/greedy_tuples.jl:195, 201} & Loops with no progress check; hang on uncoverable tuples or all-forbidden candidates. \\
+\code{src/greedy_tuples.jl:250, 256} & The same loops in the mixed-strength variant. \\
+\code{src/parameter_order.jl:128, 170} & Unplaceable tuples appended as rows without a completability check. \\
+\code{src/parameter_order.jl:224--226} & Final fill leaves zeros when no value is allowed; leads to \code{p[0]}. \\
+\code{src/parameter_order.jl:436}, \code{src/excursions.jl:32} & The user's \code{wayness} dictionary is modified. \\
+\code{src/coverage_matrix.jl:426} & Assertion instead of a message when an extra strength equals the base. \\
+\code{src/factorial_interface.jl:61} & GND's default RNG is unseeded and unrecorded. \\
+\code{src/factorial_interface.jl:85} & \code{nothing} marks unassigned parameters; ambiguous with real \code{nothing}. \\
+\code{src/factorial_interface.jl:100} & Must-run values looked up with \code{indexin}; a miss surfaces as a \code{convert} error. \\
+\code{src/factorial_interface.jl:219} & Single-valued parameters rejected. \\
+\code{src/full_factorial.jl:5} & Allocates the full result before any size check. \\
+\code{docs/src/man/guide.md} & \code{wayness} example throws. \\
+\code{docs/src/man/engines.md} & Describes GND as shorter; measured longer. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% =====================================================================
+\begin{thebibliography}{99}\small
+
+\bibitem{kuhn2004}
+D.~R. Kuhn, D.~R. Wallace, and A.~M. Gallo Jr.
+\newblock Software fault interactions and implications for software testing.
+\newblock \emph{IEEE Transactions on Software Engineering}, 30(6):418--421, 2004.
+
+\bibitem{lei2008}
+Y.~Lei, R.~Kacker, D.~R. Kuhn, V.~Okun, and J.~Lawrence.
+\newblock IPOG/IPOG-D: Efficient test generation for multi-way combinatorial testing.
+\newblock \emph{Software Testing, Verification and Reliability}, 18(3):125--148, 2008.
+
+\bibitem{yu2013}
+L.~Yu, Y.~Lei, M.~Nourozborazjany, R.~N. Kacker, and D.~R. Kuhn.
+\newblock An efficient algorithm for constraint handling in combinatorial test generation.
+\newblock In \emph{IEEE Sixth International Conference on Software Testing, Verification and Validation (ICST)}, 2013.
+
+\bibitem{ccm}
+D.~R. Kuhn, I.~Dominguez Mendoza, R.~N. Kacker, and Y.~Lei.
+\newblock Combinatorial coverage measurement concepts and applications.
+\newblock In \emph{Second International Workshop on Combinatorial Testing (IWCT)}, 2013.
+\newblock Tool: \url{https://github.com/usnistgov/combinatorial-testing-tools}.
+
+\bibitem{ben}
+L.~S. Ghandehari et al.
+\newblock A combinatorial testing-based approach to fault localization.
+\newblock \emph{IEEE Transactions on Software Engineering}, 46(6):616--645, 2020.
+
+\bibitem{yilmaz2014}
+C.~Yilmaz, E.~Dumlu, M.~B. Cohen, and A.~Porter.
+\newblock Reducing masking effects in combinatorial interaction testing: A feedback driven adaptive approach.
+\newblock \emph{IEEE Transactions on Software Engineering}, 40(1):43--66, 2014.
+
+\bibitem{pict}
+Microsoft.
+\newblock PICT: Pairwise Independent Combinatorial Testing, user guide.
+\newblock \url{https://github.com/microsoft/pict/blob/main/doc/pict.md}.
+
+\bibitem{supposition}
+Seelengrab (GitHub author).
+\newblock Supposition.jl: choice-sequence based property-based testing for Julia.
+\newblock \url{https://github.com/Seelengrab/Supposition.jl}.
+
+\bibitem{ghmatrix}
+GitHub Docs.
+\newblock Running variations of jobs in a workflow (a matrix generates at most 256 jobs per workflow run).
+\newblock \url{https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs}.
+
+\end{thebibliography}
+
+\end{document}
