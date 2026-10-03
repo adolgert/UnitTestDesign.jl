@@ -115,4 +115,47 @@ using TestItemRunner
 
 end
 
+@testsnippet IndexCoverage begin
+    # Index-space coverage counts for the engine tests, which check designs
+    # as parameters × cases matrices or vectors of rows of value positions.
+    # They replace src/coverage_set.jl, removed in Phase 5: measurement in
+    # the package is `coverage` (src/measure.jl), in value space, and the
+    # oracle is test/checker.jl.
+    using Combinatorics: combinations
+
+    """
+    The distinct `n_way`-tuples of nonzero values in `rows` (each indexable by
+    parameter), as a `Dict` from each parameter subset to its set of tuples.
+    """
+    function tuples_in_trials(rows, n_way)
+        n = length(first(rows))
+        seen = Dict(Tuple(s) => Set{NTuple{n_way, Int}}() for s in combinations(1:n, n_way))
+        for row in rows, (s, set) in seen
+            values = ntuple(k -> row[s[k]], n_way)
+            all(!=(0), values) && push!(set, values)
+        end
+        return seen
+    end
+
+    "The number of distinct `n_way`-tuples of nonzero values in `rows`."
+    coverage_by_tuple(rows, n_way) = sum(length, values(tuples_in_trials(rows, n_way)); init = 0)
+
+    """
+    `(start, finish)` for a design `matrix` (parameters × cases): `start` is
+    the number of `n_way` combinations of values `1:arity[i]`, and `finish`
+    how many of them no column contains.
+    """
+    function test_coverage(matrix, arity, n_way)
+        subsets = collect(combinations(1:length(arity), n_way))
+        start = sum(s -> prod(arity[s]), subsets; init = 0)
+        covered = 0
+        for s in subsets
+            seen = Set(matrix[s, j] for j in axes(matrix, 2)
+                       if all(k -> 1 <= matrix[s[k], j] <= arity[s[k]], eachindex(s)))
+            covered += length(seen)
+        end
+        return (start = start, finish = start - covered)
+    end
+end
+
 @run_package_tests

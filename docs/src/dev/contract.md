@@ -1,6 +1,6 @@
 # Contract
 
-This page specifies what UnitTestDesign.jl 1.0 promises. It is the reference
+This page specifies what UnitTestDesign.jl 0.5 promises. It is the reference
 for implementation, tests, documentation, and review. Clauses are numbered so
 that code, tests, and reviews can cite them ("contract §3.4"). Each clause
 states one requirement.
@@ -12,7 +12,7 @@ Invalid input throws an `ArgumentError` whose message uses the caller's
 vocabulary (parameter names, values, case positions), unless a clause names
 another exception.
 
-**0.2** Clauses describe the 1.0 release. A phase that has not yet implemented
+**0.2** Clauses describe the 0.5 release. A phase that has not yet implemented
 a clause must raise an explicit unsupported-feature error for inputs that need
 it. It must not apply different semantics in the meantime.
 
@@ -98,7 +98,18 @@ Measurement never needs a search to classify a covered target.
 
 **1.12** `coverage(cases, space; strength, stronger)` measures the supplied
 rows against the space, independent of any generator bookkeeping.
-`coverage(cases::TestCases)` uses the space and request stored in the result.
+`coverage(cases::TestCases)` uses the space and request stored in the result:
+it measures at `cases.strength` and `cases.stronger`. For a result whose
+strength is 0 (an excursion or a full factorial, §1.19),
+`coverage(cases::TestCases)` is an `ArgumentError` asking for `strength =`,
+and `report(cases)` measures at strength `min(2, parameter count)`, so at
+strength 1 for a one-parameter space, and says so in its guarantee line. An
+explicit `strength` replaces `cases.strength` and keeps `cases.stronger`
+unless `stronger` is passed too. A stored group whose strength is below the
+requested strength is an `ArgumentError` naming the group ("stronger group
+(a, b, c) => 3 is below the requested strength 4; pass stronger = [] to drop
+it"). An explicit `stronger` replaces the stored groups, and `stronger = []`
+drops them.
 
 **1.13** Rows given to `coverage` must be complete, use only the space's
 parameter names, and use only domain values (§2.11). Anything else is an
@@ -126,10 +137,10 @@ rows.
 `collect(cases)` returns a plain `Vector{T}`.
 
 **1.19** A `TestCases` records its space, strategy (`:covering`, `:excursion`,
-`:full_factorial`), strength, `stronger` groups, engine name and seed, the
-number of must-include rows, the excluded targets with attribution and
-explanation status, and covered-target counts, with ordinary and negative
-bookkeeping kept separate.
+`:full_factorial`), strength (0 for a strategy that has none), `stronger`
+groups, engine name and seed, the number of must-include rows, the excluded
+targets with attribution and explanation status, and covered-target counts,
+with ordinary and negative bookkeeping kept separate.
 
 **1.20** A generated `TestCases` contains no target whose status is unknown
 (§3.6).
@@ -143,7 +154,13 @@ feasibility search, rule evaluation, or coverage recount. It shows the count
 of valid rows in the full product only when that count is already known.
 
 **1.23** Independent verification, bonus coverage at strength + 1, and the
-prefix curve belong to `report` and `coverage`, never to `show`.
+prefix curve belong to `report` and `coverage`, never to `show`. The report
+is the verification: the excluded targets it lists, with their rules and
+explanation status, come from its own measurement under its own
+`feasibility_limit` and `explanation_limit`, not from generation's
+bookkeeping. Exclusions recorded at generation are a fallback, listed only
+for targets the report's measurement left unknown, and each is identified
+as recorded at generation.
 
 **1.24** If the space is proven to have no valid ordinary row, covering
 generation returns a result with no generated ordinary rows and reports every
@@ -206,7 +223,9 @@ remain two choices even though `github_matrix` writes both as `"x"`.
 **2.4** A value read from a returned row has the same concrete type as the
 domain value and is `isequal` to it. Result element types are chosen so that
 storing a value never converts it: a parameter whose values share one concrete
-type gets that type; otherwise a `Union` or abstract field type.
+type gets that type, whatever the domain's element type (`Any[1, 2]` gives
+`Int`); otherwise a `Union` of the values' concrete types (`Any[1, 1.0]` gives
+`Union{Int64, Float64}`) or an abstract field type.
 
 **2.5** A domain that lists the same choice twice is an error naming the
 parameter and the value ("parameter `tol` lists `1.0` twice"). The same value
@@ -255,7 +274,22 @@ feasible or infeasible.
 **3.3** The keyword `feasibility_limit`, a positive `Int`, bounds each search.
 Its default is `1_000_000` nodes. A node is one tentative assignment of one value to one
 parameter in the backtracking search, counting assignments that are later
-undone.
+undone. Nothing else is a node. In particular, rule evaluations are not
+counted against the limit: neither those of tabulation when the space is
+built (§12.18) nor the rule checks a search makes, where a check is one
+consultation of one rule on one assignment of its scope (a table lookup, or
+a memoized evaluation for a lazily evaluated rule, §12.19). A search checks
+rules in two places: the direct check, once per applicable rule whose scope
+the queried assignment completes, and forward checking, which after each
+node checks every rule that reads the assigned parameter and has exactly one
+unassigned parameter left, once per surviving value of that parameter (an
+initial prune does the same for every rule before the first node). So the
+checks one node causes are at most the sum, over the rules it touches, of
+the domain size of the parameter each has left, and a query's checks before
+its first node are at most one per applicable rule plus that sum over every
+applicable rule. `explain` and `classify` report the nodes and checks each
+answer took. A separate budget for rule evaluations is deferred until the
+Phase 3 benchmarks show a need for one.
 
 **3.4** The budget belongs to one query: one completability question about one
 assignment under one active rule set. Every connected component solved for
@@ -263,8 +297,12 @@ that query, including components with no assigned parameter, draws on the
 same budget. An answer found in the run-local cache costs no nodes. There is
 no run-wide total.
 
-**3.5** Cache keys include the assignment and the active rule set. Caches are
-local to one call. An exhausted search is never cached as infeasible.
+**3.5** Cache keys include the assignment and the active rule set. Search
+caches are local to one call. An exhausted search is never cached as
+infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
+context too: a generation request, or one `explain` or `classify` call. The
+operation's searches and its final validation share it, and it is released
+with the operation. A `TestSpace` retains nothing from any operation.
 
 **3.6** Generation resolves every target classification, the whole-space
 feasibility check, every must-include completion, and every placement decision.
@@ -301,7 +339,8 @@ hides uncertainty.
 
 **3.12** `report` applies §3.10 to bonus coverage and to the prefix curve.
 `design_sizes` reports a strategy's resource-limit status in place of a case
-count or share.
+count or share. Both apply §3.10 to the ordinary and the negative figures
+separately (§5.10).
 
 **3.13** Explanation of implied exclusions has its own budget, the keyword
 `explanation_limit::Int`, default `1_000_000` nodes, shared by all deletion
@@ -322,7 +361,14 @@ unresolved.
 its rules was verified to make the target feasible, with a witness.
 
 **3.17** `followups` reports `unknown` for a suspect whose isolation search
-reaches the limit.
+reaches the limit. The search covers every kind of row that could hold the
+suspect: for a suspect with no `Invalid` value, ordinary rows and the
+negative rows at each invalid value of each parameter it leaves out (§5.5);
+for a suspect with one, the negative rows at that value. The isolation
+conditions (no other suspect) apply to every kind, including rules that
+name the invalid parameter. A suspect is `inseparable` only when every kind
+is proven to hold no isolating row, and `unknown` when no kind yields one
+and some kind's search reaches the limit.
 
 ## 4. Partitions
 
@@ -401,7 +447,12 @@ negative rows contribute to negative coverage. A negative row never increases
 ordinary coverage, including for the combinations among its ordinary values.
 
 **5.10** Ordinary and negative coverage are reported separately in `coverage`,
-`report`, and the `TestCases` bookkeeping.
+`report`, and the `TestCases` bookkeeping. Every progress and planning figure
+separates the two parts: `report`'s guarantee, bonus coverage and prefix
+curve, and `design_sizes`'s case counts and pair and triple coverage. For a
+space with `Invalid` values an ordinary figure is labeled as ordinary and
+printed beside its negative figure, so no ordinary figure reads as the
+whole.
 
 **5.11** A row that violates its applicable rules contributes to neither kind of
 coverage.
@@ -443,7 +494,9 @@ The covering guarantee (§1.3) belongs to covering alone.
 
 **7.2** `full_factorial` returns every valid ordinary row and every valid
 negative row, each once, ordinary rows first. It never returns a
-multiple-invalid row.
+multiple-invalid row. Must-include rows precede them, in the order given with
+duplicates kept (§10.5); a valid row equal to a must-include row is not
+repeated.
 
 **7.3** `full_factorial(space; limit = 10^6)` counts candidate rows before
 enumerating: the ordinary product plus, for each parameter, its invalid
@@ -455,16 +508,28 @@ result reports candidate and accepted counts separately.
 Its result is a materialized `TestCases`.
 
 **7.5** `excursions(space; from, distance = 1, must_include)` returns the
-must-include rows, the base, and every valid row, ordinary or negative, that
-differs from the base in at most `distance` parameters. It never returns a
-multiple-invalid row.
+must-include rows, then the base, then every valid row, ordinary or
+negative, that differs from the base in at most `distance` parameters, each
+once. An excursion has exactly one distance, an integer of at least 0; a
+negative distance is an error. Distance 0 returns the must-include rows and
+the base alone. A distance above the parameter count is the parameter count.
+Every returned row other than a must-include row is within Hamming distance
+`distance` of the base (the number of parameters whose values differ), and
+nothing widens it: an excursion has no groups, and a request with `stronger`
+groups is an `ArgumentError` ("excursions take a single distance; stronger
+groups apply to covering designs"). Excursion distance is not covering
+strength: `strength` plays no part in an excursion, and a positional call's
+`n_way` is its distance. It never returns a multiple-invalid row.
 
 **7.6** `from` is a complete, valid, ordinary row. Omitted, it is the first
-ordinary value of each parameter. A base that contains an `Invalid` or
-violates a rule is an error naming the cause.
+ordinary value of each parameter. A base that is partial, contains an
+`Invalid`, or violates a rule is an error naming the cause, the rules it
+breaks for a violation. The base is never dropped or replaced, at any
+distance.
 
-**7.7** Excursions report the values that never appear in the result. They make
-no covering claim, and their docstring says so.
+**7.7** A row within the distance that violates a rule is left out. Excursions
+report how many rows were left out and the values that never appear in the
+result. They make no covering claim, and their docstring says so.
 
 **7.8** Without must-include rows, covering at strength equal to the parameter
 count returns, as a set, the same rows as `full_factorial`: every valid
@@ -519,7 +584,9 @@ scheduling, the global random number generator, or the clock.
 **9.5** `GND(; seed = 0, candidates = 50, rng = nothing)` seeds a fresh
 generator from `seed` at the start of every call, so repeated calls with the
 same engine agree. The seed is recorded in the result and printed by
-`report`.
+`report`. `seed` is an integer of at least 0 and `candidates` a positive
+integer, each within `Int`; another value is an `ArgumentError` naming the
+keyword.
 
 **9.6** If `rng` is given, GND uses a copy of it at the start of every call,
 leaves the caller's generator unadvanced, and records the seed as `nothing`.
@@ -633,7 +700,17 @@ the listed order. The names are distinct and there is at least one.
 
 **12.6** In `@forbid` and `@require`, every free identifier not in call position
 names a parameter. The scope lists them in order of first appearance.
-`$x` interpolates the caller's `x` when the rule is built.
+`$x` interpolates the caller's `x` when the rule is built. Names bound inside
+the expression are local, with Julia's scoping, when they are bound by one
+of these forms: the arguments of `->` and of an anonymous `function`
+(including keyword arguments and `do`-block arguments), `let` bindings, and
+the variables of generators and comprehensions. Any other form that binds or
+assigns a name or runs statements (an assignment outside a `let` binding,
+`for`, `while`, `try`, `global`, `local`, a quoted expression, a macro call)
+is an error when the macro expands, and the message points to the function
+form `forbid(f, names...)`. The subtype operators `<:` and `>:` are syntax,
+not calls, and are an error too; the message suggests the call form,
+`(<:)(T, $S)`, which the macro reads, and the function form.
 
 **12.7** In a macro rule, `nothing` and `missing` denote those values, not
 parameter names. A parameter may not be named `nothing` or `missing`.
@@ -685,9 +762,19 @@ order.
 
 **12.19** A rule whose scope product exceeds `tabulation_limit` (a `TestSpace`
 keyword, default `10^5` evaluations) is evaluated lazily with a memo. The
-package warns once per rule and suggests a narrower scope.
+package warns once per rule and suggests a narrower scope. A lazy rule's memo
+belongs to the operation context (§3.5): a generation request, or one
+`explain` or `classify` call. It is keyed by value indices, shared by all of
+that operation's feasibility searches, deletion trials, and final
+validation, and released with the operation. Within an operation it holds
+at most one entry per combination of the scope's ordinary values (the full
+product of the ordinary domains for a whole-case rule), so a predicate is
+evaluated at most once per combination per operation. A `TestSpace` retains
+nothing from any operation: its size is the same before and after any call.
+`isallowed`, which checks one row, may evaluate lazy rules without a memo.
 
-**12.20** Whole-case rules are always evaluated lazily, memoized per row.
+**12.20** Whole-case rules are always evaluated lazily, memoized within the
+operation (§12.19).
 
 **12.21** Cost of whole-case rules, documented in their docstring: they connect
 every parameter into one component, and deciding feasibility may search up to
@@ -701,14 +788,17 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 
 ## 13. Vocabulary
 
-**13.1** The 1.0 public names:
+**13.1** The 0.5 public names:
 
 | Name | Kind | Status | Notes |
 |:--|:--|:--|:--|
-| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `arity(space)`, `length(space)` (full product). |
+| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `length(space)` (full product); `arity(space)` is internal. |
+| `parameters` | function | new | `parameters(space)`: the parameter names, in order. |
 | `constraints` | keyword | new | Rules for a space. |
 | `forbid`, `require` | functions | new | Pattern, listed-names, and whole-case forms (§12). |
 | `@forbid`, `@require` | macros | new | Bare-name rules (§12.6). |
+| `Constraint` | type | new | The one rule form that all four surface forms build (§12.1). |
+| `ConstraintError` | exception | new | A rule's predicate threw (§12.16). |
 | `must_include` | keyword | new | Replaces `seeds`. |
 | `seeds` | keyword | deprecated | Alias for `must_include`. |
 | `strength` | keyword | new | Replaces `n_way`. |
@@ -716,6 +806,7 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `stronger` | keyword | new | Replaces `wayness` (§11). |
 | `wayness` | keyword | deprecated | Translated to `stronger`. |
 | `TestCases` | type | new | Result of every generator. |
+| `Exclusion` | type | new | One excluded target and the rules that exclude it (§1.4). |
 | `covering` | function | new | General entry point. |
 | `all_tuples` | function | deprecated | Alias for `covering`. |
 | `all_values`, `all_pairs`, `all_triples` | functions | kept | `covering` at strength 1, 2, 3. |
@@ -723,10 +814,14 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `values_excursion`, `pairs_excursion`, `triples_excursion` | functions | deprecated | Thin aliases for `excursions` at distance 1, 2, 3. |
 | `full_factorial` | function | kept | Size guard (§7.3). |
 | `coverage` | function | new | Measurement (§1.12). |
+| `Coverage` | type | new | What `coverage` returns. |
+| `iscomplete` | function | new | §1.16. |
 | `missing_interactions` | function | new | §3.11. |
 | `explain`, `isallowed` | functions | new | §1.25–§1.27. |
 | `report` | function | new | Verification, excluded list, bonus coverage, prefix curve, seed. |
+| `Report` | type | new | What `report` returns. |
 | `design_sizes` | function | new | Cases per strategy before committing. |
+| `DesignSizes` | type | new | What `design_sizes` returns. |
 | `diagnose` | function | experimental | `diagnose(cases, passed)`: ranked suspects; a pure function of cases and outcomes. |
 | `followups` | function | experimental | Isolating cases per suspect: found, inseparable, or unknown. |
 | `github_matrix` | function | new | JSON for a workflow `include:` list; validates every row before writing. |
@@ -738,7 +833,12 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `GND(M = ...)` | keyword | deprecated | Alias for `candidates`. |
 
 **13.2** Deprecated names warn through `Base.depwarn` and are scheduled for
-removal in the next breaking release.
+removal in the next breaking release. A keyword given together with its
+deprecated alias (`strength` and `n_way`, `must_include` and `seeds`,
+`stronger` and `wayness`, an excursion's `distance` and `n_way`, GND's
+`candidates` and `M`) is an `ArgumentError`, whatever their values: a keyword
+passed at its default value counts as passed, and neither one overrides the
+other.
 
 **13.3** Removed outright, with no alias: `disallow`, `generate_tuples`,
 `Excursion`, and the `Counter` keyword.
@@ -752,9 +852,9 @@ distinguish it from line coverage.
 
 ## 14. Not now
 
-**14.1** The following are outside 1.0. Proposals for them need a new review.
+**14.1** The following are outside 0.5. Proposals for them need a new review.
 
-| Item | Status in 1.0 |
+| Item | Status in 0.5 |
 |:--|:--|
 | Test runner | None. Outcomes enter only through `diagnose(cases, passed)`. |
 | Outcome files | None. |
@@ -768,6 +868,6 @@ distinguish it from line coverage.
 | TOML specifications | None. |
 | `max_cases` | None. |
 | Rolling coverage across CI runs | None. |
-| Evidence track (case study, mutation analysis) | Deferred until after 1.0. |
+| Evidence track (case study, mutation analysis) | Deferred until after 0.5. |
 
 **14.2** Behavior not stated in this contract is not promised.

@@ -384,23 +384,21 @@ end
 
 
 """
-    remove_combinations!(mc::MatrixCoverage, disallow)
+    remove_combinations!(mc::MatrixCoverage, dead)
 
-Remove all tuples that are disallowed by the `disallow` function.
-Input to the function is a vector of parameter indexes.
-The output to the function is whether they are disallowed,
-as a boolean. This reduces the size of total tuples in the
-coverage matrix. It doesn't move them to covered tuples. It
-deletes them.
+Delete every tuple for which `dead(tuple)` is true, where the tuple is a
+vector of value positions with `0` for unset parameters. This reduces the
+total number of tuples in the coverage matrix. It doesn't move them to
+covered tuples. It deletes them.
 """
-function remove_combinations!(mc::MatrixCoverage, disallow)
+function remove_combinations!(mc::MatrixCoverage, dead)
     allow_cnt = 0
     allowed = zeros(Int, size(mc.allc, 2))
     for i in 1:size(mc.allc, 2)
-        if !disallow(mc.allc[:, i])
+        if !dead(mc.allc[:, i])
             allow_cnt += 1
             allowed[allow_cnt] = i
-        # else disallowed
+        # else dead, so dropped
         end
     end
     mc.allc = mc.allc[:, allowed[1:allow_cnt]]
@@ -418,19 +416,24 @@ of parameters.
 
 The wayness is a dictionary from an integer, the wayness, to a set
 of lists of indices that should have that wayness together. The `base_wayness`
-is the `n_way` for the rest of the variables. It should be less than
-the other sets of waynesses.
+is the `n_way` for the rest of the variables. A group at the base wayness
+adds nothing (contract §11.7); a lower one is an error (§11.6). The
+dictionary is not modified (§11.9).
 """
 function multi_way_coverage(arity, wayness, base_wayness)
     orders = sort(collect(keys(wayness)), rev = true)
-    @assert minimum(orders) > base_wayness
-    @assert maximum(orders) <= length(arity)
+    all(>=(base_wayness), orders) || throw(ArgumentError(
+        "a wayness below the base wayness $base_wayness: $(minimum(orders))"))
+    all(<=(length(arity)), orders) || throw(ArgumentError(
+        "a wayness above the number of parameters $(length(arity)): $(maximum(orders))"))
 
     param_cnt = length(arity)
     order_combos = Vector{Matrix{eltype(arity)}}(undef, 0)
     for order in orders
+        order == base_wayness && continue  # the base group covers these
         # The parameter set is a list of parameter indices.
         for param_set in wayness[order]
+            param_set = collect(param_set)
             high_combos = all_combinations(arity[param_set], order)
             widened = zeros(eltype(arity), param_cnt, size(high_combos, 2))
             widened[param_set, :] = high_combos

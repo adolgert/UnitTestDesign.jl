@@ -3,12 +3,15 @@ using TestItemRunner
 
 # Tests of the independent oracle in checker.jl against hand-enumerated
 # fixtures. Any test item can use the oracle, the random problem generator,
-# and the fixture inventory with `setup=[Checker]`.
+# the fixture inventory, and the adapter from a fixture or checker space to a
+# production TestSpace (`test_space`, `model_rows`, `checker_row`) with
+# `setup=[Checker]`.
 
 @testmodule Checker begin
     include("checker.jl")          # the oracle; no code shared with src/
     include("random_problems.jl")  # random constrained problems (test_random_problems.jl)
     include("fixtures.jl")         # the fixture inventory (test_fixtures.jl)
+    include("fixture_model.jl")    # the adapter to a production TestSpace: test_space(fixture)
 end
 
 

@@ -1,6 +1,10 @@
-# UnitTestDesign.jl 1.0.0 release notes (draft)
+# UnitTestDesign.jl 0.5.0 release notes (draft)
 
 Started in Phase 1 (step 6). Phase 8 fills in the changelog below.
+
+2026-09-27: the release is 0.5.0, not 1.0.0; the maintainer wants to use a
+0.x version before calling it 1.0. This file was
+`release_notes_1.0_draft.md`, and the release branch is `release/0.5`.
 
 ## Dependents check (Phase 1, 2026-09-26)
 
@@ -19,9 +23,9 @@ either at run time (`[deps]`/`[weakdeps]`) or for tests only (`[extras]` +
 
 | Repository | In General? | How it declares UnitTestDesign | Compat bound | What it calls | Effect of the positional return-type change |
 |:--|:--|:--|:--|:--|:--|
-| [adolgert/BijectiveHilbert.jl](https://github.com/adolgert/BijectiveHilbert.jl) | Yes (`91e7fc40-…`) | `test/Project.toml` `[deps]` | `"^0.3"` | `for (A, I, C, D, B) in all_pairs(...)` in `test/test_simple2d.jl`, `test/test_hamilton.jl`, `test/test_global_gray.jl` | None for now. The bound already excludes 0.4 and 1.0. Destructuring works on tuple rows once the bound is raised. |
-| [adolgert/CompetingClocks.jl](https://github.com/adolgert/CompetingClocks.jl) | Yes (`5bb9b785-…`) | `test/Project.toml` `[deps]` | none | `design = faster ? all_pairs : full_factorial`, then `length`, `eachindex`, `configurations[idx]`, `configuration[1:5]...`, `configuration[6]` in `test/gauntlet/experiments.jl`. The test suite reaches it through `test/gauntlet/test_travel.jl` (`run_experiments(true)`). | With no bound, its next CI run resolves 1.0. Indexing, range slicing, and splatting work on tuples, and `TestCases <: AbstractVector` provides `length`, `eachindex`, and `getindex`, so it should keep working. Verify by running its tests against `release/1.0`. |
-| [jwscook/LinearMaxwellVlasov.jl](https://github.com/jwscook/LinearMaxwellVlasov.jl) | No | main `Project.toml` `[extras]` + `[targets].test` | none | `for params ∈ all_pairs(...)`, then `(kz, ω, n, pow, diffbool) = params` in `test/integrals/Parallel.jl`; `for (ωT, kz, n, pow, dFdv) ∈ all_pairs(...)` in `test/integrals/DiracDelta.jl`. `using UnitTestDesign` with no calls found in `test/integrals/Parallel_unittest4.jl` and `test/tensors/Brambilla.jl`. | It will resolve 1.0 because it has no bound. Destructuring works on tuple rows, so it should keep working. |
+| [adolgert/BijectiveHilbert.jl](https://github.com/adolgert/BijectiveHilbert.jl) | Yes (`91e7fc40-…`) | `test/Project.toml` `[deps]` | `"^0.3"` | `for (A, I, C, D, B) in all_pairs(...)` in `test/test_simple2d.jl`, `test/test_hamilton.jl`, `test/test_global_gray.jl` | None for now. The bound already excludes 0.4 and 0.5. Destructuring works on tuple rows once the bound is raised. |
+| [adolgert/CompetingClocks.jl](https://github.com/adolgert/CompetingClocks.jl) | Yes (`5bb9b785-…`) | `test/Project.toml` `[deps]` | none | `design = faster ? all_pairs : full_factorial`, then `length`, `eachindex`, `configurations[idx]`, `configuration[1:5]...`, `configuration[6]` in `test/gauntlet/experiments.jl`. The test suite reaches it through `test/gauntlet/test_travel.jl` (`run_experiments(true)`). | With no bound, its next CI run resolves 0.5. Indexing, range slicing, and splatting work on tuples, and `TestCases <: AbstractVector` provides `length`, `eachindex`, and `getindex`, so it should keep working. Verify by running its tests against `release/0.5`. |
+| [jwscook/LinearMaxwellVlasov.jl](https://github.com/jwscook/LinearMaxwellVlasov.jl) | No | main `Project.toml` `[extras]` + `[targets].test` | none | `for params ∈ all_pairs(...)`, then `(kz, ω, n, pow, diffbool) = params` in `test/integrals/Parallel.jl`; `for (ωT, kz, n, pow, dFdv) ∈ all_pairs(...)` in `test/integrals/DiracDelta.jl`. `using UnitTestDesign` with no calls found in `test/integrals/Parallel_unittest4.jl` and `test/tensors/Brambilla.jl`. | It will resolve 0.5 because it has no bound. Destructuring works on tuple rows, so it should keep working. |
 
 Other matches that are not package dependents:
 
@@ -104,13 +108,19 @@ or checks `isa Vector`. The search found no such code. The general Discourse
 announcement planned for Phase 8, step 4, is unaffected.
 
 Maintainer follow-ups (not announcements): run the CompetingClocks.jl tests
-against `release/1.0` before registering, since it has no compat bound.
+against `release/0.5` before registering, since it has no compat bound.
 BijectiveHilbert.jl's `"^0.3"` bound already lags 0.4, so raise it when
 convenient.
 
 ---
 
-## 1.0.0 changelog (skeleton; Phase 8 fills in)
+## 0.5.0 changelog (skeleton; Phase 8 fills in)
+
+0.5.0 is a breaking release. Under Julia's semantic versioning a minor bump
+before 1.0 is breaking: a compat bound of `"0.4"` or `"^0.4"` means
+`[0.4.0, 0.5.0)`, so packages that declare it are not upgraded to 0.5
+automatically and must raise the bound to use it. Packages with no bound
+resolve 0.5 on their next update.
 
 ### Breaking changes
 

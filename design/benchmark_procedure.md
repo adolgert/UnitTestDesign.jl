@@ -51,8 +51,9 @@ engines the same way before and after the constraint fix.
    IPOG builds rows with `p1 = 2, p2 = 2` and then finds no `p9` for them
    (1 of its 21 rows pairwise, 6 of 91 three-way). GND loops without
    raising its attempt-cap error. So the prior revision has no "before"
-   number for this fixture; it joins fixture 3. The IPOG failure is
-   asserted with `@test_throws BoundsError` in `test/test_fixtures.jl`;
+   number for this fixture; it joins fixture 3. The IPOG failure was
+   asserted with `@test_throws BoundsError` in `test/test_fixtures.jl`
+   until Phase 3 replaced it with completeness tests for both engines;
    the GND hang is recorded here only.
 3. **Repaired cases.** The random problems that crash IPOG or hang GND on
    the prior revision (see issue #51), `bench12`, and the four greedy
@@ -74,11 +75,29 @@ engines the same way before and after the constraint fix.
   with allocations and bytes.
 - The case count of the returned design, so a speedup is never bought
   with a larger design unnoticed.
+- Memory of lazy-rule memos (Phase 2 review round 1). Since Phase 3
+  review round 1 a lazy rule's memo belongs to the operation context, the
+  request, and is released with it; the `TestSpace` retains nothing
+  (contract §3.5, §12.19). Record `Base.summarysize(space)` before and
+  after generation, which must not change, and, for each request,
+  `UnitTestDesign.memo_size(request)` and
+  `Base.summarysize(request.feasibility)` after generation, for two
+  spaces: `bench12` with an added whole-case rule, and the 15-parameter,
+  4-value fixture 1 with a whole-case rule. A per-request whole-case memo
+  is bounded by the product of the ordinary domains
+  (331776 rows for `bench12`, 4^15 for fixture 1), so the second is the one
+  that can grow without a practical bound. The Phase 3 measurement (memo on
+  the space, 128 MB retained on fixture 1) is what moved the memo into the
+  request; a bound on the per-request memo is decided from this one.
+- The search effort alongside the time: nodes and rule checks
+  (`Explanation.nodes`, `.evaluations`, or the `SearchStats` of the
+  request's feasibility searches). A separate evaluation budget (§3.3) is
+  added only if checks per node turn out to dominate.
 
 ## Procedure
 
 1. Check out the prior revision (`main` at commit `d46122d`, before
-   `release/1.0`) and run fixture 1, the one it handles without crashing.
+   `release/0.5`) and run fixture 1, the one it handles without crashing.
    Record the table. Fixture 2's legacy baseline is the failure recorded
    above.
 2. Check out the Phase 3 branch and run all three fixtures. Record the
@@ -91,5 +110,8 @@ engines the same way before and after the constraint fix.
    test asserts machine-dependent seconds. Limit exhaustion and
    progress-guarantee regressions go in the deterministic suite.
 
-The benchmark script lives at `benchmark/run.jl` when Phase 3 lands and
-writes a Markdown table that is pasted into the Phase 3 review.
+The benchmark script lives at `benchmark/run.jl` and writes Markdown tables
+that are pasted into the Phase 3 review. Its header gives the commands for
+this revision and for the prior one. The Phase 3 results, with the 0.4
+comparison and the proposed tolerance, are in
+`design/benchmark_results_phase3.md`.
