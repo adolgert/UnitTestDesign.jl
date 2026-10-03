@@ -19,6 +19,9 @@ const _BonusCounts = NamedTuple{(:strength, :covered, :feasible, :unknown, :nega
 const _PrefixPoint = NamedTuple{(:cases, :covered, :feasible, :unknown), NTuple{4, Int}}
 
 """
+Use when you read the fields of what [`report`](@ref) found: the guarantee, the
+coverage, the exclusions, bonus coverage, and the prefix curve.
+
     Report
 
 What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
@@ -93,6 +96,11 @@ struct Report
 end
 
 """
+Use when you want to check what a generated result promises and see the
+evidence: the guarantee measured from the rows, what the rules excluded and why,
+bonus coverage at the next strength, and how coverage grows over the first
+cases.
+
     report(cases::TestCases; feasibility_limit = 1_000_000,
            explanation_limit = 1_000_000) -> Report
 
@@ -159,15 +167,16 @@ The measurement searches, within `feasibility_limit` nodes per target, for
 the targets no row holds (§3.9). A search that runs out leaves its target
 unresolved: the counts become bounds ("8 of at least 11"), no percentage is
 printed, and nothing is called complete (§3.10, §3.12). `explanation_limit`
-bounds the search for the rules behind an implied exclusion (§3.13).
+bounds the search for the rules behind an implied exclusion (§3.13); running
+out marks that explanation unresolved and changes no count (§3.15).
 
 The report is the verification (§1.23). The exclusions it lists, with their
-rules and whether each explanation is verified minimal, are its own, found
-with its own `feasibility_limit` and `explanation_limit`, not copied from
-generation: a result generated with `explanation_limit = 1` and reported
-with the default shows verified explanations, and one reported with
-`explanation_limit = 1` shows the explanations that limit left unresolved,
-whatever generation found. Exclusions recorded at generation are a
+rules and whether each explanation is verified inclusion-minimal, are its
+own, found with its own `feasibility_limit` and `explanation_limit`, not
+copied from generation: a result generated with `explanation_limit = 1`
+and reported with the default shows verified explanations, and one reported
+with `explanation_limit = 1` shows the explanations that limit left
+unresolved, whatever generation found. Exclusions recorded at generation are a
 fallback, used only for targets this measurement left unknown, and each is
 printed with "(recorded at generation)"; they are in the `recorded` field,
 apart from `excluded`.
@@ -241,8 +250,9 @@ end
     _covers_text(c, verb; with_strength) -> (claim, rest)
 
 What the rows cover, from the measurement: the claim "cover all 11 feasible
-pairs", or "cover 9 of 11 feasible pairs" with the rest "; 2 pairs missing",
-or, with unresolved targets, "cover 28 of at least 28 feasible pairs" with
+pairs" ("cover the 1 feasible pair" for one), or "cover 9 of 11 feasible
+pairs" with the rest "; 2 pairs missing", or, with unresolved targets,
+"cover 28 of at least 28 feasible pairs" with
 "; 420 pairs unresolved (feasibility_limit = 1); no exact percentage"
 (§3.10). The noun is pairs, triples, or combinations, the last followed by
 the strengths when `with_strength`. The claim is `nothing` when no target is
@@ -251,11 +261,12 @@ feasible and none is unresolved.
 function _covers_text(c::Coverage, verb::AbstractString; with_strength::Bool)
     part = c.ordinary
     noun = _coverage_noun(c)
-    nouns = noun == "combination" && with_strength ? "combinations at " * _strength_text(c) : noun * "s"
+    # The noun agrees with the feasible count: "the 1 feasible pair", "9 of 11 feasible pairs".
+    nouns = _noun(part.feasible, noun) * (noun == "combination" && with_strength ? " at " * _strength_text(c) : "")
     resolved = isempty(part.unknown)
     resolved && part.feasible == 0 && return nothing, ""
     claim = if resolved && isempty(part.missing)
-        "$verb all $(part.feasible) feasible $nouns"
+        "$verb $(part.feasible == 1 ? "the" : "all") $(part.feasible) feasible $nouns"
     else
         "$verb $(part.covered) of $(resolved ? "" : "at least ")$(part.feasible) feasible $nouns"
     end
@@ -296,7 +307,7 @@ apart from the ordinary guarantee (§5.10).
 """
 function _guarantee(tc::TestCases, c::Coverage)
     lead = _plural(length(tc), "case")
-    space = "a $(length(tc.space))-combination space"
+    space = "$(_indefinite(length(tc.space))) $(length(tc.space))-combination space"
     tail = String[]
     must = _plural(tc.n_must_include, "must-include row") * " kept first"
     tc.n_must_include > 0 && tc.strategy !== :excursion && push!(tail, must)
@@ -386,7 +397,7 @@ function _print_prefix(io::IO, r::Report)
             print(io, " cover $(_percent(p.covered, p.feasible))% ", negative ? "of ordinary $(noun)s " : "",
                   "($(p.covered) of $(p.feasible))")
         else
-            print(io, " cover ", _of(p), negative ? " ordinary $(noun)s" : "")
+            print(io, " cover ", _of(p), negative ? " ordinary " * _noun(p.feasible, noun) : "")
         end
         negative && print(io, "; negative ", _of(r.prefix_negative[k]))
     end
@@ -400,7 +411,7 @@ function _print_bonus(io::IO, r::Report)
         return nothing
     end
     noun = _target_noun([b.strength])
-    nouns = noun == "combination" ? "combinations at strength $(b.strength)" : noun * "s"
+    nouns = _noun(b.feasible, noun) * (noun == "combination" ? " at strength $(b.strength)" : "")
     if b.unknown == 0
         print(io, "bonus: $(b.covered) of $(b.feasible) feasible $nouns covered")
     else
@@ -459,6 +470,9 @@ const _SizeRow = NamedTuple{(:strategy, :kind, :level, :status, :message, :cases
           Union{Nothing, Int}, Union{Nothing, _SizeCounts}, Union{Nothing, _SizeCounts}}}
 
 """
+Use when you read the table [`design_sizes`](@ref) returns: one row per
+strategy, with its case count, its share of the valid cases, and its coverage.
+
     DesignSizes
 
 The table [`design_sizes`](@ref) returns. Fields: `parameters` (the names),
@@ -499,6 +513,9 @@ struct DesignSizes
 end
 
 """
+Use when choosing a strategy before committing to one: it shows how many cases
+each strategy produces for your space, and what each covers.
+
     design_sizes(space; strengths = 1:3, distances = 1:2, engine = IPOG(), limit = 10^6,
                  from = nothing, feasibility_limit = 1_000_000,
                  explanation_limit = 1_000_000) -> DesignSizes
@@ -645,7 +662,7 @@ function _size_note(t::DesignSizes, row::_SizeRow)
 end
 
 Base.show(io::IO, t::DesignSizes) =
-    print(io, "DesignSizes: ", _plural(length(t.rows), "strategy"), " for ", _plural(length(t.parameters), "parameter"))
+    print(io, "DesignSizes: ", _plural(length(t.rows), "strategy", "strategies"), " for ", _plural(length(t.parameters), "parameter"))
 
 function Base.show(io::IO, ::MIME"text/plain", t::DesignSizes)
     header = ["strategy", "cases", "share", "pairs", "triples"]

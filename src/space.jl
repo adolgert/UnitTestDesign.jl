@@ -9,6 +9,10 @@
 ## Wrappers (contract §2.12, §2.13, §4, §5)
 
 """
+Use when one value stands for a class of inputs, such as tiny tolerances, and
+each run should draw a concrete member of the class while rules and coverage
+count the class by its name.
+
     Partition(name::Symbol, draw)
 
 A named choice that stands for a class of values (contract §4.1). Rules,
@@ -20,6 +24,11 @@ A partition's identity is its name; `draw` is not part of it (§2.13). Names are
 unique within a parameter, and a domain may not also hold the raw `Symbol` of a
 partition's name (§4.3, §4.4). A partition is an ordinary value (§4.2).
 `Invalid(Partition(...))` is an error (§4.12).
+
+A partition prints as `Partition(:tiny)`, which does not read back as code. In
+cases committed to a test file as a literal, such as the output of
+`repr(collect(cases))`, write its name, `:tiny`, which `coverage` and
+`must_include` accept in its place (§2.11).
 """
 struct Partition
     name::Symbol
@@ -46,6 +55,10 @@ Base.hash(p::Partition, h::UInt) = hash(p.name, h ⊻ 0x5f0c8e2b4a1d7c39)
 
 
 """
+Use when a parameter has values the code must reject, and you want negative
+cases that try each invalid value beside otherwise valid values, one invalid
+value per case.
+
     Invalid(x)
 
 Marks `x` as an invalid value of the parameter whose domain lists it, for
@@ -63,6 +76,10 @@ negative rows: each holds one invalid value beside ordinary values, and
 together they cover that value's negative targets (§6), such as, at strength
 2, the invalid value beside every feasible value of every other parameter.
 Rows keep the wrapper, so a test body can branch on [`hasinvalid`](@ref).
+
+The wrapped value is `x.value`, the supported way to read it. A test body
+unwraps a row's values before the call with
+`unwrap(x) = x isa Invalid ? x.value : x`.
 """
 struct Invalid{T}
     value::T
@@ -83,6 +100,9 @@ Base.hash(x::Invalid, h::UInt) = hash(x.value, h ⊻ 0x2d7a91c4e8b3f056)
 
 
 """
+Use when a test body must tell a negative case, one that holds an
+[`Invalid`](@ref) value, from an ordinary one.
+
     hasinvalid(case) -> Bool
 
 True when the row (a `NamedTuple`, `Tuple`, or vector) holds an
@@ -162,6 +182,10 @@ end
 ## The space
 
 """
+Use when you want to describe a test's parameters, their values, and the rules
+that exclude combinations once, and share that description among generation,
+measurement and diagnosis.
+
     TestSpace(domains::NamedTuple; constraints = [], tabulation_limit = 10^5)
     TestSpace(name => domain, ...; constraints = [], tabulation_limit = 10^5)
 
@@ -316,6 +340,9 @@ end
 ## Accessors
 
 """
+Use when you need a space's parameter names in order, for example to name the
+columns of a positional result: `DataFrame(cases, parameters(cases.space))`.
+
     parameters(space::TestSpace) -> Vector{Symbol}
 
 The parameter names, in order.
@@ -477,7 +504,30 @@ rule_label(space::TestSpace, k::Integer) = rule_label(space.constraints[k], k)
 
 ## Display
 
-_plural(n, word) = string(n, " ", word, n == 1 ? "" : "s")
+"""
+    _noun(n, word, plural = word * "s") -> String
+
+The form of `word` that agrees with a count of `n`: `word` for exactly 1,
+`plural` otherwise ("1 pair", "0 pairs", "2 strategies"). Every printed
+count goes through it or through `_plural`, so none reads "1 pairs".
+"""
+_noun(n, word, plural = string(word, "s")) = n == 1 ? word : plural
+
+"`n` followed by the form of `word` that agrees with it: \"1 case\", \"3 cases\"."
+_plural(n, word, plural = string(word, "s")) = string(n, " ", _noun(n, word, plural))
+
+"""
+    _indefinite(n) -> String
+
+The article before the number `n` read aloud: "an" when its name begins with
+a vowel sound (8, 11, 18, 80–89, 800–899, 8000, 11000, 18000, …), else "a",
+as in "an 18-combination space".
+"""
+function _indefinite(n::Integer)
+    digits = string(abs(n))
+    lead = digits[1:mod1(length(digits), 3)]   # the leading group of three digits
+    return startswith(lead, "8") || lead == "11" || lead == "18" ? "an" : "a"
+end
 
 function Base.show(io::IO, space::TestSpace)
     print(io, "TestSpace with ", _plural(length(space.names), "parameter"), ", ",

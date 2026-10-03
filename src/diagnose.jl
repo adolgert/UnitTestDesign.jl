@@ -54,12 +54,15 @@ The result of [`diagnose`](@ref). Fields:
   another; no suspects), or `:conflicting` (some case appears more than once
   with different outcomes; those rows are listed in `conflicting` and left
   out, and the rest are compared as for `:ranked`).
-- `groups::Vector{Vector{Suspect}}`: the suspects, grouped by the failing
-  cases that contain them. The members of a group occur in exactly the same
-  cases, so these outcomes cannot tell them apart. Groups are ranked by the
-  number of failing cases, most first, then by their representative, the
-  group's first and smallest member: fewer values first, then parameter
-  order, then domain order. Members follow the same order.
+- `groups::Vector{Vector{Suspect}}`: the suspects, grouped by failure
+  pattern, the set of failing cases that contain them. The members of a
+  group have the same failure pattern, so these outcomes cannot tell them
+  apart; `show` lists them as "same failures as" the first. This is not the
+  `:indistinguishable` status of [`followups`](@ref), which means that one
+  suspect contains another. Groups are ranked by the number of failing
+  cases, most first, then by their representative, the group's first and
+  smallest member: fewer values first, then parameter order, then domain
+  order. Members follow the same order.
 - `suspects::Vector{Suspect}`: every suspect, group by group, in rank order.
 - `strength::Int`: the largest combination considered.
 - `n_cases::Int`, `n_failed::Int`: the rows given, and how many failed,
@@ -86,26 +89,31 @@ struct Diagnosis
 end
 
 """
+Use when some cases failed and you want ranked hypotheses about which values, or
+combinations of values, the failures have in common. Experimental: the ranking
+is a set of hypotheses, not proof.
+
     diagnose(cases, passed::AbstractVector{Bool}; strength = nothing, space = nothing) -> Diagnosis
 
 !!! warning "Experimental"
     The ranking is a set of hypotheses, not proof (contract §8.6). Its
     interface may change in a minor release.
 
-Use after a run in which some cases failed, to see which values and
-combinations of values to suspect. `passed[k]` is the outcome of
-`cases[k]`: `true` for a pass, `false` for a failure. Collect outcomes
-however you like (a Test.jl loop, a cluster job, a spreadsheet); diagnosis
-is a pure function of the cases and outcomes, and runs nothing (§14.1).
+`passed[k]` is the outcome of `cases[k]`: `true` for a pass, `false` for a
+failure. Collect outcomes however you like (a Test.jl loop, a cluster job, a
+spreadsheet); diagnosis is a pure function of the cases and outcomes, and
+runs nothing (§14.1).
 
 A *suspect* is a combination of 1 to `strength` values that appears in at
 least one failing case and in no passing case. Suspects are ranked by the
 number of failing cases that contain them, most first; then smaller
 combinations first, since a single value that explains the failures is a
 simpler hypothesis than a pair; then by parameter order and domain order,
-so the ranking is deterministic. Suspects that occur in exactly the same
-failing cases are grouped: these outcomes cannot tell them apart, and only
-new cases can. [`followups`](@ref) proposes those cases.
+so the ranking is deterministic. Suspects with the same failure pattern,
+those that occur in exactly the same failing cases, are grouped, and the
+display lists them as "same failures as" the group's first member: these
+outcomes cannot tell them apart, and only new cases can. [`followups`](@ref)
+proposes those cases.
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> space = TestSpace((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
@@ -381,7 +389,7 @@ function Base.show(io::IO, ::MIME"text/plain", d::Diagnosis)
         print(io, "\n", j, ". ", _exact(io, representative.combination), " — in ",
               representative.failures, " of ", total, " failure", total == 1 ? "" : "s")
         if length(group) > 1
-            print(io, " — indistinguishable from ",
+            print(io, " — same failures as ",
                   _listed([_exact(io, s.combination) for s in group[2:end]]))
         end
     end
@@ -453,6 +461,10 @@ _no_case(suspect::NamedTuple, status::Symbol; others = NamedTuple[], rules = Int
 const _FOLLOWUP_STARTS = 5
 
 """
+Use when [`diagnose`](@ref) has ranked suspects and you want the next cases to
+run: for each suspect it searches for a valid case that holds that suspect and
+no other, and says when no such case exists or the search ran out. Experimental.
+
     followups(d::Diagnosis; feasibility_limit = 1_000_000, explanation_limit = 1_000_000,
               prefer = :nearest) -> Vector{Followup}
 
@@ -460,9 +472,10 @@ const _FOLLOWUP_STARTS = 5
     Follow-up cases test hypotheses; they carry no minimum-distance
     guarantee (contract §8.6). The interface may change in a minor release.
 
-Use after [`diagnose`](@ref), to choose the next cases to run: for each
-suspect, a valid case that holds it and no other suspect, so that its
-outcome speaks to that suspect alone. The result has one
+For each suspect, `followups` searches for a valid case that holds it and no
+other suspect, so that the case's outcome speaks to that suspect alone. Such
+a case need not exist, and a search may reach its limit first, so isolation
+is not guaranteed: the status says which. The result has one
 [`Followup`](@ref UnitTestDesign.Followup) per suspect, in the diagnosis's
 rank order, and each has a `status`:
 

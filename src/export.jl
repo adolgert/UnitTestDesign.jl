@@ -11,12 +11,12 @@ import JSON
 const _GITHUB_MATRIX_LIMIT = 256
 
 """
+Use when a GitHub Actions workflow should run one job per test case: write the
+cases as the JSON document `{"include": [...]}`, one object per case, for a
+workflow to read with `fromJSON`.
+
     github_matrix(cases; io = stdout)
     github_matrix(io::IO, cases)
-
-Use when a GitHub Actions workflow should run one job per test case: write
-the cases as the JSON document `{"include": [...]}`, one object per case,
-for a workflow to read with `fromJSON`.
 
 `cases` is a [`TestCases`](@ref) or a vector of rows. Each object's keys are
 the parameter names; a positional result's parameters are `p1`, `p2`, …, and

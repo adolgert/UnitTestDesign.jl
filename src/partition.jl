@@ -9,6 +9,9 @@
 using Random: AbstractRNG
 
 """
+Use when cases hold [`Partition`](@ref) values and the test needs concrete
+inputs: it draws a value for each partition from the `rng` you pass.
+
     realize(case; rng) -> case
     realize(cases; rng) -> Vector
 

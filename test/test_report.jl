@@ -600,3 +600,27 @@ end
     @test all(r -> r.negative_cases == 0 && r.negative_pairs == none && r.negative_triples == none, s.rows)
     @test !occursin("+", shown(s))
 end
+
+
+@testitem "report and design_sizes: a count of one is singular, and 8 and 18 take \"an\" (Phase 6 review)" setup=[ReportSetup] begin
+    # One feasible pair: the rules forbid three of the four.
+    one_pair = TestSpace((a = [1, 2], b = [:x, :y]);
+                         constraints = [forbid((a = 1, b = :x)), forbid((a = 2, b = :y)), forbid((a = 2, b = :x))])
+    r = report(all_pairs(one_pair))
+    @test r.guarantee == "1 case covers the 1 feasible pair of a 4-combination space (3 pairs forbidden)"
+    @test occursin("\n  first 1 of 1 cover 100% (1 of 1)\n", shown(r))
+    # One valid row: 3 feasible pairs, and the bonus is 1 feasible triple.
+    one_row = TestSpace((a = [1, 2], b = [:x, :y], c = [true, false]);
+                        constraints = [@require(a == 1 && b == :x && c)])
+    r = report(all_pairs(one_row))
+    @test startswith(r.guarantee, "1 case covers all 3 feasible pairs of an 8-combination space (")
+    @test occursin("\nbonus: 1 of 1 feasible triple covered\n", shown(r))
+    # With Invalid values the ordinary prefix figure is labeled, and agrees too.
+    negative = report(all_pairs(TestSpace((a = [1, Invalid(0)], b = [:x]))))
+    @test occursin("cover 100% of ordinary pairs (1 of 1); negative", shown(negative))
+    @test sprint(show, design_sizes((a = [1, 2], b = [:x]); strengths = 1:0, distances = 1:0)) ==
+          "DesignSizes: 1 strategy for 2 parameters"
+    @test sprint(show, design_sizes((a = [1, 2], b = [:x]); strengths = 1:1, distances = 1:0)) ==
+          "DesignSizes: 2 strategies for 2 parameters"
+    @test sprint(show, report(all_pairs(1:3, 1:6))) == "18 cases cover all 18 feasible pairs of an 18-combination space"
+end

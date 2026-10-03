@@ -5,6 +5,9 @@
 using Random: AbstractRNG, Xoshiro
 
 """
+Use when you want the default engine: deterministic and free of randomness, so
+the same inputs always give the same cases.
+
     IPOG()
 
 In-parameter-order General (IPOG): deterministic, no randomness (contract
@@ -18,6 +21,11 @@ struct IPOG
 end
 
 """
+Use when you want a seeded, randomized alternative to [`IPOG`](@ref), for
+instance to compare design sizes at a high strength, where it sometimes finds
+fewer cases; the same `seed` gives the same cases, and neither engine promises
+the smaller design.
+
     GND(; seed = 0, candidates = 50, rng = nothing)
 
 Greedy Non-deterministic (GND). Builds each case by drawing `candidates`

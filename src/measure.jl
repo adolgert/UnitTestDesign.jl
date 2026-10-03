@@ -69,12 +69,17 @@ struct CoveragePart
 end
 
 """
+Use when you read what [`coverage`](@ref) measured: the covered, missing,
+excluded and unresolved combinations, with ordinary and negative targets kept
+apart.
+
     Coverage
 
 What [`coverage`](@ref) measured: which of the requested combinations the
 supplied rows contain (contract §1.12–§1.17). Fields:
 
-- `ordinary`, `negative`: a `CoveragePart` each (see its docstring), measured
+- `ordinary`, `negative`: a
+  [`CoveragePart`](@ref UnitTestDesign.CoveragePart) each, measured
   separately (§5.10). The negative part is empty unless the space has
   [`Invalid`](@ref) values.
 - `space`: the [`TestSpace`](@ref) measured against.
@@ -132,12 +137,21 @@ struct Coverage
 end
 
 """
+Use when a test should assert that a set of cases covers every feasible
+combination, as in `@test iscomplete(coverage(cases, space))`; it is `false`
+when anything is missing or unresolved.
+
     iscomplete(c::Coverage) -> Bool
 
 `true` when every feasible target, ordinary and negative, is covered and no
 target is unresolved (contract §1.16). An unknown target makes it `false`:
 coverage is never claimed complete under an exhausted limit (§1.7, §3.10).
 Rejected rows do not change it; they are listed in the result (§1.14).
+
+A rejected row does not make a result incomplete. To test that committed
+cases are still valid, check the rows with [`isallowed`](@ref) as well,
+`@test all(case -> isallowed(space, case), cases)`; otherwise a new rule
+that forbids a committed row passes unnoticed.
 """
 iscomplete(c::Coverage) = all(p -> isempty(p.missing) && isempty(p.unknown), (c.ordinary, c.negative))
 
@@ -526,6 +540,10 @@ _coverage(rows::AbstractVector, space::TestSpace; kwargs...) = first(_measure(ro
 ## The public functions
 
 """
+Use when you have test cases from anywhere (hand-written, generated, or an older
+design) and want to know which combinations of values they cover and which they
+miss.
+
     coverage(cases, space; strength = 2, stronger = [],
              feasibility_limit = 1_000_000, explanation_limit = 1_000_000) -> Coverage
     coverage(cases, domains::NamedTuple; constraints = [], kwargs...)
@@ -669,6 +687,10 @@ _strategy_phrase(cases::TestCases) =
     cases.strategy === :full_factorial ? "a full factorial" : "this $(cases.strategy) result"
 
 """
+Use when you want the list of feasible combinations your cases miss, to add
+cases for them; it throws rather than return a list that a search limit left
+uncertain.
+
     missing_interactions(cases, space; strength = 2, stronger = [],
                          feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     missing_interactions(cases::TestCases; kwargs...)
