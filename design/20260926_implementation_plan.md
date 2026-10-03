@@ -1,5 +1,9 @@
 # UnitTestDesign.jl 1.0: Implementation Plan
 
+2026-09-27: the release is 0.5.0, not 1.0.0; the maintainer wants to use a
+0.x version before calling it 1.0. Read "1.0" below as "0.5". The release
+branch is `release/0.5`.
+
 Date: 2026-09-26. Prepared from `interface_synthesis.md` and the decisions
 in `20260926_answers.md`. One release, eight phases, a review at the end of
 each phase. Every phase ends with the test suite green and the package
@@ -42,7 +46,7 @@ From your answers:
     `must_include`.
   - Outcomes enter only through the pure function `diagnose(cases, passed)`.
   - Julia target is the latest LTS, 1.10, and nothing earlier: `julia = "1.10"`
-    in `Project.toml`, CI runs on 1.10, 1.11, and the latest release, and
+    in `Project.toml`, CI runs on 1.10 (LTS), 1.13, and the latest release, and
     the code uses 1.10 features freely (package extensions, `Returns`,
     `@NamedTuple`) with no compatibility shims for older versions.
   - Vocabulary: `TestSpace`, `constraints`, `must_include` (alias `seeds`),
@@ -63,7 +67,7 @@ Say so at the Phase 1 review if you want a different one:
 | `generate_tuples`, `Excursion`, `Counter` | Removed from the public surface | No user-facing purpose once the request is internal |
 
 Branching: merge `fix/gnd-match-condition` to `main` first (its commit
-message already says only what it fixes). Then one branch, `release/1.0`,
+message already says only what it fixes). Then one branch, `release/0.5`,
 with one PR per phase into it, and one PR from it to `main` in Phase 8.
 
 ## The target, in one screen
@@ -124,7 +128,7 @@ the tests in place that will fail until the engines keep it.
 
 Steps:
 
-1. **Merge the GND branch to `main`; cut `release/1.0`.** Open one issue,
+1. **Merge the GND branch to `main`; cut `release/0.5`.** Open one issue,
    "Implicit constraints crash IPOG and hang GND," with Opus's
    os/gpu/driver example, so Phase 3 has something to close.
 2. **Write `docs/src/dev/contract.md`.** The six-point semantic contract
@@ -209,7 +213,7 @@ Steps:
    unsatisfiable components, exhausted limits, heterogeneous values,
    partial seeds, overlapping stronger groups, and wrapper interactions.
 5. **Bump `Project.toml`** to `1.0.0-DEV`, `julia = "1.10"` (the latest LTS;
-   nothing earlier is supported). Set the CI matrix to `'1.10'`, `'1.11'`,
+   nothing earlier is supported). Set the CI matrix to `'1.10'`, `'1.13'`,
    and `'1'`, replacing the `lts` alias so the floor is explicit. Add `.DS_Store`, `Manifest.toml`, `.vscode/`
    to `.gitignore`. Move `interface_*.{md,pdf,tex}`, `interface_synthesis.*`,
    `z3_example.jl`, and the two dated files into `design/` so the root is clean.
@@ -449,7 +453,7 @@ Steps:
 6. **`show(io, ::TestCases)`.** One summary line ("5 cases · strength 2 ·
    IPOG · 3 parameters · 12 combinations, 5 valid" when the valid count
    is cheap, otherwise just the product), then "excluded: 3 pairs
-   forbidden, 2 impossible because constraints combine; see
+   forbidden, 2 impossible under the constraints; see
    report(cases)", then an aligned table truncated like a `DataFrame`.
    Nothing is computed at display time that generation did not already know.
 7. **Tables.** A vector of `NamedTuple`s already satisfies Tables.jl's
@@ -490,9 +494,15 @@ Steps:
    once. Negative rows never increase ordinary coverage. Implement the
    result structure now and activate wrapper inputs in Phase 6.
    `coverage(cases::TestCases)` reads the space and request from the
-   result. Prints "covers 11 of 11 feasible pairs" or the missing list when
-   classification is resolved. With unknown targets, report known counts
-   and unresolved targets without an exact percentage or completeness claim.
+   result. `coverage(cases::TestCases)` measures at `cases.strength` and
+   `cases.stronger`; for a result whose strength is 0 (an excursion or a
+   full factorial) it is an `ArgumentError` asking for `strength =`, and
+   `report(cases)` on such a result measures at strength
+   `min(2, parameter count)` and says so in its guarantee line. Prints
+   "covers 11 of 11 feasible pairs" or the missing list when
+   classification is resolved. With unknown targets,
+   report known counts and unresolved targets without an exact percentage
+   or completeness claim.
 2. **`missing_interactions(cases, space; ...)`** returns
    `coverage(...).missing` when classification is resolved; otherwise raise
    a resource-limit error directing the caller to `coverage` for the known
@@ -520,7 +530,9 @@ Steps:
    agree with the checker on the random problems; `design_sizes`
    reproduces Fable's 10-of-81 example. Test limit exhaustion in coverage,
    missing-interaction queries, bonus reports, and planning; verify that
-   unresolved denominators never print as exact percentages.
+   unresolved denominators never print as exact percentages. `report` on a
+   one-parameter excursion and full factorial measures at strength
+   `min(2, parameter count)` = 1: cover this boundary in Phase 5 tests.
 
 Acceptance gate: review checked outputs for the solver example, a
 hand-written suite with gaps, and a limited search with unresolved targets.
@@ -657,17 +669,17 @@ or unconditional follow-up isolation.
 
 ---
 
-## Phase 8: Release 1.0
+## Phase 8: Release 0.5
 
 Steps:
 
-1. Full matrix green (1.10, 1.11, latest release, three OSes), Aqua,
+1. Full matrix green (1.10, 1.13, latest release, three OSes), Aqua,
    doctests, deterministic regressions, the full random-problem gate, and
    benchmark results within the Phase 3 tolerance on the documented runner.
-2. `CHANGELOG.md` for 1.0.0: breaking changes (return type, `disallow`
+2. `CHANGELOG.md` for 0.5.0: breaking changes (return type, `disallow`
    removed, `Counter` removed), deprecations with their replacements, new
    API, the constraint fix with the issue number.
-3. Set `version = "1.0.0"`; prepare PR `release/1.0` → `main` with the
+3. Set `version = "0.5.0"`; prepare PR `release/0.5` → `main` with the
    validation results and rendered documentation. Keep it unmerged for review.
 4. Draft a short Discourse announcement (the promise sentence, the
    decision table, the constraint fix) for you to post or not.

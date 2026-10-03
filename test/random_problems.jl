@@ -5,9 +5,12 @@
 # 2–3 parameters, about half of them written with `!=` or `<`. A problem carries
 # both forms of its rules:
 #
-#   - `space`, a CheckSpace for the independent oracle in checker.jl, and
+#   - `space`, a CheckSpace for the independent oracle in checker.jl, which
+#     `test_space` (fixture_model.jl) turns into a production `TestSpace`, and
 #   - `domains` and `disallow`, the positional inputs of the 0.4 engines,
-#     `all_pairs(domains...; disallow, engine)`.
+#     `all_pairs(domains...; disallow, engine)`. Phase 3 removed `disallow`
+#     from the package; this form is kept only as a record, to run a problem
+#     against the prior revision (commit d46122d).
 #
 # The legacy `disallow` receives positional values, with `nothing` for an
 # unassigned parameter. It applies a rule only when every parameter in the
@@ -23,8 +26,7 @@
 
 using Random
 
-export RandomRule, RandomProblem, random_problem, legacy_disallow,
-    budgeted, DisallowBudgetExceeded
+export RandomRule, RandomProblem, random_problem, legacy_disallow
 
 """
 One scoped rule. `scope` holds parameter positions in the order the predicate
@@ -82,33 +84,6 @@ function legacy_disallow(space::CheckSpace)
             predicate((values[p] for p in scope)...) && return true
         end
         return false
-    end
-end
-
-"Thrown when a legacy engine calls `disallow` more often than its budget allows."
-struct DisallowBudgetExceeded <: Exception
-    limit::Int
-    problem::Any
-end
-
-Base.showerror(io::IO, e::DisallowBudgetExceeded) = print(io,
-    "the engine called disallow more than $(e.limit) times, far beyond any ",
-    "terminating run; it is probably stuck. This is not the known legacy ",
-    "defect. Problem: ", e.problem)
-
-"""
-    budgeted(disallow, limit, problem)
-
-Wrap a legacy `disallow` so that call number `limit + 1` throws
-`DisallowBudgetExceeded`. A watchdog: it turns an unexpected infinite loop
-into a test error instead of a hung test run.
-"""
-function budgeted(disallow, limit::Integer, problem)
-    calls = 0
-    return function (values...)
-        calls += 1
-        calls > limit && throw(DisallowBudgetExceeded(limit, problem))
-        return disallow(values...)
     end
 end
 

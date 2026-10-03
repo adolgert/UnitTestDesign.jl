@@ -11,6 +11,10 @@
 # when they run.
 
 """
+Use when you handle rules as values: [`forbid`](@ref), [`require`](@ref),
+[`@forbid`](@ref) and [`@require`](@ref) all return a `Constraint`, and a
+[`TestSpace`](@ref) takes a vector of them as `constraints`.
+
     Constraint
 
 One rule of a [`TestSpace`](@ref): the single internal form that
@@ -92,6 +96,10 @@ _scope_text(c::Constraint) = isempty(c.scope) ? "the whole case" : "(" * join(c.
 
 
 """
+Use when some combinations of values are not valid and you can say which: an
+exact pattern of values, or a predicate over named parameters that returns
+`true` for the forbidden combinations.
+
     forbid(pattern::NamedTuple; reason = nothing)
 
 Forbid one exact combination of values, such as
@@ -143,6 +151,9 @@ forbid(f, names::Symbol...; reason = nothing) = _function_rule(:forbid, f, names
 
 
 """
+Use when it is easier to say which combinations are valid than which are not:
+the rule excludes every combination for which the predicate returns `false`.
+
     require(f, names::Symbol...; reason = nothing)
     require(names::Symbol...; reason = nothing) do values... end
     require(f; reason = nothing)
@@ -184,6 +195,10 @@ end
 ## The macros (contract §12.6–§12.8)
 
 """
+Use when a rule reads most clearly as a Julia expression over bare parameter
+names that is `true` for the forbidden combinations, such as
+`@forbid mode == :fast && solver != :none`.
+
     @forbid expr
     @forbid(expr; reason = "...")
 
@@ -213,6 +228,9 @@ Which identifiers are parameters (contract §12.6, §12.7):
   `local`, a quoted expression, or a macro call) is an `ArgumentError` when
   the macro expands. Write such a rule with the function form,
   `forbid(f, names...)`.
+- A subtype test written with the operator, `T <: \$AbstractFloat` or
+  `T >: \$Int`, is an `ArgumentError` too: `<:` and `>:` are syntax, not
+  calls. Write the call, `(<:)(T, \$AbstractFloat)`, or use the function form.
 
 The rule's label is its source text as Julia prints it, such as
 `"@forbid(mode == :fast && solver != :none)"`, preceded by the reason if one
@@ -225,6 +243,10 @@ macro forbid(args...)
 end
 
 """
+Use when a rule reads most clearly as a Julia expression over bare parameter
+names that must be `true` in every valid combination, such as
+`@require mode == :exact || solver == :none`.
+
     @require expr
     @require(expr; reason = "...")
 
@@ -342,6 +364,8 @@ function _walk(w::_RuleWalk, ex, bound::Set{Symbol})
         return ex  # r"...", v"...": a literal
     elseif head in _RULE_PLAIN_HEADS
         return Expr(head, (_walk(w, a, bound) for a in args)...)
+    elseif head === :<: || head === :>:
+        _rule_unsupported_operator(w, ex, bound)
     else
         _rule_unsupported(w, _describe_form(ex))
     end
@@ -597,6 +621,32 @@ function _rule_unsupported(w::_RuleWalk, what::AbstractString)
         "anything else, use the function form $(w.polarity)(f, names...)."))
 end
 
+# `a <: b` and `a >: b` parse as their own expression heads, not as calls, so
+# a macro rule rejects them; they bind nothing, so the message says what to
+# write instead: the call form, which the macro reads, or the function form.
+# When the subtype test is the whole rule, one operand a parameter's name and
+# the other `$x`, as in `@forbid(T <: $AbstractFloat)`, the message spells out
+# the function form for it. With two bare names it cannot tell a parameter
+# from a type the caller forgot to interpolate, so it gives the general form.
+function _rule_unsupported_operator(w::_RuleWalk, ex::Expr, bound::Set{Symbol})
+    op = ex.head
+    call = "($op)(" * join(map(_source_text, ex.args), ", ") * ")"
+    example = ""
+    is_name(a) = a isa Symbol && !(a in bound || a in _RULE_VALUE_NAMES)
+    is_interpolated(a) = a isa Expr && a.head === :$ && length(a.args) == 1
+    if w.text == "@$(w.polarity)(" * _source_text(ex) * ")" && length(ex.args) == 2 &&
+       count(is_name, ex.args) == 1 && count(is_interpolated, ex.args) == 1
+        name = only(filter(is_name, ex.args))
+        plain = Expr(op, (is_interpolated(a) ? a.args[1] : a for a in ex.args)...)
+        example = ", here $(w.polarity)(($name,) -> $(_source_text(plain)), $(repr(name)))"
+    end
+    throw(ArgumentError(
+        "$(w.text) contains `$(_source_text(ex))`, and `$op` is not supported inside " *
+        "@forbid/@require: Julia parses it as syntax, not as a function call (contract " *
+        "§12.6). Write it as the call `$call`, which the macro reads, or use the " *
+        "function form $(w.polarity)(f, names...)$example."))
+end
+
 # What the macros expand to: the same Constraint as the listed-names form.
 function _macro_rule(polarity::Symbol, scope::Tuple{Vararg{Symbol}}, f, text::String, reason)
     isempty(scope) && throw(ArgumentError(
@@ -636,6 +686,9 @@ end
 
 
 """
+Use when a rule's predicate may throw: the exception reaches you wrapped in a
+`ConstraintError` that names the rule and the values it received.
+
     ConstraintError(rule, arguments, exception)
 
 A rule's predicate threw an exception (contract §12.16). `rule` names the rule
@@ -735,9 +788,9 @@ ordinary values is evaluated once per combination, when the space is built,
 and the forbidden value-index tuples are stored in a `Set`. The combinations
 follow `Iterators.product` over the scope's ordinary value indices in scope
 order, so the first parameter of the scope varies fastest. A larger scope is
-evaluated lazily with a memo, and the package warns once for that rule. A
-whole-case rule is always lazy, with no warning; its table's scope is every
-parameter.
+evaluated lazily, memoized per operation by the `Feasibility` that asks
+(§12.19), and the package warns once for that rule. A whole-case rule is
+always lazy, with no warning; its table's scope is every parameter.
 
 Only ordinary values are tabulated, and predicates receive them as
 [`rule_value`](@ref)s (a partition by its name, never an `Invalid`: §5.8,
@@ -780,35 +833,32 @@ end
 
 """
 The lazy form of a rule (contract §12.19, §12.20): a function from a tuple of
-value indices, in scope order, to `true` when forbidden, memoized per tuple.
-An evaluation that throws stores nothing.
+value indices, in scope order, to `true` when forbidden. Each call evaluates
+the predicate: a non-`Bool` result is an `ArgumentError` and an exception a
+`ConstraintError` (§12.15, §12.16), as in tabulation.
 
-The memo belongs to the `TestSpace`, as part of its tabulation: it lives as
-long as the space and is shared by every call on it, unlike the per-call
-search caches of feasibility.jl (§3.5). Keyed by value indices, it holds at
-most one entry per combination of the scope's ordinary values. `memo_size`
-reports its total size.
+It keeps no memo. The verdicts are memoized per operation by the
+`Feasibility` that asks (feasibility.jl: a request, or one `explain` or
+`classify` call), so the memo is released with the operation and a
+`TestSpace` retains nothing from any call (§3.5, §12.19).
 """
 struct _LazyRule{N} <: Function
     rule::Constraint
     ref::String
     names::NTuple{N,Symbol}
     domains::Vector{AbstractVector}
-    memo::Dict{NTuple{N,Int},Bool}
 end
 
 _LazyRule(c::Constraint, ref::String, names::NTuple{N,Symbol}, domains) where {N} =
-    _LazyRule{N}(c, ref, names, collect(AbstractVector, domains), Dict{NTuple{N,Int},Bool}())
+    _LazyRule{N}(c, ref, names, collect(AbstractVector, domains))
 
 function (r::_LazyRule{N})(key::NTuple{N,Int}) where {N}
-    return get!(r.memo, key) do
-        args = ntuple(Val(N)) do k
-            value = r.domains[k][key[k]]
-            value isa Invalid && throw(ArgumentError(
-                "internal error: $(r.ref) was consulted with the invalid value " *
-                "$(repr(value)) of `$(r.names[k])`; rules never see an Invalid (contract §5.8)"))
-            rule_value(value)
-        end
-        _evaluate_rule(r.rule, r.ref, r.names, args)
+    args = ntuple(Val(N)) do k
+        value = r.domains[k][key[k]]
+        value isa Invalid && throw(ArgumentError(
+            "internal error: $(r.ref) was consulted with the invalid value " *
+            "$(repr(value)) of `$(r.names[k])`; rules never see an Invalid (contract §5.8)"))
+        rule_value(value)
     end
+    return _evaluate_rule(r.rule, r.ref, r.names, args)
 end

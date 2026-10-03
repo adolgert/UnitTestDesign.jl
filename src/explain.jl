@@ -11,26 +11,50 @@ The feasibility searches of one public call (contract §3.5: caches are local
 to one call). It holds one `Feasibility` per row kind: ordinary
 rows, and negative rows with a given invalid value at a given parameter.
 Each has its own candidates and active rule set (§5.5), so no cached answer
-crosses from one kind to another. Build one per call and pass it to
-`feasibility_for`; drop it when the call returns.
+crosses from one kind to another. The lazy-rule memo (§12.19), one dict per
+lazy rule of the space in `memos`, is the call's too: every row kind's
+`Feasibility` shares it, since a verdict depends on the rule alone. Build
+one context per call and pass it to `feasibility_for`; drop it when the
+call returns, and the memo goes with it.
 """
 struct FeasibilityContext
     space::TestSpace
     feasibility_limit::Int
     searches::Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}
+    memos::Vector{Union{Nothing, Dict}}
 end
 
 function FeasibilityContext(space::TestSpace; feasibility_limit = 1_000_000)
     _check_limit(:feasibility_limit, feasibility_limit)
     return FeasibilityContext(space, Int(feasibility_limit),
-        Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}())
+        Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}(), rule_memos(space.tables))
 end
 
-function _check_limit(keyword::Symbol, limit)
-    (limit isa Integer && limit >= 1) || throw(ArgumentError(
-        "$keyword must be a positive Int; got $(repr(limit)) (contract §3.3, §3.13)"))
-    return nothing
+"The lazy-rule verdicts memoized by one call so far (see `memo_size(::Feasibility)`)."
+memo_size(context::FeasibilityContext) =
+    sum((length(m) for m in context.memos if m !== nothing); init = 0)
+
+"""
+    _check_integer(keyword, value, least, section) -> Int
+
+`value` as an `Int` when it is an integer of at least `least` that an `Int`
+holds; otherwise an `ArgumentError` naming `keyword`, the values it accepts
+and `value`, such as "candidates must be a positive integer, got 1.5
+(contract §9.5)". `true` and `false` are not integers here. Every integer
+keyword of the public interface is read through this check before it is
+compared, sorted or converted, so a malformed value never surfaces as a
+`MethodError`, `InexactError` or `TypeError`.
+"""
+function _check_integer(keyword, value, least::Integer, section::AbstractString)
+    integer = value isa Integer && !(value isa Bool)
+    integer && least <= value <= typemax(Int) && return Int(value)
+    accepted = least == 1 ? "a positive integer" : "an integer of at least $least"
+    integer && value > typemax(Int) && (accepted *= " that fits in an Int")
+    throw(ArgumentError("$keyword must be $accepted, got $(repr(value)) (contract $section)"))
 end
+
+"A search budget, `feasibility_limit` or `explanation_limit`: a positive `Int` (§3.3, §3.13)."
+_check_limit(keyword::Symbol, limit) = _check_integer(keyword, limit, 1, "§3.3, §3.13")
 
 "The parameters whose value in `idx` is an `Invalid`, in parameter order."
 _invalid_parameters(space::TestSpace, idx::AbstractVector{<:Integer}) =
@@ -69,7 +93,8 @@ function feasibility_for(context::FeasibilityContext, idx::AbstractVector{<:Inte
     return get!(context.searches, (p, v)) do
         candidates = [q == p ? [v] : space.ordinary[q] for q in 1:n]
         rules = active_rules(space, p)
-        (Feasibility(candidates, space.tables[rules]; limit = context.feasibility_limit), rules)
+        (Feasibility(candidates, space.tables[rules]; limit = context.feasibility_limit,
+                     memos = context.memos[rules]), rules)
     end
 end
 
@@ -80,6 +105,9 @@ feasibility_for(space::TestSpace, idx::AbstractVector{<:Integer}; feasibility_li
 ## isallowed
 
 """
+Use when you have one complete case and want to know whether the space's rules
+allow it; it evaluates the rules on that case and never searches.
+
     isallowed(space::TestSpace, case) -> Bool
 
 Whether the complete `case` is a valid row of `space` (contract §1.25). `case`
@@ -92,15 +120,20 @@ An ordinary row is valid when no rule excludes it. A row with one
 omits `p` excludes it; rules that read `p` are not evaluated (§5.5). A row
 with two or more `Invalid` values is never valid (§5.7).
 
-`isallowed` evaluates rules on the one row and never searches (§3.9). A
+`isallowed` evaluates rules on the one row and never searches (§3.9); it
+evaluates a lazy rule without a memo (§12.19). A
 partial case, an unknown name, or a value outside its parameter's domain is
 an `ArgumentError`; use [`explain`](@ref) for partial assignments.
 
-```julia
-space = TestSpace((mode = [:fast, :exact], tol = [1e-3, 1e-6]);
-    constraints = [forbid((mode = :exact, tol = 1e-3))])
-isallowed(space, (mode = :exact, tol = 1e-6))  # true
-isallowed(space, (:exact, 1e-3))               # false
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace((mode = [:fast, :exact], tol = [1e-3, 1e-6]);
+           constraints = [forbid((mode = :exact, tol = 1e-3))]);
+
+julia> isallowed(space, (mode = :exact, tol = 1e-6))
+true
+
+julia> isallowed(space, (:exact, 1e-3))
+false
 ```
 """
 function isallowed(space::TestSpace, case::Union{NamedTuple, Tuple})
@@ -168,27 +201,30 @@ struct Explanation
 end
 
 """
+Use when you want to know whether some values can appear together in a valid
+case, and, when they cannot, which rules exclude them.
+
     explain(space::TestSpace, assignment; feasibility_limit = 1_000_000,
             explanation_limit = 1_000_000) -> Explanation
 
 Say whether `assignment` can appear in a valid row of `space`, and why not
 when it cannot (contract §1.26). `assignment` is a `NamedTuple` naming some
 or all parameters, or a complete `Tuple` in parameter order. The result is an
-`Explanation`, which prints as a sentence:
+[`Explanation`](@ref UnitTestDesign.Explanation), which prints as a sentence:
 
-```julia
-space = TestSpace(
-    (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
-    constraints = [
-        @require(mode == :exact || solver == :none),
-        forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
-    ])
-explain(space, (solver = :lu, tol = 1e-3))
-# infeasible: no valid case contains (solver = :lu, tol = 0.001); rules 1 and 2
-# together exclude it (rule 1: @require(mode == :exact || solver == :none);
-# rule 2: exact mode needs a tight tolerance)
-explain(space, (solver = :lu,))
-# completable, e.g. (mode = :exact, solver = :lu, tol = 1.0e-6)
+```jldoctest; setup = :(using UnitTestDesign)
+julia> space = TestSpace(
+           (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+           constraints = [
+               @require(mode == :exact || solver == :none),
+               forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
+           ]);
+
+julia> explain(space, (solver = :lu, tol = 1e-3))
+infeasible: no valid case contains (solver = :lu, tol = 0.001); rules 1 and 2 together exclude it (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
+
+julia> explain(space, (solver = :lu,))
+completable, e.g. (mode = :exact, solver = :lu, tol = 1.0e-6)
 ```
 
 An assignment with one [`Invalid`](@ref) value, at parameter `p`, is judged
@@ -233,6 +269,29 @@ _rule_numbers(rules) = (length(rules) == 1 ? "rule " : "rules ") * join(rules, "
 _rule_details(rules, labels) =
     "(" * join((_unlabeled(k, l) ? l : "rule $k: $l" for (k, l) in zip(rules, labels)), "; ") * ")"
 
+"""
+    _print_exclusion(io, rules, labels, minimal, limit)
+
+The clause of an infeasible explanation that names its rules: "rule 1 (…)
+excludes it" or "rules 1 and 2 together exclude it (rule 1: …; rule 2: …)",
+then, when `minimal` is `:unresolved`, the limit that left it unresolved
+(`limit` is `keyword => value`). `explain` prints it after "infeasible: no
+valid case contains …; ", and the must-include check (§10.4) after "has no
+valid completion: ", so both say the same thing the same way.
+"""
+function _print_exclusion(io::IO, rules, labels, minimal::Symbol, limit)
+    if length(rules) == 1
+        print(io, _rule_phrase(only(rules), only(labels)), " excludes it")
+    else
+        print(io, _rule_numbers(rules), " together exclude it ", _rule_details(rules, labels))
+    end
+    if minimal === :unresolved
+        print(io, "; whether each rule is needed is unresolved: ", limit.first, " = ",
+              _grouped(limit.second), " reached")
+    end
+    return nothing
+end
+
 function Base.show(io::IO, e::Explanation)
     shown = sprint(show, e.assignment; context = io)
     if e.outcome === :allowed
@@ -251,15 +310,7 @@ function Base.show(io::IO, e::Explanation)
     elseif e.outcome === :infeasible
         print(io, "infeasible: ", isempty(e.assignment) ? "the space has no valid case" :
                                   "no valid case contains " * shown, "; ")
-        if length(e.rules) == 1
-            print(io, _rule_phrase(only(e.rules), only(e.labels)), " excludes it")
-        else
-            print(io, _rule_numbers(e.rules), " together exclude it ", _rule_details(e.rules, e.labels))
-        end
-        if e.minimal === :unresolved
-            print(io, "; whether each rule is needed is unresolved: ", e.limit.first, " = ",
-                  _grouped(e.limit.second), " reached")
-        end
+        _print_exclusion(io, e.rules, e.labels, e.minimal, e.limit)
     else
         print(io, "unknown: ", e.limit.first, " = ", _grouped(e.limit.second),
               " reached; retry with a larger limit")

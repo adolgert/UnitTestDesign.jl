@@ -1,4 +1,4 @@
-# The independent oracle for UnitTestDesign 1.0.
+# The independent oracle for UnitTestDesign 0.5.
 #
 # Phase 1, step 3 of design/20260926_implementation_plan.md. It answers by
 # brute force over the full product of a small space the questions the
