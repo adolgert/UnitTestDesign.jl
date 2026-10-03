@@ -5,6 +5,7 @@ using TestItemRunner
 # 2 and 8. Test names cite the contract clauses (docs/src/dev/contract.md).
 
 @testitem "space: the target screen (plan; §2.10, §12.1, §12.4, §12.18)" begin
+    using UnitTestDesign: forbidden_tuples
     space = TestSpace(
         (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
         constraints = [
@@ -24,9 +25,9 @@ using TestItemRunner
     # Rule 1 forbids fast mode with a solver; rule 2 exact mode at 1e-3.
     t1, t2 = space.tables
     @test t1.scope == [1, 2] && t1.lazy === nothing
-    @test t1.forbidden == Set([(1, 2), (1, 3)])
+    @test forbidden_tuples(t1) == Set([(1, 2), (1, 3)])
     @test t2.scope == [1, 3]
-    @test t2.forbidden == Set([(2, 1)])
+    @test forbidden_tuples(t2) == Set([(2, 1)])
     @test space.constraints[1].polarity == :require
     @test space.constraints[2].polarity == :forbid
     @test UnitTestDesign.rule_label(space, 1) == "@require(mode == :exact || solver == :none)"
@@ -36,7 +37,7 @@ using TestItemRunner
     pairs_space = TestSpace(:mode => [:fast, :exact], :solver => [:none, :lu, :qr],
         :tol => [1e-3, 1e-6]; constraints = space.constraints)
     @test pairs_space.names == space.names
-    @test [t.forbidden for t in pairs_space.tables] == [t.forbidden for t in space.tables]
+    @test [forbidden_tuples(t) for t in pairs_space.tables] == [forbidden_tuples(t) for t in space.tables]
     # The caller's constraint vector is copied.
     rules = [@forbid(mode == :fast)]
     s = TestSpace((mode = [:fast, :exact],); constraints = rules)
@@ -157,6 +158,23 @@ end
                  Partition(:huge, identity), [1, 2], [1, 2]]
     key = UnitTestDesign._identity_key
     @test all(isequal(key(a), key(b)) == same_value(a, b) for a in vals, b in vals)
+end
+
+
+@testitem "space: a value the lookup misses is found by comparing it (§2.1)" begin
+    using UnitTestDesign: value_index, case_indices, _lookup
+    # A space finds a value by its identity key in a lookup built with the
+    # space. Should the key's hash no longer match, here because a domain
+    # value changed afterward, the value is compared with each domain value,
+    # as same_value does, before it is refused.
+    v = [1, 2]
+    space = TestSpace((a = [v, [3]], b = [:x, :y]))
+    @test space.lookup[1] == _lookup(space.values[1])
+    v[2] = 5
+    @test value_index(space, 1, [1, 5]) == 1
+    @test case_indices(space, (b = :y, a = [1, 5])) == [1, 2]
+    @test case_indices(space, ([1, 5], :x)) == [1, 1]
+    @test_throws ArgumentError value_index(space, 1, [1, 2])
 end
 
 
@@ -281,6 +299,72 @@ end
 end
 
 
+@testitem "space: the row reader and its four input errors (§2.11)" begin
+    using UnitTestDesign: _row_indices, _row_list
+    message(f) = try f(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $e" end
+    tiny = Partition(:tiny, Returns(1e-9))
+    space = TestSpace((size = [tiny, 100], n = Any[1, 1.0, Invalid(-1)], mode = [:a, :b]))
+    row_of(row; complete = false, section = nothing, hint = nothing) =
+        _row_indices(space, row; what = "row 7", section, complete, hint)
+    # A NamedTuple, in any order and partial unless `complete`; a tuple or a
+    # vector in parameter order; a partition by its name.
+    @test row_of((mode = :b, size = :tiny)) == [1, 0, 2]
+    @test row_of((:tiny, 1.0, :b)) == row_of(Any[:tiny, 1.0, :b]) == row_of([tiny, 1.0, :b]) == [1, 2, 2]
+    @test row_of((size = 100, n = Invalid(-1), mode = :a); complete = true) == [2, 3, 1]
+    # The four errors, with and without a contract section.
+    @test message(() -> row_of(5)) ==
+          "row 7 is a Int64; a row is a NamedTuple, or a tuple or vector with one value per parameter"
+    @test message(() -> row_of(Set([1]); section = "§1.13")) ==
+          "row 7 is a Set{Int64}; a row is a NamedTuple, or a tuple or vector with one value per " *
+          "parameter (contract §1.13)"
+    @test message(() -> row_of([tiny, 1])) == "row 7 has 2 values; the space has 3 parameters (size, n, mode)"
+    @test message(() -> row_of((tiny, 1); section = "§1.13")) ==
+          "row 7 has 2 values; the space has 3 parameters (size, n, mode) (contract §1.13)"
+    @test message(() -> row_of((colour = :red,); section = "§1.13")) ==
+          "row 7: `colour` is not a parameter of this space; the parameters are size, n, mode"
+    @test startswith(message(() -> row_of((tiny, 2, :a))), "row 7: 2 is not a value of `n`")
+    @test message(() -> row_of((n = 1,); complete = true)) ==
+          "row 7, (n = 1,), has no value for `size` and `mode`; it must name every parameter"
+    @test message(() -> row_of((n = 1, mode = :a); complete = true, section = "§1.13")) ==
+          "row 7, (n = 1, mode = :a), has no value for `size`; it must name every parameter (contract §1.13)"
+    # A caller's hint follows the missing-value error only, before the section.
+    hinted(row) = message(() -> row_of(row; complete = true, section = "§1.13", hint = "use g instead"))
+    @test hinted((n = 1,)) ==
+          "row 7, (n = 1,), has no value for `size` and `mode`; it must name every parameter; use g instead " *
+          "(contract §1.13)"
+    @test message(() -> row_of((n = 1,); complete = true, hint = "use g instead")) ==
+          "row 7, (n = 1,), has no value for `size` and `mode`; it must name every parameter; use g instead"
+    @test hinted(5) == message(() -> row_of(5; section = "§1.13"))
+    @test hinted((tiny, 1)) == message(() -> row_of((tiny, 1); section = "§1.13"))
+    @test hinted((colour = :red,)) == message(() -> row_of((colour = :red,)))
+
+    # The collection reader reads an iterator once and refuses a single row.
+    rows_of(input) = _row_list(input; what = "f takes rows", fix = row -> "f([$(repr(row))])", section = "§0")
+    once = Iterators.Stateful([(1, 2), (3, 4)])
+    @test rows_of(once) == [(1, 2), (3, 4)] && isempty(once)
+    @test rows_of(((a = 1,), (a = 2,))) == [(a = 1,), (a = 2,)]
+    @test rows_of([]) == []
+    @test message(() -> rows_of((a = 1,))) == "f takes rows; wrap a single row in a vector: f([(a = 1,)])"
+    @test message(() -> rows_of((1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
+    @test message(() -> rows_of([1, :x])) == "f takes rows; wrap a single row in a vector: f([Any[1, :x]])"
+    # The input itself, or, with `as_tuple`, the tuple of the elements of one
+    # that is neither a tuple nor a vector.
+    @test message(() -> rows_of(Dict(:a => 1))) == "f takes rows; wrap a single row in a vector: f([Dict(:a => 1)])"
+    @test message(() -> rows_of("ab")) == "f takes rows; wrap a single row in a vector: f([\"ab\"])"
+    tuple_of(input) = _row_list(input; what = "f takes rows", fix = row -> "f([$(repr(row))])", as_tuple = true)
+    @test message(() -> tuple_of(x for x in (1, :x))) == "f takes rows; wrap a single row in a vector: f([(1, :x)])"
+    @test message(() -> tuple_of(Dict(:a => 1))) == "f takes rows; wrap a single row in a vector: f([(:a => 1,)])"
+    @test message(() -> tuple_of("ab")) == "f takes rows; wrap a single row in a vector: f([('a', 'b')])"
+    @test message(() -> tuple_of([1, :x])) == message(() -> rows_of([1, :x]))
+    @test message(() -> tuple_of((a = 1,))) == message(() -> rows_of((a = 1,)))
+    @test message(() -> rows_of(5)) == "f takes rows, such as a vector of NamedTuples or tuples; got 5 (contract §0)"
+    # The caller may call a row something else.
+    cases_of(input) = _row_list(input; what = "g takes cases", noun = "case", fix = row -> "g([$(repr(row))])")
+    @test message(() -> cases_of((a = 1,))) == "g takes cases; wrap a single case in a vector: g([(a = 1,)])"
+    @test message(() -> cases_of([1, :x])) == "g takes cases; wrap a single case in a vector: g([Any[1, :x]])"
+end
+
+
 @testitem "space: active tables for negative rows (§5.4–§5.6, §12.22)" begin
     using UnitTestDesign: active_tables, active_rules
     space = TestSpace((n = [1, 2, Invalid(0)], m = [:a, :b], k = [:x, :y]);
@@ -304,6 +388,57 @@ end
     # No rule: every p gives an empty set.
     free = TestSpace((a = [1, Invalid(2)],))
     @test isempty(active_tables(free, 0)) && isempty(active_tables(free, 1))
+end
+
+
+@testitem "space: the candidates of each kind of row (§5.4, §5.5)" begin
+    using UnitTestDesign: _candidates
+    space = TestSpace((n = [1, Invalid(0), 2, Invalid(9)], m = [:a, :b], k = [Invalid(:z), :x, :y]))
+    # An ordinary row: every parameter's ordinary values.
+    @test _candidates(space, 0, 0) == [[1, 3], [1, 2], [2, 3]] == space.ordinary
+    # A negative row: its invalid value at its parameter, ordinary values elsewhere.
+    @test _candidates(space, 1, 4) == [[4], [1, 2], [2, 3]]
+    @test _candidates(space, 3, 1) == [[1, 3], [1, 2], [1]]
+end
+
+
+@testitem "space: the mixed-radix code of target order and its inverse (§9.7)" begin
+    using UnitTestDesign: _code, _decode!
+    radix = [3, 1, 4, 2]
+    for support in ([1, 3, 4], [4, 1], [3], [1, 2, 3, 4])
+        n = prod(radix[support])
+        rows = [_decode!(fill(-1, 4), c, support, radix) for c in 0:(n - 1)]
+        # Each code gives one assignment, only at the support, within the radix.
+        @test allunique(rows) && all(r -> all(q -> (q in support) == (r[q] != -1), 1:4), rows)
+        @test all(r -> all(q -> 1 <= r[q] <= radix[q], support), rows)
+        @test [_code(r, support, radix) for r in rows] == 0:(n - 1)
+        # The first parameter of the support varies fastest.
+        @test rows[1][support] == ones(Int, length(support))
+        n > 1 && @test rows[2][support] == [2; ones(Int, length(support) - 1)]
+    end
+    @test _decode!(zeros(Int, 4), 13, [1, 3, 4], radix) == [2, 0, 1, 2]   # 13 = 1 + 3 * (0 + 4 * 1)
+    @test _code([2, 7, 1, 2], [1, 3, 4], radix) == 13
+end
+
+
+@testitem "space: a space from parts takes every field by name, in order" begin
+    message(f) = try
+        f()
+        "no error"
+    catch e
+        sprint(showerror, e)
+    end
+    space = TestSpace((n = [1, 2, Invalid(0)], m = [:a, :b]); constraints = [@forbid(n == 2 && m == :b)])
+    parts = NamedTuple{fieldnames(TestSpace)}(Tuple(getfield(space, f) for f in fieldnames(TestSpace)))
+    rebuilt = TestSpace(Val(:parts), parts)
+    @test all(getfield(rebuilt, f) === getfield(space, f) for f in fieldnames(TestSpace))
+    # A missing, extra or misplaced part is refused, so a field added to
+    # TestSpace fails at the first negative generation (src/invalid.jl).
+    for wrong in (Base.structdiff(parts, NamedTuple{(:invalid,)}), merge(parts, (extra = 1,)),
+                  NamedTuple{reverse(keys(parts))}(reverse(values(parts))))
+        @test startswith(message(() -> TestSpace(Val(:parts), wrong)),
+                         "internal error: a TestSpace from parts needs the parts (:names, :values, ")
+    end
 end
 
 

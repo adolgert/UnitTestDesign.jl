@@ -126,6 +126,40 @@ rule 1, so no valid case separates it from that pair. These outcomes cannot
 tell the three apart, and no follow-up can. Every valid case that runs
 `:qr` runs it in exact mode, so that is the code to read.
 
+## One proof per kind of case
+
+A space with [`Invalid`](@ref) values has more than one kind of case:
+ordinary cases, and negative cases that hold one invalid value, where the
+rules that read its parameter do not apply. A suspect is `inseparable` only
+when every kind that could hold it is proven, and each kind has its own
+proof. Here both rules keep `a = 2` out of ordinary cases, but the second
+reads `n`, so only the first applies to a negative case at `n`:
+
+```@example diagnose
+kinds = TestSpace((a = [1, 2], b = [1, 2], n = [1, Invalid(0)]);
+    constraints = [
+        forbid(:a, :b; reason = "a = 2 never, whatever b") do a, b; a == 2 end,
+        forbid(:a, :n; reason = "a = 2 never with an ordinary n") do a, n; a == 2 end,
+    ])
+kind_cases = [(a = 1, b = 1, n = 1), (a = 1, b = 2, n = Invalid(0)), (a = 2, b = 1, n = 1)]
+followup = only(followups(diagnose(kind_cases, [true, true, false]; space = kinds, strength = 1)))
+```
+
+No valid case holds `a = 2` at all; the failing case broke the rules. The
+kinds' proofs differ, rule 2 in ordinary cases and rule 1 in negative ones,
+so the line gives each. `proofs` holds them, one for each entry of
+`searched`, with the kind of case, the rules and their labels, the other
+suspects, `minimal` and `limit`:
+
+```@example diagnose
+followup.proofs
+```
+
+Each proof's `minimal` is judged within its kind. The union in `rules`,
+`[1, 2]`, suffices for every kind but is not minimal: rule 1 alone would do
+for both. The deletion search tries removing the rules in order, and in
+ordinary cases rule 2 alone suffices, so it drops rule 1 there.
+
 ## The ranking is a set of hypotheses
 
 - Several faults at once split the failures between their causes, and an

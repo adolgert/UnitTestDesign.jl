@@ -109,6 +109,7 @@ These types are not exported; their fields are part of the results above.
 Diagnosis
 Suspect
 Followup
+FollowupProof
 ```
 
 ## Deprecated

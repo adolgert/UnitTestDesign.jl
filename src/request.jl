@@ -77,8 +77,7 @@ function Request(space::TestSpace; strength = 2, stronger = [], must_include = [
     n = length(space.names)
     strength = _check_strength(strength, n)
     groups = _groups(space, strength, stronger)
-    feasibility = Feasibility([copy(ordinary_indices(space, i)) for i in 1:n], space.tables;
-                              limit = feasibility_limit)
+    feasibility = Feasibility(_candidates(space, 0, 0), space.tables; limit = feasibility_limit)
     request = _request(space, strength, groups, zeros(Int, n, 0), feasibility, feasibility_limit,
                        explanation_limit)
     return _with_must_include(request, _must_include_matrix(request, must_include))
@@ -120,6 +119,7 @@ function _check_strength(strength, n::Integer)
     return strength
 end
 
+# Instrumentation, not called in src/: benchmark/run.jl reports it, and the tests read all three methods.
 "The lazy-rule verdicts memoized by this request so far (contract §12.19)."
 memo_size(request::Request) = memo_size(request.feasibility)
 
@@ -201,18 +201,7 @@ function _must_include_matrix(request::Request, rows)
     n = length(space.names)
     columns = Vector{Int}[]
     for (r, row) in enumerate(rows)
-        if row isa Tuple || row isa AbstractVector
-            length(row) == n || throw(ArgumentError(
-                "must_include row $r has $(length(row)) values; the space has $n parameters"))
-        elseif !(row isa NamedTuple)
-            throw(ArgumentError("must_include row $r is a $(typeof(row)); use a NamedTuple or a Tuple"))
-        end
-        idx = try
-            case_indices(space, row isa NamedTuple ? row : Tuple(row))
-        catch err
-            err isa ArgumentError || rethrow()
-            throw(ArgumentError("must_include row $r: " * err.msg))   # §10.2 names the row
-        end
+        idx = _row_indices(space, row; what = "must_include row $r", section = "§10.1", complete = false)
         bad = _invalid_parameters(space, idx)
         length(bad) > 1 && throw(ArgumentError(
             "must_include row $r, $(from_indices(space, idx)), has Invalid values for " *
@@ -336,44 +325,58 @@ function witness(request::Request, partial::AbstractVector{<:Integer})
         "completing the row $(from_indices(request.space, _space_indices(request, partial)))",
         request.feasibility_limit, :feasibility_limit))
     status == :infeasible && error("internal error: asked for a witness of an infeasible row $partial")
-    return _positions(request, w)
+    return _positions(request, w::Vector{Int})
 end
 
 isconstrained(request::Request) = !isempty(request.feasibility.tables)
 
 """
-    _supports(groups) -> Vector{Vector{Int}}
+    _group_supports(groups) -> (supports, shares)
+    _supports(groups) -> supports
 
 The parameter sets that carry targets (contract §1.8): for each group
 `(G, s)`, each `s`-subset of `G` in `combinations` order, the base group
 first. A subset that two groups share is listed once, where it first
 appears, so that a target arising from two groups is one target. Each
 subset is sorted, since every group's members are. A group at strength 0 (a
-negative sub-request's base group, invalid.jl) has no subsets.
+negative sub-request's base group, invalid.jl) has no subsets. `shares[g]`
+lists the positions in `supports` of group `g`'s subsets, so that a
+measurement gives each group its share of the counts (§1.15) without
+listing the subsets again.
 """
-function _supports(groups)
-    out = Vector{Int}[]
-    seen = Set{Vector{Int}}()
+function _group_supports(groups)
+    supports = Vector{Int}[]
+    position = Dict{Vector{Int}, Int}()
+    shares = Vector{Int}[]
     for (members, s) in groups
-        s == 0 && continue   # a base group at strength 0 has no targets (see `Request`)
-        for subset in combinations(members, s)
-            subset in seen && continue
-            push!(seen, subset)
-            push!(out, subset)
+        share = Int[]
+        if s > 0   # a base group at strength 0 has no targets (see `Request`)
+            for subset in combinations(members, s)
+                k = get!(position, subset) do
+                    push!(supports, subset)
+                    length(supports)
+                end
+                push!(share, k)
+            end
         end
+        push!(shares, share)
     end
-    return out
+    return supports, shares
 end
+
+_supports(groups) = first(_group_supports(groups))
 
 """
     TargetList(request) <: AbstractVector{Vector{Int}}
 
 Every target of the request as a partial row in engine positions, computed
 on demand rather than stored: for each support (`_supports`), each
-assignment of engine positions, the first parameter varying fastest. The
+assignment of engine positions, the first parameter varying fastest, which
+is `_decode!` of the codes 0, 1, 2, … with the ordinary arity as radix. The
 order is fixed by the space and the request (contract §9.7). `offsets[k]`
 counts the targets before support `k`; the last entry is the total, checked
-against `Int` overflow.
+against `Int` overflow. Each index gives a fresh vector, which the caller
+may keep.
 
 An unconstrained request requires every target, so `classify_targets`
 returns this list without building it, and `validate_design` recounts it one
@@ -404,16 +407,10 @@ Base.IndexStyle(::Type{TargetList}) = IndexLinear()
 function Base.getindex(list::TargetList, i::Int)
     @boundscheck checkbounds(list, i)
     k = searchsortedlast(list.offsets, i - 1)
-    r = i - 1 - list.offsets[k]
-    row = zeros(Int, length(list.arity))
-    for p in list.supports[k]
-        a = list.arity[p]
-        row[p] = r % a + 1
-        r ÷= a
-    end
-    return row
+    return _decode!(zeros(Int, length(list.arity)), i - 1 - list.offsets[k], list.supports[k], list.arity)
 end
 
+# Production iterates `TargetList` directly; this stays as a convenience for the tests.
 """
     targets(request) -> Vector{Vector{Int}}
 
@@ -473,26 +470,22 @@ end
     _classify_target(request, f, active, target, idx, what) -> Union{Nothing, Excluded}
 
 Classify one target (contract §1.4) with the search `f`, whose table `k` is
-the space's rule `active[k]`: `nothing` when some valid row of `f`'s kind
-contains it (it is required), otherwise its `Excluded` record, with `target`
-(engine positions) and its rules in the space's numbering. `idx` is the
-target as space value indices. An unknown answer throws `ResourceLimitError`,
-naming the target after `what` (§3.6). Ordinary targets (`classify_targets`)
-and negative targets (invalid.jl) are classified here.
+the space's rule `active[k]`, through `IndexClassification`: `nothing` when
+some valid row of `f`'s kind contains it (it is required), otherwise its
+`Excluded` record, with `target` (engine positions) and its rules in the
+space's numbering. `idx` is the target as space value indices. An unknown
+answer throws `ResourceLimitError`, naming the target after `what` (§3.6).
+Ordinary targets (`classify_targets`) and negative targets (invalid.jl) are
+classified here.
 """
 function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
                           target::AbstractVector{<:Integer}, idx::AbstractVector{<:Integer}, what)
-    e = explain_partial(f, idx; explanation_limit = request.explanation_limit)
-    if e.outcome == :unknown
-        throw(ResourceLimitError("$what $(from_indices(request.space, idx))",
-                                 request.feasibility_limit, :feasibility_limit))
-    elseif e.outcome == :allowed || e.outcome == :completable
-        return nothing
-    elseif e.outcome == :forbidden
-        return Excluded(collect(Int, target), :forbidden, active[e.rules], :not_applicable, nothing)
-    end
-    return Excluded(collect(Int, target), :implied, active[e.rules], e.minimal,
-                    _limit_pair(e.limit, request.feasibility_limit, request.explanation_limit))
+    c = IndexClassification(explain_partial(f, idx; explanation_limit = request.explanation_limit))
+    c.status === :unknown && throw(ResourceLimitError("$what $(from_indices(request.space, idx))",
+                                                      request.feasibility_limit, :feasibility_limit))
+    c.status === :required && return nothing
+    return Excluded(collect(Int, target), c.status, active[c.rules], c.minimal,
+                    _limit_pair(c.limit, request.feasibility_limit, request.explanation_limit))
 end
 
 """
@@ -529,25 +522,6 @@ end
 Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes) =
     Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,
            0, 0, Excluded[])
-
-"""
-    covers(matrix, target) -> Bool
-
-Whether some column of `matrix` contains the partial row `target`.
-"""
-function covers(matrix::AbstractMatrix{<:Integer}, target::AbstractVector{<:Integer})
-    for j in axes(matrix, 2)
-        ok = true
-        for i in eachindex(target)
-            if target[i] != 0 && matrix[i, j] != target[i]
-                ok = false
-                break
-            end
-        end
-        ok && return true
-    end
-    return false
-end
 
 """
     validate_design(request, matrix, required; strategy, negative = []) -> Int
@@ -632,20 +606,14 @@ end
 
 # Every target of an unconstrained request is required. For each support, a
 # row's projection onto it, whose entries were checked against the arity
-# above, has the code `TargetList` gives that target: its position within the
-# support's block, first parameter fastest. The support is covered exactly
-# when every code appears. The same certification as the list, with no list.
+# above, has the code (`_code`) whose target `TargetList` decodes: its
+# position within the support's block. The support is covered exactly when
+# every code appears. The same certification as the list, with no list.
 function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList)
-    arity = required.arity
     for (k, support) in enumerate(required.supports)
         seen = falses(required.offsets[k + 1] - required.offsets[k])
         for j in axes(matrix, 2)
-            code, stride = 0, 1
-            for p in support
-                code += (matrix[p, j] - 1) * stride
-                stride *= arity[p]
-            end
-            seen[code + 1] = true
+            seen[_code(view(matrix, :, j), support, required.arity) + 1] = true
         end
         missed = findfirst(!, seen)
         missed === nothing || _uncovered(request, required[required.offsets[k] + missed])

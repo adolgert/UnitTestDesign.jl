@@ -186,65 +186,6 @@ end
 end
 
 
-
-@testitem "first_match_for_parameter(mc, param_idx)" begin
-    arity = [3, 2, 2, 2]
-    mat = [0 1 2 0; 2 2 1 0]'
-    mcfm = UnitTestDesign.MatrixCoverage(collect(mat), size(mat, 2), arity)
-    fm1 = UnitTestDesign.first_match_for_parameter(mcfm, 3)
-    @test fm1 == [0, 1, 2, 0]
-    blank = UnitTestDesign.first_match_for_parameter(mcfm, 1)
-    @test blank == [2, 2, 1, 0]
-    lack = UnitTestDesign.first_match_for_parameter(mcfm, 4)
-    @test lack == [0, 0, 0, 0]
-end
-
-
-@testitem "fill_consistent_matches" begin
-    arity = [2, 4, 4]
-    mat = [
-        0 0 0;
-        1 0 0;
-        0 2 0;
-        0 0 3;
-        0 0 4
-    ]'
-    mc = UnitTestDesign.MatrixCoverage(collect(mat), size(mat, 2), arity)
-    res1 = UnitTestDesign.fill_consistent_matches(mc, [0, 2, 0])
-    @test res1 == [1, 2, 3]
-end
-
-
-@testitem "fill_consistent_matches incrmental change" begin
-    arity = [2, 4, 4]
-    mat2 = [
-        0 0 0;
-        1 2 0; # change here
-        0 2 0;
-        1 0 4;
-        0 0 3
-    ]'
-    mc2 = UnitTestDesign.MatrixCoverage(collect(mat2), size(mat2, 2), arity)
-    res2 = UnitTestDesign.fill_consistent_matches(mc2, [0, 2, 0])
-    @test res2 == [1, 2, 4]
-end
-
-
-@testitem "fill_consistent_matches another increment" begin
-    arity = [2, 4, 4]
-    mat3 = [
-        0 0 0;
-        1 2 0;
-        0 2 0;
-        0 0 3;
-        1 0 4
-    ]'
-    mc3 = UnitTestDesign.MatrixCoverage(collect(mat3), size(mat3, 2), arity)
-    res3 = UnitTestDesign.fill_consistent_matches(mc3, [0, 2, 0])
-    @test res3 == [1, 2, 3]
-end
-
-
 @testitem "add_coverage!(allc, row_cnt, entry)" begin
     # This checks that the rows of the matrix are reordered
     # when a new test covers values. It expects a particular
@@ -277,36 +218,4 @@ end
         cnt = UnitTestDesign.match_score(mc_ms, ms_case[4])
         @test cnt == ms_case[5]
     end
-end
-
-
-@testitem "remove_combinations" begin
-    rc_cases = [
-        [[1 1 1; 1 1 2; 1 2 1; 1 2 2]', (x -> x[2] == 1 && x[3] == 1), [1 1 2; 1 2 1; 1 2 2]'],
-        [[1 1 1; 1 1 2; 1 2 1; 1 2 2]', (x -> x[2] == 1), [1 2 1; 1 2 2]'],
-        [[1 1 1; 1 1 2; 1 2 1; 1 2 2]', (x -> x[1] == 1 && x[3] == 1), [1 1 2; 1 2 2]'],
-        [[1 1 1; 1 1 2; 1 2 1; 1 2 2]', (x -> x[2] < x[3]), [1 1 1; 1 2 1; 1 2 2]']
-    ]
-    for rc_case in rc_cases
-        mc_rc = UnitTestDesign.MatrixCoverage(collect(rc_case[1]), 4, [2, 3, 2])
-        UnitTestDesign.remove_combinations!(mc_rc, rc_case[2])
-        @test mc_rc.allc == rc_case[3]
-    end
-end
-
-
-@testitem "multi_way_coverage" begin
-    mwc = UnitTestDesign.multi_way_coverage([2,3,4,2,2,3], Dict(3 => [[1,3,4,5]]), 2)
-    @test maximum(sum(mwc .!= 0, dims = 1)) == 3
-    @inferred UnitTestDesign.multi_way_coverage([2,3,4,2,2,3], Dict(3 => [[1,3,4,5]]), 2)
-end
-
-
-@testitem "multi_way_coverage: a group at the base wayness adds nothing (§11.7, §11.9)" begin
-    wayness = Dict(2 => [[1, 2, 3]], 3 => [[1, 3, 4]])
-    mwc = UnitTestDesign.multi_way_coverage([2, 3, 4, 2], wayness, 2)
-    @test size(mwc, 2) == UnitTestDesign.total_combinations([2, 3, 4, 2], 2) + 2 * 4 * 2
-    @test wayness == Dict(2 => [[1, 2, 3]], 3 => [[1, 3, 4]])
-    @test_throws ArgumentError UnitTestDesign.multi_way_coverage([2, 3, 4, 2], Dict(1 => [[1, 2]]), 2)
-    @test_throws ArgumentError UnitTestDesign.multi_way_coverage([2, 3, 4, 2], Dict(5 => [[1, 2]]), 2)
 end

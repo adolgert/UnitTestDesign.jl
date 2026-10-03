@@ -624,3 +624,131 @@ end
           "DesignSizes: 2 strategies for 2 parameters"
     @test sprint(show, report(all_pairs(1:3, 1:6))) == "18 cases cover all 18 feasible pairs of an 18-combination space"
 end
+
+
+@testitem "report and design_sizes: one memo, one answer cache per measurement; each figure is a separate measurement's (§3.5, plan Stage C decision 7)" setup=[Checker, ReportSetup] begin
+    using Base.CoreLogging: with_logger, NullLogger   # a lazily evaluated rule warns
+    # A report measures the rows twice, at its strength and for the bonus one
+    # above, with one lazy-rule memo and a fresh answer cache for each. So every
+    # figure is that of a `coverage` call, which has a memo of its own, under
+    # any limit (probe 03b). Its answer caches must stay apart: in the space of
+    # two components below, a bonus that shared the first measurement's answer
+    # caches would find other component witnesses cached, and at
+    # feasibility_limit = 4 would leave 14 triples unresolved, not 10.
+    same_part(a, b) = (a.covered, a.feasible, a.rows, a.duplicates) == (b.covered, b.feasible, b.rows, b.duplicates) &&
+        isequal(a.missing, b.missing) && isequal(a.unknown, b.unknown) && same_exclusions(a.excluded, b.excluded) &&
+        a.groups == b.groups && isequal(a.rejected, b.rejected)
+    counts(part) = (covered = part.covered, feasible = part.feasible, unknown = length(part.unknown))
+    function agrees(cases, limits)
+        r = report(cases; limits...)
+        base = coverage(cases; limits...)
+        ok = same_part(r.coverage.ordinary, base.ordinary) && same_part(r.coverage.negative, base.negative) &&
+             r.coverage.limits == base.limits && same_exclusions(r.excluded, [base.ordinary.excluded; base.negative.excluded])
+        if r.bonus.applicable
+            above = coverage(collect(cases), cases.space; strength = r.strength + 1, limits...)
+            ok &= (r.bonus.covered, r.bonus.feasible, r.bonus.unknown) == values(counts(above.ordinary)) &&
+                  r.bonus.negative == counts(above.negative)
+        end
+        return ok
+    end
+    tight = [(feasibility_limit = 1, explanation_limit = 1), (feasibility_limit = 2,), (feasibility_limit = 3,),
+             (feasibility_limit = 4,), (feasibility_limit = 5,), (explanation_limit = 1,), NamedTuple()]
+    two = NamedTuple{Tuple(Symbol(c, i) for c in (:a, :b) for i in 1:4)}(Tuple(1:2 for _ in 1:8))
+    two_rules = [forbid((a1 = 1, a2 = 1)), forbid((a3 = 1, a4 = 1)), forbid((a2 = 2, a3 = 2)),
+                 forbid((b1 = 1, b2 = 1)), forbid((b3 = 1, b4 = 1)), forbid((b2 = 2, b3 = 2))]
+    negative = (n = [1, Invalid(0)], x1 = 1:4, x2 = 1:4, x3 = 1:4, x4 = 1:4)
+    negative_rules = [forbid(n -> n == 1, :n), forbid((a, b, c, d) -> !(a == b == c == d == 4), :x1, :x2, :x3, :x4)]
+    rng = Xoshiro(0x2026_0930_0003)
+    problems = [random_problem(rng; strength = 2).space for _ in 1:12]
+    # Each space with its rules tabulated, then with every rule lazy.
+    both(make) = [with_logger(() -> make(limit), NullLogger()) for limit in (10^5, 1)]
+    randoms = reduce(vcat, [both(t -> test_space(cs; tabulation_limit = t)) for cs in problems])
+    special = [both(t -> TestSpace(two; constraints = two_rules, tabulation_limit = t));
+               both(t -> TestSpace(negative; constraints = negative_rules, tabulation_limit = t))]
+    # limit_exhaustion (test "report under limits") only at feasibility_limit
+    # 1 to 5: at the default it takes seconds.
+    exhaustion = both(t -> test_space(limit_exhaustion; tabulation_limit = t))
+    corpus = [[space => tight for space in [randoms; special]]; [space => tight[1:5] for space in exhaustion]]
+    for (space, limit_list) in corpus, strength in 1:min(2, length(space.names))
+        cases = try
+            covering(space; strength)
+        catch err
+            err isa ResourceLimitError || rethrow()
+            continue
+        end
+        for limits in limit_list
+            ok = agrees(cases, limits)
+            ok || @error "report's figures differ from separate measurements" space strength limits
+            @test ok
+        end
+    end
+    # The space of two components is the one where a shared answer cache
+    # shows (14 unresolved triples with one).
+    r = report(covering(TestSpace(two; constraints = two_rules); strength = 2); feasibility_limit = 4)
+    @test r.bonus.unknown == 10
+
+    # design_sizes keeps one memo for the call; each figure is that of
+    # `coverage(design; strength = s)` with its own.
+    for space in special, limits in tight
+        t = design_sizes(space; limits...)
+        designs = Any[() -> full_factorial(space; limits...);
+                      [() -> covering(space; strength = s, limits...) for s in 1:min(3, length(space.names))];
+                      [() -> excursions(space; distance = d, limits...) for d in 1:2]]
+        for (row, make) in zip(t.rows, designs)
+            row.status === :ok || continue
+            design = make()
+            for (s, ordinary, negative) in ((2, row.pairs, row.negative_pairs), (3, row.triples, row.negative_triples))
+                s <= length(space.names) || continue
+                c = coverage(design; strength = s, limits...)
+                @test (ordinary, negative) == (counts(c.ordinary), counts(c.negative))
+            end
+        end
+    end
+end
+
+
+@testitem "report and design_sizes: a lazy predicate runs at most once per assignment for all the call's measurements (§3.5, §12.19)" begin
+    # One whole-case rule over three binary parameters: eight complete
+    # assignments. Probe 03a saw report evaluate it 12 to 16 times, and
+    # design_sizes 91 times more than its generations do alone.
+    seen = NTuple{3, Int}[]
+    probe(forbidden) = TestSpace((a = [0, 1], b = [0, 1], c = [0, 1]);
+        constraints = [forbid(case -> (push!(seen, Tuple(case)); forbidden(case)); reason = "counted")])
+    calls(f) = (empty!(seen); f(); copy(seen))
+    for forbidden in (case -> false, case -> case.a == 1 && case.b == 1)
+        space = probe(forbidden)
+        for design in (all_pairs(space), excursions(space; distance = 1))
+            logged = calls(() -> report(design))
+            @test !isempty(logged) && allunique(logged)
+        end
+        # design_sizes' generations are requests, each with its own memo; its
+        # measurements share one.
+        alone = length(calls(() -> full_factorial(space)))
+        for s in 1:3
+            alone += length(calls(() -> covering(space; strength = s)))
+        end
+        for d in 1:2
+            alone += length(calls(() -> isallowed(space, (a = 0, b = 0, c = 0))))
+            alone += length(calls(() -> excursions(space; distance = d)))
+        end
+        @test length(calls(() -> design_sizes(space))) - alone <= 8
+    end
+end
+
+
+@testitem "report: the bonus counts without listing its targets (plan Stage C step 4)" begin
+    using UnitTestDesign: rule_memos, _prepare_rows, _bonus
+    # 30 parameters of 5 values, no rules: the bonus has 287,305 missing
+    # triples. Before Stage C it listed them, and allocated about 1.0 GB here
+    # (Julia 1.13); counting allocates about 0.22 GB, and a count that listed
+    # every target again would allocate about 0.5 GB.
+    space = TestSpace(NamedTuple{Tuple(Symbol("x$i") for i in 1:30)}(Tuple(1:5 for _ in 1:30)))
+    cases = all_pairs(space)
+    memos = rule_memos(space.tables)
+    prepared = _prepare_rows(space, memos, collect(cases))
+    bonus() = _bonus(prepared, space, 2; memos, feasibility_limit = 1_000_000)
+    b = bonus()
+    @test (b.covered, b.feasible, b.unknown) == (220_195, 507_500, 0)
+    @test b.feasible - b.covered == 287_305
+    @test @allocated(bonus()) < 400_000_000
+end

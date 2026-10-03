@@ -5,7 +5,7 @@ using TestItemRunner
 # 8. Test names cite the contract clauses (docs/src/dev/contract.md).
 
 @testitem "constraints: every rule form gives the same table (§12.1–§12.5, §12.9)" begin
-    using UnitTestDesign: forbids
+    using UnitTestDesign: forbids, forbidden_tuples
     domains = (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6])
     table(rule) = only(TestSpace(domains; constraints = [rule]).tables)
 
@@ -26,15 +26,15 @@ using TestItemRunner
         @test rule.scope == (:mode, :solver)
         t = table(rule)
         @test t.scope == [1, 2]
-        @test t.forbidden == Set([(1, 2), (1, 3)])
+        @test forbidden_tuples(t) == Set([(1, 2), (1, 3)])
     end
     # Two patterns forbid the same pairs between them.
     s = TestSpace(domains; constraints = [forbid((mode = :fast, solver = :lu)),
                                           forbid((mode = :fast, solver = :qr))])
-    @test union((t.forbidden for t in s.tables)...) == Set([(1, 2), (1, 3)])
+    @test union((forbidden_tuples(t) for t in s.tables)...) == Set([(1, 2), (1, 3)])
     # A whole-case rule forbids the same rows, lazily (§12.9, §12.20).
     whole = table(forbid(case -> case.mode == :fast && case.solver != :none))
-    @test whole.scope == [1, 2, 3] && whole.forbidden === nothing
+    @test whole.scope == [1, 2, 3] && forbidden_tuples(whole) === nothing
     for row in Iterators.product(1:2, 1:3, 1:2)
         @test forbids(whole, collect(row)) == ((row[1], row[2]) in [(1, 2), (1, 3)])
     end
@@ -56,32 +56,33 @@ using TestItemRunner
         t = table(rule)
         key = Tuple(t.scope) == (1, 3) ? (2, 1) : (1, 2)
         @test sort(t.scope) == [1, 3]
-        @test t.forbidden == Set([key])
+        @test forbidden_tuples(t) == Set([key])
     end
 end
 
 
 @testitem "constraints: Astra's A == B, B == C (§1.2, §12.6)" begin
+    using UnitTestDesign: forbidden_tuples
     space = TestSpace((A = [1, 2], B = [1, 2], C = [1, 2]);
         constraints = [@require(A == B), @require(B == C)])
     @test [t.scope for t in space.tables] == [[1, 2], [2, 3]]
-    @test [t.forbidden for t in space.tables] == [Set([(1, 2), (2, 1)]), Set([(1, 2), (2, 1)])]
+    @test [forbidden_tuples(t) for t in space.tables] == [Set([(1, 2), (2, 1)]), Set([(1, 2), (2, 1)])]
     same = TestSpace((A = [1, 2], B = [1, 2], C = [1, 2]);
         constraints = [forbid((a, b) -> a != b, :A, :B), forbid((b, c) -> b != c, :B, :C)])
-    @test [t.forbidden for t in same.tables] == [t.forbidden for t in space.tables]
+    @test [forbidden_tuples(t) for t in same.tables] == [forbidden_tuples(t) for t in space.tables]
 end
 
 
 @testitem "constraints: `!=` forbids exactly two pairs, not 0.4's over-forbid (§1.6, §12.14)" begin
-    using UnitTestDesign: assigned, forbids
+    using UnitTestDesign: assigned, forbids, forbidden_tuples
     # In 0.4, a disallow function saw `nothing` for unassigned parameters, so
     # `solver != :none` held for a missing solver and fast mode was forbidden
     # outright. A tabulated rule is consulted only with its whole scope assigned.
     space = TestSpace((mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
         constraints = [@forbid(mode == :fast && solver != :none)])
     t = only(space.tables)
-    @test length(t.forbidden) == 2
-    @test t.forbidden == Set([(1, 2), (1, 3)])
+    @test length(forbidden_tuples(t)) == 2
+    @test forbidden_tuples(t) == Set([(1, 2), (1, 3)])
     @test !assigned(t, [1, 0, 0])
     @test assigned(t, [1, 1, 0])
     @test !forbids(t, [1, 1, 0])
@@ -92,34 +93,36 @@ end
 
 
 @testitem "constraints: `\$` interpolation in macros (§12.6)" begin
+    using UnitTestDesign: forbidden_tuples
     threshold = 3
     rule = @forbid(n < $threshold)
     threshold = 100  # the value was captured when the rule was built
     @test rule.scope == (:n,)
     @test rule.label == "@forbid(n < \$threshold)"
     space = TestSpace((n = 1:5,); constraints = [rule])
-    @test only(space.tables).forbidden == Set([(1,), (2,)])
+    @test forbidden_tuples(only(space.tables)) == Set([(1,), (2,)])
 
     lo = 2
     rule = @require(n > $(lo + 1) || m == :any)
     @test rule.scope == (:n, :m)
     space = TestSpace((n = 1:5, m = [:any, :some]); constraints = [rule])
-    @test only(space.tables).forbidden == Set([(1, 2), (2, 2), (3, 2)])
+    @test forbidden_tuples(only(space.tables)) == Set([(1, 2), (2, 2), (3, 2)])
 
     # An interpolated function in call position.
     isbig = x -> x > 3
     rule = @forbid($isbig(n))
     @test rule.scope == (:n,)
-    @test only(TestSpace((n = 1:5,); constraints = [rule]).tables).forbidden == Set([(4,), (5,)])
+    @test forbidden_tuples(only(TestSpace((n = 1:5,); constraints = [rule]).tables)) == Set([(4,), (5,)])
 
     # An interpolated global that is not called, such as Inf.
     rule = @forbid(x == $Inf)
     @test rule.scope == (:x,)
-    @test only(TestSpace((x = [1.0, Inf],); constraints = [rule]).tables).forbidden == Set([(2,)])
+    @test forbidden_tuples(only(TestSpace((x = [1.0, Inf],); constraints = [rule]).tables)) == Set([(2,)])
 end
 
 
 @testitem "constraints: which identifiers a macro reads as names (§12.6, §12.7)" begin
+    using UnitTestDesign: forbidden_tuples
     # Call position, dotted names, literals, nothing, missing, true, false.
     rule = @forbid(isodd(n) && m === nothing && Base.isless(k, 2) && s == "x" &&
                    q == :sym && flag == true && w === missing && z == 1e-3)
@@ -142,15 +145,15 @@ end
 
     # The generated predicates evaluate as written.
     space = TestSpace((vals = [[1, 2], [5]], n = [1, 3]); constraints = [@forbid(any(v -> v > n, vals))])
-    @test only(space.tables).forbidden == Set([(1, 1), (1, 2), (2, 2)])
+    @test forbidden_tuples(only(space.tables)) == Set([(1, 1), (1, 2), (2, 2)])
     space = TestSpace((xs = [[1, 2, 3], [2]], lo = [0, 1], hi = [2, 4]);
         constraints = [@forbid(sum(x for x in xs if x > lo) > hi)])
     # sums: xs1 lo0 -> 6, xs1 lo1 -> 5, xs2 lo0 -> 2, xs2 lo1 -> 2
-    @test only(space.tables).forbidden == Set([(1, 1, 1), (1, 2, 1), (1, 1, 2), (1, 2, 2)])
+    @test forbidden_tuples(only(space.tables)) == Set([(1, 1, 1), (1, 2, 1), (1, 1, 2), (1, 2, 2)])
     # A parameter named like a function called in the same rule still calls the function.
     space = TestSpace((v = [[1, 2], [1, 2, 3]], size = [2, 3]);
         constraints = [@forbid(size(v) == (2,) && size == 3)])
-    @test only(space.tables).forbidden == Set([(1, 2)])
+    @test forbidden_tuples(only(space.tables)) == Set([(1, 2)])
     @test only(space.constraints).scope == (:v, :size)
 
     # A rule must read a parameter; malformed macro calls are errors.
@@ -161,7 +164,36 @@ end
 end
 
 
+@testitem "constraints: macro rules work in a module that only imports the package (§12.6)" begin
+    using UnitTestDesign: forbidden_tuples
+    # The expansion needs no name bound in the caller's module, and the rule's
+    # own names resolve there: a function, a module-qualified function and
+    # value, and an interpolated variable, each evaluated when the space is built.
+    bare = Module(:Bare)
+    include_string(bare, """
+        import UnitTestDesign
+        module Helpers
+        isbig(v) = v > 1
+        const worst = 2
+        end
+        small(v) = v < 2
+        limit = 1
+        forbid_rule = UnitTestDesign.@forbid(Helpers.isbig(a) && b == Helpers.worst)
+        require_rule = UnitTestDesign.@require(small(a) || b > \$limit; reason = "a large a needs b = 2")
+        """)
+    @test !isdefined(bare, :forbid) && !isdefined(bare, Symbol("@forbid"))
+    domains = (a = 1:3, b = 1:2)
+    rule = bare.forbid_rule
+    @test rule.scope == (:a, :b) && rule.label == "@forbid(Helpers.isbig(a) && b == Helpers.worst)"
+    @test forbidden_tuples(only(TestSpace(domains; constraints = [rule]).tables)) == Set([(2, 2), (3, 2)])
+    rule = bare.require_rule
+    @test rule.scope == (:a, :b) && rule.label == "a large a needs b = 2: @require(small(a) || b > \$limit)"
+    @test forbidden_tuples(only(TestSpace(domains; constraints = [rule]).tables)) == Set([(2, 1), (3, 1)])
+end
+
+
 @testitem "constraints: macro binding forms follow Julia's scoping (§12.6)" begin
+    using UnitTestDesign: forbidden_tuples
     # Each macro rule gives the table of the explicit listed-names rule, with
     # the same scope, in order of first appearance. Regressions from the
     # Phase 2 review: `(x -> x > n)(1)` read no parameter, and a `let` name
@@ -211,9 +243,9 @@ end
         a = only(TestSpace(d; constraints = [rule]).tables)
         b = only(TestSpace(d; constraints = [explicit]).tables)
         @test a.scope == b.scope
-        @test a.forbidden == b.forbidden
+        @test forbidden_tuples(a) == forbidden_tuples(b)
         # Every case has both allowed and forbidden combinations, so agreement means something.
-        @test 0 < length(a.forbidden) < prod(length(domains[s]) for s in scope)
+        @test 0 < length(forbidden_tuples(a)) < prod(length(domains[s]) for s in scope)
     end
     # A shadowed name reads the local value inside and the parameter outside.
     rule = @forbid((n -> n)(m) > n)
@@ -226,6 +258,7 @@ end
 
 
 @testitem "constraints: unsupported macro forms point to the function form (§12.6)" begin
+    using UnitTestDesign: forbidden_tuples
     function expansion_error(ex)
         try
             macroexpand(@__MODULE__, ex)
@@ -263,7 +296,7 @@ end
         y = n
         y > 1
     end
-    @test only(TestSpace((n = 0:3,); constraints = [rule]).tables).forbidden == Set([(3,), (4,)])
+    @test forbidden_tuples(only(TestSpace((n = 0:3,); constraints = [rule]).tables)) == Set([(3,), (4,)])
 end
 
 
@@ -348,7 +381,42 @@ end
 end
 
 
+@testitem "constraints: a macro rule is the listed-names rule, labeled by its source text (§12.1, §12.3)" begin
+    using UnitTestDesign: Negated
+    domains = (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6])
+    limit = 1e-4
+    why = "fast mode has no solver"
+    # A macro rule, the same rule with listed names, and the macro rule's label.
+    cases = [
+        (@forbid(mode == :fast && solver != :none),
+         forbid((m, s) -> m == :fast && s != :none, :mode, :solver),
+         "@forbid(mode == :fast && solver != :none)"),
+        (@require(mode == :exact || solver == :none; reason = why),
+         require((m, s) -> m == :exact || s == :none, :mode, :solver; reason = why),
+         "fast mode has no solver: @require(mode == :exact || solver == :none)"),
+        (@require(tol < $limit || mode == :fast),
+         require((t, m) -> t < limit || m == :fast, :tol, :mode),
+         "@require(tol < \$limit || mode == :fast)"),
+    ]
+    for (rule, listed, label) in cases
+        @test rule.label == label && rule.source == :macro && listed.source == :names
+        for field in fieldnames(Constraint)
+            field in (:label, :source, :predicate) && continue
+            @test getfield(rule, field) == getfield(listed, field)
+        end
+        # The predicates are different closures, so they are compared on every
+        # combination of the scope's values. A require rule's are both Negated.
+        @test (rule.predicate isa Negated) == (listed.predicate isa Negated) ==
+              (rule.polarity === :require)
+        for values in Iterators.product((domains[name] for name in rule.scope)...)
+            @test rule.predicate(values...) == listed.predicate(values...)
+        end
+    end
+end
+
+
 @testitem "constraints: forms reject malformed arguments (§5.8, §12.4, §12.5)" begin
+    using UnitTestDesign: forbidden_tuples
     message(g) = try g(); "" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError" end
     # Pattern values are domain values, matched by identity (§12.4, §2.11).
     domains = (n = [1, 2], size = [Partition(:tiny, Returns(1e-9)), 100])
@@ -358,8 +426,8 @@ end
     # A partition by wrapper or by name.
     s = TestSpace(domains; constraints = [forbid((size = :tiny, n = 2)),
                                           forbid((size = Partition(:tiny, identity), n = 1))])
-    @test [t.forbidden for t in s.tables] == [Set([(1, 2)]), Set([(1, 1)])]
-    @test only(TestSpace(domains; constraints = [forbid((size = 100,))]).tables).forbidden == Set([(2,)])
+    @test [forbidden_tuples(t) for t in s.tables] == [Set([(1, 2)]), Set([(1, 1)])]
+    @test forbidden_tuples(only(TestSpace(domains; constraints = [forbid((size = 100,))]).tables)) == Set([(2,)])
     # A pattern cannot name an Invalid value (§5.8), and is not empty.
     @test occursin("§5.8", message(() -> forbid((n = Invalid(0),))))
     @test occursin("at least one", message(() -> forbid(NamedTuple())))
@@ -465,11 +533,22 @@ end
     @test err.rule == "rule 1 on the whole case"
     @test_throws ConstraintError UnitTestDesign.forbids(table, [2, 1])
     @test calls[] == 3
+
+    # Through the public calls, the exception surfaces from whichever call
+    # evaluated the rule. explain searches for a completion of a = 2.
+    err = try explain(space, (a = 2,)) catch e; e end
+    @test err isa ConstraintError && err.rule == "rule 1 on the whole case" && err.arguments.a == 2
+    # These rows avoid a = 2, so reading them does not throw; the search for
+    # a missing pair with a = 2 does.
+    rows = [(a = 1, b = 1), (a = 1, b = 2)]
+    @test all(row -> isallowed(space, row), rows)
+    err = try coverage(rows, space) catch e; e end
+    @test err isa ConstraintError && err.rule == "rule 1 on the whole case" && err.arguments.a == 2
 end
 
 
 @testitem "constraints: tabulation_limit makes a rule lazy, with one warning (§12.19)" begin
-    using UnitTestDesign: forbids
+    using UnitTestDesign: forbids, forbidden_tuples
     domains = (a = 1:3, b = 1:2, c = [:x, :y])
     rules() = [@forbid(a == 2 && c == :y), @forbid(a + b > 4), forbid((b = 1, c = :x))]
     eager = TestSpace(domains; constraints = rules())
@@ -479,9 +558,9 @@ end
                       (:warn, r"rule 2 .*exceed tabulation_limit = 4.*narrower rules"),
                       TestSpace(domains; constraints = rules(), tabulation_limit = 4))
     @test lazy.tabulation_limit == 4
-    @test lazy.tables[1].forbidden === nothing && lazy.tables[1].lazy !== nothing
-    @test lazy.tables[2].forbidden === nothing
-    @test lazy.tables[3].forbidden == Set([(1, 1)])
+    @test forbidden_tuples(lazy.tables[1]) === nothing && lazy.tables[1].lazy !== nothing
+    @test forbidden_tuples(lazy.tables[2]) === nothing
+    @test forbidden_tuples(lazy.tables[3]) == Set([(1, 1)])
     # The lazy tables give the tabulated answers.
     for (e, l) in zip(eager.tables, lazy.tables)
         @test e.scope == l.scope
@@ -513,12 +592,12 @@ end
     # The product counts ordinary values only, so Invalid values do not push a rule over.
     s = @test_logs TestSpace((a = [1, 2, Invalid(0)], b = [1, 2]);
                              constraints = [@forbid(a == b)], tabulation_limit = 4)
-    @test only(s.tables).forbidden == Set([(1, 1), (2, 2)])
+    @test forbidden_tuples(only(s.tables)) == Set([(1, 1), (2, 2)])
 end
 
 
 @testitem "constraints: whole-case rules are lazy and receive a NamedTuple (§12.9, §12.20, §4.5)" begin
-    using UnitTestDesign: forbids
+    using UnitTestDesign: forbids, forbidden_tuples
     seen = []
     rule = forbid(; reason = "no tiny fast") do case
         push!(seen, case)
@@ -530,7 +609,7 @@ end
     @test isempty(seen)
     t = only(space.tables)
     @test t.scope == [1, 2]
-    @test t.forbidden === nothing && t.lazy !== nothing
+    @test forbidden_tuples(t) === nothing && t.lazy !== nothing
     @test forbids(t, [1, 1])
     @test !forbids(t, [2, 1])
     @test !forbids(t, [1, 2])
@@ -554,6 +633,7 @@ end
 
 
 @testitem "constraints: predicates see partition names, never Invalid (§4.5, §5.8, §12.14)" begin
+    using UnitTestDesign: forbidden_tuples
     seen = []
     rule = forbid(:size, :n) do size, n
         push!(seen, (size, n))
@@ -563,7 +643,7 @@ end
                        n = [1, Invalid(1), 2]); constraints = [rule])
     @test seen == [(:tiny, 1), (100, 1), (:tiny, 2), (100, 2)]
     @test !any(x -> x isa Invalid, Iterators.flatten(seen))
-    @test only(space.tables).forbidden == Set([(1, 1)])
+    @test forbidden_tuples(only(space.tables)) == Set([(1, 1)])
     # A lazy table at an invalid index is an internal error, never a verdict.
     lazy = @test_logs (:warn,) TestSpace((size = [Partition(:tiny, Returns(1e-9)), 100, Invalid(0)],
                       n = [1, Invalid(1), 2]); constraints = [rule], tabulation_limit = 1)
@@ -572,13 +652,14 @@ end
     # Predicates compare however they are written: n == 1 matches 1 and 1.0,
     # while a pattern matches by identity (§12.23, §12.4).
     domains = (n = Any[1, 1.0, 2],)
-    @test only(TestSpace(domains; constraints = [@forbid(n == 1)]).tables).forbidden == Set([(1,), (2,)])
-    @test only(TestSpace(domains; constraints = [forbid((n = 1,))]).tables).forbidden == Set([(1,)])
-    @test only(TestSpace(domains; constraints = [forbid((n = 1.0,))]).tables).forbidden == Set([(2,)])
+    @test forbidden_tuples(only(TestSpace(domains; constraints = [@forbid(n == 1)]).tables)) == Set([(1,), (2,)])
+    @test forbidden_tuples(only(TestSpace(domains; constraints = [forbid((n = 1,))]).tables)) == Set([(1,)])
+    @test forbidden_tuples(only(TestSpace(domains; constraints = [forbid((n = 1.0,))]).tables)) == Set([(2,)])
 end
 
 
 @testitem "constraints: tabulation order is fixed (§12.17, §12.18, §9.1)" begin
+    using UnitTestDesign: forbidden_tuples
     calls = []
     rule = forbid(:b, :a) do b, a
         push!(calls, (b, a))
@@ -590,13 +671,13 @@ end
     # scope in scope order: the first scope parameter varies fastest.
     @test calls == [(:x, 1), (:y, 1), (:x, 2), (:y, 2), (:x, 3), (:y, 3)]
     @test s1.tables[1].scope == [2, 1]
-    @test s1.tables[1].forbidden == Set([(2, 2)])
+    @test forbidden_tuples(s1.tables[1]) == Set([(2, 2)])
     empty!(calls)
     s2 = TestSpace(domains; constraints = [rule, @forbid(c == 0 && a == 3)])
     @test calls == [(:x, 1), (:y, 1), (:x, 2), (:y, 2), (:x, 3), (:y, 3)]
     @test [t.scope for t in s1.tables] == [t.scope for t in s2.tables]
-    @test [t.forbidden for t in s1.tables] == [t.forbidden for t in s2.tables]
-    @test collect(s1.tables[2].forbidden) == collect(s2.tables[2].forbidden)
+    @test [forbidden_tuples(t) for t in s1.tables] == [forbidden_tuples(t) for t in s2.tables]
+    @test s1.tables[2].forbidden == s2.tables[2].forbidden   # the same bits
     # Rules are tabulated in the order given.
     order = Symbol[]
     TestSpace((a = [1],); constraints = [forbid(a -> (push!(order, :first); false), :a),
@@ -607,7 +688,7 @@ end
 
 @testitem "constraints: tables agree with the oracle on random problems" setup=[Checker] begin
     using Random
-    using UnitTestDesign: forbids
+    using UnitTestDesign: forbids, forbidden_tuples
     rng = Xoshiro(0x2026_0927_0000_0001)
     for trial in 1:40
         problem = random_problem(rng; strength = 2)
@@ -617,7 +698,7 @@ end
         for (r, t) in zip(problem.rules, space.tables)
             brute = Set(key for key in Iterators.product((eachindex(problem.domains[p]) for p in r.scope)...)
                         if r.predicate((problem.domains[p][key[j]] for (j, p) in enumerate(r.scope))...))
-            agree &= t.scope == r.scope && t.forbidden == brute
+            agree &= t.scope == r.scope && forbidden_tuples(t) == brute
         end
         @test agree
         valid = count(Iterators.product((eachindex(d) for d in problem.domains)...)) do key

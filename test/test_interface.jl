@@ -429,10 +429,10 @@ end
     # Errors: a base that breaks a rule, a partial base, a negative distance, stronger (§7.5, §7.6).
     msg = message(() -> excursions(nt; from = (a = 1, b = :y, c = true), constraints = rules))
     @test occursin("breaks rule 1 (y needs c off)", msg) && occursin("§7.6", msg)
-    @test occursin("complete row", message(() -> excursions(nt; from = (a = 1,))))
+    @test occursin("it must name every parameter", message(() -> excursions(nt; from = (a = 1,))))
     @test message(() -> excursions(nt; distance = -1)) == "distance must be an integer of at least 0, got -1 (contract §7.5)"
     @test message(() -> excursions(nt; distance = 1.5)) == "distance must be an integer of at least 0, got 1.5 (contract §7.5)"
-    @test occursin("`from` is the base row", message(() -> excursions(nt; from = :a)))
+    @test occursin("the excursion base `from` is a Symbol", message(() -> excursions(nt; from = :a)))
     @test message(() -> excursions(nt; stronger = [(:a, :b, :c) => 3])) ==
           "excursions take a single distance; stronger groups apply to covering designs"
     @test_throws MethodError excursions(nt; strength = 2)
@@ -531,6 +531,44 @@ end
         @test occursin("has no valid completion: rules 1 and 2 together exclude it", msg)
         @test occursin("unresolved: explanation_limit = 1 reached", msg)
     end
+end
+
+
+@testitem "feasibility_limit: rows, counts and exclusion statuses do not depend on it; explanations may (§3.8, §3.14)" begin
+    # (w = 1, v = 1) is excluded twice over: by rule 1, which forward checking
+    # sees at once, and by rules 2 to 7, which, when w = 1 and v = 1, make
+    # x, y, z and u all different, four parameters with three values each.
+    # Proving that takes more nodes than the small limits below allow.
+    names4 = (:x, :y, :z, :u)
+    pigeons = [forbid((w, v, p, q) -> w == 1 && v == 1 && p == q, :w, :v, a, b)
+               for (i, a) in enumerate(names4) for b in names4[(i + 1):end]]
+    domains = (w = [1, 2], v = [1, 2], a = [1, 2], x = 1:3, y = 1:3, z = 1:3, u = 1:3)
+    space = TestSpace(domains; constraints = [forbid((w, v, a) -> w == 1 && v == 1, :w, :v, :a); pigeons])
+    counts(c) = (c.required, c.covered, c.negative_required, c.negative_covered)
+    statuses(c) = [(e.target, e.status) for e in [c.excluded; c.negative_excluded]]
+    "Brute force: every row of the product that holds the target breaks one of these rules."
+    function sufficient(e)
+        rules_only = TestSpace(domains; constraints = space.constraints[e.rules])
+        rows = (NamedTuple{keys(domains)}(v) for v in Iterators.product(domains...))
+        return all(r -> !isallowed(rules_only, r),
+                   Iterators.filter(r -> all(k -> r[k] == e.target[k], keys(e.target)), rows))
+    end
+
+    reference = all_pairs(space)
+    @test statuses(reference) == [((w = 1, v = 1), :implied)]
+    for limit in (6, 10, 14)
+        cases = all_pairs(space; feasibility_limit = limit)
+        @test collect(cases) == collect(reference)
+        @test counts(cases) == counts(reference)
+        @test statuses(cases) == statuses(reference)
+        # The explanation names a sufficient set, whichever set it is. Here a
+        # deletion trial stops at feasibility_limit, keeps its rule, and the
+        # explanation names that limit (§3.14).
+        e = only(cases.excluded)
+        @test sufficient(e)
+        @test (e.minimal, e.limit) == (:unresolved, :feasibility_limit => limit)
+    end
+    @test sufficient(only(reference.excluded))
 end
 
 
@@ -650,9 +688,9 @@ end
 
     # from: its shape, then its names and values, each error naming `from`.
     @test message(() -> excursions(d...; from = (1, 3))) ==
-          "`from` has 2 values; the space has 3 parameters, p1, p2, p3, and the base is a complete row (contract §7.6)"
+          "the excursion base `from` has 2 values; the space has 3 parameters (p1, p2, p3) (contract §7.6)"
     @test message(() -> excursions(d...; from = [1, 3, 5, 7])) ==
-          "`from` has 4 values; the space has 3 parameters, p1, p2, p3, and the base is a complete row (contract §7.6)"
+          "the excursion base `from` has 4 values; the space has 3 parameters (p1, p2, p3) (contract §7.6)"
     @test message(() -> excursions(d...; from = (p1 = 1, p2 = 3, p3 = 5))) ==
           "`from` is a NamedTuple; a positional call takes the base as a tuple or vector of values in " *
           "argument order, one for each of p1, p2, p3 (contract §7.6)"
@@ -661,8 +699,8 @@ end
     @test startswith(message(() -> excursions(nt; from = (a = 9, b = 3, c = 5))),
                      "the excursion base `from`: 9 is not a value of `a`")
     @test message(() -> excursions(nt; from = Dict(:a => 1))) ==
-          "`from` is the base row: a complete NamedTuple, or a tuple of values in parameter order; " *
-          "got a Dict{Symbol, Int64} (contract §7.6)"
+          "the excursion base `from` is a Dict{Symbol, Int64}; a row is a NamedTuple, or a tuple or " *
+          "vector with one value per parameter (contract §7.6)"
     @test excursions(nt; from = (1, 4, 6), distance = 0)[1] == (a = 1, b = 4, c = 6)   # values in parameter order
 
     # stronger: a vector of group => strength pairs, each group a tuple or vector.
@@ -680,6 +718,59 @@ end
           "`stronger` strength for (1, 2, 3) must be an integer, got 2.5 (contract §11.6)"
     @test message(() -> covering(d...; stronger = [(1, true) => 2])) ==
           "`stronger` group members are names or indices; got true"
+end
+
+
+@testitem "every row a caller writes is read by one reader, whose errors read alike (§1.13, §1.25, §1.26, §2.11, §7.6, §10.1)" setup=[InterfaceSetup] begin
+    space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]))
+    valid = (1, :x, true)
+    # What each caller calls the row, the section its errors cite, whether the
+    # row must be complete, the hint a partial row's error adds, and a call
+    # that reads the row `r`.
+    readers = [
+        ("coverage row 2", " (contract §1.13)", true, "", r -> coverage([valid, r], space)),
+        ("diagnose case 2", "", true, "", r -> diagnose([valid, r], [true, false]; space)),
+        ("must_include row 2", " (contract §10.1)", false, "", r -> all_pairs(space; must_include = [valid, r])),
+        ("the excursion base `from`", " (contract §7.6)", true, "", r -> excursions(space; from = r)),
+        ("the case", " (contract §1.25)", true, "; use explain for a partial assignment", r -> isallowed(space, r)),
+        ("the assignment", " (contract §1.26)", false, "", r -> explain(space, r)),
+    ]
+    for (what, cited, complete, hint, call) in readers
+        @test message(() -> call(:a)) ==
+              "$what is a Symbol; a row is a NamedTuple, or a tuple or vector with one value per parameter$cited"
+        @test message(() -> call((1, :x))) == "$what has 2 values; the space has 3 parameters (a, b, c)$cited"
+        @test message(() -> call([1, :x, true, 4])) ==
+              "$what has 4 values; the space has 3 parameters (a, b, c)$cited"
+        @test message(() -> call((a = 1, d = 2))) ==
+              "$what: `d` is not a parameter of this space; the parameters are a, b, c"
+        @test startswith(message(() -> call([1, :z, true])), "$what: :z is not a value of `b`")
+        partial = message(() -> call((c = false, a = 2)))
+        @test partial == (complete ? "$what, (c = false, a = 2), has no value for `b`; it must name every " *
+                                     "parameter$hint$cited" : "no error")
+    end
+    # classify takes NamedTuple targets only; their names and values read alike.
+    @test message(() -> UnitTestDesign.classify(space, [(a = 1, d = 2)])) ==
+          "the target: `d` is not a parameter of this space; the parameters are a, b, c"
+end
+
+
+@testitem "a collection of values, not rows, is a single row: coverage and diagnose show it wrapped, must_include the tuple of its values (§1.12, §10.1)" setup=[InterfaceSetup] begin
+    space = TestSpace((a = [1, 2, 3], b = [:x, :y], c = [true, false]))
+    @test message(() -> coverage(Dict(:a => 1), space)) ==
+          "coverage takes a collection of rows; wrap a single row in a vector: coverage([Dict(:a => 1)], space)"
+    @test message(() -> coverage("abc", space)) ==
+          "coverage takes a collection of rows; wrap a single row in a vector: coverage([\"abc\"], space)"
+    @test message(() -> diagnose(Dict(:a => 1), [true]; space)) ==
+          "diagnose takes a collection of cases; wrap a single case in a vector: " *
+          "diagnose([Dict(:a => 1)], passed; space)"
+    @test message(() -> diagnose("abc", [true]; space)) ==
+          "diagnose takes a collection of cases; wrap a single case in a vector: diagnose([\"abc\"], passed; space)"
+    @test message(() -> all_pairs(space; must_include = Dict(:a => 1))) ==
+          "must_include is a list of rows; wrap a single row in a vector: must_include = [(:a => 1,)]"
+    @test message(() -> all_pairs(space; must_include = "abc")) ==
+          "must_include is a list of rows; wrap a single row in a vector: must_include = [('a', 'b', 'c')]"
+    @test message(() -> all_pairs(space; must_include = (v for v in (1, :x, true)))) ==
+          "must_include is a list of rows; wrap a single row in a vector: must_include = [(1, :x, true)]"
 end
 
 

@@ -3,7 +3,9 @@
 # tabulated RuleTables (contract §2, §4, §5, §12). This layer is pure: it
 # generates nothing. It translates between the caller's vocabulary (names and
 # values) and index space (rule_table.jl), where parameter `i` is the i-th
-# name and value `k` of parameter `i` is `space.values[i][k]`.
+# name and value `k` of parameter `i` is `space.values[i][k]`. Every row a
+# caller writes, and every collection of rows, is read here (`_row_indices`,
+# `_row_list`).
 
 
 ## Wrappers (contract §2.12, §2.13, §4, §5)
@@ -159,6 +161,23 @@ function _find_value(domain::AbstractVector, v)
     return k
 end
 
+"""
+    _lookup(domain) -> Dict{Any, Int}
+
+`_find_value` as one hash lookup: the index of each value of `domain` under
+its `_identity_key`, and of each partition also under its name's key
+(§2.11). A domain holds no Symbol that names one of its partitions (§4.4),
+so the two kinds of key never collide, and each key keeps its first index.
+"""
+function _lookup(domain::AbstractVector)
+    lookup = Dict{Any, Int}()
+    for (k, x) in enumerate(domain)
+        get!(lookup, _identity_key(x), k)
+        x isa Partition && get!(lookup, _identity_key(x.name), k)
+    end
+    return lookup
+end
+
 function _domain_text(domain::AbstractVector; limit::Integer = 10)
     shown = [repr(x) for x in Iterators.take(domain, limit)]
     length(domain) > limit && push!(shown, "… ($(length(domain)) values)")
@@ -232,6 +251,7 @@ struct TestSpace
     tabulation_limit::Int
     ordinary::Vector{Vector{Int}}  # per parameter, the indices of ordinary values
     invalid::Vector{Vector{Int}}   # per parameter, the indices of Invalid values
+    lookup::Vector{Dict{Any, Int}} # per parameter, `_lookup` of its domain
 
     function TestSpace(names::Vector{Symbol}, domains::AbstractVector, constraints,
                        tabulation_limit)
@@ -260,17 +280,20 @@ struct TestSpace
         end
         tables = RuleTable[_tabulate(c, k, names, values, ordinary, limit)
                            for (k, c) in enumerate(rules)]
-        return new(copy(names), values, rules, tables, limit, ordinary, invalid)
+        return new(copy(names), values, rules, tables, limit, ordinary, invalid, _lookup.(values))
     end
 
     # Internal: a space from parts that are already validated and tabulated,
     # with nothing checked or evaluated again. Negative generation (invalid.jl)
     # builds one over the parameters other than a negative row's invalid
-    # parameter, reusing that space's domains, rules and tables.
-    function TestSpace(::Val{:parts}, names::Vector{Symbol}, values::Vector{AbstractVector},
-                       constraints::Vector{Constraint}, tables::Vector{RuleTable}, tabulation_limit::Int,
-                       ordinary::Vector{Vector{Int}}, invalid::Vector{Vector{Int}})
-        return new(names, values, constraints, tables, tabulation_limit, ordinary, invalid)
+    # parameter, reusing that space's domains, rules and tables. `parts` names
+    # every field in order, so a field added to TestSpace fails here, at the
+    # first negative generation, instead of taking another field's part.
+    function TestSpace(::Val{:parts}, parts::NamedTuple)
+        keys(parts) == fieldnames(TestSpace) || error(
+            "internal error: a TestSpace from parts needs the parts $(fieldnames(TestSpace)), " *
+            "in that order; got $(keys(parts))")
+        return new(parts...)
     end
 end
 
@@ -403,11 +426,22 @@ The index of value `v` in the domain of parameter `i` (an index or a name),
 matched by identity (contract §2.1). A partition may be given as its wrapper or
 as its name (§2.11). A value that is not in the domain is an `ArgumentError`
 naming the parameter, the value, and the domain.
+
+The space's `lookup` finds `v` by its identity key, a lookup of one concrete
+type for every parameter. A value it misses is compared with each domain
+value (`_find_value`) before it is refused, so a value whose `hash`
+disagrees with `isequal` is found as before.
 """
 function value_index(space::TestSpace, i::Integer, v)
-    k = _find_value(space.values[i], v)
-    k === nothing && throw(ArgumentError(_not_in_domain(space.names[i], space.values[i], v)))
-    return k
+    k = get(space.lookup[i], _identity_key(v), 0)
+    return k == 0 ? _value_index_missed(space, i, v) : k
+end
+
+"`value_index` for a value its lookup missed: found by comparing, or refused."
+@noinline function _value_index_missed(space::TestSpace, i::Integer, v)
+    found = _find_value(space.values[i], v)
+    found === nothing && throw(ArgumentError(_not_in_domain(space.names[i], space.values[i], v)))
+    return found::Int
 end
 
 value_index(space::TestSpace, name::Symbol, v) = value_index(space, parameter_index(space, name), v)
@@ -439,7 +473,7 @@ function case_indices end
 
 function case_indices(space::TestSpace, partial::NamedTuple)
     idx = zeros(Int, length(space.names))
-    for (name, v) in pairs(partial)
+    _each_field(partial) do name, v
         i = parameter_index(space, name)
         idx[i] = value_index(space, i, v)
     end
@@ -451,7 +485,130 @@ function case_indices(space::TestSpace, case::Tuple)
     length(case) == n || throw(ArgumentError(
         "a positional case lists $(length(case)) values, but the space has $n parameters " *
         "($(join(space.names, ", "))), and a positional case is complete"))
-    return [value_index(space, i, case[i]) for i in 1:n]
+    idx = Vector{Int}(undef, n)
+    _each_field(case) do i, v
+        idx[i] = value_index(space, i, v)
+    end
+    return idx
+end
+
+"""
+    _each_field(f, row::NamedTuple)
+    _each_field(f, row::Tuple)
+
+`f(name, value)` for each field of a `NamedTuple`, or `f(i, value)` for each
+entry of a `Tuple`, in order. It is generated, so each call has its value
+with the field's own type, however many types the row holds, and `case_indices`
+reads each value without a dynamic call.
+"""
+@generated function _each_field(f, row::NamedTuple{names}) where {names}
+    calls = [:(f($(QuoteNode(names[k])), getfield(row, $k))) for k in eachindex(names)]
+    return :($(calls...); nothing)
+end
+
+@generated function _each_field(f, row::Tuple)
+    calls = [:(f($k, getfield(row, $k))) for k in 1:fieldcount(row)]
+    return :($(calls...); nothing)
+end
+
+"""
+    _row_indices(space, row; what, section = nothing, complete, hint = nothing) -> Vector{Int}
+
+The value indices of a row the caller wrote, one per parameter and `0` for
+a parameter the row leaves out, as `case_indices` finds them. A
+`NamedTuple` names some or all parameters, in any order; a `Tuple`, or a
+vector read as one, lists one value per parameter in parameter order
+(contract §2.11). With `complete`, every parameter must have a value.
+
+Every row a caller writes is read here: `coverage` and `diagnose` rows,
+must-include rows, an excursion's `from`, and the arguments of `isallowed`,
+`explain` and `classify`. So the four input errors are worded here, each an
+`ArgumentError` that starts with `what`, such as "coverage row 3":
+
+- not a row: "WHAT is a T; a row is a NamedTuple, or a tuple or vector with
+  one value per parameter";
+- the wrong length: "WHAT has k values; the space has n parameters (a, b,
+  c)";
+- an unknown name, or a value outside its domain: "WHAT: " followed by the
+  message of `case_indices`, which names the parameter and the value;
+- a missing value, when `complete`: "WHAT, (…), has no value for `a` and
+  `b`; it must name every parameter".
+
+When `section` is given, such as "§1.13", the first, second and fourth end
+with "(contract §1.13)". The third is `case_indices`'s message unchanged,
+which may cite a section of its own. A `hint`, the caller's advice for a
+partial row such as `isallowed`'s "use explain for a partial assignment",
+follows the fourth, after "; " and before the section. What a caller accepts
+beyond the shape of a row stays with the caller: an ordinary base for
+`from`, no `NamedTuple` in a positional call, a `NamedTuple` target for
+`classify`.
+"""
+function _row_indices(space::TestSpace, row; what::AbstractString, section = nothing,
+                      complete::Bool, hint = nothing)
+    n = length(space.names)
+    if row isa Union{Tuple, AbstractVector}
+        length(row) == n || throw(ArgumentError(
+            "$what has $(length(row)) values; the space has $n parameters " *
+            "($(join(space.names, ", ")))" * _cited(section)))
+        row = Tuple(row)
+    elseif !(row isa NamedTuple)
+        throw(ArgumentError(
+            "$what is a $(typeof(row)); a row is a NamedTuple, or a tuple or vector with one " *
+            "value per parameter" * _cited(section)))
+    end
+    idx = try
+        case_indices(space, row)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("$what: " * err.msg))
+    end
+    if complete && any(==(0), idx)
+        unset = space.names[idx .== 0]
+        throw(ArgumentError(
+            "$what, $(repr(row)), has no value for $(join(("`$u`" for u in unset), ", ", " and ")); " *
+            "it must name every parameter" * (hint === nothing ? "" : "; $hint") * _cited(section)))
+    end
+    return idx
+end
+
+"The end of an input error that cites `section`, or nothing when there is none."
+_cited(section) = section === nothing ? "" : " (contract $section)"
+
+"Whether `x` has the shape of a row: a `NamedTuple`, a `Tuple` or a vector."
+_is_row(x) = x isa Union{Tuple, NamedTuple, AbstractVector}
+
+"""
+    _row_list(input; what, fix, noun = "row", as_tuple = false, section = nothing) -> Vector
+
+The caller's collection of rows as a `Vector`, read once with `collect`, so
+an iterator that can be read only once gives all its rows. Each row is read
+later, by `_row_indices`. Two input errors are worded here, each an
+`ArgumentError` that starts with `what`, such as "coverage takes a
+collection of rows":
+
+- a single row, a `NamedTuple` or a collection none of whose elements is a
+  row: "WHAT; wrap a single NOUN in a vector: " followed by the corrected
+  call that `fix(row)` writes, where `noun` is what the caller calls a row,
+  such as "case" for `diagnose`. `row` is `input` itself; with `as_tuple`,
+  an input that is neither a tuple nor a vector, such as a generator, a
+  `Dict` or a `String`, is shown as the tuple of its elements;
+- anything that is not a collection: "WHAT, such as a vector of NamedTuples
+  or tuples; got …", ending with the contract `section` when it is given.
+
+A check that belongs to one caller, such as `coverage` given the space
+first, comes before this one, in the caller.
+"""
+function _row_list(input; what::AbstractString, fix, noun::AbstractString = "row", as_tuple::Bool = false,
+                   section = nothing)
+    input isa NamedTuple && throw(ArgumentError("$what; wrap a single $noun in a vector: $(fix(input))"))
+    rows = applicable(iterate, input) ? collect(input) : nothing
+    rows isa AbstractVector || throw(ArgumentError(
+        "$what, such as a vector of NamedTuples or tuples; got $(repr(input))" * _cited(section)))
+    if !isempty(rows) && !any(_is_row, rows)
+        single = as_tuple && !(input isa Union{Tuple, AbstractVector}) ? Tuple(rows) : input
+        throw(ArgumentError("$what; wrap a single $noun in a vector: $(fix(single))"))
+    end
+    return rows
 end
 
 """
@@ -468,6 +625,83 @@ function from_indices(space::TestSpace, idx::AbstractVector{<:Integer})
         "an index vector for this space has $n entries; got $(length(idx))"))
     set = [i for i in 1:n if idx[i] != 0]
     return NamedTuple{Tuple(space.names[set])}(Tuple(space.values[i][idx[i]] for i in set))
+end
+
+"""
+    _pick(domains, positions) -> Tuple
+
+`(domains[1][positions[1]], domains[2][positions[2]], …)` for a tuple of
+domains and a tuple of value indices: each value is read with its domain's
+type, so the tuple is concrete when the domains' element types are. It is
+generated because a tuple that `ntuple` or `map` builds from more than a few
+types of domain, or from more than 31 domains, is inferred as a tuple of
+`Any`.
+"""
+@generated function _pick(domains::Tuple, positions::Tuple)
+    return :(($((:(domains[$k][positions[$k]]) for k in 1:fieldcount(domains))...),))
+end
+
+"""
+    _Named(space, support)
+
+`from_indices` for the index vectors of one support: `named(idx)` is
+`from_indices(space, idx)` when the nonzero entries of `idx` are those at
+`support`. Measurement names each target it lists with the `_Named` of the
+target's support (`_Lists`, measure.jl).
+
+The support's domains are held as a tuple, so `_values` reads each value
+with its domain's type (`_pick`), and the one call of a `_Named` is the
+barrier. The names are a field, not a type parameter: a `NamedTuple` type
+per support would make the result concrete as well, but compiling one costs
+milliseconds per support, and a measurement has a support for each
+combination of parameters.
+"""
+struct _Named{K, D <: NTuple{K, AbstractVector}}
+    names::NTuple{K, Symbol}
+    support::NTuple{K, Int}
+    domains::D
+end
+
+function _Named(space::TestSpace, support::AbstractVector{<:Integer})
+    domains = Tuple(space.values[support])
+    return _Named{length(support), typeof(domains)}(Tuple(space.names[support]), Tuple(support), domains)
+end
+
+"The values of `idx` at the support, in support order, each read with its domain's type."
+_values(named::_Named{K}, idx::AbstractVector{<:Integer}) where {K} =
+    _pick(named.domains, ntuple(k -> Int(idx[named.support[k]]), Val(K)))
+
+(named::_Named)(idx::AbstractVector{<:Integer}) = NamedTuple{named.names}(_values(named, idx))
+
+"""
+    _code(idx, support, radix) -> Int
+    _decode!(row, code, support, radix) -> row
+
+The mixed-radix code that fixes the order of the targets on one support
+(contract §9.7): `idx`'s entries at `support`, 1-based, read as a 0-based
+number whose first digit varies fastest, digit `p` in radix `radix[p]`. So
+codes 0, 1, 2, … are the assignments with the first parameter of the
+support varying fastest. `_decode!` is the inverse: it writes code `code`'s
+entries into `row` at `support`, leaves the rest of `row` alone, and
+returns it. `TargetList` and `_recount` (request.jl) code engine positions,
+with the ordinary arity as radix; measurement codes value indices, with the
+domain lengths (`_Marks`, measure.jl).
+"""
+function _code(idx::AbstractVector{<:Integer}, support::Vector{Int}, radix::Vector{Int})
+    code, stride = 0, 1
+    for p in support
+        code += (idx[p] - 1) * stride
+        stride *= radix[p]
+    end
+    return code
+end
+
+function _decode!(row::AbstractVector{<:Integer}, code::Integer, support::Vector{Int}, radix::Vector{Int})
+    for p in support
+        row[p] = code % radix[p] + 1
+        code ÷= radix[p]
+    end
+    return row
 end
 
 """
@@ -492,6 +726,18 @@ The tables of [`active_rules`](@ref)`(space, p)`: every table for an ordinary
 row (`p == 0`), and for a negative row at `p` the tables whose scope omits `p`.
 """
 active_tables(space::TestSpace, p::Integer) = space.tables[active_rules(space, p)]
+
+"""
+    _candidates(space, p, v) -> Vector{Vector{Int}}
+
+The value indices a search may assign to each parameter for one kind of row:
+for an ordinary row, `p == 0`, every parameter's ordinary values (contract
+§5.4); for a negative row, `[v]` at `p` and every other parameter's ordinary
+values (§5.5). The vectors may be the space's own, so a caller must not
+change them; `Feasibility` copies them.
+"""
+_candidates(space::TestSpace, p::Int, v::Int) =
+    [q == p ? [v] : space.ordinary[q] for q in eachindex(space.names)]
 
 """
     rule_label(space, k) -> String

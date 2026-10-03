@@ -1,10 +1,7 @@
 # Tutorial
 
-This tutorial builds a test in five levels, and each level adds one idea:
-a one-line call, named parameters, constraints, must-include cases and
-strength, and inspection. A worked example at the end puts them together.
-Every block on this page runs when the documentation is built, and the output
-under it is what it printed.
+This tutorial builds a test in five levels, and each level adds one idea.
+A worked example at the end puts them together.
 
 ## Level 0: one line
 
@@ -442,10 +439,10 @@ coverage(cases)
 iscomplete(coverage(cases))
 ```
 
-[`report`](@ref) is the full account: the guarantee, measured from the rows;
-each excluded combination with the rules that exclude it; the triples the
-pairwise design covers as a bonus; how much the first cases cover, for a suite
-that runs only some of them; and the seed.
+[`report`](@ref) is the full account: the guarantee, its coverage figures
+measured from the rows; each excluded combination with the rules that exclude
+it; the triples the pairwise design covers as a bonus; how much the first
+cases cover, for a suite that runs only some of them; and the seed.
 
 ```@example tutorial
 report(cases)

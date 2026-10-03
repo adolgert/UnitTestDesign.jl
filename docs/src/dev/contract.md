@@ -300,9 +300,12 @@ no run-wide total.
 **3.5** Cache keys include the assignment and the active rule set. Search
 caches are local to one call. An exhausted search is never cached as
 infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
-context too: a generation request, or one `explain` or `classify` call. The
-operation's searches and its final validation share it, and it is released
-with the operation. A `TestSpace` retains nothing from any operation.
+context too: one generation request, or one call to `explain`, `classify`,
+`coverage`, `missing_interactions`, `report` or `followups`. `design_sizes`
+keeps one memo for all its measurements; each design it generates is a
+separate generation request with its own. The operation's searches and its
+final validation share it, and it is released with the operation. A
+`TestSpace` retains nothing from any operation.
 
 **3.6** Generation resolves every target classification, the whole-space
 feasibility check, every must-include completion, and every placement decision.
@@ -318,8 +321,11 @@ does not carry a usable design.
 **3.8** To retry, call again with a larger limit, for example
 `all_pairs(space; feasibility_limit = 10_000_000)`. Raising the limit never
 changes a resolved answer; it can only resolve unknown ones. Two successful
-generation calls that differ only in `feasibility_limit` return identical
-results.
+generation calls that differ only in `feasibility_limit` return the same
+rows in the same order, the same `required`, `covered`, `negative_required`
+and `negative_covered` counts, and exclude the same targets with the same
+status. An implied exclusion's explanation may differ: which sufficient rule
+set it names, its `minimal`, and its `limit` depend on both limits (§3.14).
 
 **3.9** Entry points that search accept `feasibility_limit`: `covering` and its
 fixed-strength forms, `excursions`, `explain`, `coverage`,
@@ -350,7 +356,12 @@ accepts it.
 **3.14** The deletion search starts from the full applicable rule set, which is
 proven to exclude the target, and tries removing one rule at a time, in rule
 order. A rule is removed only when the target is proven infeasible without
-it. A trial that ends unknown keeps the rule.
+it. A trial that ends unknown keeps the rule. Each trial is a search bounded
+by `feasibility_limit` and by what remains of `explanation_limit`, whichever
+is smaller, so either limit can stop it. An unresolved explanation's
+`limit` names the keyword that stopped it: `explanation_limit` when that
+budget stopped a trial or left one untried, and otherwise
+`feasibility_limit`.
 
 **3.15** Proven infeasibility stays proven. Classifying a target as infeasible
 never depends on the explanation search. When `explanation_limit` runs out,
@@ -368,7 +379,10 @@ for a suspect with one, the negative rows at that value. The isolation
 conditions (no other suspect) apply to every kind, including rules that
 name the invalid parameter. A suspect is `inseparable` only when every kind
 is proven to hold no isolating row, and `unknown` when no kind yields one
-and some kind's search reaches the limit.
+and some kind's search reaches the limit. An `inseparable` follow-up gives
+one proof per kind of row searched; each proof's minimality is judged
+within its kind (§3.16), and the union of the proofs is sufficient but need
+not be minimal.
 
 ## 4. Partitions
 
@@ -564,7 +578,11 @@ labeled inclusion-minimal only under §3.16. No clause promises a
 minimum-size rule set.
 
 **8.6** `diagnose` returns hypotheses, not proofs. `followups` prefers small
-changes from a failing case, with no minimum-distance guarantee.
+changes from a failing case, with no minimum-distance guarantee. `diagnose`
+takes the cases and outcomes as observed. A case that breaks a rule, or
+holds more than one `Invalid` value, is ranked like any other. A failing
+case that broke the rules can leave a suspect that no valid case holds,
+which `followups` reports as `inseparable` with no other suspects.
 
 ## 9. Determinism
 
@@ -747,7 +765,12 @@ assigned, and only with ordinary values. Partitions are passed by name.
 
 **12.16** An exception thrown by a predicate is rethrown as an error naming the
 rule's label and argument values, with the original exception as its cause.
-An exception never means forbidden or allowed.
+An exception never means forbidden or allowed. A tabulated rule's predicate
+runs when the space is built (§12.18), so its exception surfaces there. A
+lazily evaluated rule's predicate, including every whole-case rule, runs
+during searches and row checks, so its exception surfaces from whichever
+call evaluated it: a generation, `isallowed`, `explain`, `coverage`,
+`missing_interactions`, `report`, `design_sizes` or `followups`.
 
 **12.17** Predicates must be deterministic and free of observable side effects.
 They may be called more than once. Apart from tabulation (§12.18), call order
@@ -763,10 +786,13 @@ order.
 **12.19** A rule whose scope product exceeds `tabulation_limit` (a `TestSpace`
 keyword, default `10^5` evaluations) is evaluated lazily with a memo. The
 package warns once per rule and suggests a narrower scope. A lazy rule's memo
-belongs to the operation context (§3.5): a generation request, or one
-`explain` or `classify` call. It is keyed by value indices, shared by all of
-that operation's feasibility searches, deletion trials, and final
-validation, and released with the operation. Within an operation it holds
+belongs to the operation context (§3.5): one generation request, or one call
+to `explain`, `classify`, `coverage`, `missing_interactions`, `report` or
+`followups`. `design_sizes` keeps one memo for all its measurements; each
+design it generates is a separate generation request with its own. The memo
+is keyed by value indices, shared by all of that operation's feasibility
+searches, deletion trials, and final validation, and released with the
+operation. Within an operation it holds
 at most one entry per combination of the scope's ordinary values (the full
 product of the ordinary domains for a whole-case rule), so a predicate is
 evaluated at most once per combination per operation. A `TestSpace` retains

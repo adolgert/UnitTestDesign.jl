@@ -2,18 +2,21 @@
 # and 4; contract §1.12, §1.23, §3.10, §3.12, §7.7, §8.3, §8.4).
 #
 # `report` is where verification happens (§1.23): it measures a result's rows
-# with `coverage` machinery (measure.jl), never trusting the bookkeeping, and
-# adds bonus coverage at strength + 1 and the prefix curve. `design_sizes`
-# runs each strategy and measures what it produced. Neither prints a
-# percentage when a target is unresolved (§3.10, §3.12), and neither calls a
-# case count minimal (§8.3, §8.4). With `Invalid` values every figure comes in
-# two parts, ordinary and negative, measured and printed apart (§5.9, §5.10).
+# with `coverage` machinery (measure.jl) instead of reading the recorded
+# counts, and adds bonus coverage at strength + 1, counted only, and the
+# prefix curve. The guarantee line's other parts (must-include rows, an
+# excursion's notes, GND's seed) are copied from the result (`_guarantee`),
+# and recorded exclusions are a fallback for targets the measurement leaves
+# unknown (`_recorded_exclusions`). `design_sizes` runs each strategy and
+# counts what its rows cover. Each call reads a set of rows once and keeps one
+# lazy-rule memo for all its measurements (§3.5). Neither prints a percentage
+# when a target is unresolved (§3.10, §3.12), and neither calls a case count
+# minimal (§8.3, §8.4). With `Invalid` values every figure comes in two
+# parts, ordinary and negative, measured and printed apart (§5.9, §5.10).
 
 
 ## report
 
-"Counts for one part, ordinary or negative: covered, feasible (a lower bound with unknowns), unknown."
-const _PartCounts = NamedTuple{(:covered, :feasible, :unknown), NTuple{3, Int}}
 const _BonusCounts = NamedTuple{(:strength, :covered, :feasible, :unknown, :negative, :applicable, :reason),
                                 Tuple{Int, Int, Int, Int, _PartCounts, Bool, String}}
 const _PrefixPoint = NamedTuple{(:cases, :covered, :feasible, :unknown), NTuple{4, Int}}
@@ -26,9 +29,13 @@ coverage, the exclusions, bonus coverage, and the prefix curve.
 
 What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
 
-- `guarantee::String`: the claim the rows meet, checked by measuring them,
-  such as "5 cases cover all 11 feasible pairs of a 12-combination space (3
-  pairs forbidden, 2 impossible under the constraints)".
+- `guarantee::String`: the claim the rows meet, its coverage figures
+  measured from the rows, such as "5 cases cover all 11 feasible pairs of a
+  12-combination space (3 pairs forbidden, 2 impossible under the
+  constraints)". The rest of the line is what the result recorded at
+  generation (§1.19): the must-include rows kept first, an excursion's
+  distance, base, dropped rows and values that never appear, a full
+  factorial's "every valid row", and GND's seed.
 - `strategy::Symbol`, `n_cases::Int`, `engine::Symbol`, `seed`,
   `n_must_include::Int`: as the result recorded them.
 - `strength::Int`: the strength measured: the result's, or `min(2, number of
@@ -97,19 +104,19 @@ end
 
 """
 Use when you want to check what a generated result promises and see the
-evidence: the guarantee measured from the rows, what the rules excluded and why,
-bonus coverage at the next strength, and how coverage grows over the first
-cases.
+evidence: the guarantee, with its coverage figures measured from the rows, what
+the rules excluded and why, bonus coverage at the next strength, and how
+coverage grows over the first cases.
 
     report(cases::TestCases; feasibility_limit = 1_000_000,
            explanation_limit = 1_000_000) -> Report
 
 Check what a generated result promises and say it in one line, with the
-evidence (contract §1.23): the guarantee, measured from the rows; the targets
-excluded, each with the rules that exclude it; bonus coverage at the next
-strength; the prefix curve, how much the first rows cover, for suites that
-run only part of the cases; and the seed. `show` prints only what generation
-recorded; `report` recounts.
+evidence (contract §1.23): the guarantee, its coverage figures measured from
+the rows; the targets excluded, each with the rules that exclude it; bonus
+coverage at the next strength; the prefix curve, how much the first rows
+cover, for suites that run only part of the cases; and the seed. `show`
+prints only what generation recorded; `report` recounts.
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> space = TestSpace(
@@ -187,11 +194,14 @@ function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_lim
     covering = cases.strategy === :covering
     strength = covering ? cases.strength : min(2, n)
     stronger = covering ? cases.stronger : Pair[]
-    rows = collect(cases)
-    c, prefix, negative = _measure(rows, cases.space; strength, stronger, feasibility_limit,
-                                   explanation_limit)
+    # One call: the rows are read once, and the base and bonus measurements
+    # share one lazy-rule memo, each with its own answer caches (§3.5).
+    memos = rule_memos(cases.space.tables)
+    prepared = _prepare_rows(cases.space, memos, collect(cases))
+    c, prefix, negative = _measure(prepared, cases.space; strength, stronger, memos, feasibility_limit,
+                                   explanation_limit, curves = true)
     recorded = covering ? _recorded_exclusions(cases, c) : Exclusion[]
-    bonus = _bonus(rows, cases.space, strength; feasibility_limit, explanation_limit)
+    bonus = _bonus(prepared, cases.space, strength; memos, feasibility_limit)
     return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c,
                   [c.ordinary.excluded; c.negative.excluded], recorded, bonus,
                   _prefix_points(prefix, c.ordinary), _prefix_points(negative, c.negative), cases.seed,
@@ -202,9 +212,6 @@ end
 _prefix_points(curve::Vector{Int}, part::CoveragePart) =
     _PrefixPoint[(cases = k, covered = curve[k], feasible = part.feasible, unknown = length(part.unknown))
                  for k in eachindex(curve)]
-
-"A part's counts: covered, feasible, and how many targets are unresolved."
-_part_counts(part::CoveragePart) = _PartCounts((part.covered, part.feasible, length(part.unknown)))
 
 """
     _recorded_exclusions(cases, c) -> Vector{Exclusion}
@@ -222,17 +229,16 @@ function _recorded_exclusions(cases::TestCases, c::Coverage)
                      if case_indices(space, e.target) in unresolved]
 end
 
-"Coverage of `rows` at `strength + 1`, ordinary and negative, or why there is none (§3.12)."
-function _bonus(rows, space::TestSpace, strength::Int; feasibility_limit, explanation_limit)
+"Coverage counts of the prepared rows at `strength + 1`, ordinary and negative, or why there are none (§3.12)."
+function _bonus(prepared::PreparedRows, space::TestSpace, strength::Int; memos, feasibility_limit)
     n = length(space.names)
     if strength + 1 > n
         return _BonusCounts((strength + 1, 0, 0, 0, _PartCounts((0, 0, 0)), false,
             "strength $(strength + 1) exceeds the number of parameters, $n"))
     end
-    b = _coverage(rows, space; strength = strength + 1, stronger = Pair[], feasibility_limit,
-                  explanation_limit)
-    return _BonusCounts((strength + 1, b.ordinary.covered, b.ordinary.feasible,
-                         length(b.ordinary.unknown), _part_counts(b.negative), true, ""))
+    b = _measure_counts(prepared, space; strength = strength + 1, stronger = Pair[], memos, feasibility_limit)
+    return _BonusCounts((strength + 1, b.ordinary.covered, b.ordinary.feasible, b.ordinary.unknown,
+                         b.negative, true, ""))
 end
 
 _text(x) = sprint(show, x; context = :typeinfo => Any)
@@ -567,15 +573,18 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     space, _ = _space(:design_sizes, input, constraints)
     n = length(space.names)
     limits = (; feasibility_limit, explanation_limit)
+    # Every measurement of the call shares one lazy-rule memo, each with its
+    # own answer caches; each generation is a request with its own (§3.5).
+    memos = rule_memos(space.tables)
     rows = _SizeRow[]
     none = (nothing, nothing, nothing)   # the negative figures of a row with no case count
     ff = _attempt(() -> full_factorial(space; limit, limits...))
     valid = ff isa TestCases ? length(ff) : nothing
-    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, n, limits))
+    push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, space; memos, feasibility_limit))
     for s in strengths
         s <= n || continue
         design = _attempt(() -> covering(space; strength = s, engine, limits...))
-        push!(rows, _size_row("covering($s)", :covering, s, design, valid, n, limits))
+        push!(rows, _size_row("covering($s)", :covering, s, design, valid, space; memos, feasibility_limit))
     end
     for d in distances
         base = from === nothing ? _default_base(space) : nothing
@@ -586,7 +595,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
             continue
         end
         design = _attempt(() -> excursions(space; distance = d, from, limits...))
-        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, n, limits))
+        push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, space; memos, feasibility_limit))
     end
     return DesignSizes(copy(space.names), length(space), valid, nameof(typeof(engine)), limit,
                        _has_invalid(space), rows)
@@ -612,22 +621,38 @@ function _attempt(f)
     end
 end
 
-"The design's (ordinary, negative) coverage at strength `s`, or `(nothing, nothing)` above `n`."
-function _size_counts(cases::TestCases, s::Int, n::Int, limits)
-    s <= n || return nothing, nothing
-    c = coverage(cases; strength = s, limits...)
-    return _part_counts(c.ordinary), _part_counts(c.negative)
+"""
+    _size_counts(design, space, prepared, s; memos, feasibility_limit) -> (ordinary, negative)
+
+The coverage counts at strength `s` of the design's rows, `prepared` in
+`space`, at the strength and groups `coverage(design; strength = s)`
+measures (`_measured_request`), or `(nothing, nothing)` above the number of
+parameters. `memos` are the lazy-rule memos of `space`'s rules.
+"""
+function _size_counts(design::TestCases, space::TestSpace, prepared, s::Int; memos, feasibility_limit)
+    s <= length(space.names) || return nothing, nothing
+    strength, stronger = _measured_request(design, s, nothing)
+    return _measure_counts(prepared, space; strength, stronger, memos, feasibility_limit)
 end
 
-function _size_row(strategy, kind, level, design, valid, n, limits)
+"""
+    _size_row(strategy, kind, level, design, valid, space; memos, feasibility_limit) -> _SizeRow
+
+One line of `design_sizes`: `design`, generated from `space`, or the
+`ResourceLimitError` that stopped it. The design's rows are measured in
+`space`, not in `design.space`, because `memos` memoize `space`'s rules.
+"""
+function _size_row(strategy, kind, level, design, valid, space::TestSpace; memos, feasibility_limit)
     if design isa ResourceLimitError
         message = "$(design.keyword) = $(_grouped(design.limit)) reached: $(design.what)"
         return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing,
                          nothing, nothing, nothing))
     end
     share = valid === nothing ? nothing : (valid == 0 ? nothing : length(design) / valid)
-    pairs, negative_pairs = _size_counts(design, 2, n, limits)
-    triples, negative_triples = _size_counts(design, 3, n, limits)
+    # The rows are read once for both strengths, and only when one is measured.
+    prepared = length(space.names) < 2 ? nothing : _prepare_rows(space, memos, collect(design))
+    pairs, negative_pairs = _size_counts(design, space, prepared, 2; memos, feasibility_limit)
+    triples, negative_triples = _size_counts(design, space, prepared, 3; memos, feasibility_limit)
     return _SizeRow((strategy, kind, level, :ok, "", length(design), share, pairs, triples,
                      count(hasinvalid, design), negative_pairs, negative_triples))
 end
@@ -730,6 +755,7 @@ function _plain_part(space::TestSpace, part::CoveragePart)
                                    rules = copy(r.rules)) for r in part.rejected])
 end
 
+# Not called in src/: `plain` is for users, who call it qualified, as the `Report` docstring says.
 """
     plain(r::Report)
     plain(c::Coverage)

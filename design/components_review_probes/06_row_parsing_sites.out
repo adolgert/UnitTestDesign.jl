@@ -1,0 +1,47 @@
+== 1. expansion ==
+let var"##interpolated#144" = x
+    (UnitTestDesign._macro_rule)(:forbid, (:a, :b), ((var"##a#142", var"##b#143")->var"##a#142" == 1 && var"##b#143" > var"##interpolated#144"), "@forbid(a == 1 && b > \$x)", "why")
+end
+
+== 2. macro from a module that only imports the package ==
+scope=(:a, :b) label=@forbid(helper(a) && b == 2) source=macro
+forbidden=Set([(2, 2)])
+
+== 3. macro vs listed-names Constraint fields ==
+scope      macro=(:a,)   names=(:a,)
+predicate  macro=var"#2#3"()   names=var"#5#6"()
+polarity   macro=:forbid   names=:forbid
+label      macro="@forbid(a == 1)"   names=""
+source     macro=:macro   names=:names
+pattern    macro=nothing   names=nothing
+
+== 4. row shapes across entry points ==
+coverage vector row                         ok: 1
+coverage rule-breaking row (rejected?)      FieldError: FieldError: type Coverage has no field `rejected`, available fields: `ordinary`, `negative`, `space`, `strength`, `stronger`, `limits`
+diagnose vector row                         ok: :ranked
+diagnose rule-breaking failing row          ok: NamedTuple[(a = 2,), (b = :y,), (a = 2, b = :y)]
+isallowed vector row                        MethodError: MethodError: no method matching isallowed(::TestSpace, ::Vector{Any})
+The function `isallowed` exists, but no method is defined for this combination of argument types.
+
+Closest candidates
+isallowed tuple row                         ok: true
+explain vector row                          MethodError: MethodError: no method matching explain(::TestSpace, ::Vector{Any})
+The function `explain` exists, but no method is defined for this combination of argument types.
+
+Closest candidates are
+all_pairs must_include vector               ok: (a = 1, b = :x)
+all_pairs must_include partial NT           ok: (a = 1, b = :x)
+coverage partial NT                         ArgumentError: ArgumentError: coverage row 1, (a = 1,), has no value for `b`; a row given to coverage names every parameter (contract §1.13)
+diagnose partial NT                         ArgumentError: ArgumentError: diagnose case 1, (a = 1,), has no value for `b`; a case names every parameter
+excursions from partial NT                  ArgumentError: ArgumentError: the excursion base `from` must be a complete row (contract §7.6); it has no value for b
+excursions from vector (values)             ok: (a = 1, b = :x)
+coverage short tuple                        ArgumentError: ArgumentError: coverage row 1 has 1 values; the space has 2 parameters (a, b), and a row given to coverage is complete (contract §1.13)
+diagnose short tuple                        ArgumentError: ArgumentError: diagnose case 1 has 1 values; the space has 2 parameters (a, b), and a case is complete
+must_include short tuple                    ArgumentError: ArgumentError: must_include row 1 has 1 values; the space has 2 parameters
+excursions short tuple from                 ArgumentError: ArgumentError: `from` has 1 values; the space has 2 parameters, a, b, and the base is a complete row (contract §7.6)
+isallowed short tuple                       ArgumentError: ArgumentError: a positional case lists 1 values, but the space has 2 parameters (a, b), and a positional case is complete
+coverage unknown name                       ArgumentError: ArgumentError: coverage row 1: `c` is not a parameter of this space; the parameters are a, b
+must_include unknown name                   ArgumentError: ArgumentError: must_include row 1: `c` is not a parameter of this space; the parameters are a, b
+
+== 5. internal generate_excursion: Vector{Int} means engine positions ==
+from=[2,1] -> base column [2, 1] = (a = 20, b = 1)

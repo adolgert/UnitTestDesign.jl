@@ -187,12 +187,12 @@ is a hypothesis, not a measured result.
 The measurements the package makes about your suite are more relevant than
 any study.
 
-- [`report`](@ref) checks the guarantee by measuring the rows, lists every
-  excluded combination with the rules that exclude it, gives the bonus
-  coverage at the next strength (a pairwise design covers some of the
-  triples too), and prints the prefix curve. The prefix curve says how much
-  the first ``k`` cases cover, which is what you need when a quick CI job
-  runs only part of a design.
+- [`report`](@ref) states the guarantee with its coverage figures measured
+  from the rows, lists every excluded combination with the rules that
+  exclude it, gives the bonus coverage at the next strength (a pairwise
+  design covers some of the triples too), and prints the prefix curve. The
+  prefix curve says how much the first ``k`` cases cover, which is what you
+  need when a quick CI job runs only part of a design.
 - [`coverage`](@ref) measures any set of rows, including a hand-written
   suite, and names the combinations it misses. See [Audit and extend an
   existing suite](../howto/audit_existing.md).

@@ -190,7 +190,9 @@ end
 
     # Inputs are complete and in the space's vocabulary.
     err = try isallowed(space, (n = 1, m = :a)) catch e; e end
-    @test err isa ArgumentError && occursin("complete case", err.msg) && occursin("no value for k", err.msg)
+    @test err isa ArgumentError &&
+          err.msg == "the case, (n = 1, m = :a), has no value for `k`; it must name every parameter; " *
+                     "use explain for a partial assignment (contract §1.25)"
     err = try isallowed(space, (n = 3, m = :a, k = :x)) catch e; e end
     @test err isa ArgumentError && occursin("`n`", err.msg) && occursin("3", err.msg)
     @test_throws ArgumentError isallowed(space, (n = 1, m = :a, k = :x, j = 1))
@@ -209,6 +211,43 @@ end
     @test_throws ArgumentError classify(space, [(n = Invalid(1), m = Invalid(:z))])
     c = only(classify(space, [(n = Invalid(1), k = :y)]))
     @test c.status == :required && c.witness == (n = Invalid(1), m = :b, k = :y)
+end
+
+
+@testitem "isallowed and explain: a vector is read as the tuple of the same values (§1.25, §1.26, §2.11)" setup=[ExplainSetup] begin
+    using Base.CoreLogging: with_logger, NullLogger   # a lazily evaluated rule warns
+    message(f) = try f(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $e" end
+    fields(e) = (e.assignment, e.outcome, e.rules, e.labels, e.minimal, e.witness, e.limit, e.nodes,
+                 e.evaluations)
+    tiny = Partition(:tiny, Returns(1e-9))
+    domains = (n = [1, 2, Invalid(1)], m = [:a, :b, Invalid(:z)], size = [tiny, 100])
+    rules = [@forbid(n == 2 && m == :b), forbid((m = :a, size = :tiny)),
+             forbid(case -> case.n == 1 && case.size == 100; reason = "whole case")]
+    for limit in (10^5, 1)   # the rules tabulated, then evaluated lazily
+        space = with_logger(() -> TestSpace(domains; constraints = rules, tabulation_limit = limit),
+                            NullLogger())
+        # Every row of the product: valid, rule-breaking, negative, two Invalid values.
+        for row in Iterators.product(values(domains)...)
+            named = NamedTuple{keys(domains)}(row)
+            by_name = map(v -> v isa Partition ? v.name : v, collect(Any, row))   # §2.11
+            for vector in (collect(Any, row), by_name)
+                @test isallowed(space, vector) == isallowed(space, row) == isallowed(space, named)
+                @test isequal(fields(explain(space, vector)), fields(explain(space, row)))
+            end
+        end
+        # A malformed vector is refused in the tuple's words.
+        @test message(() -> isallowed(space, [1, :a])) == message(() -> isallowed(space, (1, :a))) ==
+              "the case has 2 values; the space has 3 parameters (n, m, size) (contract §1.25)"
+        @test message(() -> explain(space, [1, :a, :tiny, 1])) ==
+              message(() -> explain(space, (1, :a, :tiny, 1))) ==
+              "the assignment has 4 values; the space has 3 parameters (n, m, size) (contract §1.26)"
+        @test message(() -> isallowed(space, [3, :a, :tiny])) == message(() -> isallowed(space, (3, :a, :tiny)))
+    end
+    # A vector of integers is values, never positions: in this domain order the two differ.
+    space = TestSpace((a = [3, 1, 2], b = [2, 1]); constraints = [forbid((a = 1, b = 2))])
+    @test !isallowed(space, [1, 2]) && !isallowed(space, (1, 2))
+    @test isallowed(space, [3, 1])
+    @test explain(space, [1, 2]).outcome == explain(space, (1, 2)).outcome == :forbidden
 end
 
 

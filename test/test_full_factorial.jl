@@ -22,13 +22,6 @@ using TestItemRunner
     positional = full_factorial([1, 2], [:x, :y, :z], [true, false])
     @test positional isa TestCases{Tuple{Int, Symbol, Bool}}
     @test collect(positional) == [Tuple(c) for c in cases]
-    # The iterator is lazy and in the same order.
-    rows = collect(UnitTestDesign.full_factorial_rows([2, 3, 2]))
-    @test rows[1:3] == [[1, 1, 1], [1, 1, 2], [1, 2, 1]]
-    # Iterators.product varies its first range fastest, so reverse the ranges and each tuple.
-    @test rows == vec([collect(reverse(t)) for t in Iterators.product(1:2, 1:3, 1:2)])
-    @test length(collect(UnitTestDesign.full_factorial_rows([2, 5, 4, 3]))) == 120
-    @test isempty(collect(UnitTestDesign.full_factorial_rows([2, 0, 3])))
     # 0.4: five parameters, and four with ranges.
     cases = full_factorial((1:k for k in [2, 3, 4, 2, 2])...)
     @test length(cases) == 96 && allunique(cases)

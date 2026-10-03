@@ -10,7 +10,7 @@ using TestItemRunner
 
 @testsnippet DiagnoseSetup begin
     using Combinatorics: combinations
-    using UnitTestDesign: Diagnosis, Followup, Suspect
+    using UnitTestDesign: Diagnosis, Followup, FollowupProof, Suspect
 
     "Opus's solver space: fails only when method = :newton and sparse = true."
     newton_space() = TestSpace((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
@@ -84,12 +84,68 @@ using TestItemRunner
     end
 
     """
+    The rows of one kind in the product of `space`'s domains that the rules
+    numbered `rules` alone allow: `kind` is `NamedTuple()` for ordinary rows
+    and `(p = v,)` for negative rows with `v` at `p`. By enumeration and
+    `isallowed` on a space with only those rules.
+    """
+    function kind_rows(space, kind, rules)
+        names = Tuple(parameters(space))
+        only_these = TestSpace(NamedTuple{names}(Tuple(space.values)); constraints = space.constraints[rules])
+        invalid(row) = count(x -> x isa Invalid, values(row))
+        of_kind(row) = isempty(kind) ? invalid(row) == 0 : invalid(row) == 1 && holds(row, kind)
+        rows = [NamedTuple{names}(values) for values in Iterators.product(space.values...)]
+        return filter(row -> of_kind(row) && isallowed(only_these, row), rows)
+    end
+
+    """
+    Check an inseparable follow-up's proofs by brute force, each within its
+    kind of case: its rules and other suspects alone leave no row of that kind
+    that holds the suspect and none of them, and, when it is `:verified`,
+    dropping any one rule or other suspect leaves one. Then check that the
+    union fields combine the proofs as the `Followup` docstring says. `others`
+    is every other suspect, in rank order.
+    """
+    function check_proofs(space, f, others)
+        if count(x -> x isa Invalid, values(f.suspect)) > 1
+            @test isempty(f.proofs)   # inseparable without a search (§5.7)
+            return nothing
+        end
+        @test !isempty(f.proofs)
+        @test isequal([p.searched for p in f.proofs], f.searched)
+        for p in f.proofs
+            isolating(rules, blockers) = [row for row in kind_rows(space, p.searched, rules)
+                                          if holds(row, f.suspect) && !any(o -> holds(row, o), blockers)]
+            @test isempty(isolating(p.rules, p.others))
+            if p.minimal === :verified
+                for r in p.rules
+                    @test !isempty(isolating(filter(!=(r), p.rules), p.others))
+                end
+                for o in p.others
+                    @test !isempty(isolating(p.rules, filter(!=(o), p.others)))
+                end
+            end
+            @test (p.limit !== nothing) == (p.minimal === :unresolved)
+            @test p.labels == [f.labels[findfirst(==(r), f.rules)] for r in p.rules]
+        end
+        @test f.rules == sort!(unique([r for p in f.proofs for r in p.rules]))
+        @test f.others == [o for o in others if any(p -> o in p.others, f.proofs)]
+        minimals = [p.minimal for p in f.proofs]
+        @test f.minimal === (any(==(:unresolved), minimals) ? :unresolved :
+                             all(==(:verified), minimals) ? :verified : :not_applicable)
+        limits = [p.limit for p in f.proofs if p.limit !== nothing]
+        @test f.limit == (isempty(limits) ? nothing : first(limits))
+    end
+
+    """
     Check every follow-up of `d` against the space's valid rows, ordinary and
     negative, by brute force: a found case is a valid row of the kind it
     names, holds its suspect and no other, and its distance is right; an
     indistinguishable suspect holds the others it names; an inseparable
-    suspect has no valid row of either kind that isolates it, and every kind
-    of case that could hold it was searched. Returns the statuses.
+    suspect has no valid row of either kind that isolates it, every kind of
+    case that could hold it was searched, and each kind's proof holds within
+    that kind (`check_proofs`). Only an inseparable suspect has proofs.
+    Returns the statuses.
     """
     function check_followups(d, fs)
         space = d.space
@@ -110,6 +166,7 @@ using TestItemRunner
                     Tuple(space.values[p][d.rows[f.from][p]] for p in eachindex(space.values)))
                 @test f.changes == count(k -> !same(f.case[k], failing_row[k]), keys(f.case))
                 @test isempty(f.others) && isempty(f.rules) && f.limit === nothing
+                @test isempty(f.proofs)   # even when a kind searched before was proven
                 # The kinds searched are a prefix of the kinds that could hold it.
                 kinds = row_kinds(space, f.suspect)
                 @test isequal(f.searched, kinds[1:length(f.searched)])
@@ -117,13 +174,16 @@ using TestItemRunner
                 @test !isempty(f.others)
                 @test all(o -> o in others && holds(f.suspect, o), f.others)
                 @test f.case === nothing && f.kind === :none
+                @test isempty(f.proofs)
             elseif f.status === :inseparable
                 @test !any(isolates, every)   # proven: no valid row of any kind isolates it
                 @test all(o -> o in others, f.others)
                 @test f.case === nothing && f.kind === :none
                 @test isequal(f.searched, row_kinds(space, f.suspect))
+                check_proofs(space, f, others)
             else
                 @test f.status === :unknown && f.kind === :none
+                @test isempty(f.proofs)
             end
         end
         return [f.status for f in fs]
@@ -297,7 +357,8 @@ end
                              "(b = 1, c = 2), under rule 1 ($reason)"
     @test fs[2].case == (a = 1, b = 1, c = 2)
 
-    # A failing case that broke the rules leaves a suspect no valid case holds.
+    # A failing case that broke the rules is ranked like any other, and leaves a
+    # suspect no valid case holds (§8.6).
     rows = [(a = 2, b = 2, c = 2), (a = 1, b = 1, c = 1), (a = 2, b = 1, c = 1), (a = 1, b = 2, c = 1)]
     d = diagnose(rows, [true, true, false, true]; space)
     fs = followups(d)
@@ -327,6 +388,7 @@ end
     limited = followups(d; feasibility_limit = 1)
     @test limited[1].status === :unknown
     @test limited[1].case === nothing && limited[1].limit == (:feasibility_limit => 1)
+    @test isempty(limited[1].proofs)
     @test sprint(show, limited[1]) ==
         "(a = 1, b = 2): unknown; feasibility_limit = 1 reached; retry with a larger limit"
     # A proof that needs no node stands under any limit; only its minimality waits (§3.15).
@@ -338,6 +400,51 @@ end
     @test check_followups(d, retried) == [:found, :inseparable, :found]
     @test retried[2].minimal === :verified
     @test retried[2].others == [(b = 2, d = 1)] && retried[2].rules == [1]
+
+    # Ordinary cases are proven to hold no isolating case at once, by the rule
+    # that reads n; the negative search at n reaches the limit. The question is
+    # open, so no proof is kept.
+    space = TestSpace((a = [1, 2], b = [1, 2], c = [1, 2], n = [1, Invalid(0)]);
+                      constraints = [forbid((a = 2, b = 1)), forbid((b = 2, c = 1)),
+                                     forbid(:a, :n) do a, n; a == 2 end])
+    rows = [(a = 1, b = 1, c = 1, n = 1), (a = 1, b = 2, c = 2, n = Invalid(0)), (a = 2, b = 1, c = 1, n = 1)]
+    d = diagnose(rows, [true, true, false]; space, strength = 1)
+    f = only(followups(d; feasibility_limit = 1))
+    @test f.status === :unknown && isempty(f.proofs)
+    @test isequal(f.searched, NamedTuple[NamedTuple(), (n = Invalid(0),)])
+    @test only(followups(d)).status === :found
+end
+
+
+@testitem "followups: an isolation search that reaches its limit returns the limit that stopped it (§3.17)" setup=[DiagnoseSetup] begin
+    using UnitTestDesign: RuleTable, _isolate, _isolation_table, _Found, _Unknown, rule_memos
+    # c, d and e differ pairwise. (a = 2,) is the only suspect, so its search
+    # among ordinary cases in domain order is the search `explain` makes. That
+    # search and the one that starts from the failing case each take 3 nodes,
+    # so feasibility_limit 1 and 2 stop them. explanation_limit differs from
+    # both, so the limit named cannot be the wrong one.
+    space = TestSpace((a = [1, 2], c = 1:3, d = 1:3, e = 1:3);
+                      constraints = [forbid(:c, :d) do c, d; c == d end, forbid(:c, :e) do c, e; c == e end,
+                                     forbid(:d, :e) do d, e; d == e end])
+    rows = [(a = 1, c = 1, d = 2, e = 3), (a = 2, c = 1, d = 2, e = 3)]
+    d = diagnose(rows, [true, false]; space, strength = 1)
+    s = only(d.suspects)
+    isolation = RuleTable[_isolation_table(t.key) for t in d.suspects]
+    for feasibility_limit in 1:3
+        limits = (feasibility_limit, 100)
+        e = explain(space, s.combination; feasibility_limit, explanation_limit = 100)
+        @test e.outcome === (feasibility_limit < 3 ? :unknown : :completable)
+        # With no starts (domain order) and starting from the failing case.
+        for starts in (Int[], [2])
+            r = _isolate(d, s, (0, 0), Int[], isolation, rule_memos(space.tables), limits, starts)
+            if e.outcome === :unknown
+                @test r isa _Unknown && r.limit == e.limit == (:feasibility_limit => feasibility_limit)
+            else
+                @test r isa _Found
+            end
+        end
+        @test only(followups(d; feasibility_limit, explanation_limit = 100)).limit == e.limit
+    end
 end
 
 
@@ -349,6 +456,7 @@ end
             (n = 1, m = Invalid(:z), k = :y),
             (n = Invalid(-1), m = :b, k = :y), (n = Invalid(-1), m = Invalid(:z), k = :y)]
     passed = [true, true, true, true, false, false]
+    # The last row holds two Invalid values and is ranked like any other (§8.6).
     d = diagnose(rows, passed; space)
     @test Dict(s.combination => s.failing for s in d.suspects) == oracle_suspects(rows, passed, 2)
     @test [s.combination for s in d.suspects] ==
@@ -362,8 +470,9 @@ end
     @test hasinvalid(fs[2].case) && isallowed(space, fs[2].case)
     @test !holds(fs[2].case, d.suspects[1].combination)
     @test fs[1].case == (n = Invalid(-1), m = :a, k = :y)
-    # Two Invalid values: no valid case holds them (§5.7).
+    # Two Invalid values: no valid case holds them (§5.7), and no search ran, so no proof.
     @test fs[3].others == [] && fs[3].rules == []
+    @test isempty(fs[3].searched) && isempty(fs[3].proofs)
     @test sprint(show, fs[3]) == "(n = Invalid(-1), m = Invalid(:z)): inseparable; it has more than " *
                                  "one Invalid value, and a case holds at most one"
 end
@@ -385,21 +494,32 @@ end
         @test f.case == (n = Invalid(0), b = 2) && f.kind === :negative
         @test (f.from, f.changes) == (3, 0)
         @test isequal(f.searched, NamedTuple[NamedTuple(), (n = Invalid(0),)])
+        # Ordinary cases were proven to hold no isolating case first; the negative
+        # case settles the question, so no proof is kept.
+        @test isempty(f.proofs)
         @test sprint(show, f) == "(b = 2,): found negative case (n = Invalid(0), b = 2), failing case 3 itself"
     end
 
     # At strength 2 the pair (n = Invalid(0), b = 2) is a suspect too. Ordinary
     # cases cannot hold b = 2 and the negative one holds the pair, so the value
-    # is inseparable, and the explanation names both kinds of case.
+    # is inseparable, and each kind of case has its own proof.
     d = diagnose(rows, passed; space)
     fs = followups(d)
     @test check_followups(d, fs) == [:inseparable, :indistinguishable]
     f = fs[1]
     @test f.others == [(n = Invalid(0), b = 2)] && f.rules == [1]
     @test isequal(f.searched, NamedTuple[NamedTuple(), (n = Invalid(0),)])
-    @test sprint(show, f) == "(b = 2,): inseparable; every valid case holding it also holds " *
-        "(n = Invalid(0), b = 2), under rule 1 on (n, b); searched ordinary cases and negative cases " *
-        "with n = Invalid(0)"
+    ordinary, negative = f.proofs
+    @test ordinary.rules == [1] && isempty(ordinary.others) && ordinary.minimal === :verified
+    # The negative case at n holds the pair outright: a direct proof, with no rule.
+    @test isempty(negative.rules) && negative.others == [(n = Invalid(0), b = 2)]
+    @test negative.minimal === :not_applicable && negative.limit === nothing
+    @test f.minimal === :not_applicable && f.limit === nothing
+    @test isempty(fs[2].proofs)
+    # The proofs differ, so the line gives each kind's, not the union.
+    @test sprint(show, f) == "(b = 2,): inseparable; in ordinary cases, no valid case holds it: " *
+        "rule 1 on (n, b) excludes it; in negative cases with n = Invalid(0), every valid case " *
+        "holding it also holds (n = Invalid(0), b = 2)"
 
     # An ordinary case wins a tie in changes, and needs no rule to be skipped.
     free = TestSpace((n = [1, 2, Invalid(0)], b = [1, 2], c = [:x, :y]))
@@ -410,6 +530,209 @@ end
     @test check_followups(d, fs) == [:found]
     @test fs[1].kind === :ordinary && fs[1].changes == 0
     @test isequal(fs[1].searched, NamedTuple[NamedTuple()])   # a failing case itself stops the search
+end
+
+
+@testitem "followups: kinds of case that need different rules each keep their own proof (§3.16, §3.17; probe 04 Example A)" setup=[DiagnoseSetup] begin
+    # Rule 1 keeps a = 2 out of every valid case. Rule 2 reads n, so it keeps
+    # a = 2 out of ordinary cases only (§5.5). The failing case broke both.
+    reasons = ["a = 2 never, whatever b", "a = 2 never with an ordinary n"]
+    space = TestSpace((a = [1, 2], b = [1, 2], n = [1, Invalid(0)]);
+                      constraints = [forbid(:a, :b; reason = reasons[1]) do a, b; a == 2 end,
+                                     forbid(:a, :n; reason = reasons[2]) do a, n; a == 2 end])
+    rows = [(a = 1, b = 1, n = 1), (a = 1, b = 2, n = Invalid(0)), (a = 2, b = 1, n = 1)]
+    d = diagnose(rows, [true, true, false]; space, strength = 1)
+    fs = followups(d)
+    @test check_followups(d, fs) == [:inseparable]
+    f = only(fs)
+    @test f.rules == [1, 2] && f.labels == reasons && isempty(f.others)
+    @test f.minimal === :verified && f.limit === nothing
+    @test f.proofs isa Vector{FollowupProof} && length(f.proofs) == 2
+    # The deletion search tries rule 1 first. In ordinary cases rule 2 alone
+    # suffices, so rule 1 goes; in negative cases at n, rule 2 does not apply.
+    ordinary, negative = f.proofs
+    @test isequal(ordinary.searched, NamedTuple()) && ordinary.rules == [2] && ordinary.labels == reasons[2:2]
+    @test isempty(ordinary.others) && ordinary.minimal === :verified && ordinary.limit === nothing
+    @test isequal(negative.searched, (n = Invalid(0),)) && negative.rules == [1] && negative.labels == reasons[1:1]
+    @test isempty(negative.others) && negative.minimal === :verified && negative.limit === nothing
+    # Each proof is minimal for its kind; the union is not minimal as a whole:
+    # rule 1 alone keeps a = 2 out of both kinds.
+    @test all(k -> !any(row -> holds(row, f.suspect), kind_rows(space, k, [1])), f.searched)
+    @test sprint(show, f) == "(a = 2,): inseparable; in ordinary cases, no valid case holds it: " *
+        "rule 2 (a = 2 never with an ordinary n) excludes it; in negative cases with n = Invalid(0), " *
+        "no valid case holds it: rule 1 (a = 2 never, whatever b) excludes it"
+end
+
+
+@testitem "followups: a proof with another suspect, per kind of case, and when the kinds agree (probe 04 Examples B and B reversed)" setup=[DiagnoseSetup] begin
+    # The failing case is valid. The whole-case rule never applies to a negative
+    # case (§5.6), and on ordinary cases it repeats the pair rule.
+    pair = forbid((a = 2, b = 2); reason = "a = 2 needs b = 1")
+    whole = forbid(; reason = "whole-case: no a = 2 with b = 2") do c; c.a == 2 && c.b == 2 end
+    domains = (a = [1, 2], b = [1, 2], n = [1, Invalid(0)])
+    rows = [(a = 1, b = 2, n = 1), (a = 1, b = 2, n = Invalid(0)), (a = 2, b = 1, n = 1)]
+    d = diagnose(rows, [true, true, false]; space = TestSpace(domains; constraints = [pair, whole]),
+                 strength = 1)
+    fs = followups(d)
+    @test check_followups(d, fs) == [:inseparable, :found]
+    f = fs[1]
+    @test f.others == [(b = 1,)] && f.rules == [1, 2] && f.minimal === :verified
+    @test [p.rules for p in f.proofs] == [[2], [1]]
+    @test all(p -> p.others == [(b = 1,)] && p.minimal === :verified, f.proofs)
+    @test sprint(show, f) == "(a = 2,): inseparable; in ordinary cases, every valid case holding it " *
+        "also holds (b = 1,), under rule 2 (whole-case: no a = 2 with b = 2); in negative cases with " *
+        "n = Invalid(0), every valid case holding it also holds (b = 1,), under rule 1 (a = 2 needs b = 1)"
+    @test isempty(fs[2].proofs)
+
+    # The whole-case rule first: both kinds keep the pair rule, now rule 2. The
+    # proofs agree, so the line is the union's, which is each kind's proof.
+    d = diagnose(rows, [true, true, false]; space = TestSpace(domains; constraints = [whole, pair]),
+                 strength = 1)
+    fs = followups(d)
+    @test check_followups(d, fs) == [:inseparable, :found]
+    f = fs[1]
+    @test f.others == [(b = 1,)] && f.rules == [2] && f.minimal === :verified
+    @test [p.rules for p in f.proofs] == [[2], [2]] && all(p -> p.others == [(b = 1,)], f.proofs)
+    @test sprint(show, f) == "(a = 2,): inseparable; every valid case holding it also holds (b = 1,), " *
+        "under rule 2 (a = 2 needs b = 1); searched ordinary cases and negative cases with n = Invalid(0)"
+end
+
+
+@testitem "followups: kinds of case that need different other suspects each keep their own (probe 04 Example D)" setup=[DiagnoseSetup] begin
+    # n has one ordinary value, so in ordinary cases the other suspect
+    # (a = 2, n = 1) alone blocks a = 2; negative cases at n need the rule and
+    # (a = 2, b = 1).
+    space = TestSpace((a = [1, 2], b = [1, 2], n = [1, Invalid(0)]);
+                      constraints = [forbid((a = 2, b = 2); reason = "a = 2 needs b = 1")])
+    rows = [(a = 1, b = 2, n = 1), (a = 1, b = 2, n = Invalid(0)), (a = 2, b = 1, n = 1)]
+    d = diagnose(rows, [true, true, false]; space, strength = 2)
+    fs = followups(d)
+    @test check_followups(d, fs) ==
+        [:inseparable, :found, :indistinguishable, :indistinguishable, :indistinguishable]
+    f = fs[1]
+    @test f.suspect == (a = 2,)
+    @test f.others == [(a = 2, b = 1), (a = 2, n = 1)] && f.rules == [1] && f.minimal === :verified
+    ordinary, negative = f.proofs
+    @test isempty(ordinary.rules) && ordinary.others == [(a = 2, n = 1)] && ordinary.minimal === :verified
+    @test negative.rules == [1] && negative.others == [(a = 2, b = 1)] && negative.minimal === :verified
+    # The union is not minimal as a whole: the rule and (a = 2, b = 1) alone
+    # leave no isolating case of either kind.
+    @test all(k -> !any(row -> holds(row, f.suspect) && !holds(row, (a = 2, b = 1)), kind_rows(space, k, [1])),
+              f.searched)
+    @test sprint(show, f) == "(a = 2,): inseparable; in ordinary cases, every valid case holding it " *
+        "also holds (a = 2, n = 1); in negative cases with n = Invalid(0), every valid case holding it " *
+        "also holds (a = 2, b = 1), under rule 1 (a = 2 needs b = 1)"
+    @test all(g -> isempty(g.proofs), fs[2:end])
+end
+
+
+@testitem "followups: the union's minimal is unresolved if any kind's is, verified if every kind's is, else not_applicable" setup=[DiagnoseSetup] begin
+    # Every kind verified (probe 04 Example A).
+    space = TestSpace((a = [1, 2], b = [1, 2], n = [1, Invalid(0)]);
+                      constraints = [forbid(:a, :b) do a, b; a == 2 end, forbid(:a, :n) do a, n; a == 2 end])
+    rows = [(a = 1, b = 1, n = 1), (a = 1, b = 2, n = Invalid(0)), (a = 2, b = 1, n = 1)]
+    f = only(followups(diagnose(rows, [true, true, false]; space, strength = 1)))
+    @test [p.minimal for p in f.proofs] == [:verified, :verified]
+    @test f.minimal === :verified && f.limit === nothing
+
+    # One kind direct, none unresolved (probe 04 Example C): not_applicable.
+    space = TestSpace((n = [1, Invalid(0)], b = [1, 2]); constraints = [forbid((n = 1, b = 2))])
+    rows = [(n = 1, b = 1), (n = Invalid(0), b = 1), (n = Invalid(0), b = 2)]
+    d = diagnose(rows, [true, true, false]; space)
+    f = followups(d)[1]
+    @test [p.minimal for p in f.proofs] == [:verified, :not_applicable]
+    @test f.minimal === :not_applicable && f.limit === nothing
+
+    # One kind direct and another unresolved: unresolved, with that kind's limit.
+    fs = followups(d; explanation_limit = 1)
+    @test check_followups(d, fs) == [:inseparable, :indistinguishable]
+    f = fs[1]
+    @test [p.minimal for p in f.proofs] == [:unresolved, :not_applicable]
+    @test f.proofs[1].limit == (:explanation_limit => 1) && f.proofs[2].limit === nothing
+    @test f.minimal === :unresolved && f.limit == (:explanation_limit => 1)
+end
+
+
+@testitem "followups: a kind of case left unresolved keeps its own limit, and the union takes the first (§3.15)" setup=[DiagnoseSetup] begin
+    # Probe 04 Example B. Example A's trials cost no nodes, so no limit leaves
+    # it unresolved; here 2 is the smallest explanation_limit that leaves one
+    # kind unresolved and the other verified.
+    space = TestSpace((a = [1, 2], b = [1, 2], n = [1, Invalid(0)]);
+                      constraints = [forbid((a = 2, b = 2); reason = "a = 2 needs b = 1"),
+                                     forbid(; reason = "whole-case: no a = 2 with b = 2") do c
+                                         c.a == 2 && c.b == 2
+                                     end])
+    rows = [(a = 1, b = 2, n = 1), (a = 1, b = 2, n = Invalid(0)), (a = 2, b = 1, n = 1)]
+    d = diagnose(rows, [true, true, false]; space, strength = 1)
+    fs = followups(d; explanation_limit = 2)
+    @test check_followups(d, fs) == [:inseparable, :found]
+    f = fs[1]
+    ordinary, negative = f.proofs
+    @test ordinary.rules == [2] && ordinary.minimal === :unresolved
+    @test ordinary.limit == (:explanation_limit => 2)
+    @test negative.rules == [1] && negative.minimal === :verified && negative.limit === nothing
+    @test f.rules == [1, 2] && f.minimal === :unresolved && f.limit == (:explanation_limit => 2)
+    @test sprint(show, f) == "(a = 2,): inseparable; in ordinary cases, every valid case holding it " *
+        "also holds (b = 1,), under rule 2 (whole-case: no a = 2 with b = 2) (whether each is needed is " *
+        "unresolved: explanation_limit = 2 reached); in negative cases with n = Invalid(0), every valid " *
+        "case holding it also holds (b = 1,), under rule 1 (a = 2 needs b = 1)"
+
+    # The first kind verified and the second unresolved: the union's limit is
+    # the second's. Rule 4 reads n and keeps a = 2 out of ordinary cases at
+    # once; negative cases need the others, and one trial reaches the limit.
+    space = TestSpace((a = [1, 2], b = [1, 2], c = [1, 2], n = [1, Invalid(0)]);
+                      constraints = [forbid((a = 2, b = 1)), forbid((a = 2, c = 1)), forbid((b = 2, c = 2)),
+                                     forbid(:a, :n) do a, n; a == 2 end])
+    rows = [(a = 1, b = 1, c = 1, n = 1), (a = 1, b = 2, c = 1, n = Invalid(0)), (a = 2, b = 2, c = 2, n = 1)]
+    d = diagnose(rows, [true, true, false]; space, strength = 1)
+    fs = followups(d; feasibility_limit = 1)
+    @test check_followups(d, fs) == [:inseparable, :unknown]
+    f = fs[1]
+    @test [p.minimal for p in f.proofs] == [:verified, :unresolved]
+    @test f.proofs[1].limit === nothing && f.proofs[2].limit == (:feasibility_limit => 1)
+    @test f.minimal === :unresolved && f.limit == (:feasibility_limit => 1)
+end
+
+
+@testitem "followups: an unresolved proof with no other suspect notes its limit in parentheses, since \"; \" separates the clauses" setup=[DiagnoseSetup] begin
+    # Rules 1 and 3 read n and m, so negative cases at n need rules 2 and 3,
+    # and at m rules 1 and 2: the proofs differ. At explanation_limit = 3 only
+    # the ordinary proof is unresolved, and its note comes before the next kind.
+    space = TestSpace((a = [1, 2], b = [1, 2], n = [1, Invalid(0)], m = [1, Invalid(0)]);
+                      constraints = [forbid(:a, :b, :n) do a, b, n; a == 2 && b == 1 end,
+                                     forbid((a = 2, b = 2)),
+                                     forbid(:a, :b, :m) do a, b, m; a == 2 && b == 1 end])
+    rows = [(a = 1, b = 1, n = 1, m = 1), (a = 1, b = 2, n = Invalid(0), m = 1),
+            (a = 1, b = 2, n = 1, m = Invalid(0)), (a = 2, b = 1, n = 1, m = 1)]
+    d = diagnose(rows, [true, true, true, false]; space, strength = 1)
+    fs = followups(d; explanation_limit = 3)
+    @test check_followups(d, fs) == [:inseparable]
+    f = only(fs)
+    @test [p.rules for p in f.proofs] == [[2, 3], [2, 3], [1, 2]] && all(p -> isempty(p.others), f.proofs)
+    @test [p.minimal for p in f.proofs] == [:unresolved, :verified, :verified]
+    @test sprint(show, f) == "(a = 2,): inseparable; in ordinary cases, no valid case holds it: rules 2 and 3 " *
+        "together exclude it (rule 2 on (a, b); rule 3 on (a, b, m)) (whether each rule is needed is " *
+        "unresolved: explanation_limit = 3 reached); in negative cases with n = Invalid(0), no valid case " *
+        "holds it: rules 2 and 3 together exclude it (rule 2 on (a, b); rule 3 on (a, b, m)); in negative " *
+        "cases with m = Invalid(0), no valid case holds it: rules 1 and 2 together exclude it (rule 1 on " *
+        "(a, b, n); rule 2 on (a, b))"
+
+    # So does a line of one proof, or of proofs that agree, before the kinds searched.
+    function unresolved(domains, rows)
+        space = TestSpace(domains; constraints = [forbid((a = 2, b = 1)), forbid((a = 2, b = 2))])
+        d = diagnose(rows, [true, true, false]; space, strength = 1)
+        fs = followups(d; explanation_limit = 1)
+        @test check_followups(d, fs) == [:inseparable]
+        @test all(p -> p.minimal === :unresolved && isempty(p.others), only(fs).proofs)
+        return sprint(show, only(fs))
+    end
+    line = "(a = 2,): inseparable; no valid case holds it: rules 1 and 2 together exclude it (rule 1 on " *
+           "(a, b); rule 2 on (a, b)) (whether each rule is needed is unresolved: explanation_limit = 1 reached)"
+    @test unresolved((a = [1, 2], b = [1, 2], c = [1, 2]),
+                     [(a = 1, b = 1, c = 1), (a = 1, b = 2, c = 2), (a = 2, b = 1, c = 1)]) == line
+    @test unresolved((a = [1, 2], b = [1, 2], n = [1, Invalid(0)]),
+                     [(a = 1, b = 1, n = 1), (a = 1, b = 2, n = Invalid(0)), (a = 2, b = 1, n = 1)]) ==
+          line * "; searched ordinary cases and negative cases with n = Invalid(0)"
 end
 
 

@@ -28,6 +28,7 @@ export realize
 
 include("rule_table.jl")
 include("constraints.jl")
+include("constraint_macros.jl")
 include("space.jl")
 include("feasibility.jl")
 include("explain.jl")

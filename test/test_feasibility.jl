@@ -494,7 +494,7 @@ end
                 tally[whole ? :whole : :lazy] += 1
                 lazy = function (key)
                     all(>(0), key) || error("rule called with an unset parameter")  # §1.6
-                    return key in forbidden
+                    return Tuple(key) in forbidden
                 end
                 push!(tables, RuleTable(scope, lazy))
             else
@@ -657,7 +657,7 @@ end
 
 
 @testitem "feasibility: the lazy-rule memo is the operation's, shared by its trials (§3.5, §12.19)" setup=[FeasibilitySetup] begin
-    using UnitTestDesign: memo_size, rule_memos
+    using UnitTestDesign: memo_size, rule_memos, RuleMemo
     # A lazy three-parameter rule and a tabulated one, as in Fable's solver:
     # (y = 2, z = 1) is implied, so its explanation runs deletion trials.
     calls = Ref(0)
@@ -668,7 +668,7 @@ end
     tables = [lazy, table([1, 3], (2, 1))]
     cands = [[1, 2], [1, 2, 3], [1, 2]]
     f = Feasibility(cands, tables)
-    @test f.rule_memo[1] isa Dict{NTuple{3, Int}, Bool} && f.rule_memo[2] === nothing
+    @test f.rule_memo[1] isa RuleMemo && length(f.rule_memo[1].key) == 3 && f.rule_memo[2] === nothing
     @test memo_size(f) == 0
     e = explain_partial(f, [0, 2, 1])
     @test (e.outcome, e.rules, e.minimal) == (:infeasible, [1, 2], :verified)
@@ -687,7 +687,7 @@ end
     # ... but they must fit the tables.
     @test_throws ArgumentError Feasibility(cands, tables; memos = [nothing, nothing])
     @test_throws ArgumentError Feasibility(cands, tables; memos = rule_memos(tables[[1]]))
-    @test_throws ArgumentError Feasibility(cands, tables; memos = [Dict{NTuple{2, Int}, Bool}(), nothing])
+    @test_throws ArgumentError Feasibility(cands, tables; memos = [RuleMemo(2), nothing])
     # A fresh object starts empty, and the table itself keeps nothing.
     @test memo_size(Feasibility(cands, tables)) == 0
     @test !hasfield(UnitTestDesign._LazyRule{3}, :memo)

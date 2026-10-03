@@ -503,6 +503,23 @@ end
 end
 
 
+@testitem "coverage: one call evaluates a lazy rule at most once per assignment (§3.5, §12.19)" begin
+    # A whole-case rule is lazy. One coverage call is one operation, so its
+    # row checks, target searches and deletion trials share one memo.
+    seen = NTuple{4, Int}[]
+    space = TestSpace((a = 1:2, b = 1:2, c = 1:2, d = 1:3);
+        constraints = [forbid(case -> (push!(seen, Tuple(case)); case.a == case.b == 2 && case.d == 3);
+                              reason = "counted")])
+    design = all_pairs(space)
+    empty!(seen)
+    c = coverage(design; strength = 3)
+    # The call searched: some triples are missing, and one is excluded.
+    @test !isempty(c.ordinary.missing) && !isempty(c.ordinary.excluded)
+    @test !isempty(seen)
+    @test allunique(seen)
+end
+
+
 @testitem "coverage: the per-group breakdown; overlapping stronger groups (§1.8, §11.7, §11.8)" setup=[Checker, MeasureSetup] begin
     f = overlapping_groups
     space = test_space(f)
@@ -631,6 +648,54 @@ end
         @test issorted(position.(c.ordinary.missing))
         @test issorted(position.([e.target for e in c.ordinary.excluded]))
     end
+end
+
+
+@testitem "coverage: a block's targets come in the order of their codes (§9.7)" begin
+    using UnitTestDesign: FeasibilityContext, _Lists, _measure_block!, _decode!, from_indices
+    # _measure_block! steps one buffer through a block's targets. They are the
+    # codes 0, 1, 2, … of _decode! over the rest of the support, in radix the
+    # ordinary arity, as positions among each parameter's ordinary values,
+    # which Invalid values between them make differ from value indices.
+    space = TestSpace((a = [Invalid(0), 1, 2], b = [:x, Invalid(:z), :y, :w], c = [true, false],
+                       d = [1, 2, 3, Invalid(9)]))
+    arity = length.(space.ordinary)
+    for (support, p) in (([1, 2, 3, 4], 0), ([2, 4], 0), ([3], 0), ([1, 2, 4], 1), ([2, 4], 2), ([2, 4], 4),
+                         ([4], 4))
+        rest = filter(!=(p), support)
+        t = zeros(Int, 4)
+        p == 0 || (t[p] = only(space.invalid[p]))
+        fixed = copy(t)
+        lists = _Lists(1_000_000)   # no rule, so every target is missing, listed as met
+        counts = _measure_block!(lists, FeasibilityContext(space), support, rest, t, nothing)
+        n = prod(arity[rest]; init = 1)
+        @test counts == (0, n, 0, 0)
+        expected = map(0:(n - 1)) do code
+            idx = copy(fixed)
+            positions = _decode!(zeros(Int, 4), code, rest, arity)
+            for q in rest
+                idx[q] = space.ordinary[q][positions[q]]
+            end
+            from_indices(space, idx)
+        end
+        @test lists.missing == expected
+        @test t == fixed   # the buffer is cleared again
+    end
+end
+
+
+@testitem "coverage: a complete design classifies nothing and allocates little (plan Stage D)" begin
+    # 30 parameters of 5 values, no rules: all_pairs covers all 10,875 pairs,
+    # so no target is classified, and a measurement allocates only to read
+    # the rows, list the supports, project the rows onto each and walk its
+    # targets. Before Stage D's step 6 that took about 850 KB (Julia 1.13;
+    # 861 KB on 1.10); now about 600 KB. A vector per target would take 3 MB.
+    space = TestSpace(NamedTuple{Tuple(Symbol("x$i") for i in 1:30)}(Tuple(1:5 for _ in 1:30)))
+    cases = all_pairs(space)
+    measure() = coverage(cases)
+    c = measure()
+    @test iscomplete(c) && (c.ordinary.covered, c.ordinary.feasible, c.negative.feasible) == (10_875, 10_875, 0)
+    @test @allocated(measure()) < 1_000_000
 end
 
 

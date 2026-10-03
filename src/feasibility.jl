@@ -1,9 +1,9 @@
 # Feasibility in index space: whether a partial assignment extends to a
 # valid row (with a witness), under a node budget, and why a target is
 # excluded when it does not. Plan Phase 2 step 6; Phase 3's request layer
-# consumes `dead`, and the public `explain`, `isallowed` and `classify`
+# consumes `dead`, and the public `explain` and the unexported `classify`
 # over a `TestSpace` are thin wrappers over `explain_partial` and `classify`
-# here.
+# here. (`isallowed` reads the rule tables directly and never searches.)
 #
 # Everything in this file is index space (see rule_table.jl). Parameters
 # are `1:n`, values are the integers listed in `candidates`, and a partial
@@ -21,7 +21,7 @@
 # needs N nodes succeeds exactly when the limit is at least N.
 #
 # Rule checks are not budgeted but are counted (contract §3.3). A check is one
-# `forbids(f, t, partial)` call: a set lookup for a tabulated table, a lookup
+# `forbids(f, t, partial)` call: a bit test for a tabulated table, a lookup
 # in the operation's memo (evaluating the predicate on a miss) for a lazy
 # one. After a node assigns `x`, forward checking checks each surviving
 # candidate of the one unset parameter of every table of `x` that has one
@@ -73,7 +73,7 @@ Counters for one `Feasibility`, for tests and for reporting search effort.
 `evaluations` counts every rule check made through the object: each
 `forbids` call by `violates`, `violated_rules`, the direct check of
 `completable` and `explain_partial`, and forward-checking prunes. A check of a
-tabulated table is a set lookup and a check of a lazy one a lookup in the
+tabulated table is a bit test and a check of a lazy one a lookup in the
 operation's memo, evaluating the predicate on a miss, so `evaluations` bounds
 the predicate calls from above.
 """
@@ -86,6 +86,25 @@ mutable struct SearchStats
 end
 
 SearchStats() = SearchStats(0, 0, 0, 0, 0)
+
+
+"""
+    RuleMemo(n)
+
+One operation's verdicts for one lazy table whose scope has `n` parameters
+(contract §3.5, §12.19): `verdicts` maps the scope's value indices, in scope
+order, to `true` when the rule forbids them. `key` is where `forbids(f, k,
+partial)` gathers those indices to look them up, so a check that finds its
+verdict allocates nothing; a verdict is stored under a copy of `key`. One key
+type serves every scope, however long, so the check has no dynamic dispatch,
+and `length(verdicts)` counts the tuples evaluated through the memo.
+"""
+struct RuleMemo
+    verdicts::Dict{Vector{Int}, Bool}
+    key::Vector{Int}
+end
+
+RuleMemo(n::Int) = RuleMemo(Dict{Vector{Int}, Bool}(), zeros(Int, n))
 
 
 """
@@ -125,16 +144,16 @@ Fields: `candidates`, `tables`, `limit`, the component structure
 ⇒ the component's witness values, or `nothing`), `rule_memo`, and `stats`.
 
 The lazy-rule memo (contract §3.5, §12.19). `rule_memo[k]` is `nothing` for
-a tabulated table and, for a lazy one, a `Dict{NTuple{N,Int},Bool}` from the
-scope's value indices to the rule's verdict. Every rule check made through
-this object (`violates`, `violated_rules`, the searches, and a request's
-final validation) goes through `forbids(f, k, partial)`, which evaluates a
-lazy predicate at most once per tuple. A verdict depends on the table alone,
-not on the rule set, so the `Feasibility` objects of one operation may share
-the dicts: pass `memos`, aligned with `tables`, to reuse them (a deletion
-trial does, and so does each row kind of a `FeasibilityContext`). Otherwise
-each lazy table gets a fresh, empty dict. The memo lives as long as the
-operation that holds this object and never on the `TestSpace`.
+a tabulated table and, for a lazy one, a `RuleMemo` from the scope's value
+indices to the rule's verdict. Every rule check made through this object
+(`violates`, `violated_rules`, the searches, and a request's final
+validation) goes through `forbids(f, k, partial)`, which evaluates a lazy
+predicate at most once per tuple. A verdict depends on the table alone, not
+on the rule set, so the `Feasibility` objects of one operation may share the
+memos: pass `memos`, aligned with `tables`, to reuse them (a deletion trial
+does, and so does each row kind of a `FeasibilityContext`). Otherwise each
+lazy table gets a fresh, empty memo. The memo lives as long as the operation
+that holds this object and never on the `TestSpace`.
 """
 struct Feasibility
     candidates::Vector{Vector{Int}}
@@ -146,22 +165,21 @@ struct Feasibility
     param_tables::Vector{Vector{Int}}
     memo::Dict{Vector{Int}, Union{Nothing, Vector{Int}}}
     witness_cache::Vector{Dict{Vector{Int}, Union{Nothing, Vector{Int}}}}
-    rule_memo::Vector{Union{Nothing, Dict}}
+    rule_memo::Vector{Union{Nothing, RuleMemo}}
     stats::SearchStats
 end
 
 "An empty verdict memo for a lazy table, `nothing` for a tabulated one."
-_rule_memo(table::RuleTable) =
-    table.lazy === nothing ? nothing : Dict{NTuple{length(table.scope), Int}, Bool}()
+_rule_memo(table::RuleTable) = table.lazy === nothing ? nothing : RuleMemo(length(table.scope))
 
 """
-    rule_memos(tables) -> Vector{Union{Nothing, Dict}}
+    rule_memos(tables) -> Vector{Union{Nothing, RuleMemo}}
 
 One fresh verdict memo per table (`nothing` for a tabulated table), to pass
 as `memos` to every `Feasibility` of one operation over (subsets of) these
 tables.
 """
-rule_memos(tables::AbstractVector) = Union{Nothing, Dict}[_rule_memo(t) for t in tables]
+rule_memos(tables::AbstractVector) = Union{Nothing, RuleMemo}[_rule_memo(t) for t in tables]
 
 function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::Integer = 1_000_000,
                      memos = nothing)
@@ -186,7 +204,7 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
             "memos has $(length(memos)) entries for $(length(rules)) tables"))
         for (k, t) in enumerate(rules)
             memos[k] === nothing && t.lazy === nothing && continue
-            memos[k] isa Dict{NTuple{length(t.scope), Int}, Bool} && t.lazy !== nothing && continue
+            memos[k] isa RuleMemo && length(memos[k].key) == length(t.scope) && t.lazy !== nothing && continue
             throw(ArgumentError("memos[$k] does not fit table $k"))
         end
     end
@@ -204,7 +222,7 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
         component_tables, param_tables,
         Dict{Vector{Int}, Union{Nothing, Vector{Int}}}(),
         [Dict{Vector{Int}, Union{Nothing, Vector{Int}}}() for _ in components],
-        collect(Union{Nothing, Dict}, memos), SearchStats())
+        collect(Union{Nothing, RuleMemo}, memos), SearchStats())
 end
 
 "Union-find over table scopes. Components ordered by smallest member, members ascending."
@@ -241,6 +259,7 @@ function Base.show(io::IO, f::Feasibility)
         " tables, ", length(f.components), " components, limit = ", f.limit, ")")
 end
 
+# Production reads `f.components` directly; this stays as a convenience for the tests.
 """
     components(f::Feasibility) -> Vector{Vector{Int}}
 
@@ -255,34 +274,37 @@ components(f::Feasibility) = [copy(c) for c in f.components]
     forbids(f::Feasibility, k, partial) -> Bool
 
 Whether table `k` of `f` forbids the values assigned in `partial` (its scope
-must be assigned), through the operation's memo: a tabulated table is a set
-lookup, and a lazy table's predicate is evaluated at most once per tuple of
+must be assigned), through the operation's memo: a tabulated table is a bit
+test, and a lazy table's predicate is evaluated at most once per tuple of
 scoped value indices, then read from `f.rule_memo[k]` (contract §12.19). An
-evaluation that throws stores nothing. Callers count the check in
-`f.stats.evaluations`.
+evaluation that throws stores nothing. A check that finds its verdict in the
+memo allocates nothing; a miss evaluates the rule, one dynamic call, and
+stores a copy of the key. Callers count the check in `f.stats.evaluations`.
 """
 function forbids(f::Feasibility, k::Int, partial::AbstractVector{<:Integer})
     table = f.tables[k]
-    table.lazy === nothing && return forbids(table, partial)
-    return _memo_forbids(f.rule_memo[k], table, partial)
-end
-
-function _memo_forbids(memo::Dict{NTuple{N, Int}, Bool}, table::RuleTable,
-                       partial::AbstractVector{<:Integer}) where {N}
-    scope = table.scope
-    key = ntuple(j -> Int(partial[scope[j]]), Val(N))
-    return get!(() -> table.lazy(key)::Bool, memo, key)
+    table.lazy === nothing && return _forbidden_bit(table, partial)
+    memo = f.rule_memo[k]::RuleMemo
+    key = memo.key
+    for (j, p) in enumerate(table.scope)
+        key[j] = partial[p]
+    end
+    verdict = get(memo.verdicts, key, nothing)
+    verdict === nothing || return verdict
+    verdict = table.lazy(key)::Bool
+    memo.verdicts[copy(key)] = verdict
+    return verdict
 end
 
 """
     memo_size(f::Feasibility) -> Int
 
 The number of lazy-rule verdicts memoized in `f.rule_memo`, summed over its
-tables: `0` when every table is tabulated. Dicts shared with other
+tables: `0` when every table is tabulated. Memos shared with other
 `Feasibility` objects of the same operation (see `memos`) are counted as
 they stand. Not exported; the benchmarks and tests read it.
 """
-memo_size(f::Feasibility) = sum((length(m) for m in f.rule_memo if m !== nothing); init = 0)
+memo_size(f::Feasibility) = sum((length(m.verdicts) for m in f.rule_memo if m !== nothing); init = 0)
 
 "Whether component `c` has a table, so that it must be solved (§3.4)."
 _constrained(f::Feasibility, c::Int) = !isempty(f.component_tables[c])
@@ -435,22 +457,26 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
             witness[params] .= cached
         end
     end
-    search = _Search(f, witness, limit)
     status = :feasible
-    for c in pending
-        params = f.components[c]
-        status = _solve_component!(search, c)
-        if status === :feasible
-            f.witness_cache[c][key[params]] = witness[params]
-        elseif status === :infeasible
-            f.witness_cache[c][key[params]] = nothing
-            break
-        else
-            break  # :unknown, the budget is spent; store nothing
+    nodes = 0
+    if !isempty(pending)   # a query with no component left to solve builds no search state
+        search = _Search(f, witness, limit)
+        for c in pending
+            params = f.components[c]
+            status = _solve_component!(search, c)
+            if status === :feasible
+                f.witness_cache[c][key[params]] = witness[params]
+            elseif status === :infeasible
+                f.witness_cache[c][key[params]] = nothing
+                break
+            else
+                break  # :unknown, the budget is spent; store nothing
+            end
         end
+        nodes = search.nodes
     end
-    stats.last_nodes = search.nodes
-    stats.total_nodes += search.nodes
+    stats.last_nodes = nodes
+    stats.total_nodes += nodes
     if status === :feasible
         f.memo[key] = witness
         return (:feasible, witness)
@@ -647,7 +673,7 @@ function explain_partial(f::Feasibility, partial::AbstractVector{<:Integer};
     all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, key, nothing, cost()...)
     status, witness = _completable(f, key, f.limit)
     if status === :feasible
-        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness), nothing, cost()...)
+        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness::Vector{Int}), nothing, cost()...)
     elseif status === :unknown
         return IndexExplanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit, cost()...)
     end
@@ -724,11 +750,33 @@ struct IndexClassification
     evaluations::Int
 end
 
+"The status of each outcome of `explain_partial`: the one place a search outcome becomes a status."
 const _STATUS_OF_OUTCOME = (allowed = :required, completable = :required,
     forbidden = :forbidden, infeasible = :implied, unknown = :unknown)
 
 IndexClassification(e::IndexExplanation) = IndexClassification(_STATUS_OF_OUTCOME[e.outcome],
     e.rules, e.minimal, e.witness, e.limit, e.nodes, e.evaluations)
+
+"""
+    _status(f::Feasibility, partial) -> Symbol
+
+The status `IndexClassification` gives `partial` (`:required`, `:forbidden`,
+`:implied` or `:unknown`), without its rules, witness or effort: for
+counting, which keeps none of them. It reaches the outcome as
+`explain_partial` does, the direct check and then `completable`, and skips
+the deletion search. That search's trials are fresh `Feasibility` objects
+that share only the rule memo, so skipping it leaves `f`'s answer caches as
+`explain_partial` would, and every later answer the same.
+"""
+function _status(f::Feasibility, partial::AbstractVector{<:Integer})
+    key = _checked_key(f, partial)
+    _violates(f, key) && return _STATUS_OF_OUTCOME.forbidden
+    all(!=(0), key) && return _STATUS_OF_OUTCOME.allowed
+    status, _ = _completable(f, key, f.limit)
+    status === :feasible && return _STATUS_OF_OUTCOME.completable
+    status === :unknown && return _STATUS_OF_OUTCOME.unknown
+    return _STATUS_OF_OUTCOME.infeasible
+end
 
 """
     classify(f::Feasibility, targets; explanation_limit = 1_000_000) -> Vector{IndexClassification}

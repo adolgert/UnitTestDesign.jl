@@ -5,34 +5,40 @@
 
 
 """
-    FeasibilityContext(space; feasibility_limit = 1_000_000)
+    FeasibilityContext(space, memos = rule_memos(space.tables); feasibility_limit = 1_000_000)
 
-The feasibility searches of one public call (contract §3.5: caches are local
-to one call). It holds one `Feasibility` per row kind: ordinary
-rows, and negative rows with a given invalid value at a given parameter.
-Each has its own candidates and active rule set (§5.5), so no cached answer
-crosses from one kind to another. The lazy-rule memo (§12.19), one dict per
-lazy rule of the space in `memos`, is the call's too: every row kind's
-`Feasibility` shares it, since a verdict depends on the rule alone. Build
-one context per call and pass it to `feasibility_for`; drop it when the
-call returns, and the memo goes with it.
+The feasibility searches of one public call, or of one measurement within
+it (contract §3.5: caches are local to one call). It holds one
+`Feasibility` per row kind: ordinary rows, and negative rows with a given
+invalid value at a given parameter. Each has its own candidates and active
+rule set (§5.5), so no cached answer crosses from one kind to another. The
+lazy-rule memo (§12.19), one `RuleMemo` per lazy rule of the space in `memos`, is
+the call's: every row kind's `Feasibility` shares it, since a verdict
+depends on the rule alone. A call that makes several measurements, `report`
+or `design_sizes`, passes each one's context the same `memos`, while the
+answer caches in `searches` stay the context's own: an answer cache shared
+between measurements could resolve a target that a measurement alone leaves
+unknown (`_completable` keeps a solved component's witness when a later
+component runs out of budget), and so change a figure. Pass the context to
+`feasibility_for`; drop it when the call returns, and the memo goes with it.
 """
 struct FeasibilityContext
     space::TestSpace
     feasibility_limit::Int
     searches::Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}
-    memos::Vector{Union{Nothing, Dict}}
+    memos::Vector{Union{Nothing, RuleMemo}}
 end
 
-function FeasibilityContext(space::TestSpace; feasibility_limit = 1_000_000)
+function FeasibilityContext(space::TestSpace, memos = rule_memos(space.tables);
+                            feasibility_limit = 1_000_000)
     _check_limit(:feasibility_limit, feasibility_limit)
     return FeasibilityContext(space, Int(feasibility_limit),
-        Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}(), rule_memos(space.tables))
+        Dict{Tuple{Int, Int}, Tuple{Feasibility, Vector{Int}}}(), memos)
 end
 
 "The lazy-rule verdicts memoized by one call so far (see `memo_size(::Feasibility)`)."
 memo_size(context::FeasibilityContext) =
-    sum((length(m) for m in context.memos if m !== nothing); init = 0)
+    sum((length(m.verdicts) for m in context.memos if m !== nothing); init = 0)
 
 """
     _check_integer(keyword, value, least, section) -> Int
@@ -91,9 +97,8 @@ function feasibility_for(context::FeasibilityContext, idx::AbstractVector{<:Inte
     p = isempty(bad) ? 0 : only(bad)
     v = p == 0 ? 0 : Int(idx[p])
     return get!(context.searches, (p, v)) do
-        candidates = [q == p ? [v] : space.ordinary[q] for q in 1:n]
         rules = active_rules(space, p)
-        (Feasibility(candidates, space.tables[rules]; limit = context.feasibility_limit,
+        (Feasibility(_candidates(space, p, v), space.tables[rules]; limit = context.feasibility_limit,
                      memos = context.memos[rules]), rules)
     end
 end
@@ -111,8 +116,8 @@ allow it; it evaluates the rules on that case and never searches.
     isallowed(space::TestSpace, case) -> Bool
 
 Whether the complete `case` is a valid row of `space` (contract §1.25). `case`
-is a `NamedTuple` naming every parameter, in any order, or a `Tuple` of values
-in parameter order. Values are matched by identity, and a
+is a `NamedTuple` naming every parameter, in any order, or a `Tuple` or
+vector of values in parameter order. Values are matched by identity, and a
 [`Partition`](@ref) may be written by its name (§2.11).
 
 An ordinary row is valid when no rule excludes it. A row with one
@@ -136,12 +141,9 @@ julia> isallowed(space, (:exact, 1e-3))
 false
 ```
 """
-function isallowed(space::TestSpace, case::Union{NamedTuple, Tuple})
-    idx = case_indices(space, case)
-    unset = space.names[idx .== 0]
-    isempty(unset) || throw(ArgumentError(
-        "isallowed takes a complete case, but $(repr(case)) has no value for " *
-        "$(join(unset, ", ")). Use explain for a partial assignment (contract §1.25)."))
+function isallowed(space::TestSpace, case)
+    idx = _row_indices(space, case; what = "the case", section = "§1.25", complete = true,
+                       hint = "use explain for a partial assignment")
     bad = _invalid_parameters(space, idx)
     length(bad) > 1 && return false
     p = isempty(bad) ? 0 : only(bad)
@@ -209,8 +211,9 @@ case, and, when they cannot, which rules exclude them.
 
 Say whether `assignment` can appear in a valid row of `space`, and why not
 when it cannot (contract §1.26). `assignment` is a `NamedTuple` naming some
-or all parameters, or a complete `Tuple` in parameter order. The result is an
-[`Explanation`](@ref UnitTestDesign.Explanation), which prints as a sentence:
+or all parameters, or a complete `Tuple` or vector in parameter order. The
+result is an [`Explanation`](@ref UnitTestDesign.Explanation), which prints
+as a sentence:
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> space = TestSpace(
@@ -240,11 +243,11 @@ stays infeasible even if that search is cut short (§3.13–§3.16). The result'
 `nodes` and `evaluations` report the effort the answer took: nodes against
 those limits, and the rule checks those nodes caused, which no limit bounds.
 """
-function explain(space::TestSpace, assignment::Union{NamedTuple, Tuple};
-                 feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
+function explain(space::TestSpace, assignment; feasibility_limit = 1_000_000,
+                 explanation_limit = 1_000_000)
     context = FeasibilityContext(space; feasibility_limit)
     _check_limit(:explanation_limit, explanation_limit)
-    idx = case_indices(space, assignment)
+    idx = _row_indices(space, assignment; what = "the assignment", section = "§1.26", complete = false)
     shown = from_indices(space, idx)
     if length(_invalid_parameters(space, idx)) > 1
         return Explanation(shown, :forbidden, Int[], String[], :not_applicable, nothing, nothing, 0, 0)
@@ -270,24 +273,27 @@ _rule_details(rules, labels) =
     "(" * join((_unlabeled(k, l) ? l : "rule $k: $l" for (k, l) in zip(rules, labels)), "; ") * ")"
 
 """
-    _print_exclusion(io, rules, labels, minimal, limit)
+    _print_exclusion(io, rules, labels, minimal, limit; parenthesized = false)
 
 The clause of an infeasible explanation that names its rules: "rule 1 (…)
 excludes it" or "rules 1 and 2 together exclude it (rule 1: …; rule 2: …)",
 then, when `minimal` is `:unresolved`, the limit that left it unresolved
-(`limit` is `keyword => value`). `explain` prints it after "infeasible: no
-valid case contains …; ", and the must-include check (§10.4) after "has no
-valid completion: ", so both say the same thing the same way.
+(`limit` is `keyword => value`): "; whether each rule is needed is
+unresolved: …", or, with `parenthesized`, the same note in parentheses, for
+a line whose clauses "; " already separates. `explain` prints it after
+"infeasible: no valid case contains …; ", and the must-include check
+(§10.4) after "has no valid completion: ", so both say the same thing the
+same way; a follow-up's proofs print it too (`_print_proof`).
 """
-function _print_exclusion(io::IO, rules, labels, minimal::Symbol, limit)
+function _print_exclusion(io::IO, rules, labels, minimal::Symbol, limit; parenthesized::Bool = false)
     if length(rules) == 1
         print(io, _rule_phrase(only(rules), only(labels)), " excludes it")
     else
         print(io, _rule_numbers(rules), " together exclude it ", _rule_details(rules, labels))
     end
     if minimal === :unresolved
-        print(io, "; whether each rule is needed is unresolved: ", limit.first, " = ",
-              _grouped(limit.second), " reached")
+        note = "whether each rule is needed is unresolved: $(limit.first) = $(_grouped(limit.second)) reached"
+        print(io, parenthesized ? " ($note)" : "; $note")
     end
     return nothing
 end
@@ -367,8 +373,10 @@ against negative rows (§5.5, §6.2); a target with more than one is an
 
 Each target gets its own `feasibility_limit` budget (§3.4) and its own
 `explanation_limit` budget for the deletion search (§3.13). Answers are
-cached for the duration of the call only (§3.5). Not exported: coverage
-measurement uses it.
+cached for the duration of the call only (§3.5). Not exported; the tests use
+it. `classify`, generation, coverage measurement and the isolation searches
+of `followups` share `IndexClassification`, which maps each search outcome
+to a status, so the four classify alike.
 """
 function classify(space::TestSpace, targets::AbstractVector;
                   feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
@@ -382,7 +390,7 @@ function _classify_one(context::FeasibilityContext, target, explanation_limit)
     target isa NamedTuple || throw(ArgumentError(
         "a target is a NamedTuple of some parameters' values, such as (mode = :fast,); " *
         "got $(repr(target))"))
-    idx = case_indices(space, target)
+    idx = _row_indices(space, target; what = "the target", complete = false)
     f, active = feasibility_for(context, idx)
     c = IndexClassification(explain_partial(f, idx; explanation_limit))
     rules = active[c.rules]
