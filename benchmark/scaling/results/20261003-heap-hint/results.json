@@ -1,0 +1,1073 @@
+{
+  "metadata": {
+    "started": "2026-10-03T16:00:54.234635-04:00",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "source_sha256": {
+      "src/UnitTestDesign.jl": "a787ecba3d4ccc3737f549319d6e6dfebcdc5b9cba586b026cc6471c125536e6",
+      "src/combinations.jl": "bb08e0392812010df06edb9a3d24ed51ae05c24ed7b1fe522b1ada024e148d48",
+      "src/constraints.jl": "505cb133e2b4c9e1a1733b9976b95550d169c5a9b8472357a2ac6d24f5afa8c3",
+      "src/coverage_matrix.jl": "a324026a207522bfe1ece663c3685a83c576430ccb4d723589206ecff25a913c",
+      "src/diagnose.jl": "d0d080279bd60ad4d79573ca53dff731ed59e669d2de084ce2a86f7a1a908a86",
+      "src/engines.jl": "06f9d86962d6994050c4d4c8fa2ef9f2bf452a5d706bcb9eb1d53d4cbaf35e7d",
+      "src/excursions.jl": "6bb3efda9582321aa4d14bf2e2603a3c6836c0127157bf72afd9d3ddd1262636",
+      "src/explain.jl": "14ca199cae928164be27a3ecf5804b2cd1a27e6333f6d121e4d97b3edeb9451f",
+      "src/export.jl": "07e62496ea2e7fc0c94330f3dce778f0c3d1f5448611ea4eedb9384a41b476a3",
+      "src/feasibility.jl": "6268807087c852ae204eda3889dca87943256c9554e73fef6abd2d29c70298da",
+      "src/full_factorial.jl": "f434d1a3164ba12540a158bec6559c3fbfcffdda3bbd2e1f46c9498b28bfd668",
+      "src/greedy_tuples.jl": "b71c91bc421a620bf0e2f4e52157c20c3b3da55fb3d84de1e3ec1f1bcfdae912",
+      "src/interface.jl": "c9aad35a24636cd0c41b31a170d928dc9da4103239894cd94a874ae4302571c0",
+      "src/invalid.jl": "d1ed2f9932e23ddb6e9c8ce3963ffacdeb70dbe53b154e16fb2812980b6dc4b8",
+      "src/measure.jl": "935f3c0f6ccf4779ccbac573ea413e8f8ebe60651e78d08605b6187e8b9fa707",
+      "src/parameter_order.jl": "138dc968a7ce5d5f830e578d19cb86d680c56cff3159282452fef9d99b797f8c",
+      "src/partition.jl": "bffd3e186f9f24f3134a1d1e1121a41bc400a955c109f687859b81b23cd19cf3",
+      "src/report.jl": "589ea9f1d1539e29e234ea362913a7b232b507a4aa56421bd237a00696809a06",
+      "src/request.jl": "0f7246a954f2025b60454a0754fe9e84cff3115d311b130ff4de0f301c1b58a7",
+      "src/rule_table.jl": "1b2d44dece286cc07f6b69a7c8800b16ddd58595f1ac7e30eccec58b6c46877c",
+      "src/space.jl": "1edd12ab4b77051f855b74c4516f2dad4df7cbc6258c2239112e7685b172f85c",
+      "src/testcases.jl": "907513cafde4f3adcdc89df764f114fdb6210c80b469b91c07ba644aa2f3c3b7",
+      "Project.toml": "df7d7a80e78fd266cf4caa60d27d85a0e4de5d09a240cedd00c05fd713e87011",
+      "Manifest.toml": "01e5db5904ceeb798ccdbc11af58c6af543035e2cea4b326aa8ae3d6f7567ba6",
+      "benchmark/scaling/worker.jl": "303a48cfdca94610b8055c46e46f6456aabf272a79c1197baa9b8b3d034ced80",
+      "benchmark/scaling/run.py": "ce7efbe2a165ce2d9cbfba13acce89c3e031a76a4a2c9575f6ba9bfd893338b2",
+      "benchmark/fixtures.jl": "95065e2d0a4f4e17057b8950d61a5bd2377485acc240396e36a8504be353f555",
+      "test/checker.jl": "93b6f9fa9c05e3941642097dc1b47c57e04d0e9d40b504dbdf75c83ef3e7839c",
+      "test/random_problems.jl": "c078781dcf50af6e64b8ca9f92c8ef03e958bbd6259f1f7bf205fcd42cd8ed3e",
+      "test/fixtures.jl": "34d94f66d513afe575b09c4e2a8f7a817b0bb66812fb7ebeeab6bb93b77bef9c",
+      "test/fixture_model.jl": "4e19dc580cb57b2cea47d51ab94d7bbcf935391c2dd4e9a67b4f4d2bbe446d7f"
+    },
+    "commit": "0bc6bae34ea7be1b5bbb54993bbeed67317b97c1",
+    "git_status": "?? benchmark/scaling/\n?? benchmark/solver_review.md\n?? design/20260930_mini_review.md\n?? design/20260930_walkthrough.pdf\n?? design/architecture_and_algorithms.tex\n?? output/",
+    "source_diff": "",
+    "limits": {
+      "out": "benchmark/scaling/results/20261003-heap-hint",
+      "runs": 3,
+      "filter": "",
+      "specs": "benchmark/scaling/heap_specs.json",
+      "adapter": [],
+      "julia": "julia",
+      "julia_arg": [
+        "--heap-size-hint=1G"
+      ],
+      "rss_mib": 2048,
+      "stage_seconds": 60.0,
+      "startup_seconds": 60,
+      "cold_seconds": 120.0,
+      "diagnostic_seconds": 30,
+      "job_seconds": 300.0,
+      "poll": 0.2,
+      "continue_ladders": false,
+      "resume": false,
+      "list": false
+    },
+    "memory_before": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    52397.\nPages active:                                 346442.\nPages inactive:                               338916.\nPages speculative:                              6969.\nPages throttled:                                   0.\nPages wired down:                             147091.\nPages purgeable:                                9841.\n\"Translation faults\":                      783197072.\nPages copy-on-write:                        36456290.\nPages zero filled:                         514571492.\nPages reactivated:                          47211942.\nPages purged:                                7799368.\nFile-backed pages:                            225645.\nAnonymous pages:                              466682.\nPages stored in compressor:                  1126806.\nPages occupied by compressor:                 630746.\nDecompressions:                             32962553.\nCompressions:                               42990614.\nPageins:                                    45449942.\nPageouts:                                     161132.\nSwapins:                                        4010.\nSwapouts:                                      53440.",
+    "finished": "2026-10-03T16:01:45.515592-04:00",
+    "memory_after": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     4135.\nPages active:                                 342745.\nPages inactive:                               393292.\nPages speculative:                                47.\nPages throttled:                                   0.\nPages wired down:                             147988.\nPages purgeable:                                   2.\n\"Translation faults\":                      784096364.\nPages copy-on-write:                        36526990.\nPages zero filled:                         515227344.\nPages reactivated:                          47288290.\nPages purged:                                7813767.\nFile-backed pages:                            209674.\nAnonymous pages:                              526410.\nPages stored in compressor:                  1170001.\nPages occupied by compressor:                 634354.\nDecompressions:                             32989362.\nCompressions:                               43064862.\nPageins:                                    45465387.\nPageouts:                                     161166.\nSwapins:                                        4010.\nSwapouts:                                      53440."
+  },
+  "results": [
+    {
+      "spec": {
+        "id": "heap-hint-reuse-ipog-n512-v2-t2",
+        "ladder": "heap-hint-reuse",
+        "n": 512,
+        "v": 2,
+        "family": "none",
+        "usage": "reuse",
+        "solver": "ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": []
+      },
+      "status": "rss_limit",
+      "stopped_stage": "warm",
+      "exit_code": -15,
+      "wall_seconds": 15.605197917029727,
+      "sampled_peak_rss_bytes": 2154430464,
+      "measurements": [
+        {
+          "allocated_bytes": 50175056,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 86344,
+          "rules": 0,
+          "run": 0,
+          "seconds": 0.430555875,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 1962960,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 86344,
+          "rules": 0,
+          "run": 1,
+          "seconds": 0.000917584,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 1962960,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 86344,
+          "rules": 0,
+          "run": 2,
+          "seconds": 0.0008835,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 1962960,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 86344,
+          "rules": 0,
+          "run": 3,
+          "seconds": 0.000880959,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 16830835888,
+          "certification": "production validation included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.982751385,
+          "result": {
+            "cases": 21,
+            "covered": 523264,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 523264
+          },
+          "retained_bytes": 172632,
+          "run": 0,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 144112
+          },
+          "seconds": 7.570290833,
+          "stage": "cold"
+        }
+      ],
+      "errors": [],
+      "validation": null,
+      "command": [
+        "julia",
+        "--heap-size-hint=1G",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-heap-hint/heap-hint-reuse-ipog-n512-v2-t2/spec.json"
+      ],
+      "completed_warm_runs": 0,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 706641920,
+        "gc": 713474048,
+        "construct": 709672960,
+        "cold": 2027241472,
+        "diagnostics": 2082783232,
+        "warm": 2154430464
+      },
+      "monitor_error": null,
+      "environment": {
+        "cpu": "Apple M2",
+        "event": "environment",
+        "free_memory": 323764224,
+        "julia": "1.13.1",
+        "threads": 1,
+        "total_memory": 25769803776
+      },
+      "phase_measurements": [],
+      "os_peak_rss_bytes": null,
+      "os_peak_footprint_bytes": null,
+      "fingerprint": "8bbc3af86b07242584e7637fa3df40cb4209f7f29f9514cac919d612435c9f83"
+    },
+    {
+      "spec": {
+        "id": "heap-hint-reuse-ipog-n1024-v2-t2",
+        "ladder": "heap-hint-reuse",
+        "n": 1024,
+        "v": 2,
+        "family": "none",
+        "usage": "reuse",
+        "solver": "ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": []
+      },
+      "status": "skipped_after_limit",
+      "reason": "heap-hint-reuse-ipog-n512-v2-t2",
+      "fingerprint": "cc68f4a34d7d73be443ebc758aa767d3e5c182808ed7e168ada8d63d84c9be7e"
+    },
+    {
+      "spec": {
+        "id": "heap-hint-report-ipog-n64-v2-t2",
+        "ladder": "heap-hint-report",
+        "n": 64,
+        "v": 2,
+        "family": "none",
+        "usage": "report",
+        "solver": "ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": []
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 12.907917166943662,
+      "sampled_peak_rss_bytes": 862519296,
+      "measurements": [
+        {
+          "allocated_bytes": 48323952,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 11080,
+          "rules": 0,
+          "run": 0,
+          "seconds": 0.427775583,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 122832,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 11080,
+          "rules": 0,
+          "run": 1,
+          "seconds": 0.000157042,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 122832,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 11080,
+          "rules": 0,
+          "run": 2,
+          "seconds": 0.000145875,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 122832,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 11080,
+          "rules": 0,
+          "run": 3,
+          "seconds": 0.000141167,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 315780992,
+          "cases": 15,
+          "certification": "production validation included",
+          "event": "measurement",
+          "result": {
+            "cases": 15,
+            "covered": 8064,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 8064
+          },
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 19056
+          },
+          "seconds": 3.661940208,
+          "stage": "prepare"
+        },
+        {
+          "allocated_bytes": 511208480,
+          "certification": "not_applicable",
+          "event": "measurement",
+          "gc_seconds": 0.0446655,
+          "result": {
+            "bonus": {
+              "applicable": true,
+              "covered": 290230,
+              "feasible": 333312,
+              "negative": {
+                "covered": 0,
+                "feasible": 0,
+                "unknown": 0
+              },
+              "reason": "",
+              "strength": 3,
+              "unknown": 0
+            },
+            "cases": 15,
+            "complete": true,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative": {
+              "covered": 0,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 0,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 0,
+              "unknown": 0
+            },
+            "ordinary": {
+              "covered": 8064,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 8064,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 15,
+              "unknown": 0
+            },
+            "recorded_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "result_type": "Report",
+            "strength": 2
+          },
+          "retained_bytes": 14331,
+          "run": 0,
+          "search": {},
+          "seconds": 2.112594,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 351814480,
+          "certification": "not_applicable",
+          "event": "measurement",
+          "gc_seconds": 0.035500583,
+          "result": {
+            "bonus": {
+              "applicable": true,
+              "covered": 290230,
+              "feasible": 333312,
+              "negative": {
+                "covered": 0,
+                "feasible": 0,
+                "unknown": 0
+              },
+              "reason": "",
+              "strength": 3,
+              "unknown": 0
+            },
+            "cases": 15,
+            "complete": true,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative": {
+              "covered": 0,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 0,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 0,
+              "unknown": 0
+            },
+            "ordinary": {
+              "covered": 8064,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 8064,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 15,
+              "unknown": 0
+            },
+            "recorded_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "result_type": "Report",
+            "strength": 2
+          },
+          "retained_bytes": 14331,
+          "run": 1,
+          "search": {},
+          "seconds": 0.175720792,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 351814480,
+          "certification": "not_applicable",
+          "event": "measurement",
+          "gc_seconds": 0.03151,
+          "result": {
+            "bonus": {
+              "applicable": true,
+              "covered": 290230,
+              "feasible": 333312,
+              "negative": {
+                "covered": 0,
+                "feasible": 0,
+                "unknown": 0
+              },
+              "reason": "",
+              "strength": 3,
+              "unknown": 0
+            },
+            "cases": 15,
+            "complete": true,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative": {
+              "covered": 0,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 0,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 0,
+              "unknown": 0
+            },
+            "ordinary": {
+              "covered": 8064,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 8064,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 15,
+              "unknown": 0
+            },
+            "recorded_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "result_type": "Report",
+            "strength": 2
+          },
+          "retained_bytes": 14331,
+          "run": 2,
+          "search": {},
+          "seconds": 0.16993,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 351814480,
+          "certification": "not_applicable",
+          "event": "measurement",
+          "gc_seconds": 0.034672708,
+          "result": {
+            "bonus": {
+              "applicable": true,
+              "covered": 290230,
+              "feasible": 333312,
+              "negative": {
+                "covered": 0,
+                "feasible": 0,
+                "unknown": 0
+              },
+              "reason": "",
+              "strength": 3,
+              "unknown": 0
+            },
+            "cases": 15,
+            "complete": true,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative": {
+              "covered": 0,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 0,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 0,
+              "unknown": 0
+            },
+            "ordinary": {
+              "covered": 8064,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 8064,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 15,
+              "unknown": 0
+            },
+            "recorded_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "result_type": "Report",
+            "strength": 2
+          },
+          "retained_bytes": 14331,
+          "run": 3,
+          "search": {},
+          "seconds": 0.175581458,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_applicable",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--heap-size-hint=1G",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-heap-hint/heap-hint-report-ipog-n64-v2-t2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 686817280,
+        "construct": 688979968,
+        "diagnostics": 805748736,
+        "prepare": 758726656,
+        "cold": 800751616,
+        "warm": 862519296,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "environment": {
+        "cpu": "Apple M2",
+        "event": "environment",
+        "free_memory": 1476870144,
+        "julia": "1.13.1",
+        "threads": 1,
+        "total_memory": 25769803776
+      },
+      "phase_measurements": [],
+      "os_peak_rss_bytes": 861585408,
+      "os_peak_footprint_bytes": 743982400,
+      "warm_median_seconds": 0.175581458,
+      "warm_min_seconds": 0.16993,
+      "warm_max_seconds": 0.175720792,
+      "warm_median_allocated_bytes": 351814480,
+      "fingerprint": "1213d5d65363df282e71a0b071dee78a06a946265426e5862ca71712372ebd5f"
+    },
+    {
+      "spec": {
+        "id": "heap-hint-report-ipog-n128-v2-t2",
+        "ladder": "heap-hint-report",
+        "n": 128,
+        "v": 2,
+        "family": "none",
+        "usage": "report",
+        "solver": "ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": []
+      },
+      "status": "rss_limit",
+      "stopped_stage": "warm",
+      "exit_code": -15,
+      "wall_seconds": 22.716874875011854,
+      "sampled_peak_rss_bytes": 2156445696,
+      "measurements": [
+        {
+          "allocated_bytes": 48481216,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 21832,
+          "rules": 0,
+          "run": 0,
+          "seconds": 0.428415667,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 278528,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 21832,
+          "rules": 0,
+          "run": 1,
+          "seconds": 0.000281708,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 278528,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 21832,
+          "rules": 0,
+          "run": 2,
+          "seconds": 0.00024825,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 278528,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 21832,
+          "rules": 0,
+          "run": 3,
+          "seconds": 0.000235709,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 546676624,
+          "cases": 17,
+          "certification": "production validation included",
+          "event": "measurement",
+          "result": {
+            "cases": 17,
+            "covered": 32512,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 32512
+          },
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 36464
+          },
+          "seconds": 3.70990925,
+          "stage": "prepare"
+        },
+        {
+          "allocated_bytes": 4333048144,
+          "certification": "not_applicable",
+          "event": "measurement",
+          "gc_seconds": 2.228136376,
+          "result": {
+            "bonus": {
+              "applicable": true,
+              "covered": 2453663,
+              "feasible": 2731008,
+              "negative": {
+                "covered": 0,
+                "feasible": 0,
+                "unknown": 0
+              },
+              "reason": "",
+              "strength": 3,
+              "unknown": 0
+            },
+            "cases": 17,
+            "complete": true,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative": {
+              "covered": 0,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 0,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 0,
+              "unknown": 0
+            },
+            "ordinary": {
+              "covered": 32512,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 32512,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 17,
+              "unknown": 0
+            },
+            "recorded_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "result_type": "Report",
+            "strength": 2
+          },
+          "retained_bytes": 26254,
+          "run": 0,
+          "search": {},
+          "seconds": 7.050078625,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 4147485472,
+          "certification": "not_applicable",
+          "event": "measurement",
+          "gc_seconds": 1.588613958,
+          "result": {
+            "bonus": {
+              "applicable": true,
+              "covered": 2453663,
+              "feasible": 2731008,
+              "negative": {
+                "covered": 0,
+                "feasible": 0,
+                "unknown": 0
+              },
+              "reason": "",
+              "strength": 3,
+              "unknown": 0
+            },
+            "cases": 17,
+            "complete": true,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative": {
+              "covered": 0,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 0,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 0,
+              "unknown": 0
+            },
+            "ordinary": {
+              "covered": 32512,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 32512,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 17,
+              "unknown": 0
+            },
+            "recorded_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "result_type": "Report",
+            "strength": 2
+          },
+          "retained_bytes": 26254,
+          "run": 1,
+          "search": {},
+          "seconds": 2.999285375,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 4147485472,
+          "certification": "not_applicable",
+          "event": "measurement",
+          "gc_seconds": 1.083878501,
+          "result": {
+            "bonus": {
+              "applicable": true,
+              "covered": 2453663,
+              "feasible": 2731008,
+              "negative": {
+                "covered": 0,
+                "feasible": 0,
+                "unknown": 0
+              },
+              "reason": "",
+              "strength": 3,
+              "unknown": 0
+            },
+            "cases": 17,
+            "complete": true,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative": {
+              "covered": 0,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 0,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 0,
+              "unknown": 0
+            },
+            "ordinary": {
+              "covered": 32512,
+              "duplicates": 0,
+              "exclusions": {
+                "forbidden": 0,
+                "implied": 0,
+                "minimal_not_applicable": 0,
+                "minimal_unresolved": 0,
+                "minimal_verified": 0,
+                "total": 0
+              },
+              "feasible": 32512,
+              "missing": 0,
+              "rejected": 0,
+              "rows": 17,
+              "unknown": 0
+            },
+            "recorded_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "result_type": "Report",
+            "strength": 2
+          },
+          "retained_bytes": 26254,
+          "run": 2,
+          "search": {},
+          "seconds": 2.4894895,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": null,
+      "command": [
+        "julia",
+        "--heap-size-hint=1G",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-heap-hint/heap-hint-report-ipog-n128-v2-t2/spec.json"
+      ],
+      "completed_warm_runs": 2,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 713015296,
+        "gc": 723910656,
+        "construct": 715931648,
+        "prepare": 784580608,
+        "diagnostics": 1591263232,
+        "cold": 1589870592,
+        "warm": 2156445696
+      },
+      "monitor_error": null,
+      "environment": {
+        "cpu": "Apple M2",
+        "event": "environment",
+        "free_memory": 1453047808,
+        "julia": "1.13.1",
+        "threads": 1,
+        "total_memory": 25769803776
+      },
+      "phase_measurements": [],
+      "os_peak_rss_bytes": null,
+      "os_peak_footprint_bytes": null,
+      "fingerprint": "bb43d9329a50889c7236ee75ede9d95e1bd5c6d5508d3649bd72ade2666d678d"
+    }
+  ]
+}

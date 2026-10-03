@@ -1,0 +1,156 @@
+[
+  {
+    "id": "phases-profile_ipog-none-n32-v2",
+    "ladder": "phases-profile_ipog-none-n32",
+    "n": 32,
+    "v": 2,
+    "family": "none",
+    "usage": "core",
+    "solver": "profile_ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_ipog-noop_scoped-n32-v2",
+    "ladder": "phases-profile_ipog-noop_scoped-n32",
+    "n": 32,
+    "v": 2,
+    "family": "noop_scoped",
+    "usage": "core",
+    "solver": "profile_ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_ipog-noop_whole-n32-v2",
+    "ladder": "phases-profile_ipog-noop_whole-n32",
+    "n": 32,
+    "v": 2,
+    "family": "noop_whole",
+    "usage": "core",
+    "solver": "profile_ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_ipog-scoped-n32-v2",
+    "ladder": "phases-profile_ipog-scoped-n32",
+    "n": 32,
+    "v": 2,
+    "family": "scoped",
+    "usage": "core",
+    "solver": "profile_ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_ipog-equality-n32-v2",
+    "ladder": "phases-profile_ipog-equality-n32",
+    "n": 32,
+    "v": 2,
+    "family": "equality",
+    "usage": "core",
+    "solver": "profile_ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_ipog-none-n8-v16",
+    "ladder": "phases-profile_ipog-none-n8",
+    "n": 8,
+    "v": 16,
+    "family": "none",
+    "usage": "core",
+    "solver": "profile_ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_ipog-bench12-n12-v0",
+    "ladder": "phases-profile_ipog-bench12-n12",
+    "n": 12,
+    "v": 0,
+    "family": "bench12",
+    "usage": "core",
+    "solver": "profile_ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_gnd-none-n32-v2",
+    "ladder": "phases-profile_gnd-none-n32",
+    "n": 32,
+    "v": 2,
+    "family": "none",
+    "usage": "core",
+    "solver": "profile_gnd",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_gnd-noop_scoped-n32-v2",
+    "ladder": "phases-profile_gnd-noop_scoped-n32",
+    "n": 32,
+    "v": 2,
+    "family": "noop_scoped",
+    "usage": "core",
+    "solver": "profile_gnd",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_gnd-noop_whole-n32-v2",
+    "ladder": "phases-profile_gnd-noop_whole-n32",
+    "n": 32,
+    "v": 2,
+    "family": "noop_whole",
+    "usage": "core",
+    "solver": "profile_gnd",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_gnd-scoped-n32-v2",
+    "ladder": "phases-profile_gnd-scoped-n32",
+    "n": 32,
+    "v": 2,
+    "family": "scoped",
+    "usage": "core",
+    "solver": "profile_gnd",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_gnd-equality-n32-v2",
+    "ladder": "phases-profile_gnd-equality-n32",
+    "n": 32,
+    "v": 2,
+    "family": "equality",
+    "usage": "core",
+    "solver": "profile_gnd",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_gnd-none-n8-v16",
+    "ladder": "phases-profile_gnd-none-n8",
+    "n": 8,
+    "v": 16,
+    "family": "none",
+    "usage": "core",
+    "solver": "profile_gnd",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "phases-profile_gnd-bench12-n12-v0",
+    "ladder": "phases-profile_gnd-bench12-n12",
+    "n": 12,
+    "v": 0,
+    "family": "bench12",
+    "usage": "core",
+    "solver": "profile_gnd",
+    "strength": 2,
+    "runs": 3
+  }
+]

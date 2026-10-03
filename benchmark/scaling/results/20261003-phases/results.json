@@ -1,0 +1,3850 @@
+{
+  "metadata": {
+    "started": "2026-10-03T15:55:36.595744-04:00",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "source_sha256": {
+      "src/UnitTestDesign.jl": "a787ecba3d4ccc3737f549319d6e6dfebcdc5b9cba586b026cc6471c125536e6",
+      "src/combinations.jl": "bb08e0392812010df06edb9a3d24ed51ae05c24ed7b1fe522b1ada024e148d48",
+      "src/constraints.jl": "505cb133e2b4c9e1a1733b9976b95550d169c5a9b8472357a2ac6d24f5afa8c3",
+      "src/coverage_matrix.jl": "a324026a207522bfe1ece663c3685a83c576430ccb4d723589206ecff25a913c",
+      "src/diagnose.jl": "d0d080279bd60ad4d79573ca53dff731ed59e669d2de084ce2a86f7a1a908a86",
+      "src/engines.jl": "06f9d86962d6994050c4d4c8fa2ef9f2bf452a5d706bcb9eb1d53d4cbaf35e7d",
+      "src/excursions.jl": "6bb3efda9582321aa4d14bf2e2603a3c6836c0127157bf72afd9d3ddd1262636",
+      "src/explain.jl": "14ca199cae928164be27a3ecf5804b2cd1a27e6333f6d121e4d97b3edeb9451f",
+      "src/export.jl": "07e62496ea2e7fc0c94330f3dce778f0c3d1f5448611ea4eedb9384a41b476a3",
+      "src/feasibility.jl": "6268807087c852ae204eda3889dca87943256c9554e73fef6abd2d29c70298da",
+      "src/full_factorial.jl": "f434d1a3164ba12540a158bec6559c3fbfcffdda3bbd2e1f46c9498b28bfd668",
+      "src/greedy_tuples.jl": "b71c91bc421a620bf0e2f4e52157c20c3b3da55fb3d84de1e3ec1f1bcfdae912",
+      "src/interface.jl": "c9aad35a24636cd0c41b31a170d928dc9da4103239894cd94a874ae4302571c0",
+      "src/invalid.jl": "d1ed2f9932e23ddb6e9c8ce3963ffacdeb70dbe53b154e16fb2812980b6dc4b8",
+      "src/measure.jl": "935f3c0f6ccf4779ccbac573ea413e8f8ebe60651e78d08605b6187e8b9fa707",
+      "src/parameter_order.jl": "138dc968a7ce5d5f830e578d19cb86d680c56cff3159282452fef9d99b797f8c",
+      "src/partition.jl": "bffd3e186f9f24f3134a1d1e1121a41bc400a955c109f687859b81b23cd19cf3",
+      "src/report.jl": "589ea9f1d1539e29e234ea362913a7b232b507a4aa56421bd237a00696809a06",
+      "src/request.jl": "0f7246a954f2025b60454a0754fe9e84cff3115d311b130ff4de0f301c1b58a7",
+      "src/rule_table.jl": "1b2d44dece286cc07f6b69a7c8800b16ddd58595f1ac7e30eccec58b6c46877c",
+      "src/space.jl": "1edd12ab4b77051f855b74c4516f2dad4df7cbc6258c2239112e7685b172f85c",
+      "src/testcases.jl": "907513cafde4f3adcdc89df764f114fdb6210c80b469b91c07ba644aa2f3c3b7",
+      "Project.toml": "df7d7a80e78fd266cf4caa60d27d85a0e4de5d09a240cedd00c05fd713e87011",
+      "Manifest.toml": "01e5db5904ceeb798ccdbc11af58c6af543035e2cea4b326aa8ae3d6f7567ba6",
+      "benchmark/scaling/worker.jl": "303a48cfdca94610b8055c46e46f6456aabf272a79c1197baa9b8b3d034ced80",
+      "benchmark/scaling/run.py": "c24c1ca8e7e16f3bfe6230a6dfc397ae54bb23a717b39f3003e47b44c690a296",
+      "benchmark/scaling/bench12_adapter.jl": "199163215ac7cb630071bccc6c9ae6c65adbc7f9bcd7affe30a993d0a1d4ca35",
+      "benchmark/scaling/phase_adapter.jl": "11cb2751b52afa7ced03d67da62cce93af55c17cfb68bcfe62d2ef5b49152e4a"
+    },
+    "commit": "0bc6bae34ea7be1b5bbb54993bbeed67317b97c1",
+    "git_status": "?? benchmark/scaling/\n?? benchmark/solver_review.md\n?? design/20260930_mini_review.md\n?? design/20260930_walkthrough.pdf\n?? design/architecture_and_algorithms.tex\n?? output/",
+    "source_diff": "",
+    "limits": {
+      "out": "benchmark/scaling/results/20261003-phases",
+      "runs": 3,
+      "filter": "",
+      "specs": "benchmark/scaling/phase_specs.json",
+      "adapter": [
+        "benchmark/scaling/bench12_adapter.jl",
+        "benchmark/scaling/phase_adapter.jl"
+      ],
+      "julia": "julia",
+      "rss_mib": 2048,
+      "stage_seconds": 20.0,
+      "startup_seconds": 60,
+      "cold_seconds": 60,
+      "diagnostic_seconds": 30,
+      "job_seconds": 180.0,
+      "poll": 0.2,
+      "continue_ladders": false,
+      "resume": false,
+      "list": false
+    },
+    "memory_before": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    60898.\nPages active:                                 270407.\nPages inactive:                               269992.\nPages speculative:                               321.\nPages throttled:                                   0.\nPages wired down:                             175669.\nPages purgeable:                                5660.\n\"Translation faults\":                      779652056.\nPages copy-on-write:                        36122410.\nPages zero filled:                         512383769.\nPages reactivated:                          47027616.\nPages purged:                                7709800.\nFile-backed pages:                            208881.\nAnonymous pages:                              331839.\nPages stored in compressor:                  1373129.\nPages occupied by compressor:                 745274.\nDecompressions:                             32585848.\nCompressions:                               42765232.\nPageins:                                    45394520.\nPageouts:                                     161118.\nSwapins:                                        4010.\nSwapouts:                                      53440.",
+    "finished": "2026-10-03T15:59:02.217644-04:00",
+    "memory_after": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                    78452.\nPages active:                                 324187.\nPages inactive:                               323380.\nPages speculative:                              5249.\nPages throttled:                                   0.\nPages wired down:                             146955.\nPages purgeable:                               10498.\n\"Translation faults\":                      782858530.\nPages copy-on-write:                        36435088.\nPages zero filled:                         514376862.\nPages reactivated:                          47211322.\nPages purged:                                7793160.\nFile-backed pages:                            220939.\nAnonymous pages:                              431877.\nPages stored in compressor:                  1164554.\nPages occupied by compressor:                 644338.\nDecompressions:                             32926204.\nCompressions:                               42990614.\nPageins:                                    45446652.\nPageouts:                                     161132.\nSwapins:                                        4010.\nSwapouts:                                      53440."
+  },
+  "results": [
+    {
+      "spec": {
+        "id": "phases-profile_ipog-none-n32-v2",
+        "ladder": "phases-profile_ipog-none-n32",
+        "n": 32,
+        "v": 2,
+        "family": "none",
+        "usage": "core",
+        "solver": "profile_ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 13.415164374979213,
+      "sampled_peak_rss_bytes": 864305152,
+      "measurements": [
+        {
+          "allocated_bytes": 58256944,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 0,
+          "seconds": 0.52643825,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 57856,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 1,
+          "seconds": 0.000133833,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 57856,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 2,
+          "seconds": 0.000108666,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 57856,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 3,
+          "seconds": 0.000116458,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 331926688,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 0,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 4.422279625,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 5284320,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 1,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 0.000923083,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 5284320,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 2,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 0.000828834,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 5284320,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 3,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 0.000799542,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_ipog-none-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 766361600,
+        "gc": 864305152,
+        "construct": 769392640,
+        "diagnostics": 863993856,
+        "cold": 850870272,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 864108544,
+      "os_peak_footprint_bytes": 732497240,
+      "warm_median_seconds": 0.000828834,
+      "warm_min_seconds": 0.000799542,
+      "warm_max_seconds": 0.000923083,
+      "warm_median_allocated_bytes": 5284320,
+      "fingerprint": "d699f11976ad843cecb48c0703c816fa8a314c2e2c3505a46fd39bc9e8796770"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_ipog-noop_scoped-n32-v2",
+        "ladder": "phases-profile_ipog-noop_scoped-n32",
+        "n": 32,
+        "v": 2,
+        "family": "noop_scoped",
+        "usage": "core",
+        "solver": "profile_ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 13.387333582970314,
+      "sampled_peak_rss_bytes": 853278720,
+      "measurements": [
+        {
+          "allocated_bytes": 84124344,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 0,
+          "seconds": 0.599054,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 60408,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 1,
+          "seconds": 0.000146084,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60408,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 2,
+          "seconds": 0.0001615,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60408,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 3,
+          "seconds": 0.000134375,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 359504272,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 0,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 6,
+            "queries": 4335,
+            "rule_checks": 242,
+            "rule_memo": 0,
+            "search_retained_bytes": 1472048
+          },
+          "seconds": 4.579725875,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 20510016,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 1,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 6,
+            "queries": 4335,
+            "rule_checks": 242,
+            "rule_memo": 0,
+            "search_retained_bytes": 1472048
+          },
+          "seconds": 0.004677709,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 20510016,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 2,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 6,
+            "queries": 4335,
+            "rule_checks": 242,
+            "rule_memo": 0,
+            "search_retained_bytes": 1472048
+          },
+          "seconds": 0.004454459,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 20510016,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 3,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 6,
+            "queries": 4335,
+            "rule_checks": 242,
+            "rule_memo": 0,
+            "search_retained_bytes": 1472048
+          },
+          "seconds": 0.004400291,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_ipog-noop_scoped-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 724434944,
+        "gc": 853278720,
+        "construct": 727957504,
+        "diagnostics": 853229568,
+        "cold": 835977216,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 852869120,
+      "os_peak_footprint_bytes": 719357272,
+      "warm_median_seconds": 0.004454459,
+      "warm_min_seconds": 0.004400291,
+      "warm_max_seconds": 0.004677709,
+      "warm_median_allocated_bytes": 20510016,
+      "fingerprint": "e454185da052b30ad1dbc982c0a691ea6852cedbade3beb33b5c937f920a9456"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_ipog-noop_whole-n32-v2",
+        "ladder": "phases-profile_ipog-noop_whole-n32",
+        "n": 32,
+        "v": 2,
+        "family": "noop_whole",
+        "usage": "core",
+        "solver": "profile_ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 14.655935625021812,
+      "sampled_peak_rss_bytes": 874971136,
+      "measurements": [
+        {
+          "allocated_bytes": 58566832,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 0,
+          "seconds": 0.534386083,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 60080,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 1,
+          "seconds": 0.000138875,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60080,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 2,
+          "seconds": 0.000131584,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60080,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 3,
+          "seconds": 0.000114834,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 384939296,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 0,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 64605,
+            "queries": 4335,
+            "rule_checks": 4715,
+            "rule_memo": 1314,
+            "search_retained_bytes": 3980520
+          },
+          "seconds": 4.841727292,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 30338784,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 1,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 64605,
+            "queries": 4335,
+            "rule_checks": 4715,
+            "rule_memo": 1314,
+            "search_retained_bytes": 3980520
+          },
+          "seconds": 0.01272075,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 30338784,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 2,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 64605,
+            "queries": 4335,
+            "rule_checks": 4715,
+            "rule_memo": 1314,
+            "search_retained_bytes": 3980520
+          },
+          "seconds": 0.012686542,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 30338784,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3544,
+          "run": 3,
+          "search": {
+            "assignment_memo": 2351,
+            "memo_hits": 1984,
+            "nodes": 64605,
+            "queries": 4335,
+            "rule_checks": 4715,
+            "rule_memo": 1314,
+            "search_retained_bytes": 3980520
+          },
+          "seconds": 0.012751542,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_ipog-noop_whole-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 737951744,
+        "construct": 740196352,
+        "diagnostics": 874971136,
+        "gc": 745848832,
+        "cold": 856571904,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 874020864,
+      "os_peak_footprint_bytes": 737887576,
+      "warm_median_seconds": 0.01272075,
+      "warm_min_seconds": 0.012686542,
+      "warm_max_seconds": 0.012751542,
+      "warm_median_allocated_bytes": 30338784,
+      "fingerprint": "ce89291018e08bb85da7e5e71cb1da0dc9023713faab637a9a6b8b2645fa67c3"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_ipog-scoped-n32-v2",
+        "ladder": "phases-profile_ipog-scoped-n32",
+        "n": 32,
+        "v": 2,
+        "family": "scoped",
+        "usage": "core",
+        "solver": "profile_ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 13.595157416013535,
+      "sampled_peak_rss_bytes": 851509248,
+      "measurements": [
+        {
+          "allocated_bytes": 84163256,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 0,
+          "seconds": 0.616071875,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 60776,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 1,
+          "seconds": 0.000135875,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60776,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 2,
+          "seconds": 0.000118208,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60776,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 3,
+          "seconds": 0.000113833,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 359130416,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 11,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 3512,
+          "run": 0,
+          "search": {
+            "assignment_memo": 2297,
+            "memo_hits": 1983,
+            "nodes": 6,
+            "queries": 4280,
+            "rule_checks": 185,
+            "rule_memo": 0,
+            "search_retained_bytes": 1438592
+          },
+          "seconds": 4.598816208,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 20136160,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 11,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 3512,
+          "run": 1,
+          "search": {
+            "assignment_memo": 2297,
+            "memo_hits": 1983,
+            "nodes": 6,
+            "queries": 4280,
+            "rule_checks": 185,
+            "rule_memo": 0,
+            "search_retained_bytes": 1438592
+          },
+          "seconds": 0.004282167,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 20136160,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 11,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 3512,
+          "run": 2,
+          "search": {
+            "assignment_memo": 2297,
+            "memo_hits": 1983,
+            "nodes": 6,
+            "queries": 4280,
+            "rule_checks": 185,
+            "rule_memo": 0,
+            "search_retained_bytes": 1438592
+          },
+          "seconds": 0.004621042,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 20136160,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 11,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 3512,
+          "run": 3,
+          "search": {
+            "assignment_memo": 2297,
+            "memo_hits": 1983,
+            "nodes": 6,
+            "queries": 4280,
+            "rule_checks": 185,
+            "rule_memo": 0,
+            "search_retained_bytes": 1438592
+          },
+          "seconds": 0.00421275,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_ipog-scoped-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 726138880,
+        "gc": 731742208,
+        "construct": 730316800,
+        "cold": 843481088,
+        "diagnostics": 851509248,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 851017728,
+      "os_peak_footprint_bytes": 712459632,
+      "warm_median_seconds": 0.004282167,
+      "warm_min_seconds": 0.00421275,
+      "warm_max_seconds": 0.004621042,
+      "warm_median_allocated_bytes": 20136160,
+      "fingerprint": "f8319cdc17827e2b9d1111e79e06ebfc6c80f503738337bd2e5e0c7ea2cb40c6"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_ipog-equality-n32-v2",
+        "ladder": "phases-profile_ipog-equality-n32",
+        "n": 32,
+        "v": 2,
+        "family": "equality",
+        "usage": "core",
+        "solver": "profile_ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 16.259744875016622,
+      "sampled_peak_rss_bytes": 936984576,
+      "measurements": [
+        {
+          "allocated_bytes": 84236136,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 0,
+          "seconds": 0.645294708,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 144728,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 1,
+          "seconds": 0.000240458,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 144728,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 2,
+          "seconds": 0.000195916,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 144728,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 3,
+          "seconds": 0.000187125,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 1430899248,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.074243457,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 0,
+          "search": {
+            "assignment_memo": 1982,
+            "memo_hits": 1922,
+            "nodes": 47740,
+            "queries": 3904,
+            "rule_checks": 102364,
+            "rule_memo": 0,
+            "search_retained_bytes": 1955032
+          },
+          "seconds": 5.447326583,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 1092849712,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.044874999,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 1,
+          "search": {
+            "assignment_memo": 1982,
+            "memo_hits": 1922,
+            "nodes": 47740,
+            "queries": 3904,
+            "rule_checks": 102364,
+            "rule_memo": 0,
+            "search_retained_bytes": 1955032
+          },
+          "seconds": 0.321801625,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 1092849712,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.043030585,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 2,
+          "search": {
+            "assignment_memo": 1982,
+            "memo_hits": 1922,
+            "nodes": 47740,
+            "queries": 3904,
+            "rule_checks": 102364,
+            "rule_memo": 0,
+            "search_retained_bytes": 1955032
+          },
+          "seconds": 0.3136925,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 1092849712,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.04681775,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 3,
+          "search": {
+            "assignment_memo": 1982,
+            "memo_hits": 1922,
+            "nodes": 47740,
+            "queries": 3904,
+            "rule_checks": 102364,
+            "rule_memo": 0,
+            "search_retained_bytes": 1955032
+          },
+          "seconds": 0.334308625,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_ipog-equality-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 772603904,
+        "construct": 776372224,
+        "diagnostics": 936804352,
+        "cold": 883703808,
+        "warm": 936984576,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 936476672,
+      "os_peak_footprint_bytes": 802063752,
+      "warm_median_seconds": 0.321801625,
+      "warm_min_seconds": 0.3136925,
+      "warm_max_seconds": 0.334308625,
+      "warm_median_allocated_bytes": 1092849712,
+      "fingerprint": "440ae9714dcf380230b080dfd0215beadef4506f33f4758991caa3972649a822"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_ipog-none-n8-v16",
+        "ladder": "phases-profile_ipog-none-n8",
+        "n": 8,
+        "v": 16,
+        "family": "none",
+        "usage": "core",
+        "solver": "profile_ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 13.368717750010546,
+      "sampled_peak_rss_bytes": 863420416,
+      "measurements": [
+        {
+          "allocated_bytes": 58244288,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 0,
+          "seconds": 0.542287667,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 40176,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 1,
+          "seconds": 8.0833e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 40176,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 2,
+          "seconds": 6.2958e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 40176,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 3,
+          "seconds": 6.175e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 495774048,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.018847416,
+          "result": {
+            "cases": 256,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 16600,
+          "run": 0,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 4.43130225,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 177306240,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.005147916,
+          "result": {
+            "cases": 256,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 16600,
+          "run": 1,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 0.039542166,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 177306240,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.005890625,
+          "result": {
+            "cases": 256,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 16600,
+          "run": 2,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 0.040161083,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 177306240,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.005822791,
+          "result": {
+            "cases": 256,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 16600,
+          "run": 3,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 0.040343,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_ipog-none-n8-v16/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 767737856,
+        "construct": 770998272,
+        "gc": 863420416,
+        "cold": 862568448,
+        "diagnostics": 863387648,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 863174656,
+      "os_peak_footprint_bytes": 733529408,
+      "warm_median_seconds": 0.040161083,
+      "warm_min_seconds": 0.039542166,
+      "warm_max_seconds": 0.040343,
+      "warm_median_allocated_bytes": 177306240,
+      "fingerprint": "378aa5accb40428beeab73b44a0aa4881ef858eb52f744e6e6299b32c8db425c"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_ipog-bench12-n12-v0",
+        "ladder": "phases-profile_ipog-bench12-n12",
+        "n": 12,
+        "v": 0,
+        "family": "bench12",
+        "usage": "core",
+        "solver": "profile_ipog",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 13.35569287504768,
+      "sampled_peak_rss_bytes": 841236480,
+      "measurements": [
+        {
+          "allocated_bytes": 153242936,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 0,
+          "seconds": 0.765859208,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 38616,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 1,
+          "seconds": 0.000120167,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 38616,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 2,
+          "seconds": 8.8708e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 38616,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 3,
+          "seconds": 8.0417e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 345683968,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 22,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3448,
+          "run": 0,
+          "search": {
+            "assignment_memo": 815,
+            "memo_hits": 589,
+            "nodes": 68,
+            "queries": 1404,
+            "rule_checks": 916,
+            "rule_memo": 0,
+            "search_retained_bytes": 303656
+          },
+          "seconds": 4.502854792,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 4492368,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 22,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3448,
+          "run": 1,
+          "search": {
+            "assignment_memo": 815,
+            "memo_hits": 589,
+            "nodes": 68,
+            "queries": 1404,
+            "rule_checks": 916,
+            "rule_memo": 0,
+            "search_retained_bytes": 303656
+          },
+          "seconds": 0.001133541,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 4492368,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 22,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3448,
+          "run": 2,
+          "search": {
+            "assignment_memo": 815,
+            "memo_hits": 589,
+            "nodes": 68,
+            "queries": 1404,
+            "rule_checks": 916,
+            "rule_memo": 0,
+            "search_retained_bytes": 303656
+          },
+          "seconds": 0.001137708,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 4492368,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 22,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3448,
+          "run": 3,
+          "search": {
+            "assignment_memo": 815,
+            "memo_hits": 589,
+            "nodes": 68,
+            "queries": 1404,
+            "rule_checks": 916,
+            "rule_memo": 0,
+            "search_retained_bytes": 303656
+          },
+          "seconds": 0.001120792,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_ipog-bench12-n12-v0/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 728416256,
+        "construct": 732135424,
+        "diagnostics": 841187328,
+        "gc": 841236480,
+        "cold": 826834944,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 840957952,
+      "os_peak_footprint_bytes": 698025304,
+      "warm_median_seconds": 0.001133541,
+      "warm_min_seconds": 0.001120792,
+      "warm_max_seconds": 0.001137708,
+      "warm_median_allocated_bytes": 4492368,
+      "fingerprint": "d5d10f546d39e0b41df60bdc4aff2481dd4d2c712bfbc40aa4f576cb471e03e9"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_gnd-none-n32-v2",
+        "ladder": "phases-profile_gnd-none-n32",
+        "n": 32,
+        "v": 2,
+        "family": "none",
+        "usage": "core",
+        "solver": "profile_gnd",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 12.720763374993112,
+      "sampled_peak_rss_bytes": 823623680,
+      "measurements": [
+        {
+          "allocated_bytes": 58256784,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 0,
+          "seconds": 0.494189083,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 57856,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 1,
+          "seconds": 0.00010525,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 57856,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 2,
+          "seconds": 8.9875e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 57856,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5704,
+          "rules": 0,
+          "run": 3,
+          "seconds": 9.0208e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 295841072,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 0,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 4.129898375,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 12550080,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 1,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 0.02428525,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 12550080,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 2,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 0.024215042,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 12550080,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 3,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 9552
+          },
+          "seconds": 0.024594292,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_gnd-none-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 742047744,
+        "gc": 745603072,
+        "construct": 745160704,
+        "cold": 822542336,
+        "diagnostics": 822820864,
+        "warm": 823623680,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 822689792,
+      "os_peak_footprint_bytes": 709412160,
+      "warm_median_seconds": 0.02428525,
+      "warm_min_seconds": 0.024215042,
+      "warm_max_seconds": 0.024594292,
+      "warm_median_allocated_bytes": 12550080,
+      "fingerprint": "4cf16d9d6b8bdd312e36c27aaed1fb47b3efc9334a42fcecc39d232318397ee9"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_gnd-noop_scoped-n32-v2",
+        "ladder": "phases-profile_gnd-noop_scoped-n32",
+        "n": 32,
+        "v": 2,
+        "family": "noop_scoped",
+        "usage": "core",
+        "solver": "profile_gnd",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 13.375085667008534,
+      "sampled_peak_rss_bytes": 831471616,
+      "measurements": [
+        {
+          "allocated_bytes": 84120760,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 0,
+          "seconds": 0.598588959,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 60408,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 1,
+          "seconds": 0.000168542,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60408,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 2,
+          "seconds": 0.000116458,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60408,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6072,
+          "rules": 1,
+          "run": 3,
+          "seconds": 0.000104125,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 314658144,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 0,
+          "search": {
+            "assignment_memo": 4317,
+            "memo_hits": 2051,
+            "nodes": 6,
+            "queries": 6368,
+            "rule_checks": 1245,
+            "rule_memo": 0,
+            "search_retained_bytes": 2844816
+          },
+          "seconds": 4.140470375,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 30319504,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 1,
+          "search": {
+            "assignment_memo": 4317,
+            "memo_hits": 2051,
+            "nodes": 6,
+            "queries": 6368,
+            "rule_checks": 1245,
+            "rule_memo": 0,
+            "search_retained_bytes": 2844816
+          },
+          "seconds": 0.030277792,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 30319504,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 2,
+          "search": {
+            "assignment_memo": 4317,
+            "memo_hits": 2051,
+            "nodes": 6,
+            "queries": 6368,
+            "rule_checks": 1245,
+            "rule_memo": 0,
+            "search_retained_bytes": 2844816
+          },
+          "seconds": 0.029709625,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 30319504,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 3,
+          "search": {
+            "assignment_memo": 4317,
+            "memo_hits": 2051,
+            "nodes": 6,
+            "queries": 6368,
+            "rule_checks": 1245,
+            "rule_memo": 0,
+            "search_retained_bytes": 2844816
+          },
+          "seconds": 0.029612708,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_gnd-noop_scoped-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 738656256,
+        "construct": 742555648,
+        "gc": 743555072,
+        "cold": 821673984,
+        "diagnostics": 831471616,
+        "warm": 831438848,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 831275008,
+      "os_peak_footprint_bytes": 706168104,
+      "warm_median_seconds": 0.029709625,
+      "warm_min_seconds": 0.029612708,
+      "warm_max_seconds": 0.030277792,
+      "warm_median_allocated_bytes": 30319504,
+      "fingerprint": "ac9b5336be2e066d3b51962b2b52b0e04f361c1d6a983fc2d67d899786a2acba"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_gnd-noop_whole-n32-v2",
+        "ladder": "phases-profile_gnd-noop_whole-n32",
+        "n": 32,
+        "v": 2,
+        "family": "noop_whole",
+        "usage": "core",
+        "solver": "profile_gnd",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 18.75386520801112,
+      "sampled_peak_rss_bytes": 895303680,
+      "measurements": [
+        {
+          "allocated_bytes": 58566512,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 0,
+          "seconds": 0.509615917,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 60080,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 1,
+          "seconds": 0.000156458,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60080,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 2,
+          "seconds": 0.000104,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60080,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 1,
+          "retained_bytes": 6528,
+          "rules": 1,
+          "run": 3,
+          "seconds": 0.000100833,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 574948688,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.053905001,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 0,
+          "search": {
+            "assignment_memo": 37930,
+            "memo_hits": 4438,
+            "nodes": 580894,
+            "queries": 42368,
+            "rule_checks": 74712,
+            "rule_memo": 31842,
+            "search_retained_bytes": 63360408
+          },
+          "seconds": 4.7113065,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 275004880,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.023039708,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 1,
+          "search": {
+            "assignment_memo": 37930,
+            "memo_hits": 4438,
+            "nodes": 580894,
+            "queries": 42368,
+            "rule_checks": 74712,
+            "rule_memo": 31842,
+            "search_retained_bytes": 63360408
+          },
+          "seconds": 0.230270708,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 275004880,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.027701166,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 2,
+          "search": {
+            "assignment_memo": 37930,
+            "memo_hits": 4438,
+            "nodes": 580894,
+            "queries": 42368,
+            "rule_checks": 74712,
+            "rule_memo": 31842,
+            "search_retained_bytes": 63360408
+          },
+          "seconds": 0.234858125,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 275004880,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.029413583,
+          "result": {
+            "cases": 12,
+            "covered": 1984,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1984
+          },
+          "retained_bytes": 3288,
+          "run": 3,
+          "search": {
+            "assignment_memo": 37930,
+            "memo_hits": 4438,
+            "nodes": 580894,
+            "queries": 42368,
+            "rule_checks": 74712,
+            "rule_memo": 31842,
+            "search_retained_bytes": 63360408
+          },
+          "seconds": 0.235481125,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_gnd-noop_whole-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 732217344,
+        "construct": 735461376,
+        "gc": 736854016,
+        "cold": 886521856,
+        "diagnostics": 895303680,
+        "warm": 858931200,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 893992960,
+      "os_peak_footprint_bytes": 773719408,
+      "warm_median_seconds": 0.234858125,
+      "warm_min_seconds": 0.230270708,
+      "warm_max_seconds": 0.235481125,
+      "warm_median_allocated_bytes": 275004880,
+      "fingerprint": "5dbe2a4672f864340922b12e01fd8fe8e027fe957cce68752fef38e1cef761b4"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_gnd-scoped-n32-v2",
+        "ladder": "phases-profile_gnd-scoped-n32",
+        "n": 32,
+        "v": 2,
+        "family": "scoped",
+        "usage": "core",
+        "solver": "profile_gnd",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 13.921764832979534,
+      "sampled_peak_rss_bytes": 829898752,
+      "measurements": [
+        {
+          "allocated_bytes": 84160216,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 0,
+          "seconds": 0.60699375,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 60776,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 1,
+          "seconds": 0.000260792,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60776,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 2,
+          "seconds": 0.00014775,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 60776,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 6344,
+          "rules": 1,
+          "run": 3,
+          "seconds": 0.000132417,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 314939280,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 4024,
+          "run": 0,
+          "search": {
+            "assignment_memo": 4523,
+            "memo_hits": 2043,
+            "nodes": 6,
+            "queries": 6566,
+            "rule_checks": 1347,
+            "rule_memo": 0,
+            "search_retained_bytes": 2860200
+          },
+          "seconds": 4.215203375,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 30600640,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 4024,
+          "run": 1,
+          "search": {
+            "assignment_memo": 4523,
+            "memo_hits": 2043,
+            "nodes": 6,
+            "queries": 6566,
+            "rule_checks": 1347,
+            "rule_memo": 0,
+            "search_retained_bytes": 2860200
+          },
+          "seconds": 0.029925625,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 30600640,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 4024,
+          "run": 2,
+          "search": {
+            "assignment_memo": 4523,
+            "memo_hits": 2043,
+            "nodes": 6,
+            "queries": 6566,
+            "rule_checks": 1347,
+            "rule_memo": 0,
+            "search_retained_bytes": 2860200
+          },
+          "seconds": 0.030114375,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 30600640,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 13,
+            "covered": 1983,
+            "excluded": 1,
+            "exclusions": {
+              "forbidden": 1,
+              "implied": 0,
+              "minimal_not_applicable": 1,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 1
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 1983
+          },
+          "retained_bytes": 4024,
+          "run": 3,
+          "search": {
+            "assignment_memo": 4523,
+            "memo_hits": 2043,
+            "nodes": 6,
+            "queries": 6566,
+            "rule_checks": 1347,
+            "rule_memo": 0,
+            "search_retained_bytes": 2860200
+          },
+          "seconds": 0.030218292,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_gnd-scoped-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 739409920,
+        "construct": 743047168,
+        "diagnostics": 829898752,
+        "gc": 829833216,
+        "cold": 819789824,
+        "warm": 829849600,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 829456384,
+      "os_peak_footprint_bytes": 701367640,
+      "warm_median_seconds": 0.030114375,
+      "warm_min_seconds": 0.029925625,
+      "warm_max_seconds": 0.030218292,
+      "warm_median_allocated_bytes": 30600640,
+      "fingerprint": "e2d19e8d08093edb602cf3bb8c0c754281689db6a67ee52c7d027dfa47784d03"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_gnd-equality-n32-v2",
+        "ladder": "phases-profile_gnd-equality-n32",
+        "n": 32,
+        "v": 2,
+        "family": "equality",
+        "usage": "core",
+        "solver": "profile_gnd",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 15.606413916975725,
+      "sampled_peak_rss_bytes": 870727680,
+      "measurements": [
+        {
+          "allocated_bytes": 84235688,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 0,
+          "seconds": 0.64272225,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 144728,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 1,
+          "seconds": 0.000241208,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 144728,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 2,
+          "seconds": 0.000247125,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 144728,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 22472,
+          "rules": 31,
+          "run": 3,
+          "seconds": 0.000214375,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 1405646944,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.068342125,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 0,
+          "search": {
+            "assignment_memo": 7707,
+            "memo_hits": 2537,
+            "nodes": 96569,
+            "queries": 10244,
+            "rule_checks": 274491,
+            "rule_memo": 0,
+            "search_retained_bytes": 6804240
+          },
+          "seconds": 4.62822725,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 1121308000,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.04258325,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 1,
+          "search": {
+            "assignment_memo": 7707,
+            "memo_hits": 2537,
+            "nodes": 96569,
+            "queries": 10244,
+            "rule_checks": 274491,
+            "rule_memo": 0,
+            "search_retained_bytes": 6804240
+          },
+          "seconds": 0.331778792,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 1121308000,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.044767209,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 2,
+          "search": {
+            "assignment_memo": 7707,
+            "memo_hits": 2537,
+            "nodes": 96569,
+            "queries": 10244,
+            "rule_checks": 274491,
+            "rule_memo": 0,
+            "search_retained_bytes": 6804240
+          },
+          "seconds": 0.343331708,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 1121306336,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.045532376,
+          "result": {
+            "cases": 2,
+            "covered": 992,
+            "excluded": 992,
+            "exclusions": {
+              "forbidden": 62,
+              "implied": 930,
+              "minimal_not_applicable": 62,
+              "minimal_unresolved": 0,
+              "minimal_verified": 930,
+              "total": 992
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 992
+          },
+          "retained_bytes": 476072,
+          "run": 3,
+          "search": {
+            "assignment_memo": 7707,
+            "memo_hits": 2537,
+            "nodes": 96569,
+            "queries": 10244,
+            "rule_checks": 274491,
+            "rule_memo": 0,
+            "search_retained_bytes": 6804240
+          },
+          "seconds": 0.342306292,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_gnd-equality-n32-v2/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 739033088,
+        "construct": 742391808,
+        "diagnostics": 870727680,
+        "cold": 864632832,
+        "warm": 870088704,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 869761024,
+      "os_peak_footprint_bytes": 733988184,
+      "warm_median_seconds": 0.342306292,
+      "warm_min_seconds": 0.331778792,
+      "warm_max_seconds": 0.343331708,
+      "warm_median_allocated_bytes": 1121308000,
+      "fingerprint": "3d91cc5a31e9cffbcfcf61301827db9fce4230b5a193a90e0643d3c90281faa2"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_gnd-none-n8-v16",
+        "ladder": "phases-profile_gnd-none-n8",
+        "n": 8,
+        "v": 16,
+        "family": "none",
+        "usage": "core",
+        "solver": "profile_gnd",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 18.270210499991663,
+      "sampled_peak_rss_bytes": 872857600,
+      "measurements": [
+        {
+          "allocated_bytes": 58243872,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 0,
+          "seconds": 0.499549042,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 40176,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 1,
+          "seconds": 8.9459e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 40176,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 2,
+          "seconds": 6.2917e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 40176,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 3576,
+          "rules": 0,
+          "run": 3,
+          "seconds": 5.9334e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 526224336,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.022694251,
+          "result": {
+            "cases": 344,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 22232,
+          "run": 0,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 5.548651792,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 242933232,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.004266041,
+          "result": {
+            "cases": 344,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 22232,
+          "run": 1,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 1.37342375,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 242933232,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.005362833,
+          "result": {
+            "cases": 344,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 22232,
+          "run": 2,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 1.367354292,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 242933232,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.005535126,
+          "result": {
+            "cases": 344,
+            "covered": 7168,
+            "excluded": 0,
+            "exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 7168
+          },
+          "retained_bytes": 22232,
+          "run": 3,
+          "search": {
+            "assignment_memo": 0,
+            "memo_hits": 0,
+            "nodes": 0,
+            "queries": 0,
+            "rule_checks": 0,
+            "rule_memo": 0,
+            "search_retained_bytes": 3720
+          },
+          "seconds": 1.368683666,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_gnd-none-n8-v16/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 729513984,
+        "gc": 865402880,
+        "construct": 732594176,
+        "diagnostics": 865386496,
+        "cold": 864305152,
+        "warm": 872857600,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 872710144,
+      "os_peak_footprint_bytes": 725271896,
+      "warm_median_seconds": 1.368683666,
+      "warm_min_seconds": 1.367354292,
+      "warm_max_seconds": 1.37342375,
+      "warm_median_allocated_bytes": 242933232,
+      "fingerprint": "d9cdd5174a0adfd90be8dc11ff1959d70cd8672c95b26cc300b4ed7a83acc0d6"
+    },
+    {
+      "spec": {
+        "id": "phases-profile_gnd-bench12-n12-v0",
+        "ladder": "phases-profile_gnd-bench12-n12",
+        "n": 12,
+        "v": 0,
+        "family": "bench12",
+        "usage": "core",
+        "solver": "profile_gnd",
+        "strength": 2,
+        "runs": 3,
+        "adapters": [
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/bench12_adapter.jl",
+          "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/phase_adapter.jl"
+        ]
+      },
+      "status": "ok",
+      "stopped_stage": null,
+      "exit_code": 0,
+      "wall_seconds": 14.866952583950479,
+      "sampled_peak_rss_bytes": 871563264,
+      "measurements": [
+        {
+          "allocated_bytes": 153237624,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 0,
+          "seconds": 0.763102791,
+          "stage": "construct"
+        },
+        {
+          "allocated_bytes": 38616,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 1,
+          "seconds": 0.000111083,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 38616,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 2,
+          "seconds": 8.5083e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 38616,
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "lazy_rules": 0,
+          "retained_bytes": 5088,
+          "rules": 4,
+          "run": 3,
+          "seconds": 7.9541e-05,
+          "stage": "construct_warm"
+        },
+        {
+          "allocated_bytes": 331264944,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 25,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3736,
+          "run": 0,
+          "search": {
+            "assignment_memo": 22958,
+            "memo_hits": 4466,
+            "nodes": 68,
+            "queries": 27424,
+            "rule_checks": 35772,
+            "rule_memo": 0,
+            "search_retained_bytes": 7132216
+          },
+          "seconds": 4.132642292,
+          "stage": "cold"
+        },
+        {
+          "allocated_bytes": 44730048,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 25,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3736,
+          "run": 1,
+          "search": {
+            "assignment_memo": 22958,
+            "memo_hits": 4466,
+            "nodes": 68,
+            "queries": 27424,
+            "rule_checks": 35772,
+            "rule_memo": 0,
+            "search_retained_bytes": 7132216
+          },
+          "seconds": 0.021197417,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 44730048,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 25,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3736,
+          "run": 2,
+          "search": {
+            "assignment_memo": 22958,
+            "memo_hits": 4466,
+            "nodes": 68,
+            "queries": 27424,
+            "rule_checks": 35772,
+            "rule_memo": 0,
+            "search_retained_bytes": 7132216
+          },
+          "seconds": 0.020873917,
+          "stage": "warm"
+        },
+        {
+          "allocated_bytes": 44730048,
+          "certification": "adapter Request/classify/validate certification included in operation timing",
+          "event": "measurement",
+          "gc_seconds": 0.0,
+          "result": {
+            "cases": 25,
+            "covered": 586,
+            "excluded": 4,
+            "exclusions": {
+              "forbidden": 3,
+              "implied": 1,
+              "minimal_not_applicable": 3,
+              "minimal_unresolved": 0,
+              "minimal_verified": 1,
+              "total": 4
+            },
+            "negative_covered": 0,
+            "negative_exclusions": {
+              "forbidden": 0,
+              "implied": 0,
+              "minimal_not_applicable": 0,
+              "minimal_unresolved": 0,
+              "minimal_verified": 0,
+              "total": 0
+            },
+            "negative_required": 0,
+            "required": 586
+          },
+          "retained_bytes": 3736,
+          "run": 3,
+          "search": {
+            "assignment_memo": 22958,
+            "memo_hits": 4466,
+            "nodes": 68,
+            "queries": 27424,
+            "rule_checks": 35772,
+            "rule_memo": 0,
+            "search_retained_bytes": 7132216
+          },
+          "seconds": 0.020804333,
+          "stage": "warm"
+        }
+      ],
+      "errors": [],
+      "validation": {
+        "exhaustive": "not_run_large",
+        "public_coverage": "not_applicable"
+      },
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--project=/Users/adolgert/dev/UnitTestDesign.jl",
+        "--threads=1",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/worker.jl",
+        "/Users/adolgert/dev/UnitTestDesign.jl/benchmark/scaling/results/20261003-phases/phases-profile_gnd-bench12-n12-v0/spec.json"
+      ],
+      "completed_warm_runs": 3,
+      "sampled_stage_peak_rss_bytes": {
+        "startup": 754745344,
+        "gc": 871530496,
+        "construct": 759267328,
+        "diagnostics": 871563264,
+        "cold": 841924608,
+        "oracle": 0
+      },
+      "monitor_error": null,
+      "os_peak_rss_bytes": 871301120,
+      "os_peak_footprint_bytes": 737707352,
+      "warm_median_seconds": 0.020873917,
+      "warm_min_seconds": 0.020804333,
+      "warm_max_seconds": 0.021197417,
+      "warm_median_allocated_bytes": 44730048,
+      "fingerprint": "fc941b1be04d588fc507b859553c3b759121668568487262980725f5bc0cdc5a"
+    }
+  ]
+}
