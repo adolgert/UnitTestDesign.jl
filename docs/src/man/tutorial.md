@@ -1,10 +1,7 @@
 # Tutorial
 
-This tutorial builds a test in five levels, and each level adds one idea:
-a one-line call, named parameters, constraints, must-include cases and
-strength, and inspection. A worked example at the end puts them together.
-Every block on this page runs when the documentation is built, and the output
-under it is what it printed.
+This tutorial builds a test in five levels, and each level adds one idea.
+A worked example at the end puts them together.
 
 ## Level 0: one line
 
