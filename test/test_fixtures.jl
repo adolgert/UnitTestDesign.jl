@@ -7,10 +7,8 @@ using TestItemRunner
 # the "Phase 2" lines ask the production model the fixture's question. The
 # "Phase 3" lines generate with both engines through the internal request,
 # `gen(engine, space; kwargs...)` below, until Phase 4 brings `all_pairs` and
-# `covering` over a `TestSpace`. Each `@test_skip` line is an engine or
-# production test waiting for a later phase; its comment says which. The
-# skipped expressions sketch the future call and are never evaluated;
-# `throws(T, f)` stands for `@test_throws`.
+# `covering` over a `TestSpace`. The "Phase 6" lines, pending until
+# negative generation and partitions landed, now run.
 
 @testsnippet FixtureGen begin
     using UnitTestDesign: Request, generate, to_cases
@@ -74,8 +72,11 @@ end
         @test complete(check) && check.ordinary.counts.covered == 11
     end
     @test length(gen(IPOG(), test_space(fable_solver))) == 5
-    # pending: Phase 5 — coverage and report agree with the checker
-    @test_skip coverage(valid_rows(fable_solver.space), test_space(fable_solver)).covered == 11
+    # Phase 5 — coverage agrees with the checker: 11 of 11, 3 forbidden, 2 implied
+    c = coverage(valid_rows(fable_solver.space), test_space(fable_solver))
+    @test iscomplete(c) && c.ordinary.covered == c.ordinary.feasible == 11
+    @test [(e.status, e.rules) for e in c.ordinary.excluded] ==
+          [(:forbidden, [1]), (:forbidden, [1]), (:forbidden, [2]), (:implied, [1, 2]), (:implied, [1, 2])]
 
     s = opus_gpu.space
     @test length(valid_rows(s)) == 7
@@ -160,8 +161,11 @@ end
         @test_throws ResourceLimitError gen(engine, test_space(limit_exhaustion); feasibility_limit = 1)
         @test gen(engine, test_space(limit_exhaustion)) == valid_rows(s)
     end
-    # pending: Phase 5 — coverage with limit 1 lists unknown targets and claims no percentage
-    @test_skip !complete(coverage([], test_space(limit_exhaustion); feasibility_limit = 1))
+    # Phase 5 — coverage with limit 1 lists unknown targets and claims no percentage
+    c = coverage([], test_space(limit_exhaustion); feasibility_limit = limit_exhaustion.request.small_limit)
+    @test !iscomplete(c) && length(c.ordinary.unknown) == 448
+    @test !occursin('%', sprint(show, MIME"text/plain"(), c)) && !occursin("complete", sprint(show, MIME"text/plain"(), c))
+    @test iscomplete(coverage(valid_rows(s), test_space(limit_exhaustion)))
 end
 
 
@@ -211,10 +215,13 @@ end
     # Phase 2 — TestSpace keeps 1 and 1.0 as two choices and nothing as a value
     @test length(test_space(heterogeneous_values).values[1]) == 2
     @test test_space(heterogeneous_values).values[2][1] === nothing
-    # pending: Phase 4 — generated rows keep Int, Float64, Nothing, Symbol and String values
-    @test_skip Set(typeof(r.x) for r in all_pairs(test_space(heterogeneous_values))) == Set([Int, Float64])
-    # pending: Phase 5 — coverage of the 3 valid rows is 7 of 7, keyed by identity
-    @test_skip coverage(valid_rows(heterogeneous_values.space), test_space(heterogeneous_values)).covered == 7
+    # Phase 4 — generated rows keep Int, Float64, Nothing, Symbol and String values
+    @test Set(typeof(r.x) for r in all_pairs(test_space(heterogeneous_values))) == Set([Int, Float64])
+    # Phase 5 — coverage of the 3 valid rows is 7 of 7, keyed by identity: 1 and 1.0 are two values
+    c = coverage(valid_rows(heterogeneous_values.space), test_space(heterogeneous_values))
+    @test iscomplete(c) && c.ordinary.covered == c.ordinary.feasible == 7
+    @test (count(t -> t.x === 1, [e.target for e in c.ordinary.excluded if haskey(e.target, :x)]),
+           count(t -> t.x === 1.0, [e.target for e in c.ordinary.excluded if haskey(e.target, :x)])) == (1, 2)
 end
 
 
@@ -226,14 +233,14 @@ end
     @test classify_target(s, only(partial_seeds.request.infeasible)).status == :implied
     r = check_design(partial_seeds.request.violating, s)
     @test only(r.ordinary.rejected).rules == [1]
-    # pending: Phase 4 — (solver = :lu,) is completed in place and comes first
-    @test_skip first(all_pairs(test_space(partial_seeds); must_include = [(solver = :lu,)])) ==
-               (mode = :exact, solver = :lu, tol = 1e-6)
-    # pending: Phase 4 — an infeasible partial row is an error carrying its explanation
-    @test_skip throws(ArgumentError, () -> all_pairs(test_space(partial_seeds); must_include = [(solver = :lu, tol = 1e-3)]))
-    # pending: Phase 4 — a complete row violating rule 1 is an error naming it
-    @test_skip throws(ArgumentError, () -> all_pairs(test_space(partial_seeds);
-                                                     must_include = [(mode = :fast, solver = :lu, tol = 1e-6)]))
+    # Phase 4 — (solver = :lu,) is completed in place and comes first
+    @test first(all_pairs(test_space(partial_seeds); must_include = [(solver = :lu,)])) ==
+          (mode = :exact, solver = :lu, tol = 1e-6)
+    # Phase 4 — an infeasible partial row is an error carrying its explanation
+    @test_throws ArgumentError all_pairs(test_space(partial_seeds); must_include = [(solver = :lu, tol = 1e-3)])
+    # Phase 4 — a complete row violating rule 1 is an error naming it
+    @test_throws ArgumentError all_pairs(test_space(partial_seeds);
+                                         must_include = [(mode = :fast, solver = :lu, tol = 1e-6)])
 end
 
 
@@ -260,13 +267,14 @@ end
     wayness = f.legacy.wayness()
     @test length(all_pairs(f.legacy.domains...; wayness)) >= 8
     @test wayness == f.legacy.wayness()
-    # pending: Phase 4 — covering(space; stronger) covers the union; the caller's vector is unchanged
-    @test_skip complete(check_design(covering(test_space(f); stronger = f.request.stronger), f.space;
-                                     stronger = f.request.stronger))
+    # Phase 4 — covering(space; stronger) covers the union; the caller's vector is unchanged
+    @test complete(check_design(covering(test_space(f); stronger = f.request.stronger), f.space;
+                                stronger = f.request.stronger))
 end
 
 
 @testitem "fixtures: wrappers" setup=[Checker] begin
+    using Random: Xoshiro
     f = invalid_beside_ordinary
     s = f.space
     bad = CheckInvalid(1)
@@ -281,10 +289,12 @@ end
     @test length(filter(row -> same_value(row.n, seed.n), negative_rows(s))) == 3
     # Phase 2 — TestSpace accepts 1 and Invalid(1) in one domain
     @test length(test_space(invalid_beside_ordinary).values[1]) == 3
-    # pending: Phase 6 — all_pairs covers 9 ordinary pairs and 4 negative targets, reported separately
-    @test_skip coverage(all_pairs(test_space(invalid_beside_ordinary))).negative.covered == 4
-    # pending: Phase 6 — must_include = [(n = Invalid(1),)] completes as a negative row
-    @test_skip hasinvalid(first(all_pairs(test_space(invalid_beside_ordinary); must_include = f.request.negative_seed)))
+    # Phase 6 — all_pairs covers 9 ordinary pairs and 4 negative targets, reported separately
+    c = coverage(all_pairs(test_space(invalid_beside_ordinary)))
+    @test (c.ordinary.covered, c.ordinary.feasible, c.negative.covered, c.negative.feasible) == (9, 9, 4, 4)
+    # Phase 6 — must_include = [(n = Invalid(1),)] completes as a negative row
+    negative_seed = [(n = Invalid(1),)]   # f.request.negative_seed in production values
+    @test hasinvalid(first(all_pairs(test_space(invalid_beside_ordinary); must_include = negative_seed)))
 
     f = partition_names
     s = f.space
@@ -295,8 +305,11 @@ end
     @test classify_target(s, (size = :tiny, mode = :tiny)).status == :required
     # Phase 2 — TestSpace accepts the space and the rule receives :tiny
     @test explain(test_space(partition_names), (size = :tiny, mode = :b)).outcome == :forbidden
-    # pending: Phase 6 — generated rows hold the Partition wrappers; realize draws each once
-    @test_skip all(r -> !(r.size isa Symbol), all_pairs(test_space(partition_names)))
+    # Phase 6 — generated rows hold the Partition wrappers; realize draws each once
+    cases = all_pairs(test_space(partition_names))
+    @test all(r -> !(r.size isa Symbol), cases) && any(r -> r.size isa Partition, cases)
+    @test all(((c, r),) -> c.size isa Partition ? r.size === c.size.name : r.size === c.size,
+              zip(cases, realize(cases; rng = Xoshiro(1))))   # the model draws Returns(name)
 end
 
 
@@ -319,10 +332,12 @@ end
     r = check_design(f.request.ordinary_seed, s)
     @test only(r.ordinary.rejected).reason == :violates_rule
     @test only(r.ordinary.rejected).rules == [1]
-    # pending: Phase 6 — the negative must-include row is accepted: it is the whole result
-    @test_skip collect(all_pairs(test_space(f); must_include = [(a = Invalid(0), b = 1)])) == [(a = Invalid(0), b = 1)]
-    # pending: Phase 6 — the ordinary must-include row is an error naming rule 1
-    @test_skip throws(ArgumentError, () -> all_pairs(test_space(f); must_include = f.request.ordinary_seed))
+    # Phase 6 — the negative must-include row is accepted: it is the whole result
+    @test collect(all_pairs(test_space(f); must_include = [(a = Invalid(0), b = 1)])) == [(a = Invalid(0), b = 1)]
+    # Phase 6 — the ordinary must-include row is an error naming rule 1
+    @test_throws ArgumentError all_pairs(test_space(f); must_include = f.request.ordinary_seed)
+    err = try all_pairs(test_space(f); must_include = f.request.ordinary_seed) catch e; e end
+    @test occursin("breaks rule 1", err.msg)
 end
 
 

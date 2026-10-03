@@ -191,15 +191,28 @@ end
 end
 
 
-@testitem "request: limits are positive, wrappers wait for Phase 6 (§3.3, §0.2)" setup=[RequestSetup] begin
+@testitem "request: limits are positive, and wrappers are values (§3.3, §4.2, §5)" setup=[RequestSetup] begin
     space = solver_space()
     @test_throws ArgumentError Request(space; feasibility_limit = 0)
     @test_throws ArgumentError Request(space; explanation_limit = -1)
     @test Request(space; feasibility_limit = 5).feasibility_limit == 5
-    msg = message(() -> Request(TestSpace((a = [1, Invalid(0)], b = [1, 2]))))
-    @test occursin("parameter `a` has an Invalid value", msg) && occursin("§0.2", msg)
-    msg = message(() -> Request(TestSpace((a = [Partition(:tiny, Returns(1)), 2], b = [1, 2]))))
-    @test occursin("parameter `a` has a Partition value", msg)
+    # Invalid values follow the ordinary ones in engine positions; an engine
+    # sees only the ordinary positions, 1:arity (Phase 6).
+    r = Request(TestSpace((a = [1, Invalid(0), 2], b = [1, 2])))
+    @test r.candidates == [[1, 3, 2], [1, 2]] && r.arity == [2, 2]
+    @test r.feasibility.candidates == [[1, 3], [1, 2]]
+    @test length(targets(r)) == 4
+    # A Partition is an ordinary value.
+    r = Request(TestSpace((a = [Partition(:tiny, Returns(1)), 2], b = [1, 2])))
+    @test r.candidates == [[1, 2], [1, 2]] && r.arity == [2, 2]
+    # A negative must-include row is validated under the negative policy and
+    # holds its invalid position (§7.9).
+    s = TestSpace((a = [1, Invalid(0)], b = [1, 2]); constraints = [@forbid(a == 1 && b == 2)])
+    r = Request(s; must_include = [(a = Invalid(0), b = 2), (a = Invalid(0),)])
+    @test r.must_include == [2 2; 2 0]
+    @test occursin("breaks rule 1", message(() -> Request(s; must_include = [(a = 1, b = 2)])))
+    # Strength 0 is refused at the keyword constructor, the public floor (§11.1).
+    @test_throws ArgumentError Request(s; strength = 0)
 end
 
 
@@ -374,6 +387,41 @@ end
     @test_throws ErrorException validate_design(request, short, required)
     # Only required targets are checked: excluded ones may stay uncovered.
     @test validate_design(Request(solver_space()), good, required) == 11
+end
+
+
+@testitem "request: an unconstrained request's targets stay lazy, and the recount streams (§1.8, §1.21, §9.7)" setup=[RequestSetup] begin
+    using UnitTestDesign: TargetList, generate
+    # Phase 3 review, round 1, item 4: with no rule every target is required,
+    # so classify_targets returns the TargetList, which computes each target
+    # on demand, and validate_design certifies it one support at a time.
+    free = Request(TestSpace((a = 1:2, b = 1:3, c = 1:2, d = [:x, :y]));
+                   stronger = [(:a, :b, :c) => 3, (:c, :b, :a) => 3, (:a, :b, :c, :d) => 3])
+    required, excluded = classify_targets(free)
+    @test required isa TargetList && isempty(excluded)
+    @test collect(required) == targets(free)     # the same targets, in the same order
+    # 30 pairs; the triples of (a, b, c, d), of which (a, b, c)'s 12 are counted once.
+    @test length(required) == 30 + (12 + 12 + 8 + 12)
+    @test required[1] == [1, 1, 0, 0] && required[end] == [0, 3, 2, 2]
+    @test_throws BoundsError required[length(required) + 1]
+    # A constrained request lists its required targets.
+    @test first(classify_targets(Request(solver_space()))) isa Vector{Vector{Int}}
+    for engine in (IPOG(), GND())
+        design = generate(engine, free)
+        @test design.required == design.covered == length(required)
+    end
+    # The streamed recount agrees with the listed one, and names the same
+    # first uncovered target.
+    matrix = generate(IPOG(), free).matrix
+    listed = collect(required)
+    @test validate_design(free, matrix, required) == validate_design(free, matrix, listed) == length(required)
+    for drop in (1, size(matrix, 2))
+        short = matrix[:, setdiff(axes(matrix, 2), drop)]
+        streamed, list = message(() -> validate_design(free, short, required)),
+                         message(() -> validate_design(free, short, listed))
+        @test streamed !== nothing && streamed == list
+        @test occursin("internal error: required target", streamed)
+    end
 end
 
 

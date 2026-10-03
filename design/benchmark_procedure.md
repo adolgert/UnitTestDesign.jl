@@ -97,7 +97,7 @@ engines the same way before and after the constraint fix.
 ## Procedure
 
 1. Check out the prior revision (`main` at commit `d46122d`, before
-   `release/1.0`) and run fixture 1, the one it handles without crashing.
+   `release/0.5`) and run fixture 1, the one it handles without crashing.
    Record the table. Fixture 2's legacy baseline is the failure recorded
    above.
 2. Check out the Phase 3 branch and run all three fixtures. Record the

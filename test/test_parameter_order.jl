@@ -38,12 +38,12 @@ end
 end
 
 
-@testitem "ipog_multi_way covers every pair without rules" setup=[IPOGSetup] begin
+@testitem "ipog_multi_way covers every pair without rules" setup=[IndexCoverage, IPOGSetup] begin
     arity = [2, 3, 2]
     required, _ = classify_targets(positional_request(arity))
     im232 = ipog_multi_way(arity, required, Returns(false))
     @test size(im232) == (3, 6)
-    @test UnitTestDesign.test_coverage(im232, arity, 2) == (start = 16, finish = 0)
+    @test test_coverage(im232, arity, 2) == (start = 16, finish = 0)
     @inferred ipog_multi_way(arity, required, Returns(false))
     # The same size as the classic algorithm.
     @test size(ipog_multi_way([2, 3, 2, 4, 7, 2], targets(positional_request([2, 3, 2, 4, 7, 2])),
@@ -58,7 +58,7 @@ end
 end
 
 
-@testitem "ipog with must-include rows: they come first (§10.5)" setup=[IPOGSetup] begin
+@testitem "ipog with must-include rows: they come first (§10.5)" setup=[IndexCoverage, IPOGSetup] begin
     seed232 = [2 1; 3 3; 1 2]
     request = positional_request([2, 3, 2]; must_include = [Tuple(seed232[:, j]) for j in 1:2])
     design = generate(IPOG(), request)
@@ -67,7 +67,7 @@ end
     # the test cases come first.
     @test design.matrix[:, 1:2] == seed232
     @test design.n_must_include == 2
-    @test UnitTestDesign.test_coverage(design.matrix, [2, 3, 2], 2).finish == 0
+    @test test_coverage(design.matrix, [2, 3, 2], 2).finish == 0
 end
 
 
@@ -83,7 +83,7 @@ end
 end
 
 
-@testitem "long random of ipog_multi_way" setup=[UTSetup, IPOGSetup] begin
+@testitem "long random of ipog_multi_way" setup=[IndexCoverage, UTSetup, IPOGSetup] begin
     using Random
 
     rng = Xoshiro(90714134 ⊻ seed_mod())
@@ -98,13 +98,13 @@ end
         k = rand(rng, 2:minimum([3, n]))
         required, _ = classify_targets(positional_request(arity; strength = k))
         r1 = ipog_multi_way(arity, required, Returns(false))
-        cover1 = UnitTestDesign.test_coverage(r1, arity, k)
+        cover1 = test_coverage(r1, arity, k)
         @test cover1.finish == 0
     end
 end
 
 
-@testitem "all combinations long random, with a forbidden pair" setup=[UTSetup, IPOGSetup] begin
+@testitem "all combinations long random, with a forbidden pair" setup=[IndexCoverage, UTSetup, IPOGSetup] begin
     using Random
 
     rng = Xoshiro(2424324 ⊻ seed_mod())
@@ -130,7 +130,7 @@ end
         compare .= -1
         compare[2:3] .= [3, 2]
         exclude = vec(sum(all_combos .== compare, dims = 1) .== 2)
-        cover2 = UnitTestDesign.test_coverage(r2, arity, k)
+        cover2 = test_coverage(r2, arity, k)
         @test cover2.start == combo_cnt
         @test cover2.finish == sum(exclude)
         @test length(design.excluded) == sum(exclude)
@@ -139,35 +139,35 @@ end
 end
 
 
-@testitem "test coverage specific: a stronger group" setup=[IPOGSetup] begin
+@testitem "test coverage specific: a stronger group" setup=[IndexCoverage, IPOGSetup] begin
     imw_arity = [2, 3, 2, 3]
     imw_k = 2
     imw_ind = [1, 3, 4]
     request = positional_request(imw_arity; stronger = [imw_ind => 3])
     imw1 = generate(IPOG(), request).matrix
-    imw_cover1 = UnitTestDesign.test_coverage(imw1, imw_arity, imw_k)
+    imw_cover1 = test_coverage(imw1, imw_arity, imw_k)
     @test imw_cover1.finish == 0
-    imw_cover2 = UnitTestDesign.test_coverage(imw1[imw_ind, :], imw_arity[imw_ind], 3)
+    imw_cover2 = test_coverage(imw1[imw_ind, :], imw_arity[imw_ind], 3)
     @test imw_cover2.finish == 0
     oind1 = [1, 2, 3]
-    imw_cover3 = UnitTestDesign.test_coverage(imw1[oind1, :], imw_arity[oind1], 3)
+    imw_cover3 = test_coverage(imw1[oind1, :], imw_arity[oind1], 3)
     oind2 = [2, 3, 4]
-    imw_cover4 = UnitTestDesign.test_coverage(imw1[oind2, :], imw_arity[oind2], 3)
+    imw_cover4 = test_coverage(imw1[oind2, :], imw_arity[oind2], 3)
     @test imw_cover3.finish + imw_cover4.finish > 0
 
     # What if we do the whole set at 3-way?
     im11 = generate(IPOG(), positional_request(imw_arity; strength = 3)).matrix
-    im11_cover = UnitTestDesign.test_coverage(im11, imw_arity, 3)
+    im11_cover = test_coverage(im11, imw_arity, 3)
     @test im11_cover.finish == 0
 
     # Groups by range and tuple; the positional wayness of 0.4, twenty binary parameters.
     stronger5 = [1:5 => 3, (4, 5, 6) => 3, collect(11:18) => 4]
     trials5 = generate(IPOG(), positional_request(fill(2, 20); stronger = stronger5)).matrix
     arity5 = fill(2, 20)
-    @test UnitTestDesign.test_coverage(trials5, arity5, 2).finish == 0
-    @test UnitTestDesign.test_coverage(trials5[1:5, :], arity5[1:5], 3).finish == 0
-    @test UnitTestDesign.test_coverage(trials5[4:6, :], arity5[4:6], 3).finish == 0
-    @test UnitTestDesign.test_coverage(trials5[11:18, :], arity5[11:18], 4).finish == 0
+    @test test_coverage(trials5, arity5, 2).finish == 0
+    @test test_coverage(trials5[1:5, :], arity5[1:5], 3).finish == 0
+    @test test_coverage(trials5[4:6, :], arity5[4:6], 3).finish == 0
+    @test test_coverage(trials5[11:18, :], arity5[11:18], 4).finish == 0
 end
 
 
@@ -278,7 +278,7 @@ end
 end
 
 
-@testitem "IPOG: must-include rows first, partial ones completed in place (§10.5, §7.10)" setup=[IPOGSetup, Checker] begin
+@testitem "IPOG: must-include rows first, partial ones completed in place (§10.5, §7.10)" setup=[IndexCoverage, IPOGSetup, Checker] begin
     f = fable_solver
     seeds = [(solver = :lu,), (mode = :fast, solver = :none, tol = 1e-3), (solver = :lu,), (mode = :exact,)]
     request, design, cases, check = ipog_fixture(f; must_include = seeds)
@@ -293,7 +293,7 @@ end
     request = positional_request([2, 3, 2]; must_include = [(p2 = 3,), (1, 1, 1)])
     design = generate(IPOG(), request)
     @test design.matrix[2, 1] == 3 && design.matrix[:, 2] == [1, 1, 1]
-    @test UnitTestDesign.test_coverage(design.matrix, [2, 3, 2], 2).finish == 0
+    @test test_coverage(design.matrix, [2, 3, 2], 2).finish == 0
 end
 
 
@@ -309,7 +309,7 @@ end
     # Without rules: every row, in lexicographic order.
     free = generate(IPOG(), positional_request([2, 3]; strength = 2)).matrix
     @test free == [1 1 1 2 2 2; 1 2 3 1 2 3]
-    @test all_tuples([1, 2], [:a, :b]; n_way = 2) == [[1, :a], [1, :b], [2, :a], [2, :b]]
+    @test covering([1, 2], [:a, :b]; strength = 2) == [(1, :a), (1, :b), (2, :a), (2, :b)]
     @test length(all_triples([1, 2], [3, 4], [5, 6])) == 8
     @test_throws ArgumentError all_triples([1, 2], [3, 4])   # strength above n (§11.2)
 end
@@ -319,8 +319,8 @@ end
     rows = all_pairs([1], [1, 2], [:a, :b])
     @test length(rows) == 4
     @test all(r -> r[1] == 1, rows)
-    @test Set(r[2:3] for r in rows) == Set([[1, :a], [1, :b], [2, :a], [2, :b]])
-    @test all_values([:only]) == [[:only]]
+    @test Set(r[2:3] for r in rows) == Set([(1, :a), (1, :b), (2, :a), (2, :b)])
+    @test all_values([:only]) == [(:only,)]
     space = TestSpace((a = [1], b = 1:3, c = [:x, :y]); constraints = [forbid((b = 3, c = :y))])
     request = Request(space)
     design = generate(IPOG(), request)

@@ -132,6 +132,11 @@ runner.
 
 ## Retained memory of a lazy rule's memo
 
+> This section records the Phase 3 state. In Phase 3 review round 1 the memo
+> moved from the `TestSpace` into the request (contract §12.19); see [Memory
+> of a lazy rule's memo](benchmark_ci_20260927.md#memory-of-a-lazy-rules-memo)
+> for the measurement under the current design.
+
 Contract §12.19 keeps a lazy rule's memo on the `TestSpace`, so it outlives
 every call. Each space below gets one added whole-case rule,
 `forbid(case -> false)`, which is always lazy; the calls run in order on the

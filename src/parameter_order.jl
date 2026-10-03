@@ -446,42 +446,39 @@ end
 
 
 """
-    generate(::IPOG, request::Request) -> Design
+    cover_ordinary(::IPOG, request::Request, required) -> Matrix{Int}
 
-A covering design for `request` (contract §1.3): every returned row is valid,
-and every required target, at the base strength and in every `stronger`
-group, is in some row. Steps:
+IPOG's rows for `request` (contract §1.3): the must-include rows first, then
+rows until every target in `required` (the classified required targets,
+engine positions) is in some row, each row valid under the request's rules.
+`generate` classifies the targets, calls this, and validates the result
+(§1.21). The request's must-include rows are ordinary. Cases:
 
-1. Classify every target (`classify_targets`); an unknown classification is a
-   `ResourceLimitError` (§3.6). Excluded targets go to the bookkeeping.
-2. A proven empty space (no required target) without must-include rows
-   returns no rows (§1.24).
-3. Strength equal to the parameter count returns every valid row
+1. No required target and no must-include row gives no rows: a proven
+   empty space (§1.24).
+2. Strength equal to the parameter count gives every valid row
    (`full_strength_rows`, §7.8).
-4. An unconstrained request with one strength and no must-include rows uses
+3. An unconstrained request with one strength and no must-include rows uses
    the classic `ipog`.
-5. Everything else uses `ipog_multi_way` over the required targets, with
+4. Everything else uses `ipog_multi_way` over the required targets, with
    `dead(request, row)` deciding each placement.
 
-The result is certified by `validate_design` before it is returned (§1.21).
-IPOG uses no randomness (§9.4); the recorded seed is `nothing`.
+IPOG uses no randomness (§9.4).
 """
-function generate(::IPOG, request::Request)
-    required, excluded = classify_targets(request)
+function cover_ordinary(::IPOG, request::Request, required)
     n = length(request.arity)
     seeds = request.must_include
-    matrix = if isempty(required) && isempty(seeds)
-        zeros(Int, n, 0)
+    if isempty(required) && isempty(seeds)
+        return zeros(Int, n, 0)
     elseif request.strength == n
-        full_strength_rows(request, required)
+        return full_strength_rows(request, required)
     elseif !isconstrained(request) && isempty(seeds) && length(request.groups) == 1
-        ipog(request.arity, request.strength)
-    else
-        alive = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
-        ipog_multi_way(request.arity, required, alive, seeds;
-                       order = ipog_order(request.arity, request.groups))
+        return ipog(request.arity, request.strength)
     end
-    covered = validate_design(request, matrix, required; strategy = :covering)
-    return Design(matrix, :covering, :IPOG, nothing, length(required), covered, excluded,
-                  n_must_include(request), (;))
+    alive = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
+    return ipog_multi_way(request.arity, required, alive, seeds;
+                          order = ipog_order(request.arity, request.groups))
 end
+
+_engine_name(::IPOG) = :IPOG
+_engine_seed(::IPOG) = nothing
