@@ -1,6 +1,6 @@
 # Contract
 
-This page specifies what UnitTestDesign.jl 1.0 promises. It is the reference
+This page specifies what UnitTestDesign.jl 0.5 promises. It is the reference
 for implementation, tests, documentation, and review. Clauses are numbered so
 that code, tests, and reviews can cite them ("contract §3.4"). Each clause
 states one requirement.
@@ -12,7 +12,7 @@ Invalid input throws an `ArgumentError` whose message uses the caller's
 vocabulary (parameter names, values, case positions), unless a clause names
 another exception.
 
-**0.2** Clauses describe the 1.0 release. A phase that has not yet implemented
+**0.2** Clauses describe the 0.5 release. A phase that has not yet implemented
 a clause must raise an explicit unsupported-feature error for inputs that need
 it. It must not apply different semantics in the meantime.
 
@@ -103,7 +103,13 @@ it measures at `cases.strength` and `cases.stronger`. For a result whose
 strength is 0 (an excursion or a full factorial, §1.19),
 `coverage(cases::TestCases)` is an `ArgumentError` asking for `strength =`,
 and `report(cases)` measures at strength `min(2, parameter count)`, so at
-strength 1 for a one-parameter space, and says so in its guarantee line.
+strength 1 for a one-parameter space, and says so in its guarantee line. An
+explicit `strength` replaces `cases.strength` and keeps `cases.stronger`
+unless `stronger` is passed too. A stored group whose strength is below the
+requested strength is an `ArgumentError` naming the group ("stronger group
+(a, b, c) => 3 is below the requested strength 4; pass stronger = [] to drop
+it"). An explicit `stronger` replaces the stored groups, and `stronger = []`
+drops them.
 
 **1.13** Rows given to `coverage` must be complete, use only the space's
 parameter names, and use only domain values (§2.11). Anything else is an
@@ -148,7 +154,13 @@ feasibility search, rule evaluation, or coverage recount. It shows the count
 of valid rows in the full product only when that count is already known.
 
 **1.23** Independent verification, bonus coverage at strength + 1, and the
-prefix curve belong to `report` and `coverage`, never to `show`.
+prefix curve belong to `report` and `coverage`, never to `show`. The report
+is the verification: the excluded targets it lists, with their rules and
+explanation status, come from its own measurement under its own
+`feasibility_limit` and `explanation_limit`, not from generation's
+bookkeeping. Exclusions recorded at generation are a fallback, listed only
+for targets the report's measurement left unknown, and each is identified
+as recorded at generation.
 
 **1.24** If the space is proven to have no valid ordinary row, covering
 generation returns a result with no generated ordinary rows and reports every
@@ -327,7 +339,8 @@ hides uncertainty.
 
 **3.12** `report` applies §3.10 to bonus coverage and to the prefix curve.
 `design_sizes` reports a strategy's resource-limit status in place of a case
-count or share.
+count or share. Both apply §3.10 to the ordinary and the negative figures
+separately (§5.10).
 
 **3.13** Explanation of implied exclusions has its own budget, the keyword
 `explanation_limit::Int`, default `1_000_000` nodes, shared by all deletion
@@ -348,7 +361,14 @@ unresolved.
 its rules was verified to make the target feasible, with a witness.
 
 **3.17** `followups` reports `unknown` for a suspect whose isolation search
-reaches the limit.
+reaches the limit. The search covers every kind of row that could hold the
+suspect: for a suspect with no `Invalid` value, ordinary rows and the
+negative rows at each invalid value of each parameter it leaves out (§5.5);
+for a suspect with one, the negative rows at that value. The isolation
+conditions (no other suspect) apply to every kind, including rules that
+name the invalid parameter. A suspect is `inseparable` only when every kind
+is proven to hold no isolating row, and `unknown` when no kind yields one
+and some kind's search reaches the limit.
 
 ## 4. Partitions
 
@@ -427,7 +447,12 @@ negative rows contribute to negative coverage. A negative row never increases
 ordinary coverage, including for the combinations among its ordinary values.
 
 **5.10** Ordinary and negative coverage are reported separately in `coverage`,
-`report`, and the `TestCases` bookkeeping.
+`report`, and the `TestCases` bookkeeping. Every progress and planning figure
+separates the two parts: `report`'s guarantee, bonus coverage and prefix
+curve, and `design_sizes`'s case counts and pair and triple coverage. For a
+space with `Invalid` values an ordinary figure is labeled as ordinary and
+printed beside its negative figure, so no ordinary figure reads as the
+whole.
 
 **5.11** A row that violates its applicable rules contributes to neither kind of
 coverage.
@@ -683,7 +708,9 @@ the variables of generators and comprehensions. Any other form that binds or
 assigns a name or runs statements (an assignment outside a `let` binding,
 `for`, `while`, `try`, `global`, `local`, a quoted expression, a macro call)
 is an error when the macro expands, and the message points to the function
-form `forbid(f, names...)`.
+form `forbid(f, names...)`. The subtype operators `<:` and `>:` are syntax,
+not calls, and are an error too; the message suggests the call form,
+`(<:)(T, $S)`, which the macro reads, and the function form.
 
 **12.7** In a macro rule, `nothing` and `missing` denote those values, not
 parameter names. A parameter may not be named `nothing` or `missing`.
@@ -746,7 +773,8 @@ evaluated at most once per combination per operation. A `TestSpace` retains
 nothing from any operation: its size is the same before and after any call.
 `isallowed`, which checks one row, may evaluate lazy rules without a memo.
 
-**12.20** Whole-case rules are always evaluated lazily, memoized per row.
+**12.20** Whole-case rules are always evaluated lazily, memoized within the
+operation (§12.19).
 
 **12.21** Cost of whole-case rules, documented in their docstring: they connect
 every parameter into one component, and deciding feasibility may search up to
@@ -760,14 +788,17 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 
 ## 13. Vocabulary
 
-**13.1** The 1.0 public names:
+**13.1** The 0.5 public names:
 
 | Name | Kind | Status | Notes |
 |:--|:--|:--|:--|
-| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `arity(space)`, `length(space)` (full product). |
+| `TestSpace` | type | new | Parameters, domains, rules. `parameters(space)`, `length(space)` (full product); `arity(space)` is internal. |
+| `parameters` | function | new | `parameters(space)`: the parameter names, in order. |
 | `constraints` | keyword | new | Rules for a space. |
 | `forbid`, `require` | functions | new | Pattern, listed-names, and whole-case forms (§12). |
 | `@forbid`, `@require` | macros | new | Bare-name rules (§12.6). |
+| `Constraint` | type | new | The one rule form that all four surface forms build (§12.1). |
+| `ConstraintError` | exception | new | A rule's predicate threw (§12.16). |
 | `must_include` | keyword | new | Replaces `seeds`. |
 | `seeds` | keyword | deprecated | Alias for `must_include`. |
 | `strength` | keyword | new | Replaces `n_way`. |
@@ -775,6 +806,7 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `stronger` | keyword | new | Replaces `wayness` (§11). |
 | `wayness` | keyword | deprecated | Translated to `stronger`. |
 | `TestCases` | type | new | Result of every generator. |
+| `Exclusion` | type | new | One excluded target and the rules that exclude it (§1.4). |
 | `covering` | function | new | General entry point. |
 | `all_tuples` | function | deprecated | Alias for `covering`. |
 | `all_values`, `all_pairs`, `all_triples` | functions | kept | `covering` at strength 1, 2, 3. |
@@ -782,10 +814,14 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `values_excursion`, `pairs_excursion`, `triples_excursion` | functions | deprecated | Thin aliases for `excursions` at distance 1, 2, 3. |
 | `full_factorial` | function | kept | Size guard (§7.3). |
 | `coverage` | function | new | Measurement (§1.12). |
+| `Coverage` | type | new | What `coverage` returns. |
+| `iscomplete` | function | new | §1.16. |
 | `missing_interactions` | function | new | §3.11. |
 | `explain`, `isallowed` | functions | new | §1.25–§1.27. |
 | `report` | function | new | Verification, excluded list, bonus coverage, prefix curve, seed. |
+| `Report` | type | new | What `report` returns. |
 | `design_sizes` | function | new | Cases per strategy before committing. |
+| `DesignSizes` | type | new | What `design_sizes` returns. |
 | `diagnose` | function | experimental | `diagnose(cases, passed)`: ranked suspects; a pure function of cases and outcomes. |
 | `followups` | function | experimental | Isolating cases per suspect: found, inseparable, or unknown. |
 | `github_matrix` | function | new | JSON for a workflow `include:` list; validates every row before writing. |
@@ -816,9 +852,9 @@ distinguish it from line coverage.
 
 ## 14. Not now
 
-**14.1** The following are outside 1.0. Proposals for them need a new review.
+**14.1** The following are outside 0.5. Proposals for them need a new review.
 
-| Item | Status in 1.0 |
+| Item | Status in 0.5 |
 |:--|:--|
 | Test runner | None. Outcomes enter only through `diagnose(cases, passed)`. |
 | Outcome files | None. |
@@ -832,6 +868,6 @@ distinguish it from line coverage.
 | TOML specifications | None. |
 | `max_cases` | None. |
 | Rolling coverage across CI runs | None. |
-| Evidence track (case study, mutation analysis) | Deferred until after 1.0. |
+| Evidence track (case study, mutation analysis) | Deferred until after 0.5. |
 
 **14.2** Behavior not stated in this contract is not promised.

@@ -455,19 +455,21 @@ end
     cases = handmade(space, [(n = 1, size = tiny, mode = :fast),
                              (n = Invalid(-1), size = 1.0, mode = "fast"),
                              (n = 1, size = 1.0, mode = nothing)])
+    # A negative row is marked with `!` after its number (Phase 6); this
+    # handmade covering result records no negative targets.
     @test plain(cases) == """
-        3 cases · strength 1 · IPOG · 3 parameters · 12 combinations
-            n            size              mode
-         1  1            Partition(:tiny)  :fast
-         2  Invalid(-1)  1.0               "fast"
-         3  1            1.0               nothing"""
+        3 cases · strength 1 · IPOG · 3 parameters · 12 combinations · 0 negative targets
+             n            size              mode
+         1   1            Partition(:tiny)  :fast
+         2!  Invalid(-1)  1.0               "fast"
+         3   1            1.0               nothing"""
     # A positional result has the same table under p1, p2, p3.
     pspace = TestSpace(:p1 => [1, Invalid(-1)], :p2 => [tiny, 1.0], :p3 => [:fast, "fast", nothing])
     positional = handmade(pspace, [(1, tiny, :fast), (Invalid(-1), 1.0, "fast"), (1, 1.0, nothing)];
                           positional = true)
     @test eltype(positional) <: Tuple
     @test lines(positional)[3:end] == lines(cases)[3:end]
-    @test lines(positional)[2] == "    p1           p2                p3"
+    @test lines(positional)[2] == "     p1           p2                p3"
     # Wrapped values keep their own types in a Union field (§2.4).
     @test fieldtype(eltype(cases), :n) === Union{Int, Invalid{Int}}
     @test fieldtype(eltype(cases), :mode) === Union{Symbol, String, Nothing}

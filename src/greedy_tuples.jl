@@ -221,21 +221,19 @@ end
 
 
 """
-    generate(engine::GND, request::Request) -> Design
+    cover_ordinary(engine::GND, request::Request, required) -> Matrix{Int}
 
-A covering design for `request` (contract §1.3). Classifies every target
-first (§1.4; an unknown target throws `ResourceLimitError`, §3.6), covers
-exactly the required ones, puts must-include rows first and unchanged
-(§10.5), and validates the result before returning it (§1.21). The seed is
-`engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6).
+GND's rows for `request` (contract §1.3): the must-include rows first and
+unchanged (§10.5), then rows until every target in `required` (the classified
+required targets, engine positions) is covered (`gnd_cover`). `generate`
+classifies the targets, calls this, and validates the result (§1.21). The
+request's must-include rows are ordinary.
 """
-function generate(engine::GND, request::Request)
-    required, excluded = classify_targets(request)
-    matrix, _ = gnd_cover(engine, request, required)
-    covered = validate_design(request, matrix, required; strategy = :covering)
-    return Design(matrix, :covering, :GND, engine.seed, length(required), covered, excluded,
-                  n_must_include(request), (;))
-end
+cover_ordinary(engine::GND, request::Request, required) = first(gnd_cover(engine, request, required))
+
+_engine_name(::GND) = :GND
+"The seed recorded in the result: `engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6)."
+_engine_seed(engine::GND) = engine.seed
 
 
 """

@@ -1,4 +1,4 @@
-# The 1.0 public interface (plan Phase 4 steps 2–5 and 8; contract §1.18,
+# The 0.5 public interface (plan Phase 4 steps 2–5 and 8; contract §1.18,
 # §7, §10, §11, §12.11–§12.12, §13).
 #
 # Every generation call is one pipeline: accept or build the space, build
@@ -281,6 +281,10 @@ function _covering(fname::Symbol, input::Tuple; strength = nothing, stronger = n
 end
 
 """
+Use when you want every combination of values of every `strength` parameters
+(pairs at strength 2, triples at 3) to appear in at least one case, with as few
+cases as the engine finds.
+
     covering(space; strength = 2, stronger = [], must_include = [], engine = IPOG(),
              feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     covering(domains::NamedTuple; constraints = [], kwargs...)
@@ -309,6 +313,22 @@ The parameters come in one of four forms:
 Values are kept as given, with their types: `Any[1, 1.0]` is two values, and
 `nothing` and `missing` are ordinary values (§2.1, §2.9).
 
+A [`Partition`](@ref) is an ordinary value that rules and targets see by its
+name; returned rows hold the wrapper, and [`realize`](@ref) draws the
+concrete values (§4). An [`Invalid`](@ref) value is for negative tests
+(§5, §6). The covering design is built over ordinary values; then, for each
+invalid value `v` of a parameter `p`, negative rows hold `p = v` beside
+ordinary values of the other parameters, and cover every feasible
+combination of `v` with `strength - 1` other parameters' values, and within
+each `stronger` group that contains `p`, with its strength less one. At
+strength 2, each invalid value appears beside every value of every other
+parameter that some valid negative row holds (§6.6). A negative row
+satisfies the rules that do not read `p`; rules that read `p` do not apply
+to it (§5.5). The rows are the must-include rows, then the ordinary rows,
+then the negative rows (§5.12), and a row never holds two `Invalid` values
+(§5.7). `hasinvalid(case)` tells a test body which kind it has, and the
+result counts the two kinds of targets separately (§5.10).
+
 # Keywords
 
 - `strength = 2`: from 1 to the number of parameters (§11.1, §11.2). At the
@@ -324,9 +344,13 @@ Values are kept as given, with their types: `Any[1, 1.0]` is two values, and
   `TestCases`, whose rows are kept and topped up with the rows needed to cover
   what they miss (§9.10). A positional call takes tuples or vectors with one
   value per parameter. A row that breaks a rule, or a partial row with no valid
-  completion, is an error naming the row and the rules (§10.2–§10.4).
+  completion, is an error naming the row and the rules (§10.2–§10.4). A row
+  with one `Invalid` value is a negative row, judged and completed under the
+  negative policy, with ordinary values elsewhere; a partial row without one
+  is completed as an ordinary row; a row with two is an error (§5.7, §7.9).
 - `engine = IPOG()`: [`IPOG`](@ref) or [`GND`](@ref). Both are deterministic
-  for the same inputs (§9.1). Neither promises the fewest cases (§8.1).
+  for the same inputs (§9.1). Neither guarantees a particular number of
+  cases, and neither is always smaller than the other (§8.1).
 - `feasibility_limit = 1_000_000`: the node budget of each search that
   decides whether a combination, a partial must-include row or a placement
   has a valid completion (§3.3, §3.4). Generation resolves every one of them
@@ -343,9 +367,10 @@ Values are kept as given, with their types: `Any[1, 1.0]` is two values, and
   and the exclusion keeps its proven set of rules with
   `minimal = :unresolved` and `limit = :explanation_limit => N`, which `show`
   counts as "with an unresolved explanation" (§3.15, §3.16). Raise it only
-  when you want each implied exclusion attributed to the fewest rules; only
-  the attribution becomes more precise. It also bounds the explanation in
-  the error for a partial must-include row with no valid completion.
+  when you want each implied exclusion's rules verified inclusion-minimal,
+  so that none of them can be dropped; only the attribution becomes more
+  precise. It also bounds the explanation in the error for a partial
+  must-include row with no valid completion.
 
 The 0.4 keywords `n_way` (now `strength`), `seeds` (now `must_include`) and
 `wayness` (now `stronger`, translated from its `Dict` of positions) are
@@ -384,6 +409,10 @@ function _fixed_strength(fname::Symbol, s::Int, keyword::Symbol, value)
 end
 
 """
+Use when you want every value of every parameter to appear in at least one case,
+with as few cases as the engine finds: a quick check that each value works at
+all.
+
     all_values(input...; stronger, must_include, engine, constraints,
                feasibility_limit, explanation_limit)
 
@@ -406,6 +435,9 @@ function all_values(input...; stronger = nothing, must_include = nothing, engine
 end
 
 """
+Use when you want every pair of parameter values to appear in at least one case,
+with as few cases as the engine finds.
+
     all_pairs(input...; stronger, must_include, engine, constraints,
               feasibility_limit, explanation_limit)
 
@@ -432,6 +464,10 @@ function all_pairs(input...; stronger = nothing, must_include = nothing, engine 
 end
 
 """
+Use when you want every combination of three parameters' values to appear in at
+least one case, with as few cases as the engine finds; it reaches faults that
+need three values together, at the cost of more cases than pairs.
+
     all_triples(input...; stronger, must_include, engine, constraints,
                 feasibility_limit, explanation_limit)
 
@@ -494,6 +530,10 @@ function _excursions(fname::Symbol, input::Tuple, default_distance::Integer; fro
 end
 
 """
+Use when you trust one base case and want every valid variation that changes at
+most `distance` of its parameters. An excursion is not a covering design: it
+does not guarantee that every pair, or even every value, appears.
+
     excursions(space; from = nothing, distance = 1, must_include = [],
                feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     excursions(domains::NamedTuple; constraints = [], kwargs...)
@@ -513,10 +553,11 @@ covering design. It makes no claim that every pair, or even every value,
 appears: a value whose rows within the distance all break a rule appears in no
 row (§7.7).
 
-- `from`: the base, a complete valid row, as a `NamedTuple` or, for a
-  positional call, a tuple of values in argument order. Omitted, it is the
-  first value of each parameter. A base that is partial or breaks a rule is an
-  error naming the rules it breaks (§7.6). The base is never dropped.
+- `from`: the base, a complete valid ordinary row, as a `NamedTuple` or, for
+  a positional call, a tuple of values in argument order. Omitted, it is the
+  first ordinary value of each parameter. A base that is partial, holds an
+  [`Invalid`](@ref) value, or breaks a rule is an error naming the cause
+  (§7.6). The base is never dropped.
 - `distance = 1`: an integer of at least 0. 0 gives the must-include rows and
   the base alone; a distance above the number of parameters is the number of
   parameters. Excursion distance is not covering strength, and there are no
@@ -525,6 +566,10 @@ row (§7.7).
   kept as given, duplicates included. A partial row is completed toward the
   base. An excursion row equal to a must-include row is not repeated
   (§7.11).
+
+Changing a parameter to one of its `Invalid` values gives a negative row,
+which is kept when it satisfies the rules that do not read that parameter
+(§5.5, §7.5). A row with two `Invalid` values is never returned (§5.7).
 
 Rows within the distance that break a rule are left out. The result reports
 how many in `cases.notes.dropped`, and `cases.notes.never_appear` lists the
@@ -550,6 +595,9 @@ end
 ## Full factorial
 
 """
+Use when the product of the domains is small enough to run every valid
+combination, or when you need every one of them.
+
     full_factorial(space; limit = 10^6, must_include = [], feasibility_limit = 1_000_000)
     full_factorial(domains::NamedTuple; constraints = [], kwargs...)
     full_factorial(name => domain, ...; constraints = [], kwargs...)
@@ -562,9 +610,18 @@ once, and a valid row equal to a must-include row is not repeated. Returns a
 [`TestCases`](@ref) with strategy `:full_factorial`; the inputs are the four
 forms [`covering`](@ref) takes.
 
+With [`Invalid`](@ref) values, the valid ordinary rows come first, then the
+valid negative rows: for each parameter in order and each of its invalid
+values in domain order, the rows holding that value beside ordinary values
+of the other parameters, kept when they satisfy the rules that do not read
+that parameter (§5.5). A row with two `Invalid` values is never returned
+(§5.7).
+
 `limit` guards against a product too large to enumerate. Before looking at
-any row, must-include rows included, the call counts the candidate rows, the
-product of the domain sizes, and if that exceeds `limit` it throws a
+any row, must-include rows included, the call counts the candidate rows,
+the product of the parameters' ordinary value counts plus, for each
+parameter, its number of `Invalid` values times the product of the other
+parameters' ordinary value counts, and if that exceeds `limit` it throws a
 [`ResourceLimitError`](@ref) that gives the count and the keyword (§7.3), so
 no search runs for a refused enumeration. Raise `limit` to go ahead, or use
 [`covering`](@ref) for a smaller design. Candidates are then enumerated one
@@ -599,7 +656,7 @@ function full_factorial(input...; limit = 10^6, must_include = nothing, constrai
     space, positional = _space(:full_factorial, input, constraints)
     # The count comes before the Request, whose must-include checks may search
     # (§7.3): an enumeration that is refused never runs a feasibility search.
-    check_full_factorial_limit([length(ordinary_indices(space, i)) for i in eachindex(space.names)], limit)
+    check_full_factorial_limit(space, limit)
     request = Request(space; strength = 1, feasibility_limit, explanation_limit,
                       must_include = _must_include_rows(must_include, space, positional))
     return TestCases(request, generate_full_factorial(request; limit); positional)
@@ -609,10 +666,13 @@ end
 ## Deprecated aliases (contract §13.1, §13.2)
 
 """
+Deprecated alias of [`covering`](@ref): call `covering` with the same inputs
+and keywords, writing `strength` for `n_way`.
+
     all_tuples(input...; n_way = 2, kwargs...)
 
-Deprecated: use [`covering`](@ref), which takes the same inputs and keywords,
-with `strength` for `n_way`.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2). See the migration table in the manual.
 """
 function all_tuples(input...; kwargs...)
     Base.depwarn("all_tuples is deprecated; use covering, which takes the same inputs, " *
@@ -621,10 +681,14 @@ function all_tuples(input...; kwargs...)
 end
 
 """
+Deprecated alias of [`excursions`](@ref) at distance 1: call
+`excursions(input...; distance = 1)`.
+
     values_excursion(input...; kwargs...)
 
-Deprecated: use [`excursions`](@ref)`(input...; distance = 1)`. It takes the
-keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It takes the keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2).
 """
 function values_excursion(input...; kwargs...)
     Base.depwarn("values_excursion is deprecated; use excursions(...; distance = 1)", :values_excursion)
@@ -632,10 +696,14 @@ function values_excursion(input...; kwargs...)
 end
 
 """
+Deprecated alias of [`excursions`](@ref) at distance 2: call
+`excursions(input...; distance = 2)`.
+
     pairs_excursion(input...; kwargs...)
 
-Deprecated: use [`excursions`](@ref)`(input...; distance = 2)`. It takes the
-keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It takes the keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2).
 """
 function pairs_excursion(input...; kwargs...)
     Base.depwarn("pairs_excursion is deprecated; use excursions(...; distance = 2)", :pairs_excursion)
@@ -643,10 +711,14 @@ function pairs_excursion(input...; kwargs...)
 end
 
 """
+Deprecated alias of [`excursions`](@ref) at distance 3: call
+`excursions(input...; distance = 3)`.
+
     triples_excursion(input...; kwargs...)
 
-Deprecated: use [`excursions`](@ref)`(input...; distance = 3)`. It takes the
-keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It takes the keywords of `excursions`, and the 0.4 `n_way` as the distance.
+It warns through `Base.depwarn` and will be removed in the next breaking
+release (contract §13.1, §13.2).
 """
 function triples_excursion(input...; kwargs...)
     Base.depwarn("triples_excursion is deprecated; use excursions(...; distance = 3)", :triples_excursion)

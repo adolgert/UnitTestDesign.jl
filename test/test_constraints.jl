@@ -267,6 +267,47 @@ end
 end
 
 
+@testitem "constraints: a subtype operator in a macro rule suggests the call form (§12.6)" begin
+    function expansion_error(source)
+        try
+            macroexpand(@__MODULE__, Meta.parse(source))
+            return "no error"
+        catch e
+            return e isa ArgumentError ? e.msg : "not an ArgumentError: $(typeof(e))"
+        end
+    end
+    # The whole rule, a name beside `$x`: the message spells out both forms.
+    @test expansion_error("@forbid(T <: \$AbstractFloat)") ==
+        "@forbid(T <: \$AbstractFloat) contains `T <: \$AbstractFloat`, and `<:` is not " *
+        "supported inside @forbid/@require: Julia parses it as syntax, not as a function " *
+        "call (contract §12.6). Write it as the call `(<:)(T, \$AbstractFloat)`, which the " *
+        "macro reads, or use the function form forbid(f, names...), here " *
+        "forbid((T,) -> T <: AbstractFloat, :T)."
+    msg = expansion_error("@require(\$Int <: T)")
+    @test occursin("`<:` is not supported", msg) && occursin("`(<:)(\$Int, T)`", msg)
+    @test occursin("require((T,) -> Int <: T, :T)", msg)
+    # Part of a larger rule, or two bare names: the call form and the general form.
+    for (source, call) in [("@forbid(T <: \$AbstractFloat && n > 3)", "(<:)(T, \$AbstractFloat)"),
+                           ("@require(T >: Int)", "(>:)(T, Int)"),
+                           ("@forbid(eltype(v) <: \$Integer)", "(<:)(eltype(v), \$Integer)")]
+        text = expansion_error(source)
+        polarity = startswith(source, "@require") ? "require" : "forbid"
+        @test startswith(text, "$source contains")
+        @test occursin("is not supported inside @forbid/@require", text)
+        @test occursin("Write it as the call `$call`", text)
+        @test endswith(text, "use the function form $(polarity)(f, names...).")
+        @test !occursin("bind names", text)
+    end
+    # The call form the message suggests is read by the macro, and so is a
+    # subtype chain, which parses as a comparison.
+    rule = @forbid((<:)(T, $AbstractFloat) && n > 1)
+    @test rule.scope == (:T, :n)
+    space = TestSpace((T = [Int, Float64], n = [1, 2]); constraints = [rule])
+    @test !isallowed(space, (T = Float64, n = 2)) && isallowed(space, (T = Int, n = 2))
+    @test (@forbid($Union{} <: T <: $Real)).scope == (:T,)
+end
+
+
 @testitem "constraints: labels, reasons and polarity (§12.2, §12.3)" begin
     using UnitTestDesign: rule_label
     a = @forbid(mode == :fast && solver != :none)

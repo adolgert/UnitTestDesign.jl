@@ -183,3 +183,46 @@ end
     @info "Random three-way problems" seed = gate.seed tally = (; sort(collect(gate.tally))...)
     gate_verdicts(gate, n_problems)
 end
+
+
+@testitem "random problems: one Invalid value, pairwise through IPOG and GND, both parts (§5, §6)" setup=[UTSetup, Checker] begin
+    using Random
+    # Plan Phase 6 step 5: each problem gives one random parameter the value
+    # Invalid(-1) (domains hold 0:9, so it is a new choice). Both engines
+    # generate at strength 2, and the oracle judges the ordinary and the
+    # negative part; the negative bookkeeping must match its counts.
+    as_check(x::Invalid) = CheckInvalid(x.value)
+    as_check(x) = x
+    rng = Xoshiro(0x2026_0927_0006 ⊻ seed_mod())
+    checked = Ref(0)
+    for index in 1:100
+        problem = random_problem(rng; strength = 2)
+        p = rand(rng, eachindex(problem.names))
+        domains = [collect(Any, d) for d in problem.space.domains]
+        push!(domains[p], CheckInvalid(-1))
+        cs = CheckSpace(problem.space.names, domains, problem.space.rules)
+        space = test_space(cs)
+        for engine in (IPOG(), GND(seed = index))
+            cases = try
+                covering(space; strength = 2, engine)
+            catch err
+                err isa InterruptException && rethrow()
+                @error("$engine threw on random problem $index with an Invalid value at $(problem.names[p])",
+                       problem, exception = (err, catch_backtrace()))
+                @test false
+                continue
+            end
+            check = check_design([map(as_check, row) for row in cases], cs; strength = 2)
+            ok = complete(check.ordinary) && complete(check.negative) &&
+                 cases.required == check.ordinary.counts.feasible &&
+                 cases.negative_required == cases.negative_covered == check.negative.counts.feasible &&
+                 length(cases.negative_excluded) == check.negative.counts.forbidden + check.negative.counts.implied &&
+                 issorted(hasinvalid.(collect(cases)))
+            ok || @error("$engine's design with an Invalid value fails the checker", index, problem,
+                         invalid_at = problem.names[p], check)
+            @test ok
+            checked[] += ok
+        end
+    end
+    @test checked[] == 200
+end

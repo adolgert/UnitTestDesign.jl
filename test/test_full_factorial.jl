@@ -5,7 +5,7 @@ using TestItemRunner
 # `full_factorial(input...; limit, must_include)`, which returns a TestCases.
 
 
-@testitem "full factorial: unconstrained is the full product, last parameter fastest" begin
+@testitem "full factorial: unconstrained is the full product, last parameter fastest" setup=[IndexCoverage] begin
     space = TestSpace((a = [1, 2], b = [:x, :y, :z], c = [true, false]))
     cases = full_factorial(space)
     @test length(cases) == 12
@@ -32,7 +32,7 @@ using TestItemRunner
     # 0.4: five parameters, and four with ranges.
     cases = full_factorial((1:k for k in [2, 3, 4, 2, 2])...)
     @test length(cases) == 96 && allunique(cases)
-    @test UnitTestDesign.test_coverage(reduce(hcat, [collect(c) for c in cases]), [2, 3, 4, 2, 2], 5).finish == 0
+    @test test_coverage(reduce(hcat, [collect(c) for c in cases]), [2, 3, 4, 2, 2], 5).finish == 0
     @test length(full_factorial([1:2, 1:2, 1:3, 1:2]...)) == 24
     @test collect(full_factorial([1])) == [(1,)]
 end
