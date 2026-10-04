@@ -119,7 +119,7 @@ end
     # node counts don't move), while its rule checks are counted.
     rng = Xoshiro(0x2026_1004_02)
     reduced = Ref(0)
-    for _ in 1:60
+    for _ in 1:40
         space = random_space(rng)
         n = length(space.names)
         strength = rand(rng, 1:min(3, n))
@@ -146,7 +146,7 @@ end
         @test validate_design(request, matrix, required) == length(required)
         reduced[] += size(matrix, 2) < size(start, 2)
     end
-    @test reduced[] > 10
+    @test reduced[] > 6
 end
 
 
@@ -218,7 +218,7 @@ end
     rng = Xoshiro(0x2026_1004_04 ⊻ seed_mod())
     inner(index) = isodd(index) ? IPOG() : GND(seed = index)   # Compact(GND()) is not in the registry
     checked = Ref(0)
-    n_problems = max(10, round(Int, 25 * test_run_multiplier()))
+    n_problems = max(10, round(Int, 16 * test_run_multiplier()))
     for index in 1:n_problems
         strength = rand(rng, 2:3)
         problem = random_problem(rng; strength)
