@@ -388,6 +388,27 @@ end
         @test said.lower_bound == cases.record.lower_bound
         @test said.proof == cases.record.proof
     end
+    doms = Any[1:4 for _ in 1:40]
+    doms[1] = [1, 2, 3, 4, Invalid(0)]
+    wide = TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:40)}(Tuple(doms)))
+    # Past the reducer's caps, `:compact` returns the start as it is, and says so.
+    seventeen = TestSpace([Symbol(:x, i) for i in 1:17], [1:3 for _ in 1:17], Constraint[], 10^5)
+    said = recommend(seventeen; strength = 7, goal = :compact)   # 42,532,776 combinations, above 2^25
+    @test said.engine == "IPOG()" &&
+          "goal = :compact leaves the start it keeps unreduced: the coverage index would hold 42532776 " *
+          "combinations, above Compact's 33554432" in said.notes
+    six = Profile(Request(seventeen; strength = 6))   # 9,022,104 combinations, below 2^25
+    @test UnitTestDesign._auto_label(_auto_plan(Auto(goal = :compact), six), six) == "Compact(IPOG())"
+    square = TestSpace([:a, :b], [1:256, 1:256], Constraint[], 10^5)   # the catalog's 65,536 rows, above 65,535
+    said = recommend(square; goal = :compact)
+    cases = all_pairs(square; engine = Auto(goal = :compact))
+    @test said.engine == cases.record.chose == "Construction()" && cases.record.reducer.stop === :rows_cap
+    @test any(startswith("goal = :compact leaves the start it keeps unreduced: the catalog's array has 65536 rows"),
+              said.notes)
+    @test recommend(fill(1:3, 4)...; goal = :compact).engine == "Compact(Construction())"
+    # Above the threshold :balanced may build the catalog's array alone, which :fast's note qualifies.
+    @test any(startswith("goal = :fast is IPOG alone; goal = :balanced builds only the catalog's array here"),
+              recommend(wide; strength = 3, goal = :fast).notes)
     # With rules or must-include rows the bound waits for generation.
     @test recommend((a = 1:3, b = 1:3); constraints = [forbid((a = 1, b = 1))]).lower_bound === nothing
     @test recommend((a = 1:3, b = 1:3); must_include = [(a = 1,)]).lower_bound === nothing
