@@ -21,6 +21,14 @@
 #     other    a second space with other names, value types and rule, its
 #              pairs and their display: what a user's own first space costs,
 #              which no workload can compile in advance
+#     auto     after those, `all_pairs` of eight seven-valued parameters
+#              with `engine = Auto()`, which builds the catalog's orthogonal
+#              array, and its display: the first call of Auto's catalog path
+#              (plan Phase 3), a new row type included, as in `other`
+#
+# With `--engine EXPR` the example's and the second space's `all_pairs` take
+# `engine = EXPR`, such as `--engine "Auto()"`: the first call if that
+# engine were the default (plan §7.5, decision D1).
 #
 # With `--precompile` it first times `Base.compilecache` of the package in a
 # child process: the one-time cost of precompiling, which the workload
@@ -64,9 +72,11 @@ other = TestSpace((window = [1, 3, 5], boundary = [:clamp, :reflect, :periodic],
                   constraints = [@forbid(window == 1 && kernel != :box)])
 show(io, MIME"text/plain"(), all_pairs(other))
 t6 = time_ns()
+show(io, MIME"text/plain"(), all_pairs(fill(1:7, 8)...; engine = Auto()))
+t7 = time_ns()
 seconds(a, b) = round((b - a) / 1e9; digits = 3)
 println(join((seconds(t0, t1), seconds(t1, t2), seconds(t2, t3), seconds(t3, t4), seconds(t1, t4),
-              seconds(t4, t5), seconds(t5, t6)), " "))
+              seconds(t4, t5), seconds(t5, t6), seconds(t6, t7)), " "))
 """
 
 "The child process that times `Base.compilecache` of the package."
@@ -75,7 +85,7 @@ package = Base.identify_package("UnitTestDesign")
 println(round(@elapsed(Base.compilecache(package)); digits = 2))
 """
 
-const FIGURES = ("load", "space", "pairs", "show", "example", "rest", "other")
+const FIGURES = ("load", "space", "pairs", "show", "example", "rest", "other", "auto")
 
 median(x) = (s = sort(x); n = length(s); isodd(n) ? s[(n + 1) ÷ 2] : (s[n ÷ 2] + s[n ÷ 2 + 1]) / 2)
 
@@ -84,7 +94,12 @@ function main(args)
     runs = i === nothing ? 5 : parse(Int, args[i + 1])
     julia = `$(Base.julia_cmd()) --project=$(Base.active_project()) --startup-file=no`
     source = Base.locate_package(Base.identify_package("UnitTestDesign"))
-    println("Julia ", VERSION, ", UnitTestDesign from ", source, ", ", runs, " fresh processes")
+    k = findfirst(==("--engine"), args)
+    child = k === nothing ? CHILD :
+            replace(CHILD, "all_pairs(space)" => "all_pairs(space; engine = $(args[k + 1]))",
+                    "all_pairs(other)" => "all_pairs(other; engine = $(args[k + 1]))")
+    println("Julia ", VERSION, ", UnitTestDesign from ", source, ", ", runs, " fresh processes",
+            k === nothing ? "" : ", engine = $(args[k + 1])")
     if "--precompile" in args
         println("precompile: ", readchomp(`$julia -e $PRECOMPILE`), " s")
     end
@@ -93,7 +108,7 @@ function main(args)
     println(rpad("run", 8), join((lpad(f, 8) for f in FIGURES)))
     results = Vector{Vector{Float64}}()
     for run in 1:runs
-        figures = parse.(Float64, split(readchomp(`$julia -e $CHILD`)))
+        figures = parse.(Float64, split(readchomp(`$julia -e $child`)))
         push!(results, figures)
         println(rpad(run, 8), join((lpad(f, 8) for f in figures)))
     end
