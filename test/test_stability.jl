@@ -466,19 +466,20 @@ end
     f, entry, members = _construction_plan(Profile(request))
     @test first(@inferred _construction_cover(request, all_targets, f, entry, members)) isa Matrix{Int}
     @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _cover_with_notes(Auto(), request, all_targets)) isa Matrix{Int}
-    # The bound reads every support in place: what it allocates (its buffer of
-    # codes) doesn't grow with the supports, 45 or 7,140 of them. One argument,
-    # as the targets-interface item advises.
+    # The bound reads every support in place, 45 or 7,140 of them: without
+    # must-include rows it allocates nothing, and with them its two buffers,
+    # whatever the supports (192 bytes for 3 rows on Julia 1.13, 320 on 1.10).
+    # One argument, as the targets-interface item advises.
     bound_bytes(r) = (t = RequiredTargets(r, first(classify_targets(r))); _ordinary_bound(r, t); @allocated _ordinary_bound(r, t))
-    small, large = bound_bytes(Request(uniform(10, 3))), bound_bytes(Request(uniform(120, 3)))
-    @test small == large && large <= 128
+    @test bound_bytes(Request(uniform(10, 3))) == bound_bytes(Request(uniform(120, 3))) == 0
     with_rows(k) = Request(uniform(k, 3); must_include = [(p1 = 1, p2 = 2), (p3 = 3,), Tuple(fill(1, k))])
-    @test bound_bytes(with_rows(10)) == bound_bytes(with_rows(40)) <= 256
+    @test bound_bytes(with_rows(10)) == bound_bytes(with_rows(40)) <= 512
     # Many must-include rows, as when topping up a previous design: each
     # support's held codes are marked in a reused bit buffer, not sorted, so
     # the bound allocates its two buffers whether it reads 435 supports
-    # (strength 2) or 4,060 (strength 3). A sort per support took scratch
-    # space past about 40 codes, 980 KB for 200 rows at strength 3.
+    # (strength 2) or 4,060 (strength 3): for 200 rows 1,776 bytes on Julia
+    # 1.13 and 1,872 on 1.10. A sort per support took scratch space past
+    # about 40 codes, 980 KB for 200 rows at strength 3.
     previous = collect(all_pairs(uniform(30, 3)))
     topping(t, m) = Request(uniform(30, 3); strength = t, must_include = [previous[mod1(i, length(previous))] for i in 1:m])
     for m in (60, 200)

@@ -72,15 +72,22 @@ ordinary ones.
 function _ordinary_bound(request::Request, targets::RequiredTargets)
     must = request.must_include
     m = size(must, 2)
+    # Without must-include rows nothing is held, and no buffer is made. With
+    # them, buffers for every support: the distinct codes held, at most one
+    # per must-include row, and a bit per combination of the largest support.
+    m == 0 && return _bound_over_supports(must, targets, nothing)
+    return _bound_over_supports(must, targets, (sizehint!(Int[], m), falses(0)))
+end
+
+"`_ordinary_bound`'s pass over the supports, with `_held_by`'s buffers, or `nothing` without must-include rows."
+function _bound_over_supports(must::Matrix{Int}, targets::RequiredTargets,
+                              buffers::Union{Nothing, Tuple{Vector{Int}, BitVector}})
+    m = size(must, 2)
     best = _SupportBound(m, 0, 0, 0, 0, 0, m)
-    # Buffers for every support: the distinct codes held, at most one per
-    # must-include row, and a bit per combination of the largest support read.
-    codes, seen = sizehint!(Int[], m), falses(0)
     for s in eachindex(supports(targets))
         need = nrequired(targets, s)
         need > 0 || continue
-        members = supports(targets)[s]
-        held, unset = _held_by(codes, seen, must, targets, s, members)
+        held, unset = buffers === nothing ? (0, 0) : _held_by(buffers..., must, targets, s, supports(targets)[s])
         rows = m + max(0, need - held - unset)
         rows > best.rows || continue
         best = _SupportBound(rows, s, need, ncombinations(targets, s), held, unset, m)
@@ -102,7 +109,6 @@ combinations, and is clear again on return.
 """
 function _held_by(codes::Vector{Int}, seen::BitVector, must::Matrix{Int}, targets::RequiredTargets, s::Int,
                   members::Vector{Int})
-    size(must, 2) == 0 && return 0, 0
     empty!(codes)
     n = ncombinations(targets, s)
     length(seen) < n && fill!(resize!(seen, n), false)
