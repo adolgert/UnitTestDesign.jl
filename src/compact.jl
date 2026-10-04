@@ -283,7 +283,9 @@ function _reduce!(index::CoverageIndex, rows::Vector{Vector{Int}}, values::Vecto
             for j in (m + 1):N
                 row = rows[j]
                 missed, at = 0, 0
-                for (k, i) in enumerate(span)
+                # A row has every parameter, `span` is a support's members, and
+                # `combination_values` has room for the largest support.
+                @inbounds for (k, i) in enumerate(span)
                     row[index.members[i]] == combination_values[k] && continue
                     missed += 1
                     missed > 1 && break
