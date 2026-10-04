@@ -468,9 +468,10 @@ The one engine entry point (plan Phase 3 step 1): a covering design for
 (contract §1.21). Every [`CoveringEngine`](@ref) builds covering designs
 (§1.3) through `cover_ordinary`, and the result records it by
 `engine_record`. An engine whose `fit` refuses the request is an
-`ArgumentError` before anything is classified (`_check_fit`). Every target classification, must-include completion and
-placement decision is resolved or the call throws `ResourceLimitError`
-(§3.6); a design is never returned with a target unresolved or dropped.
+`ArgumentError` before anything is classified (`_check_fit`). Every target
+classification, must-include completion and placement decision is resolved
+or the call throws `ResourceLimitError` (§3.6); a design is never returned
+with a target unresolved or dropped.
 
 The ordinary design is built first, over ordinary values only, from the
 classified ordinary targets (`classify_targets`, read through
