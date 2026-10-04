@@ -10,8 +10,9 @@
 # results on (t, v, k) for rows over the best known and over the bound, and
 # test_families.py checks that the file holds every shape the grid uses.
 #
-# `catalog` stays empty until the package has the catalog's size lookup
-# (BestKnown.catalog_rows, the hook for Phase 2); then rerun this script.
+# `catalog` is the package's catalog size (BestKnown.catalog_rows, which calls
+# UnitTestDesign._catalog_rows), empty where no entry applies; rerun this
+# script when the catalog changes.
 include(joinpath(@__DIR__, "BestKnown.jl"))
 using .BestKnown
 
