@@ -314,8 +314,8 @@ end
     end
     # A field is its tables: 1 MiB for 256 symbols, and little beside.
     @test measured(GaloisField, 256) <= 2 * 256^2 * 8 + 64 * 1024
-    # A lookup builds nothing: about 37 KB at strength 2 on 10 parameters of 5
-    # values and 0.6 MB at strength 3 on 250 of 7, on Julia 1.13.
+    # A lookup builds nothing: 37 KB at strength 2 on 10 parameters of 5 values
+    # and 0.57 MB at strength 3 on 250 of 7 on Julia 1.13; 76 KB and 0.97 MB on 1.10.
     @test measured(k -> _catalog_entry(2, 5, k), 10) <= 128 * 1024
     @test measured(k -> _catalog_entry(3, 7, k), 250) <= 2 * 2^20
 end

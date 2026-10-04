@@ -8,7 +8,7 @@ using TestItemRunner
 
 @testsnippet ConstructionSetup begin
     using UnitTestDesign: Construction, Request, Profile, Fit, fit, engine_record, cover_ordinary, RequiredTargets,
-        classify_targets, generate, NegativeProjection, _negative_request, _engine_for, _engine_rows
+        classify_targets, generate, NegativeProjection, _negative_request, _engine_for, _engine_rows, _catalog_rows
 
     names_for(k) = Tuple(Symbol(:p, i) for i in 1:k)
     space_of(arity; constraints = Constraint[]) =
@@ -113,9 +113,30 @@ end
     @test cases[1].p1 == 1 && cases[1].p2 == 2 && cases[2].p1 == 3 && cases[2].p3 == 3 && cases[2].p4 == 4
     @test cases[3] == must[3]
     @test length(cases) == 3 + 49
-    # A stronger group: IPOG adds the triples the orthogonal array leaves.
+    # A stronger group is seeded with its own array, on its parameters, when
+    # that is at strength 2 or 3 and no smaller than the base array; IPOG
+    # extends its rows to the other parameters and adds what they leave.
     cases = all_pairs(space; engine = C, stronger = [(:p1, :p2, :p3) => 3])
     @test iscomplete(coverage(cases)) && length(cases) == 343
+    for (arity, group, rows) in ((fill(4, 16), (:p1, :p2, :p3, :p4), 64), (fill(3, 50), (:p1, :p2, :p3, :p4), 28),
+                                 (fill(3, 12), Tuple(Symbol(:p, i) for i in 1:12), 53))
+        seeded = all_pairs(space_of(arity); engine = C, stronger = [group => 3])
+        plain = all_pairs(space_of(arity); stronger = [group => 3])
+        @test iscomplete(coverage(seeded)) && length(seeded) <= length(plain)
+        @test length(seeded) == rows && rows - _catalog_rows(3, arity[1], length(group)) <= 1   # its array, extended
+        @test occursin("`stronger` group", fit(C, Profile(Request(space_of(arity); stronger = [group => 3]))).reason)
+    end
+    # A group at strength 4, where the catalog is weak, or one whose array is
+    # smaller than the base array, is seeded with the base array.
+    for (arity, group, s) in ((fill(2, 30), Tuple(Symbol(:p, i) for i in 1:8), 4), (fill(2, 100), (:p1, :p2, :p3), 3))
+        f = fit(C, Profile(Request(space_of(arity); stronger = [group => s])))
+        @test f.kind === :seeded && startswith(f.reason, "Kleitman-Spencer") && !occursin("`stronger` group", f.reason)
+        @test iscomplete(coverage(all_pairs(space_of(arity); engine = C, stronger = [group => s])))
+    end
+    # With a rule, a partial row of the group's array that no valid row extends is dropped.
+    ruled = space_of(fill(4, 16); constraints = [@forbid(p1 == p2)])
+    seeded = all_pairs(ruled; engine = C, stronger = [(:p1, :p2, :p3, :p4) => 3])
+    @test iscomplete(coverage(seeded)) && length(seeded) <= length(all_pairs(ruled; stronger = [(:p1, :p2, :p3, :p4) => 3]))
     # A rule with t + 1 parameters of mixed counts.
     space = space_of([4, 3, 2]; constraints = [forbid((p1 = 1, p2 = 1))])
     @test iscomplete(coverage(all_pairs(space; engine = C)))
