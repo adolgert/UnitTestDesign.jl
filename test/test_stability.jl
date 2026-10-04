@@ -259,6 +259,17 @@ end
     end
     @test (@inferred Profile(constrained)).targets == length(TargetList(constrained))
     @test measured(Profile, constrained) <= 8 * 1024
+    # Twenty `stronger` groups of one strength, each every parameter but one:
+    # the count of their shared supports keeps a state per set of groups that
+    # holds at most `s` parameters chosen, 1,351 of them, where every
+    # intersection of groups was once a state and the profile allocated 620
+    # MiB (`_union_count`). About 1 MiB now; a doubling per group would pass
+    # 4 MiB by the third extra group.
+    names = [Symbol(:p, i) for i in 1:21]
+    overlapping = Request(TestSpace(names, [1:2 for _ in 1:21], Constraint[], 10^5); strength = 2,
+                          stronger = [Tuple(names[setdiff(1:21, [g])]) => 3 for g in 1:20])
+    @test Profile(overlapping).targets == length(TargetList(overlapping)) == 11_480
+    @test measured(Profile, overlapping) <= 4 * 2^20
     # The protocol's other answers infer too; `_engine_for` is the engine or IPOG.
     profile = Profile(constrained)
     @test (@inferred engine_record(GND())) isa EngineRecord

@@ -375,8 +375,12 @@ choices of `k` parameters that lead to it. Choosing a parameter intersects
 the state with the groups that hold it, and a choice that no group holds
 whole is dropped. So each `s`-subset held by some group is counted once,
 under the set of groups that hold it, with no inclusion–exclusion over the
-groups. The states are the distinct sets of groups that share some
-parameters, which for listed groups are few.
+groups. A state that only choices of `s` parameters reach makes no new
+state, so the states are the distinct sets of groups that hold some choice of
+at most `s` parameters, whatever the number of groups: twenty groups of
+twenty of 21 parameters at strength 3 make 1,351 states (1 + 20 + 190 +
+1,140), where without that rule each of the 2^20 − 1 intersections of groups
+is one.
 """
 function _union_count(arity::Vector{Int}, groups::Vector{Vector{Int}}, s::Int)
     holds = [falses(length(groups)) for _ in arity]   # holds[p][j]: group j holds parameter p
@@ -388,6 +392,9 @@ function _union_count(arity::Vector{Int}, groups::Vector{Vector{Int}}, s::Int)
         any(holds[p]) || continue
         next = Dict{BitVector, Vector{Int}}(mask => copy(e) for (mask, e) in states)
         for (mask, e) in states
+            # A state that only choices of `s` parameters reach is complete: it
+            # makes no new state, else the states could number 2^G for G groups.
+            any(!iszero, view(e, 1:s)) || continue
             both = mask .& holds[p]
             any(both) || continue
             f = get!(() -> zeros(Int, s + 1), next, both)
