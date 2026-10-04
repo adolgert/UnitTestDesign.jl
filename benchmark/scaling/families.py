@@ -19,7 +19,7 @@ EXPENSIVE_COST is a call of roughly ten seconds.
 | uniform-npp | v in {6, 10, 12, 15, 20, 24}; the same k, and at t = 2 every k in v+2..3v | 166 + 66 |
 | strength | t = 2–5, v = 2–5, k in {10, 20, 50, 100}; t = 6 at k in {10, 20}, v in {2, 3} | 41 + 27 |
 | exact | probe 25's shapes with known minima or bounds; the r2 random spaces (2–3 values) | 177 |
-| adapted | six points of each family above and of casa, bench12 and docs-solver, each with one of five changes | 220 |
+| adapted | six points of each family above and of casa at t = 2, bench12 and docs-solver, each with one of five changes | 220 |
 | casa | CASA's 35 constrained models, t = 2, 3 (datasets.py fetch casa) | 70 |
 | ct-comp | IWCT 2023's 240 models; t = 2, and t = 3–5 expensive (datasets.py fetch ct-comp) | 240 + 718 |
 | cart | State of the CArt's 295 models; t = 2, and t = 3–5 expensive (datasets.py fetch cart) | 295 + 791 |
@@ -72,14 +72,16 @@ def random_spaces():
     return json.loads(RANDOM_SPACES.read_text())['spaces']
 
 
-def random_set(grid, sets, solvers, runs):
-    return [job(grid, s['id'], s['arity'], s['strength'], solver, runs, set=s['set'], forbid=s.get('forbid'))
+def random_set(sets, solvers, runs, grid='mainstream'):
+    """The random spaces of `sets`, with ids mainstream-<space id>-<solver>-t<t> whatever their `grid` label."""
+    return [dict(job('mainstream', s['id'], s['arity'], s['strength'], solver, runs, set=s['set'], forbid=s.get('forbid')),
+                 grid=grid)
             for solver in solvers for s in random_spaces() if s['set'] in sets]
 
 
 def mainstream(solvers, runs):
     """Probe 16's r3 (2-7 values, Phase 1's gate) and r4 (strength 3), each also with rules; bench12; the docs."""
-    jobs = random_set('mainstream', ('r3', 'r3-rules', 'r4', 'r4-rules'), solvers, runs)
+    jobs = random_set(('r3', 'r3-rules', 'r4', 'r4-rules'), solvers, runs)
     for solver in solvers:
         for t in (2, 3): jobs.append(job('mainstream', 'bench12', BENCH12, t, solver, runs, space='bench12'))
         for name, arity, t, stronger in DOCS:
@@ -210,7 +212,9 @@ def adapted(solvers, runs):
     mainstream's bench12 and docs-solver at strength 2, each with each adaptation."""
     jobs = []
     for base in ('mainstream', 'smallest', 'uniform-pp', 'uniform-npp', 'strength', 'exact', 'casa'):
-        pool = [s for s in FAMILIES[base](solvers[:1], runs) if not s.get('expensive')]
+        # CASA at strength 3 mostly exceeds the 2 GiB guard at 2798ecf (README), so adapt its strength-2 runs.
+        pool = [s for s in FAMILIES[base](solvers[:1], runs)
+                if not s.get('expensive') and not (base == 'casa' and s['strength'] > 2)]
         picks = pool[::max(1, len(pool) // 6)][:6]
         if base == 'mainstream': picks += [s for s in pool if s.get('space') in ('bench12', 'docs-solver') and s['strength'] == 2]
         for solver in solvers:
@@ -228,7 +232,7 @@ def adapted(solvers, runs):
 
 FAMILIES = {
     'mainstream': mainstream,
-    'mainstream-r1': lambda solvers, runs: random_set('mainstream-r1', ('r1',), solvers, runs),
+    'mainstream-r1': lambda solvers, runs: random_set(('r1',), solvers, runs, grid='mainstream-r1'),
     'smallest': smallest,
     'uniform-pp': lambda solvers, runs: uniform('uniform-pp', (2, 3, 4, 5, 7, 8, 9, 11, 13, 16, 25), solvers, runs),
     'uniform-npp': lambda solvers, runs: uniform('uniform-npp', (6, 10, 12, 15, 20, 24), solvers, runs, wide=True),

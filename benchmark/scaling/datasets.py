@@ -93,7 +93,7 @@ def read_casa(model_text, constraints_text):
         literals = []
         for _ in range(int(take())):
             sign, index = take(), int(take())
-            if sign not in '+-' or index not in owner: raise ValueError(f'bad literal {sign} {index}')
+            if sign not in ('+', '-') or index not in owner: raise ValueError(f'bad literal {sign} {index}')
             literals.append((sign == '+', *owner[index]))
         clauses.append(literals)
     if pos != len(tokens): raise ValueError('trailing tokens in constraints file')

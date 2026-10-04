@@ -393,7 +393,7 @@ function main()
               certification=certification_label(s,ADAPTERS[s["solver"]]))
     end
     event("stage";name="diagnostics",phase="bounds")
-    event("bounds";bounds=bounds(lastvalue,m))
+    event("bounds";bounds=bounds(lastvalue,generation_model(s,m,prepared)))
     event("stage";name="oracle")
     LAST_REQUEST[]=nothing
     t=nothing
