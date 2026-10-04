@@ -256,8 +256,23 @@ end
         @test all_pairs(space; engine = Auto(goal = :compact), feasibility_limit = limit) ==
               all_pairs(space; engine = Auto(goal = :compact))
     end
-    # A limit that stops a search stops Auto too: nothing catches a ResourceLimitError.
-    @test_throws ResourceLimitError all_pairs(space; engine = Auto(), feasibility_limit = 1)
+    # A limit that stops classification stops the call before any start runs.
+    @test_throws "classifying target" all_pairs(space; engine = Auto(), feasibility_limit = 1)
+    # A limit that stops a start's own search ends Auto's call too (§9.12):
+    # nothing catches the start's ResourceLimitError. In 1,500 small random
+    # spaces with rules, no limit let classification finish and then stopped a
+    # start, so the targets are classified under the default limit and the
+    # starts run under a limit of 1, where IPOG's placement searches stop.
+    ruled = TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:7)}(Tuple(1:3 for _ in 1:7));
+                      constraints = [forbid((p5 = 2, p1 = 2)), forbid((p2 = 3, p6 = 3)), forbid((p5 = 2, p1 = 1))])
+    required, _ = classify_targets(Request(ruled))
+    for engine in (Auto(), Auto(goal = :compact))
+        @test _auto_plan(engine, Profile(Request(ruled))).candidates[1].runs   # IPOG's start runs first
+        tight = Request(ruled; feasibility_limit = 1)
+        @test_throws "placing a value: the feasibility search for" UnitTestDesign._cover_with_notes(
+            engine, tight, UnitTestDesign.RequiredTargets(tight, required))
+        @test iscomplete(coverage(all_pairs(ruled; engine)))
+    end
 end
 
 
@@ -530,4 +545,184 @@ end
     names = first.(_engine_registry())
     @test "Auto()" in names && "Auto(goal = :compact)" in names
     @test _engine_registry(5)[findfirst(==("Auto(goal = :compact)"), names)].second.seed == 5
+end
+
+
+@testitem "the lower bound: an independent brute force with negative must-include rows and several Invalid values (§4.1, §8.7)" begin
+    # The exhaustive test above makes ordinary must-include rows and at most one
+    # Invalid value. This one adds what it leaves out: negative must-include
+    # rows, complete and partial; two Invalid values in a parameter; Invalid
+    # values in two parameters; `stronger` groups that hold an invalid
+    # parameter, at base strength 1 too; duplicated must-include rows; and rules
+    # that read the invalid parameter. It computes rows, targets and validity
+    # itself from the contract's definitions (§1, §5.5, §5.7, §5.9, §6.1–§6.4,
+    # §10.5, §10.6, §11.8), with forbidden pairs as the only rules, and never
+    # the package's classification. For each engine: the bound is at most the
+    # exhaustive minimum, the minimum at most the rows, the required counts
+    # agree, and "minimal" holds only at the minimum.
+    using Random: Xoshiro
+    subsets(xs, s) = s == 0 ? [Int[]] : s > length(xs) ? Vector{Int}[] :
+                     [[x; rest] for (i, x) in enumerate(xs) for rest in subsets(xs[(i + 1):end], s - 1)]
+    isinv(x) = x isa Invalid
+    # A rule (scope, values) forbids the rows that hold `values` on `scope`; a
+    # rule that reads a row's invalid parameter doesn't apply to it (§5.5).
+    function valid(row, rules)
+        count(isinv, row) > 1 && return false
+        p = something(findfirst(isinv, row), 0)
+        return !any(((scope, vals),) -> !(p in scope) && all(row[scope[i]] == vals[i] for i in eachindex(scope)), rules)
+    end
+    holds(row, t) = all(row[i] == v for (i, v) in t)   # a target or a must-include row: index => value pairs
+    "The fewest rows of `pool` that hold every target, by branch and bound; `nothing` if one is in no row."
+    function fewest(pool, targets)
+        isempty(targets) && return 0
+        options = [[j for j in eachindex(pool) if holds(pool[j], t)] for t in targets]
+        any(isempty, options) && return nothing
+        covers = [BitSet(i for i in eachindex(targets) if holds(pool[j], targets[i])) for j in eachindex(pool)]
+        most = maximum(length, covers)
+        best = Ref(length(targets))
+        function search(uncovered::BitSet, depth::Int)
+            isempty(uncovered) && return (best[] = min(best[], depth); nothing)
+            depth + cld(length(uncovered), most) >= best[] && return nothing
+            i = argmin(i -> length(options[i]), collect(uncovered))
+            for j in options[i]
+                search(setdiff(uncovered, covers[j]), depth + 1)
+            end
+            return nothing
+        end
+        search(BitSet(eachindex(targets)), 0)
+        return best[]
+    end
+    "The fewest rows, given the must-include rows `must` that hold the targets' kind, each completed in `pool`."
+    function fewest_with(pool, targets, must)
+        best = typemax(Int)
+        for chosen in Iterators.product(([r for r in pool if holds(r, m)] for m in must)...)
+            extra = fewest(pool, [x for x in targets if !any(r -> holds(r, x), chosen)])
+            extra === nothing && error("a required target is in no valid row")
+            best = min(best, length(must) + extra)
+        end
+        return best
+    end
+    "(ordinary minimum, negative minimum, ordinary required, negative required)."
+    function brute_minimum(domains, rules, t, stronger, must)
+        k = length(domains)
+        ordinary = [filter(!isinv, d) for d in domains]
+        groups = [(collect(1:k), t); [(collect(g), s) for (g, s) in stronger]]
+        pool = vec([collect(Any, r) for r in Iterators.product(ordinary...) if valid(collect(Any, r), rules)])
+        targets = Set{Vector{Pair{Int, Any}}}()
+        for (G, s) in groups, S in subsets(G, s), a in Iterators.product((ordinary[i] for i in S)...)
+            push!(targets, [S[j] => a[j] for j in eachindex(S)])
+        end
+        required = [x for x in targets if any(r -> holds(r, x), pool)]
+        o = fewest_with(pool, required, [m for m in must if !any(isinv, last.(m))])
+        negative, n_negative = 0, 0
+        for p in 1:k, v in filter(isinv, domains[p])
+            others = [q for q in 1:k if q != p]
+            rows = Vector{Any}[]
+            for r in Iterators.product((ordinary[q] for q in others)...)
+                row = Vector{Any}(undef, k)
+                row[others] .= collect(r)
+                row[p] = v
+                valid(row, rules) && push!(rows, row)
+            end
+            here = Set{Vector{Pair{Int, Any}}}()
+            for (G, s) in groups
+                p in G || continue
+                for A in subsets([q for q in G if q != p], s - 1), a in Iterators.product((ordinary[i] for i in A)...)
+                    push!(here, sort([Pair{Int, Any}[A[j] => a[j] for j in eachindex(A)]; p => v]; by = first))
+                end
+            end
+            need = [x for x in here if any(r -> holds(r, x), rows)]
+            negative += fewest_with(rows, need, [m for m in must if any(((i, x),) -> i == p && x === v, m)])
+            n_negative += length(need)
+        end
+        return o, negative, length(required), n_negative
+    end
+    function random_case(rng)
+        while true
+            k = rand(rng, 2:4)
+            arity = rand(rng, 1:3, k)
+            prod(arity) <= 27 || continue
+            domains = Any[Any[1:a...] for a in arity]
+            for _ in 1:rand(rng, 0:2)
+                p = rand(rng, 1:k)
+                for x in (Invalid(0), Invalid(1))[1:rand(rng, 1:2)]
+                    x in domains[p] || push!(domains[p], x)
+                end
+            end
+            rules = Tuple{Vector{Int}, Vector{Any}}[]
+            for _ in 1:rand(rng, 0:2)
+                a, b = rand(rng, 1:k), rand(rng, 1:k)
+                a == b || push!(rules, ([a, b], Any[rand(rng, 1:arity[a]), rand(rng, 1:arity[b])]))
+            end
+            t = rand(rng, 1:min(3, k))
+            stronger = Pair{Vector{Int}, Int}[]
+            if k > t && rand(rng) < 0.4
+                s = rand(rng, (t + 1):k)
+                g = sort(sortperm(rand(rng, k))[1:rand(rng, s:k)])
+                push!(stronger, g => s)
+            end
+            ordinary = [filter(!isinv, d) for d in domains]
+            pool = [collect(Any, r) for r in Iterators.product(ordinary...) if valid(collect(Any, r), rules)]
+            isempty(pool) && continue
+            must = Vector{Vector{Pair{Int, Any}}}()
+            for _ in 1:rand(rng, 0:3)
+                if rand(rng) < 0.5 && any(d -> any(isinv, d), domains)
+                    p = rand(rng, [i for i in 1:k if any(isinv, domains[i])])
+                    v = rand(rng, filter(isinv, domains[p]))
+                    others = [q for q in 1:k if q != p]
+                    rows = Vector{Any}[]
+                    for r in Iterators.product((ordinary[q] for q in others)...)
+                        row = Vector{Any}(undef, k)
+                        row[others] .= collect(r)
+                        row[p] = v
+                        valid(row, rules) && push!(rows, row)
+                    end
+                    isempty(rows) && continue
+                    row = rand(rng, rows)
+                    keep = sort(unique([p; [i for i in others if rand(rng) < 0.6]]))
+                else
+                    row = rand(rng, pool)
+                    keep = [i for i in 1:k if rand(rng) < 0.7]
+                    isempty(keep) && (keep = [1])
+                end
+                push!(must, Pair{Int, Any}[i => row[i] for i in keep])
+                rand(rng) < 0.2 && push!(must, copy(must[end]))   # a duplicate
+            end
+            return domains, rules, t, stronger, must
+        end
+    end
+    seen = Dict(k => 0 for k in (:negative_must, :partial_negative_must, :two_invalid_parameters, :two_invalid_values,
+                                  :group_holds_invalid, :strength1_group_holds_invalid, :rule_reads_invalid,
+                                  :duplicate_must))
+    let rng = Xoshiro(20261004), checked = 0, claims = 0
+        for trial in 1:100
+            domains, rules, t, stronger, must = random_case(rng)
+            names = Tuple(Symbol(:p, i) for i in eachindex(domains))
+            space = TestSpace(NamedTuple{names}(Tuple(domains));
+                              constraints = [forbid(NamedTuple{Tuple(names[s])}(Tuple(v))) for (s, v) in rules])
+            must_include = [NamedTuple{Tuple(names[first.(m)])}(Tuple(last.(m))) for m in must]
+            groups = [Tuple(names[g]) => s for (g, s) in stronger]
+            o, n, n_required, n_negative = brute_minimum(domains, rules, t, stronger, must)
+            holds_invalid(g) = any(i -> any(isinv, domains[i]), g)
+            negative_must = [m for m in must if any(isinv, last.(m))]
+            seen[:negative_must] += !isempty(negative_must)
+            seen[:partial_negative_must] += any(m -> length(m) < length(domains), negative_must)
+            seen[:two_invalid_parameters] += count(d -> any(isinv, d), domains) >= 2
+            seen[:two_invalid_values] += any(d -> count(isinv, d) >= 2, domains)
+            seen[:group_holds_invalid] += any(((g, s),) -> holds_invalid(g), stronger)
+            seen[:strength1_group_holds_invalid] += t == 1 && any(((g, s),) -> holds_invalid(g), stronger)
+            seen[:rule_reads_invalid] += any(((scope, v),) -> holds_invalid(scope), rules)
+            seen[:duplicate_must] += !allunique(must)
+            for engine in (IPOG(), Auto(), Auto(goal = :compact), GND(), Compact(IPOG()))
+                cases = covering(space; strength = t, stronger = groups, must_include, engine)
+                b = cases.record.lower_bound
+                checked += 1
+                @test b <= o + n <= length(cases)
+                @test (cases.required, cases.negative_required) == (n_required, n_negative)
+                cases.record.minimal && (claims += 1; @test length(cases) == o + n)
+            end
+        end
+        @test checked == 500 && claims > 100
+    end
+    @test all(>(0), values(seen))   # every feature above came up
 end

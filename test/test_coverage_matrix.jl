@@ -150,6 +150,10 @@ end
 end
 
 @testitem "insert_tuple_into_tests" begin
+    # Parameters × cases. Each uncovered tuple (allc's first `remain` columns),
+    # from the last back, goes into the first case that can hold it, filling
+    # that case's unset entries in place; a tuple no case can hold starts a
+    # new case.
     test_set = [
         1 1 1;
         1 0 3;
@@ -166,7 +170,26 @@ end
         3,
         [2, 3, 3]
     )
-    UnitTestDesign.insert_tuple_into_tests(test_set, allc)
+    out = UnitTestDesign.insert_tuple_into_tests(test_set, allc)
+    # (p2 = 1, p3 = 3) fills case 2's unset p2; (p1 = 2) fits no case and
+    # starts one; (p1 = 1, p2 = 1) is in case 1 already.
+    @test out == [1 1 1 2; 1 1 3 0; 1 3 2 0; 1 2 2 0]
+    @test test_set == out[:, 1:3] && allc.remain == 0
+end
+
+
+@testitem "choose_last_parameter! gives each case the value that covers the most" begin
+    # Three binary parameters, the first two set every way: each case takes the
+    # value of the third that covers the most uncovered pairs, the first on a
+    # tie, which gives the orthogonal array of 4 cases, and every pair is
+    # covered, so insert_tuple_into_tests has nothing to add.
+    taller = [1 1 2 2; 1 2 1 2; 0 0 0 0]
+    allc = UnitTestDesign.MatrixCoverage(zeros(Int, 3, 0), 0, [2, 2, 2])
+    UnitTestDesign.one_parameter_combinations!(allc, 3, 2)
+    @test allc.remain == 8
+    UnitTestDesign.choose_last_parameter!(taller, allc)
+    @test taller == [1 1 2 2; 1 2 1 2; 1 2 2 1] && allc.remain == 0
+    @test UnitTestDesign.insert_tuple_into_tests(taller, allc) === taller
 end
 
 

@@ -283,7 +283,8 @@ end
     using Random: Xoshiro
     using UnitTestDesign: Request, RequiredTargets, CoverageIndex, classify_targets, cover_ordinary,
                           combination, add_row!, remove_row!, move_entry!, entry_score, singly_covered,
-                          random_uncovered, decode!, nuncovered, _allows, _compact, _space_indices
+                          random_uncovered, decode!, nuncovered, nrows, max_support, members_of, _allows,
+                          _allows_write, _holder, _replace_row!, _compact, _space_indices
     # The coverage index (plan §4.3) and the reducer's inner loop (§5.3): a
     # row's combination on a support, a move's score, a row's singly covered
     # combinations, an entry move, a row added and removed, a draw of an
@@ -341,6 +342,45 @@ end
     short, long = run(20_000), run(100_000)
     @test last(_compact(flat, flat_targets, flat_start; budget = 20_000)).reducer_stop === :budget
     @test long <= short + 1024
+    # The same with rules, two scoped and tabulated, one lazy, one whole-case:
+    # there a step may find no allowed entry move and write the combination
+    # into a row (`_allows_write`) or replace the row by a starting row that
+    # holds it (`_holder`, `_replace_row!`). Counted once by instrumenting the
+    # reducer, a run replaced a row 2 times in 20,000 steps and 19 in 100,000,
+    # and still allocated the same (Julia 1.13).
+    rules = [forbid((a, b) -> a == 1 && b == 2, :x1, :x2), forbid((a, b, c) -> a == b == c, :x3, :x4, :x5),
+             forbid((a, b) -> a + b == 5, :x6, :x7), forbid(row -> row.x1 == 3 && row.x10 == 3)]
+    ruled = Request(with_logger(NullLogger()) do   # tabulation_limit = 30: the rule on three parameters is lazy
+        TestSpace([Symbol(:x, i) for i in 1:10], [1:4 for _ in 1:10], rules, 30)
+    end)
+    ruled_targets = RequiredTargets(ruled, first(classify_targets(ruled)))
+    ruled_start = cover_ordinary(IPOG(), ruled, ruled_targets)
+    run_ruled(budget) = (_compact(ruled, ruled_targets, ruled_start; budget);
+                         @allocated _compact(ruled, ruled_targets, ruled_start; budget))
+    short, long = run_ruled(20_000), run_ruled(100_000)
+    @test last(_compact(ruled, ruled_targets, ruled_start; budget = 20_000)).reducer_stop === :budget
+    @test long <= short + 1024
+    # Those paths on their own: a write's rule check, the draw of a starting row
+    # that holds a combination, and a row's replacement allocate nothing.
+    index = CoverageIndex(ruled, ruled_targets)
+    starts = [ruled_start[:, j] for j in axes(ruled_start, 2)]
+    design = [copy(row) for row in starts]
+    foreach(row -> add_row!(index, row), design)
+    combination_values = zeros(Int, max_support(index))
+    s = decode!(combination_values, index, combination(index, 7, starts[1]))   # a combination row 1 holds
+    span = members_of(index, s)
+    f, candidates = ruled.feasibility, ruled.candidates
+    values, saved = _space_indices(ruled, design[2]), zeros(Int, max_support(index))
+    @test (@inferred _allows_write(f, values, saved, index, span, combination_values, candidates)) isa Bool
+    @test measured(x -> _allows_write(x...), (f, values, saved, index, span, combination_values, candidates)) == 0
+    @test values == _space_indices(ruled, design[2])   # restored
+    rng = Xoshiro(3)
+    @test (@inferred _holder(starts, index, span, combination_values, rng)) isa Vector{Int}
+    @test measured(x -> _holder(x...), (starts, index, span, combination_values, rng)) == 0
+    source = _holder(starts, index, span, combination_values, rng)
+    @test (@inferred _replace_row!(index, design[2], values, source, candidates)) == source
+    @test measured(x -> _replace_row!(x...), (index, design[2], values, source, candidates)) == 0
+    @test values == _space_indices(ruled, source) && nrows(index) == length(design)
 end
 
 
