@@ -14,11 +14,13 @@ function event(kind; kw...)
     println(JSON.json(Dict("event" => kind, (string(k)=>v for (k,v) in kw)...)))
     flush(stdout)
 end
+# Spec fields beyond n × v (arity, forbid, space, model, stronger, adapt) and
+# the metrics recorded beside the timings (plan §7.2, §7.3).
+include("spaces.jl"); include("model_specs.jl"); include("metrics.jl")
 
 function model(s)
     n, v = s["n"], s["v"]
-    names = [Symbol(:p,i) for i in 1:n]
-    domains = [Any[1:v...] for _ in 1:n]
+    names, domains, rules = base_model(s)
     family = s["family"]
     family in ("none","mixed","invalid","partition","scoped","lazy_scoped","whole",
         "pattern","macro","noop_scoped","noop_whole","matching","chain","equality",
@@ -31,7 +33,6 @@ function model(s)
     elseif family == "partition"
         domains = [Any[Partition(Symbol(:level,k), Returns(k)) for k in 1:v] for _ in 1:n]
     end
-    rules = Constraint[]
     if family in ("scoped", "lazy_scoped", "whole", "pattern", "macro")
         r = family == "pattern" ? forbid((p1=1,p2=1)) :
             family == "macro" ? @forbid(p1 == 1 && p2 == 1) :
@@ -57,10 +58,14 @@ function model(s)
             push!(rules,forbid((a,b)->a==b,names[i],names[j]))
         end
     end
+    adapted_must, adapted_stronger = adapt!(s, names, domains, rules)
     space = TestSpace((names[i] => domains[i] for i in 1:n)...;
                       constraints=rules, tabulation_limit=family in ("lazy_scoped","lazy_scope") ? 1 : 100_000)
     stronger = s["usage"] == "stronger" ? [Tuple(names[1:min(6,n)]) => 3] : Pair[]
+    extra = [spec_stronger(s, names); adapted_stronger]
+    isempty(extra) || (stronger = Pair[stronger; extra])
     must = s["usage"] == "seed" ? [(p1=2,)] : Any[]
+    isempty(adapted_must) || (must = Any[must; adapted_must])
     kw = (; strength=s["strength"], stronger, must_include=must,
             feasibility_limit=get(s,"nodes",100_000), explanation_limit=get(s,"explanations",1_000_000))
     return (;space,kw,names,domains)
@@ -72,24 +77,9 @@ is_builtin(adapter) = adapter isa U.CoveringEngine
 
 # Certification of trial adapters is part of the timed operation. Ordinary
 # and negative target classification uses the same request as the validator.
-function negative_required(r)
-    required=Vector{Int}[]
-    n=length(r.arity)
-    for p in 1:n, position in (r.arity[p]+1):length(r.candidates[p])
-        if r.strength == 1
-            t=zeros(Int,n); t[p]=position
-            U._classify_negative(r,t) === nothing && push!(required,t)
-        end
-        if r.strength > 1 || any(g->p in g.first,r.groups[2:end])
-            sub=U._negative_request(r,p,zeros(Int,n-1,0))
-            for target in U.TargetList(sub)
-                t=U._with_invalid(target,p,position)
-                U._classify_negative(r,t) === nothing && push!(required,t)
-            end
-        end
-    end
-    return required
-end
+# The 0.5 merge replaced the per-target helpers this called (_classify_negative,
+# _with_invalid, _negative_request by parameter) with classify_negative_targets.
+negative_required(r) = first(U.classify_negative_targets(r))
 
 function certify(adapter_result,r)
     matrix = if adapter_result isa U.Design
@@ -219,12 +209,12 @@ function describe(x)
         return Dict("cases"=>size(x.matrix,2),"required"=>x.required,"covered"=>x.covered,
                     "excluded"=>length(x.excluded),"exclusions"=>exclusion_counts(x.excluded),
                     "negative_required"=>x.negative_required,"negative_covered"=>x.negative_covered,
-                    "negative_exclusions"=>exclusion_counts(x.negative_excluded))
+                    "negative_exclusions"=>exclusion_counts(x.negative_excluded),"engine_extras"=>engine_extras(x))
     elseif x isa TestCases
         return Dict("cases"=>length(x),"required"=>x.required,"covered"=>x.covered,
                     "excluded"=>length(x.excluded),"exclusions"=>exclusion_counts(x.excluded),
                     "negative_required"=>x.negative_required,"negative_covered"=>x.negative_covered,
-                    "negative_exclusions"=>exclusion_counts(x.negative_excluded))
+                    "negative_exclusions"=>exclusion_counts(x.negative_excluded),"engine_extras"=>engine_extras(x))
     elseif x isa Coverage
         return Dict("covered"=>x.ordinary.covered,"feasible"=>x.ordinary.feasible,
                     "missing"=>length(x.ordinary.missing),"complete"=>iscomplete(x),
@@ -274,10 +264,14 @@ function verify_domains(rows,m)
     end
 end
 
+# Invalid or Partition values, which the exhaustive oracle skips, whatever the family:
+# named spaces and the `invalid` adaptation hold them too.
+wrapped(m) = any(x -> x isa Union{Invalid,Partition}, Iterators.flatten(m.domains))
+
 function oracle(x,m,s)
     x isa Union{U.Design,TestCases} && s["usage"] in
         ("core","reuse","public","named","positional","seed","stronger","upgrade","topup") || return "not_applicable"
-    s["family"] in ("invalid","partition") && return "not_applicable"
+    (s["family"] in ("invalid","partition") || wrapped(m)) && return "not_applicable"
     prod(big(length(d)) for d in m.domains) <= 4096 || return "not_run_large"
     n=s["n"]
     rows = x isa U.Design ? [collect(x.matrix[:,j]) for j in axes(x.matrix,2)] : [collect(values(row)) for row in x]
@@ -304,7 +298,7 @@ function verification(x,m,s,prepared)
     target_model=generation_model(s,m,prepared)
     exhaustive=oracle(x,target_model,s)
     public_check="not_applicable"
-    if s["family"] in ("invalid","partition") && length(m.names)<=8
+    if (s["family"] in ("invalid","partition") || wrapped(m)) && length(m.names)<=8
         covering_result=x isa Union{U.Design,TestCases} && x.strategy==:covering
         value=covering_result ? x : prepared
         if value !== nothing
@@ -374,6 +368,7 @@ function main()
         LAST_REQUEST[]=nothing
         lastvalue=nothing
         t=nothing
+        reset_extras!()
         event("stage";name="gc",phase="operation",run=i)
         GC.gc()
         stage=i==0 ? "cold" : "warm"
@@ -386,6 +381,8 @@ function main()
               retained_bytes=Base.summarysize(lastvalue),result=describe(lastvalue),search=stats(),
               certification=certification_label(s,ADAPTERS[s["solver"]]))
     end
+    event("stage";name="diagnostics",phase="bounds")
+    event("bounds";bounds=bounds(lastvalue,generation_model(s,m,prepared)))
     event("stage";name="oracle")
     LAST_REQUEST[]=nothing
     t=nothing
