@@ -89,3 +89,20 @@ end
         1 1 3; 1 2 3; 2 1 3; 2 2 3
         ]'
 end
+
+
+@testitem "one_parameter_combinations! writes every step over one matrix" begin
+    using UnitTestDesign: MatrixCoverage, one_parameter_combinations!, one_parameter_combinations
+    # Classic IPOG's steps, in order, on one matrix with a row per parameter
+    # (plan §5.2). The column count grows and, at the last parameter of the
+    # second case, shrinks; rows of parameters not yet added stay zero.
+    for (arity, n_way) in [([3, 3, 2, 2, 2], 2), ([10, 10, 10, 2], 2), ([4, 3, 3, 2, 2, 2], 3), ([3, 2, 2], 1)]
+        n = length(arity)
+        mc = MatrixCoverage(zeros(Int, n, 0), 0, arity)
+        for p in (n_way + 1):n
+            one_parameter_combinations!(mc, p, n_way)
+            @test mc.allc[1:p, 1:mc.remain] == one_parameter_combinations(arity[1:p], n_way)
+            @test all(iszero, mc.allc[(p + 1):n, :])
+        end
+    end
+end

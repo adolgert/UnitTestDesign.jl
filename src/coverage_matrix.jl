@@ -58,6 +58,31 @@ end
 
 
 """
+    one_parameter_combinations!(mc::MatrixCoverage, param_idx, n_way)
+
+Make the uncovered tuples of `mc` those of
+`one_parameter_combinations(mc.arity[1:param_idx], n_way)`, written over the
+first `param_idx` rows of its matrix, which is replaced only when it has too
+few columns. Classic `ipog` keeps one matrix, with a row for every
+parameter, and calls this once per added parameter, in order, so a row is
+zero in every column until its parameter is added (plan §5.2).
+"""
+function one_parameter_combinations!(mc::MatrixCoverage, param_idx, n_way)
+    arity = view(mc.arity, 1:param_idx)
+    cols = one_parameter_combinations_count(arity, n_way)
+    if size(mc.allc, 2) < cols
+        # Doubling keeps the replacements few while the steps grow.
+        mc.allc = zeros(eltype(mc), size(mc.allc, 1), max(cols, 2 * size(mc.allc, 2)))
+    end
+    comb = view(mc.allc, 1:param_idx, 1:cols)
+    fill!(comb, 0)
+    one_parameter_combinations!(comb, arity, n_way)
+    mc.remain = cols
+    mc
+end
+
+
+"""
 How many tuples have not been covered yet.
 """
 function remaining_uncovered(mc::MatrixCoverage)
@@ -222,7 +247,9 @@ end
 
 `matches_from_missing` written into `hist`, which it zeroes first. It reads
 the first `length(entry)` rows of each tuple, in place, as the zip of
-`case_partial_cover` did, so a call allocates nothing (plan §5.2).
+`case_partial_cover` did, so a call allocates nothing (plan §5.2). Classic
+`ipog` keeps one matrix with a row for every parameter, zero for those not
+yet added, and its entries hold the parameters added so far.
 """
 function matches_from_missing!(hist, mc::MatrixCoverage, entry, missing_param)
     fill!(hist, 0)

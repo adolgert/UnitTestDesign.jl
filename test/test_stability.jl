@@ -167,16 +167,17 @@ end
 
 
 @testitem "stability: classic IPOG reads its targets in place" setup=[StabilitySetup] begin
-    using UnitTestDesign: MatrixCoverage, ipog, one_parameter_combinations_matrix, matches_from_missing!,
+    using UnitTestDesign: MatrixCoverage, ipog, one_parameter_combinations!, matches_from_missing!,
         add_coverage!, choose_last_parameter!, insert_tuple_into_tests
     # One step of classic IPOG (plan §5.2): the 8th of ten three-valued
-    # parameters joins a design on the first seven, at strength 2.
+    # parameters joins a design on the first seven, at strength 2. The
+    # targets' matrix has a row for all ten, as `ipog` keeps it.
     arity, p = fill(3, 10), 8
     prior = ipog(arity[1:(p - 1)], 2)
     taller = vcat(prior, zeros(Int, 1, size(prior, 2)))
-    step = one_parameter_combinations_matrix(arity[1:p], 2)
+    step = @inferred one_parameter_combinations!(MatrixCoverage(zeros(Int, 10, 0), 0, arity), p, 2)
     @test step.remain == 7 * 3 * 3
-    fresh() = (copy(taller), MatrixCoverage(copy(step.allc), step.remain, arity[1:p]))
+    fresh() = (copy(taller), MatrixCoverage(copy(step.allc), step.remain, arity))
     "Bytes allocated by `g(make()...)`, on fresh arguments, after a first call compiled it."
     function allocated_fresh(g, make)
         g(make()...)
@@ -204,4 +205,11 @@ end
     @test allocated_fresh(insert_tuple_into_tests, grown) <=
           2 * allocated((n, k) -> [zeros(Int, n) for _ in 1:k], p, added) +
           2 * allocated(zeros, Int, p, size(taller, 2) + added)
+    # A later step with fewer targets writes over the same matrix.
+    matrix = step.allc
+    @test one_parameter_combinations!(step, p - 1, 2).allc === matrix
+    # A whole run allocates about 5 MiB on 128 binary parameters, mostly
+    # small vectors that enumerate each step's tuples; at 2798ecf it
+    # allocated 255 MiB, a new matrix of targets per step and a copy per read.
+    @test allocated(ipog, fill(2, 128), 2) <= 16 * 2^20
 end

@@ -243,6 +243,26 @@ end
 end
 
 
+@testitem "the targets' matrix may have rows for parameters not yet added" begin
+    using UnitTestDesign: MatrixCoverage, matches_from_missing, add_coverage!
+    # Classic IPOG keeps a row for every parameter, zero until the parameter
+    # is added, and scores and covers with cases on the parameters added so
+    # far (plan §5.2). Only those rows are read, as the zip at 2798ecf did.
+    arity4 = [3, 2, 2]
+    allc4 = [
+        1 0 1; 2 0 1; 3 0 1; 0 1 1; 0 2 1;
+        1 0 2; 2 0 2; 3 0 2; 0 1 2; 0 2 2
+    ]'
+    taller = [collect(allc4); zeros(Int, 2, size(allc4, 2))]
+    exact = MatrixCoverage(collect(allc4), size(allc4, 2), arity4)
+    tall = MatrixCoverage(taller, size(allc4, 2), [arity4; 4; 4])
+    @test matches_from_missing(tall, [1, 1, 0], 3) == matches_from_missing(exact, [1, 1, 0], 3) == [2, 2]
+    @test add_coverage!(tall, [1, 2, 2]) == add_coverage!(exact, [1, 2, 2]) == 8
+    @test tall.allc[1:3, :] == exact.allc
+    @test all(iszero, tall.allc[4:5, :])
+end
+
+
 @testitem "match_score" begin
     ms_cases = [
         [[1 1 0; 1 2 0; 0 1 3]', 3, 2, [4,4,4], 0],

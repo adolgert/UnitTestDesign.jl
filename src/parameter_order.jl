@@ -50,10 +50,10 @@ add the tuple at the end as its own test.
 """
 function insert_tuple_into_tests(test_set, allc)
     add_tests = Array{eltype(allc), 1}[]
-    # Tuples and test cases are read and filled in place; only a tuple that
-    # starts a new test case is copied (plan §5.2).
+    # Tuples, on the test set's parameters, and test cases are read and filled
+    # in place; only a tuple that starts a new test case is copied (plan §5.2).
     for find_cover_idx in allc.remain:-1:1
-        tuple = view(allc.allc, :, find_cover_idx)
+        tuple = view(allc.allc, axes(test_set, 1), find_cover_idx)
         unmatched = true
         for test_idx in axes(test_set, 2)
             test_case = view(test_set, :, test_idx)
@@ -143,6 +143,10 @@ function ipog(arity, n_way)
     # Setup by taking first n_way parameters.
     # This is a 2D array.
     test_set = all_combinations(arity[1:n_way], n_way)
+    # One coverage matrix serves every step, with a row for each parameter;
+    # a step writes and reads the rows of the parameters added so far
+    # (plan §5.2).
+    allc = MatrixCoverage(zeros(eltype(arity), param_cnt, 0), 0, arity)
 
     for param_idx in (n_way + 1):param_cnt
         taller = zeros(eltype(arity), param_idx, size(test_set, 2))
@@ -150,7 +154,7 @@ function ipog(arity, n_way)
 
         # Seed test cases by adding them once params are covered and not double-covering.
         # Make mixed strength here, once all params at a strength are covered.
-        allc = one_parameter_combinations_matrix(arity[1:param_idx], n_way)
+        one_parameter_combinations!(allc, param_idx, n_way)
 
         choose_last_parameter!(taller, allc)
 

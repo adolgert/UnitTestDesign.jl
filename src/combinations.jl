@@ -44,12 +44,22 @@ zero if not used. `arity` is a list of the number of values for each parameter,
 and `n_way` is the order of the combinations, most commonly 2-way.
 """
 function all_combinations(arity, n_way)
+    combinations_cnt = total_combinations(arity, n_way)
+    coverage = zeros(eltype(arity), length(arity), combinations_cnt)
+    all_combinations!(coverage, arity, n_way)
+end
+
+
+"""
+    all_combinations!(coverage, arity, n_way)
+
+`all_combinations(arity, n_way)` written into `coverage`, which must be zero
+and of that size.
+"""
+function all_combinations!(coverage, arity, n_way)
     v_cnt = length(arity)
     # This returns a list of lists, so it has length, not size.
     indices = collect(combinations(1:v_cnt, n_way))
-    combinations_cnt = total_combinations(arity, n_way)
-
-    coverage = zeros(eltype(arity), v_cnt, combinations_cnt)
     idx = 1
     for indices_idx in eachindex(indices)
         offset = indices[indices_idx]
@@ -78,19 +88,42 @@ and construct all `n_way` - 1 tuples. Then copy and paste that
 once for each possible value of the given parameter.
 """
 function one_parameter_combinations(arity, n_way)
+    comb = zeros(eltype(arity), length(arity), one_parameter_combinations_count(arity, n_way))
+    one_parameter_combinations!(comb, arity, n_way)
+end
+
+
+"The number of columns of `one_parameter_combinations(arity, n_way)`."
+function one_parameter_combinations_count(arity, n_way)
+    param_cnt = length(arity)
+    one_set = n_way > 1 ? total_combinations(view(arity, 1:(param_cnt - 1)), n_way - 1) : 1
+    one_set * arity[param_cnt]
+end
+
+
+"""
+    one_parameter_combinations!(comb, arity, n_way)
+
+`one_parameter_combinations(arity, n_way)` written into `comb`, which must be
+zero and of that size.
+"""
+function one_parameter_combinations!(comb, arity, n_way)
     param_cnt = length(arity)
     if n_way > 1
-        partial = all_combinations(arity[1:(param_cnt-1)], n_way - 1)
-        one_set = size(partial, 2)
-        comb = zeros(eltype(arity), param_cnt, one_set * arity[param_cnt])
+        one_set = size(comb, 2) ÷ arity[param_cnt]
+        # The first copy is built in place and the others copied from it.
+        all_combinations!(view(comb, 1:(param_cnt - 1), 1:one_set), view(arity, 1:(param_cnt - 1)), n_way - 1)
         for vidx in 1:(arity[param_cnt])
             col_begin = (vidx - 1) * one_set + 1
             col_end = vidx * one_set
-            comb[1:size(partial, 1), col_begin:col_end] .= partial
+            if vidx > 1
+                for col in 1:one_set, row in 1:(param_cnt - 1)
+                    comb[row, col_begin + col - 1] = comb[row, col]
+                end
+            end
             comb[param_cnt, col_begin:col_end] .= vidx
         end
     else  # n_way == 1
-        comb = zeros(eltype(arity), param_cnt, arity[param_cnt])
         comb[param_cnt, :] .= 1:(arity[param_cnt])
     end
     comb
