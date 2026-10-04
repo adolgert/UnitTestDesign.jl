@@ -17,7 +17,8 @@
 
 The calls a first session makes: the example on the front page of the
 documentation, the tutorial's calls, each result's display, both engines at
-strengths 2 and 3, and spaces of other value types and rules.
+strengths 2 and 3, spaces of other value types and rules, and the row
+reducer `Compact`.
 """
 function _precompile_workload()
     io = IOContext(IOBuffer(), :limit => true, :displaysize => (24, 80))
@@ -57,6 +58,9 @@ function _precompile_workload()
     # Lists of values, positional and named (the tutorial's levels 0 and 1).
     show(io, text, all_pairs([1, 2, 3], ["a", "b"], [1.0, 2.0]))
     show(io, text, all_pairs(:mode => [:fast, :exact], :solver => [:none, :lu, :qr], :tol => [1e-3, 1e-6]))
+    # The row reducer (plan §5.3), on the front page's space and at strength 3.
+    show(io, text, all_pairs(space; engine = Compact(IPOG())))
+    show(io, text, covering(other; strength = 3, engine = Compact(IPOG())))
     return nothing
 end
 
