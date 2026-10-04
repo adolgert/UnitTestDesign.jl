@@ -17,7 +17,8 @@
 
 The calls a first session makes: the example on the front page of the
 documentation, the tutorial's calls, each result's display, both engines at
-strengths 2 and 3, and spaces of other value types and rules.
+strengths 2 and 3, spaces of other value types and rules, and the catalog
+engine on an exact shape and a seeded one.
 """
 function _precompile_workload()
     io = IOContext(IOBuffer(), :limit => true, :displaysize => (24, 80))
@@ -57,6 +58,13 @@ function _precompile_workload()
     # Lists of values, positional and named (the tutorial's levels 0 and 1).
     show(io, text, all_pairs([1, 2, 3], ["a", "b"], [1.0, 2.0]))
     show(io, text, all_pairs(:mode => [:fast, :exact], :solver => [:none, :lu, :qr], :tol => [1e-3, 1e-6]))
+    # The catalog engine (plan §5.4; internal until Phase 3): an exact shape at
+    # strengths 2 and 3, and the seeded path under a rule.
+    uniform = TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:3, e = 1:3))
+    show(io, text, all_pairs(uniform; engine = Construction()))
+    show(io, text, all_triples(uniform; engine = Construction()))
+    show(io, text, all_pairs(TestSpace((a = 1:4, b = 1:4, c = 1:4, d = 1:4, e = 1:4, f = 1:4);
+                                       constraints = [@forbid(a == b)]); engine = Construction()))
     return nothing
 end
 
