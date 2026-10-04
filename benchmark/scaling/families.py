@@ -186,7 +186,7 @@ def imported(dataset, strengths, expensive_from, solvers, runs):
     """Specs for the imported models of a dataset in the cache; [] with a note if none are there.
     They search with the package's default feasibility_limit, 1,000,000 nodes per question, not
     the harness's 100,000: these are other people's constrained models, measured as a user would
-    run them (at 100,000, ct-comp's NUMC_4 stops classifying at strength 2)."""
+    run them. (ct-comp's NUMC_4 still stops classifying at strength 2 at 1,000,000.)"""
     sys.path.insert(0, str(HERE))
     import datasets
     found = datasets.models(dataset)
