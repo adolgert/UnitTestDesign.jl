@@ -169,8 +169,7 @@ group of order 6 and `:Z3xZ3` (`_symbol_group`). These 144 bounds hold 141
 vectors. Table 13, whose two starters turn the columns by a group that is
 not cyclic, is left out.
 """
-const _LOBB_STARTERS = NamedTuple{(:v, :k, :f, :rows, :kind, :group, :starter),
-                                  Tuple{Int, Int, Int, Int, Symbol, Symbol, String}}[
+const _LOBB_STARTERS = NamedTuple{(:v, :k, :f, :rows, :kind, :group, :starter)}.(Tuple{Int, Int, Int, Int, Symbol, Symbol, String}[
     # Table 4
     (3, 5, 1, 11, :cover, :Zm, "∞0 0 1 1 0"),
     (4, 6, 1, 19, :cover, :Zm, "∞0 0 1 1 2 1"),
@@ -325,7 +324,7 @@ const _LOBB_STARTERS = NamedTuple{(:v, :k, :f, :rows, :kind, :group, :starter),
     (22, 57, 7, 946, :cover, :Zm, "∞6 ∞6 4 ∞5 8 1 10 8 7 4 ∞5 4 1 ∞4 6 12 ∞3 6 ∞2 5 13 5 6 7 13 9 ∞1 10 5 8 ∞1 4 ∞4 9 5 9 5 9 8 0 3 6 ∞2 8 ∞0 10 0 5 14 0 0 0 ∞3 1 3 ∞0 7"),
     (22, 58, 7, 961, :cover, :Zm, "∞6 ∞6 6 ∞5 12 ∞4 11 ∞3 6 14 6 4 10 11 8 1 * 12 6 5 ∞5 13 4 ∞4 13 9 8 ∞2 6 5 8 ∞1 14 1 11 8 ∞0 6 13 ∞2 12 3 7 14 3 10 1 4 2 7 ∞0 13 ∞1 2 4 ∞3 1 1"),
     (23, 58, 7, 1019, :cover, :Zm, "∞6 ∞6 9 ∞5 4 4 0 3 ∞5 10 9 12 1 15 15 10 15 3 12 13 ∞4 5 2 ∞3 3 13 ∞2 11 13 9 10 1 ∞1 5 5 ∞0 12 5 0 ∞2 9 ∞4 13 ∞1 12 7 2 9 14 ∞0 11 ∞3 0 14 12 4 7 13"),
-]
+])
 
 """
     SymbolGroup(op)
