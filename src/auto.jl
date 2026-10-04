@@ -48,8 +48,9 @@ A covering engine that picks its method from the request (plan §6.1).
 `:balanced` never returns more cases than `:fast`. Where the space is small
 (at most `$(_AUTO_SMALL_TEXT)` combinations to cover, counted before the
 rules) and the catalog applies, it builds both and keeps the one with fewer
-rows, the catalog's array on a tie. Where the catalog's array has as many
-rows as the lower bound, no design has fewer, so IPOG isn't run. Above that
+rows, IPOG's on a tie, so that it gives the cases `IPOG()` gives unless the
+catalog's are fewer. Where the catalog's array has as many rows as the lower
+bound, no design has fewer, so IPOG isn't run. Above that
 size it builds the catalog's array for a space whose parameters all have
 the same number of values and no rules, and IPOG's design otherwise.
 `:compact` reduces that winner once, so it never has more rows than
@@ -112,7 +113,7 @@ end
     _AutoPlan
 
 What `Auto` runs for a request (`_auto_plan`): `goal`; `candidates`, in the
-fixed order of a tie, the catalog first, then IPOG; `smallest`, whether it
+fixed order of a tie, IPOG first, then the catalog; `smallest`, whether it
 runs more than one and keeps the fewest rows; `bound`, the lower bound the
 catalog's array would meet, when its fit is exact (`nothing` otherwise);
 `why`, one line on the rule; and the catalog's `entry` and `members`
@@ -140,10 +141,11 @@ without generating.
 - Otherwise, when the catalog's `fit` is `:unsupported`: IPOG alone.
 - When it is `:exact` and the array has as many rows as the lower bound, the
   product of the `t` largest value counts (an orthogonal array, a zero-sum
-  array): the catalog alone. IPOG can't have fewer rows, and a tie goes to
-  the catalog.
+  array): the catalog alone. IPOG can't have fewer rows, and the array is
+  balanced (an orthogonal array shows each combination once).
 - When the request has at most `_AUTO_SMALL` targets: both, and the fewer rows
-  are kept, the catalog's on a tie (keep the smallest).
+  are kept, IPOG's on a tie (keep the smallest), so that `Auto` gives IPOG's
+  cases wherever the catalog is not smaller.
 - Above it, `:exact`: the catalog alone. In the regret table no uniform
   shape above the threshold had a catalog array larger than IPOG's design.
 - Above it, `:seeded`: IPOG alone, since a seeded design's size is known
@@ -160,26 +162,26 @@ function _auto_plan(engine::Auto, p::Profile)
     catalog(runs, reason) = _AutoCandidate("Construction()", Construction(), f, runs, rows, reason)
     start(runs, reason) = _AutoCandidate("IPOG()", IPOG(), ipog, runs, nothing, reason)
     if engine.goal === :fast
-        return plan([catalog(false, "not run: goal = :fast is IPOG alone"),
-                     start(true, "IPOG alone, as goal = :fast asks")], false, "goal = :fast runs IPOG alone")
+        return plan([start(true, "IPOG alone, as goal = :fast asks"),
+                     catalog(false, "not run: goal = :fast is IPOG alone")], false, "goal = :fast runs IPOG alone")
     elseif f.kind === :unsupported
-        return plan([catalog(false, "not run: $(f.reason)"), start(true, "covers any request")], false,
+        return plan([start(true, "covers any request"), catalog(false, "not run: $(f.reason)")], false,
                     "the catalog doesn't cover this request")
     elseif rows !== nothing && rows == bound
-        return plan([catalog(true, exact),
-                     start(false, "not run: no design has fewer rows than the catalog's array, which meets the " *
-                                  "lower bound")], false, "the catalog's array meets the lower bound")
+        return plan([start(false, "not run: no design has fewer rows than the catalog's array, which meets the " *
+                                  "lower bound"), catalog(true, exact)], false,
+                    "the catalog's array meets the lower bound")
     elseif p.targets <= _AUTO_SMALL
-        return plan([catalog(true, exact), start(true, "covers any request")], true,
-                    "$targets, at most $_AUTO_SMALL_TEXT: both run, and the fewer rows are kept, the catalog's on a tie")
+        return plan([start(true, "covers any request"), catalog(true, exact)], true,
+                    "$targets, at most $_AUTO_SMALL_TEXT: both run, and the fewer rows are kept, IPOG's on a tie")
     elseif f.kind === :exact
-        return plan([catalog(true, exact),
-                     start(false, "not run: above $_AUTO_SMALL_TEXT combinations Auto runs one start, and for an " *
-                                  "exact shape that is the catalog's array")], false,
+        return plan([start(false, "not run: above $_AUTO_SMALL_TEXT combinations Auto runs one start, and for an " *
+                                  "exact shape that is the catalog's array"), catalog(true, exact)], false,
                     "$targets, above $_AUTO_SMALL_TEXT: one start, the catalog's array")
     end
-    return plan([catalog(false, "not run: above $_AUTO_SMALL_TEXT combinations Auto runs one start, and a " *
-                                "seeded array's size is known only after running"), start(true, "covers any request")],
+    return plan([start(true, "covers any request"),
+                 catalog(false, "not run: above $_AUTO_SMALL_TEXT combinations Auto runs one start, and a " *
+                                "seeded array's size is known only after running")],
                 false, "$targets, above $_AUTO_SMALL_TEXT: one start, IPOG")
 end
 
@@ -203,7 +205,7 @@ end
     _auto_label(plan) -> String
 
 What `Auto` runs, as one engine call: "Construction()", "IPOG()", or, when it
-keeps the smaller of two, "the smaller of Construction() and IPOG()";
+keeps the smaller of two, "the smaller of IPOG() and Construction()";
 wrapped in "Compact(…)" for `goal = :compact`.
 """
 function _auto_label(plan::_AutoPlan)
@@ -285,10 +287,10 @@ What [`recommend`](@ref) returns. Fields:
 
 - `goal::Symbol`: the goal asked about; `engine::String`: what
   `Auto(; goal)` would run, such as `"Construction()"`, `"IPOG()"`, `"the
-  smaller of Construction() and IPOG()"`, or one of those inside
+  smaller of IPOG() and Construction()"`, or one of those inside
   `"Compact(…)"` for `:compact`.
-- `candidates`: the starts `Auto` considers, in the order a tie is broken,
-  each a `NamedTuple` `(engine, fit, runs, rows, reason)`: its constructor
+- `candidates`: the starts `Auto` considers, in the order a tie is broken
+  (IPOG first), each a `NamedTuple` `(engine, fit, runs, rows, reason)`: its constructor
   call; how it fits the request (`:exact`, the catalog's array is the
   design; `:seeded`, the array seeds IPOG under the rules; `:native`, IPOG;
   `:unsupported`); whether `Auto` runs it; its number of cases when known
@@ -314,8 +316,8 @@ What [`recommend`](@ref) returns. Fields:
 
 ```
 Recommendation: 8 parameters × 32 values, strength 2, no rules; 28672 combinations to cover
-  use   Construction()  1024 rows: Bush orthogonal array, every combination exactly once
   skip  IPOG()          not run: no design has fewer rows than the catalog's array, which meets the lower bound
+  use   Construction()  1024 rows: Bush orthogonal array, every combination exactly once
 lower bound: 1024 cases: the 32 × 32 = 1024 combinations of p1 and p2 need a case each
 goals: :fast (IPOG alone) known only after running; :balanced 1024 cases, the minimum; :compact 1024 cases, the minimum
 covering(…; engine = Auto()) would use Construction().
@@ -362,20 +364,20 @@ search a partial must-include row's check makes.
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> recommend(fill(1:7, 8)...)
 Recommendation: 8 parameters × 7 values, strength 2, no rules; 1372 combinations to cover
-  use   Construction()  49 rows: Bush orthogonal array, every combination exactly once
   skip  IPOG()          not run: no design has fewer rows than the catalog's array, which meets the lower bound
+  use   Construction()  49 rows: Bush orthogonal array, every combination exactly once
 lower bound: 49 cases: the 7 × 7 = 49 combinations of p1 and p2 need a case each
 goals: :fast (IPOG alone) known only after running; :balanced 49 cases, the minimum; :compact 49 cases, the minimum
 covering(…; engine = Auto()) would use Construction().
 
 julia> recommend(fill(1:6, 15)...)
 Recommendation: 15 parameters × 6 values, strength 2, no rules; 3780 combinations to cover
-  run   Construction()  76 rows: Tripling (tripling from 5 columns)
   run   IPOG()          covers any request
-rule: 3780 combinations to cover, at most 100000: both run, and the fewer rows are kept, the catalog's on a tie
+  run   Construction()  76 rows: Tripling (tripling from 5 columns)
+rule: 3780 combinations to cover, at most 100000: both run, and the fewer rows are kept, IPOG's on a tie
 lower bound: 36 cases: the 6 × 6 = 36 combinations of p1 and p2 need a case each
 goals: :fast (IPOG alone) known only after running; :balanced at most 76 cases; :compact at most 76 cases
-covering(…; engine = Auto()) would use the smaller of Construction() and IPOG().
+covering(…; engine = Auto()) would use the smaller of IPOG() and Construction().
 ```
 
 The goals lean toward `:balanced` (decision D8): it never returns more cases
@@ -409,7 +411,7 @@ function _recommendation(engine::Auto, request::Request)
     # `:balanced` keeps the smaller of the starts it runs, so it has at most the
     # catalog's rows whenever it runs the catalog on an exact shape, and
     # `:compact` reduces that. IPOG's size is known only after running.
-    catalog = first(_auto_plan(Auto(), p).candidates)
+    catalog = only(c for c in _auto_plan(Auto(), p).candidates if c.engine isa Construction)
     balanced = catalog.runs ? catalog.fit.rows : nothing
     sizes = (fast = nothing, balanced = balanced, compact = balanced)
     space = request.space

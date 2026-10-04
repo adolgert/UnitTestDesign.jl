@@ -172,14 +172,22 @@ end
     # At the bound (an orthogonal array, a zero-sum array): the catalog alone.
     for (k, v, t) in ((8, 7, 2), (3, 5, 2), (4, 3, 3))
         p = plan(uniform(k, v); strength = t)
-        @test [c.runs for c in p.candidates] == [true, false] && !p.smallest
+        @test [(c.label, c.runs) for c in p.candidates] == [("IPOG()", false), ("Construction()", true)] && !p.smallest
     end
     # Small, above the bound: both, and the fewer rows kept (15 × 6: IPOG has 75, the catalog 76).
     p = plan(uniform(15, 6))
     @test p.smallest && all(c -> c.runs, p.candidates)
     cases = all_pairs(uniform(15, 6); engine = Auto())
-    @test cases.record.candidates == [(engine = "Construction()", rows = 76), (engine = "IPOG()", rows = 75)]
+    @test cases.record.candidates == [(engine = "IPOG()", rows = 75), (engine = "Construction()", rows = 76)]
     @test cases.record.chose == "IPOG()" && cases == all_pairs(uniform(15, 6))
+    # A tie goes to IPOG, so Auto gives IPOG's cases unless the catalog's are fewer: the
+    # front page's example, where the seeded zero-sum array also takes 5 cases.
+    front = TestSpace((mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+                      constraints = [@require(mode == :exact || solver == :none),
+                                     forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance")])
+    tie = all_pairs(front; engine = Auto())
+    @test tie.record.candidates == [(engine = "IPOG()", rows = 5), (engine = "Construction()", rows = 5)]
+    @test tie.record.chose == "IPOG()" && tie == all_pairs(front)
     # Smaller catalog: kept.
     seven = all_pairs(uniform(10, 7); engine = Auto())
     @test seven.record.chose == "Construction()" && length(seven) < length(all_pairs(uniform(10, 7)))
@@ -187,15 +195,15 @@ end
     big = uniform(40, 4)
     @test Profile(Request(big; strength = 3)).targets > _AUTO_SMALL
     p = plan(big; strength = 3)
-    @test [c.runs for c in p.candidates] == [true, false]
+    @test [(c.label, c.runs) for c in p.candidates] == [("IPOG()", false), ("Construction()", true)]
     # Above the threshold, seeded under a rule: IPOG alone.
     ruled = TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:40)}(Tuple(1:4 for _ in 1:40));
                       constraints = [forbid((p1 = 1, p2 = 1))])
     p = plan(ruled; strength = 3)
-    @test p.candidates[1].fit.kind === :seeded && [c.runs for c in p.candidates] == [false, true]
+    @test p.candidates[2].fit.kind === :seeded && [(c.label, c.runs) for c in p.candidates] == [("IPOG()", true), ("Construction()", false)]
     # Not covered by the catalog (mixed counts): IPOG alone, and the same rows as IPOG.
     mixed = TestSpace((a = 1:2, b = 1:3, c = 1:4, d = 1:2))
-    @test [c.runs for c in plan(mixed).candidates] == [false, true]
+    @test [(c.label, c.runs) for c in plan(mixed).candidates] == [("IPOG()", true), ("Construction()", false)]
     @test all_pairs(mixed; engine = Auto()) == all_pairs(mixed)
     # The plan is a pure function of the request: the same profile, the same plan.
     a, b = plan(uniform(15, 6)), plan(uniform(15, 6))
@@ -343,7 +351,7 @@ end
     @test r isa Recommendation
     @test r.engine == "Construction()" && r.goal === :balanced
     @test [(c.engine, c.fit, c.runs, c.rows) for c in r.candidates] ==
-          [("Construction()", :exact, true, 49), ("IPOG()", :native, false, nothing)]
+          [("IPOG()", :native, false, nothing), ("Construction()", :exact, true, 49)]
     @test r.lower_bound == 49 && r.sizes == (fast = nothing, balanced = 49, compact = 49)
     @test (r.parameters, r.values, r.strength, r.n_rules, r.targets) == ([Symbol(:p, i) for i in 1:8], fill(7, 8), 2, 0, 1372)
     text = sprint(show, MIME"text/plain"(), r)
@@ -354,13 +362,14 @@ end
     for (space, t) in ((TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:15)}(Tuple(1:6 for _ in 1:15))), 2),
                        (TestSpace((a = 1:2, b = 1:3, c = 1:4)), 2), (TestSpace((a = 1:3, b = 1:3, c = 1:3)), 3))
         for goal in (:fast, :balanced, :compact)
-            r = recommend(space; strength = t, goal)
+            said = recommend(space; strength = t, goal)
             cases = covering(space; strength = t, engine = Auto(; goal))
-            ran = [c.engine for c in r.candidates if c.runs]
+            ran = [c.engine for c in said.candidates if c.runs]
             @test [c.engine for c in cases.record.candidates] == ran
-            length(ran) == 1 && @test cases.record.chose == r.engine
-            @test r.sizes.fast === nothing
-            r.sizes.balanced === nothing || @test length(covering(space; strength = t, engine = Auto())) <= r.sizes.balanced
+            length(ran) == 1 && @test cases.record.chose == said.engine
+            @test said.sizes.fast === nothing
+            said.sizes.balanced === nothing ||
+                @test length(covering(space; strength = t, engine = Auto())) <= said.sizes.balanced
         end
     end
     # The bound recommend states, without classifying, is the one generation records.
@@ -374,10 +383,10 @@ end
         space = TestSpace(NamedTuple{names}(Tuple(domains)))
         t = rand(rng, 1:min(3, k))
         stronger = k > t + 1 && rand(rng) < 0.4 ? [names[2:(t + 2)] => t + 1] : Pair[]
-        r = recommend(space; strength = t, stronger)
+        said = recommend(space; strength = t, stronger)
         cases = covering(space; strength = t, stronger)
-        @test r.lower_bound == cases.record.lower_bound
-        @test r.proof == cases.record.proof
+        @test said.lower_bound == cases.record.lower_bound
+        @test said.proof == cases.record.proof
     end
     # With rules or must-include rows the bound waits for generation.
     @test recommend((a = 1:3, b = 1:3); constraints = [forbid((a = 1, b = 1))]).lower_bound === nothing
