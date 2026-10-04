@@ -165,7 +165,8 @@ cover_ordinary(engine::Construction, request::Request, targets::RequiredTargets)
 (plan §5.4, "Balance"): `_describe(entry)`, and `seeded`, whether the array
 seeded IPOG rather than being the design. `orthogonal` is the design's: true
 only when the design is the array and the array shows every combination
-exactly once.
+exactly once, so never for a space with `Invalid` values, whose negative
+rows repeat ordinary combinations.
 """
 function _cover_with_notes(engine::Construction, request::Request, targets::RequiredTargets)
     f, entry, members = _construction_plan(Profile(request))
@@ -183,8 +184,9 @@ function _construction_cover(request::Request, targets::RequiredTargets, f::Fit,
                              members::Union{Nothing, Vector{Int}})
     d = _describe(entry)
     seeded = f.kind === :seeded
+    orthogonal = d.orthogonal && !seeded && !_has_invalid(request.space)   # the negative rows repeat combinations
     notes = (catalog = (name = d.name, family = d.family, source = d.source, rows = d.rows,
-                        lower_bound = d.lower_bound, orthogonal = d.orthogonal && !seeded, seeded = seeded),)
+                        lower_bound = d.lower_bound, orthogonal = orthogonal, seeded = seeded),)
     return _construction_rows(request, targets, f, entry, members), notes
 end
 

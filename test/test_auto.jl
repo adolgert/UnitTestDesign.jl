@@ -346,6 +346,31 @@ end
 end
 
 
+@testitem "the record calls a design an orthogonal array only when it is one (§5.4)" setup=[AutoSetup] begin
+    # With an Invalid value the negative rows repeat combinations the array
+    # holds once, so neither the record nor report says "orthogonal array",
+    # at strength 2 or 3, and when the only must-include rows are negative.
+    pairs_of(cases, x, y) = [(r[x], r[y]) for r in cases]
+    for (space, t, must) in ((TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3)), 2, []),
+                             (TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3)), 2, []),
+                             (TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3)), 3, []),
+                             (TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3)), 2,
+                              [(a = Invalid(0), b = 1, c = 1, d = 1)]))
+        for engine in (Construction(), Auto())
+            cases = covering(space; strength = t, must_include = must, engine)
+            @test !cases.record.catalog.orthogonal && !cases.record.catalog.seeded
+            @test !allunique(pairs_of(cases, :b, :c))   # a negative row repeats a pair of the array
+            @test !occursin("orthogonal array", sprint(show, MIME"text/plain"(), report(cases)))
+        end
+    end
+    # Without one, the array is the design, and both say so.
+    cases = all_pairs(TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:3)); engine = Construction())
+    @test cases.record.catalog.orthogonal && allunique(pairs_of(cases, :b, :c))
+    @test occursin("an orthogonal array: each combination of 2 parameters' values is in exactly one case",
+                   sprint(show, MIME"text/plain"(), report(cases)))
+end
+
+
 @testitem "recommend: what Auto would run, the bound, the goals and notes (§6.1)" setup=[AutoSetup] begin
     r = recommend(fill(1:7, 8)...)
     @test r isa Recommendation

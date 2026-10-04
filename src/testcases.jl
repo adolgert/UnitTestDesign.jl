@@ -112,13 +112,16 @@ factorials); measurement of such a result needs an explicit strength.
   one case in which the package calls a count minimal (contract §8.4).
   `nothing`, `false` and `""` for an excursion or a full factorial.
 - What the engine found, when it has something to say: for [`Auto`](@ref),
-  `chose`, the engine call that made the cases, such as `"Construction()"`
-  or `"Compact(IPOG())"`, and `candidates`, each start it ran with its
-  number of ordinary cases; for a catalog array ([`Construction`](@ref)),
-  `catalog`, with the construction's `name`, `family`, `source`, `rows`, the
-  array's `lower_bound`, whether the design is an `orthogonal` array (every
-  combination of `strength` parameters exactly once), and whether the array
-  only `seeded` the design under rules; for the row reducer
+  `chose`, the engine call that made the ordinary cases, such as
+  `"Construction()"` or `"Compact(IPOG())"`, and `candidates`, each start it
+  ran with its number of ordinary cases (the negative rows of each
+  [`Invalid`](@ref) value are chosen apart, the same way, and not recorded);
+  for a catalog array ([`Construction`](@ref)), `catalog`, with the
+  construction's `name`, `family`, `source`, `rows`, the array's
+  `lower_bound`, whether the design is an `orthogonal` array (every
+  combination of `strength` parameters exactly once, so never with `Invalid`
+  values, whose negative rows repeat ordinary combinations), and whether the
+  array only `seeded` the design under rules; for the row reducer
   ([`Compact`](@ref), `Auto(goal = :compact)`), `reducer`, with the rows it
   started from and ended with, its steps and budgets, and why it stopped.
 
