@@ -2,13 +2,17 @@
 # Everything here runs outside the timed calls.
 
 # Engine-reported extras, `name => value`, recorded with each measurement as
-# `result.engine_extras`. An engine reports them in the covering `Design` it
-# returns: its `notes` NamedTuple, which `TestCases` keeps, e.g.
-# `Design(matrix, :covering, :Compact, seed, required, covered, excluded,
-# n_must_include, (reducer_steps = 1200, stopped_at_bound = true))`. A trial
-# adapter may also call `record_extra(name, value)` during its call. The
-# worker clears the dictionary before each timed call, so the extras belong
-# to the call they are recorded with.
+# `result.engine_extras`. A covering result's `record` holds them (the
+# `Design`'s, which `TestCases` keeps): the lower bound and whether it is met,
+# what Auto chose, the catalog's array and the reducer's run, each nested
+# NamedTuple flattened with its name as a prefix, so the reducer's `steps`
+# is `reducer_steps`, as before Phase 3. A covering design's `notes`, empty
+# for every engine since Phase 3, are kept too, for an adapter that returns
+# its own `Design`, e.g. `Design(matrix, :covering, :Mine, seed, required,
+# covered, excluded, n_must_include, (steps = 1200,))`. A trial adapter may
+# also call `record_extra(name, value)` during its call. The worker clears
+# the dictionary before each timed call, so the extras belong to the call
+# they are recorded with.
 const EXTRAS = Dict{String, Any}()
 record_extra(name, value) = (EXTRAS[string(name)] = value; nothing)
 reset_extras!() = empty!(EXTRAS)
@@ -24,6 +28,15 @@ function engine_extras(x)
     if x isa Union{U.Design, TestCases} && x.strategy == :covering
         for (k, v) in pairs(x.notes)
             out[string(k)] = json_value(v)
+        end
+        for (k, v) in pairs(x.record)
+            if v isa NamedTuple
+                for (j, w) in pairs(v)
+                    out[string(k, "_", j)] = json_value(w)
+                end
+            else
+                out[string(k)] = json_value(v)
+            end
         end
     end
     return out

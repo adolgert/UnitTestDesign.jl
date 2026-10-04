@@ -33,9 +33,9 @@ in its own file:
   of this shape, read from the request alone (`Profile`), never by running.
 
 An engine may also define `_fallback(engine)`, the engine that covers what
-its `fit` refuses (IPOG by default); a randomized engine defines
-`_randomized(::Val{name}) = true` for its record's name, so that results show
-its seed. Add the engine to `_engine_registry`, so that the oracle loops of
+its `fit` refuses (IPOG by default), and `_cover_with_notes`, to put what it
+found into the result's record; a randomized engine says so in its record
+(`EngineRecord`'s `randomized`), so that results show its seed. Add the engine to `_engine_registry`, so that the oracle loops of
 test/test_random_problems.jl check it against the independent oracle
 (test/checker.jl) and the benchmark harness can name it; and give its inner
 loops `@inferred` and `@allocated` tests in test/test_stability.jl (no JET).
@@ -159,39 +159,37 @@ end
 engine_rng(engine::GND) = engine.rng === nothing ? Xoshiro(engine.seed) : copy(engine.rng)
 
 """
-    EngineRecord(name, seed, parameters = Pair{Symbol, Any}[])
+    EngineRecord(name, seed, parameters = Pair{Symbol, Any}[]; randomized = false)
 
 What a result records of the engine that made it (plan §4.2), from
 `engine_record(engine)`: `name`, the `Symbol` that a `Design` and a
 [`TestCases`](@ref) keep as `engine`; `seed`, the seed a randomized engine
 drew from, or `nothing` when it drew from a caller's `rng` (contract §9.6)
-or uses no randomness; and `parameters`, the engine's other settings as
-`keyword => value` pairs, for display. Whether the engine is randomized is a
-fact about its name (`_randomized`), so a result that keeps only `engine` and
-`seed` shows its seed as the record does (`_engine_phrase`, `_seed_note`,
-`_seed_text`).
+or uses no randomness; `parameters`, the engine's other settings as
+`keyword => value` pairs, for display; and `randomized`, whether the engine
+draws random numbers, so that results show its seed (§9.5). A result keeps
+`randomized` in its record (`TestCases`'s `record`), beside `engine` and
+`seed`, so its display rebuilds the record from those three
+(`_engine_phrase`, `_seed_note`, `_seed_text`). `Auto` is randomized only
+with `goal = :compact`, which is why this is a field of the record and not a
+fact about the name.
 
-`generate` reads the record once per call. Phase 3's `Auto` records what it
-chose here, beside its own name, and `TestCases` gains a field for it then.
+`generate` reads the record once per call, and puts `randomized` and what the
+engine found (`_cover_with_notes`: what `Auto` chose, the catalog's array,
+the reducer's run) into the result's record, beside the lower bound.
 """
 struct EngineRecord
     name::Symbol
     seed::Union{Nothing, Int}
     parameters::Vector{Pair{Symbol, Any}}
+    randomized::Bool
 end
 
-EngineRecord(name::Symbol, seed) = EngineRecord(name, seed, Pair{Symbol, Any}[])
+EngineRecord(name::Symbol, seed, parameters::Vector{Pair{Symbol, Any}} = Pair{Symbol, Any}[];
+             randomized::Bool = false) = EngineRecord(name, seed, parameters, randomized)
 
-"""
-    _randomized(::Val{name}) -> Bool
-
-Whether the engine whose record is named `name` draws random numbers, so that
-its results show the seed (contract §9.5). A randomized engine adds its method
-in its own file; `:Excursion` and `:FullFactorial`, the records of the other
-strategies, use no randomness.
-"""
-_randomized(::Val) = false
-_randomized(record::EngineRecord) = _randomized(Val(record.name))
+"Whether the engine that made a result drew random numbers, so that its seed is shown (contract §9.5)."
+_randomized(record::EngineRecord) = record.randomized
 
 "How a summary line names the engine: \"IPOG\", \"GND seed 3\", or \"GND, caller's rng\" (§1.22)."
 function _engine_phrase(record::EngineRecord)
@@ -477,7 +475,9 @@ The one engine entry point (plan Phase 3 step 1): a covering design for
 `request` in index space, certified by `validate_design` before it returns
 (contract §1.21). Every [`CoveringEngine`](@ref) builds covering designs
 (§1.3) through `cover_ordinary`, and the result records it by
-`engine_record`. An engine whose `fit` refuses the request is an
+`engine_record`, with the lower bound on its rows (`_ordinary_bound`, and
+the negative rows' from `cover_negative`) and what the engine found
+(`_cover_with_notes`) in `record`. An engine whose `fit` refuses the request is an
 `ArgumentError` before anything is classified (`_check_fit`). Every target
 classification, must-include completion and placement decision is resolved
 or the call throws `ResourceLimitError` (§3.6); a design is never returned
@@ -499,17 +499,23 @@ function generate(engine::CoveringEngine, request::Request)
     required, excluded = classify_targets(request)
     record = engine_record(engine)
     name, seed = record.name, record.seed
+    names = request.space.names
     if !_has_invalid(request.space)
-        matrix, notes = _cover_with_notes(engine, request, RequiredTargets(request, required))
+        targets = RequiredTargets(request, required)
+        matrix, notes = _cover_with_notes(engine, request, targets)
         covered = validate_design(request, matrix, required)
+        bound = _bound_record(size(matrix, 2), _ordinary_bound(request, targets), 0, names, request.arity,
+                              supports(targets))
         return Design(matrix, :covering, name, seed, length(required), covered, excluded,
-                      n_must_include(request), notes)
+                      n_must_include(request), (;), 0, 0, Excluded[],
+                      merge((randomized = record.randomized,), bound, notes))
     end
     must = request.must_include
     negative_columns = [j for j in axes(must, 2) if _holds_invalid(request, view(must, :, j))]
     ordinary_columns = [j for j in axes(must, 2) if !(j in negative_columns)]
     ordinary_request = _with_must_include(request, must[:, ordinary_columns])
-    ordinary, notes = _cover_with_notes(engine, ordinary_request, RequiredTargets(ordinary_request, required))
+    targets = RequiredTargets(ordinary_request, required)
+    ordinary, notes = _cover_with_notes(engine, ordinary_request, targets)
     negative = cover_negative(engine, request, negative_columns)
     # Must-include rows in the order given, each completed by its kind's step.
     rows = Vector{Vector{Int}}(undef, size(must, 2))
@@ -523,19 +529,24 @@ function generate(engine::CoveringEngine, request::Request)
     append!(rows, negative.rows)
     matrix = isempty(rows) ? zeros(Int, length(request.arity), 0) : reduce(hcat, rows)
     covered = validate_design(request, matrix, required; negative = negative.required)
+    bound = _bound_record(size(matrix, 2), _ordinary_bound(ordinary_request, targets), negative.bound, names,
+                          request.arity, supports(targets))
     return Design(matrix, :covering, name, seed, length(required), covered, excluded,
-                  n_must_include(request), notes, length(negative.required), length(negative.required),
-                  negative.excluded)
+                  n_must_include(request), (;), length(negative.required), length(negative.required),
+                  negative.excluded, merge((randomized = record.randomized,), bound, notes))
 end
 
 """
     _cover_with_notes(engine, request, targets) -> (matrix, notes::NamedTuple)
 
-`cover_ordinary`'s rows, with what the engine reports of the call, which
-`generate` keeps as the ordinary design's `notes` and the benchmark harness
-records as engine extras (benchmark/scaling/metrics.jl). An engine that
-reports nothing needs no method: the notes are empty. `Compact` reports its
-reducer's steps and why it stopped.
+`cover_ordinary`'s rows, with what the engine found, which `generate` puts
+into the result's record after the lower bound (`TestCases`'s `record`) and
+the benchmark harness records as engine extras (benchmark/scaling/metrics.jl).
+An engine that reports nothing needs no method: the notes are empty.
+`Construction` reports its catalog array (`catalog`, `_describe`), `Compact`
+its reducer's run (`reducer`), and `Auto` what it chose (`chose`,
+`candidates`) beside its start's notes. Only the ordinary design's notes are
+kept; a negative sub-request's are not.
 """
 _cover_with_notes(engine::CoveringEngine, request::Request, targets::RequiredTargets) =
     (cover_ordinary(engine, request, targets), (;))

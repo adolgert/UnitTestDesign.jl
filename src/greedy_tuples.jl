@@ -230,9 +230,8 @@ validates the result (§1.21). The request's must-include rows are ordinary.
 cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) =
     first(gnd_cover(engine, request, _target_list(targets)))
 
-"The record: the seed is `engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6)."
-engine_record(engine::GND) = EngineRecord(:GND, engine.seed, Pair{Symbol, Any}[:candidates => engine.candidates])
-
-_randomized(::Val{:GND}) = true
+"The record: randomized; the seed is `engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6)."
+engine_record(engine::GND) = EngineRecord(:GND, engine.seed, Pair{Symbol, Any}[:candidates => engine.candidates];
+                                          randomized = true)
 
 fit(::GND, ::Profile) = Fit(:native, "GND covers any request")

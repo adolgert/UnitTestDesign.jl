@@ -445,14 +445,24 @@ cover_ordinary(engine::Compact, request::Request, targets::RequiredTargets) =
 function _cover_with_notes(engine::Compact, request::Request, targets::RequiredTargets)
     start, inner = _cover_with_notes(engine.inner, request, targets)
     matrix, notes = _compact(request, targets, start; seed = engine.seed, effort = engine.effort)
-    return matrix, merge(inner, notes)
+    return matrix, merge(inner, (reducer = _reducer_record(notes),))
 end
 
-"The record: Compact's seed, and its inner engine's record and its effort as settings (plan §4.2)."
-engine_record(engine::Compact) = EngineRecord(:Compact, engine.seed,
-    Pair{Symbol, Any}[:inner => engine_record(engine.inner), :effort => engine.effort])
+"""
+    _reducer_record(notes) -> NamedTuple
 
-_randomized(::Val{:Compact}) = true
+`_compact`'s notes as a result's record keeps them, under `reducer`: `start`
+and `rows`, the rows before and after; `bound`, `steps`, `budget`, `work`,
+`work_budget` and `stop` (`_compact`). The benchmark harness writes them as
+`reducer_start`, `reducer_rows`, … (benchmark/scaling/metrics.jl).
+"""
+_reducer_record(n::NamedTuple) =
+    (start = n.reducer_start, rows = n.reducer_rows, bound = n.reducer_bound, steps = n.reducer_steps,
+     budget = n.reducer_budget, work = n.reducer_work, work_budget = n.reducer_work_budget, stop = n.reducer_stop)
+
+"The record: randomized, Compact's seed, and its inner engine's record and its effort as settings (plan §4.2)."
+engine_record(engine::Compact) = EngineRecord(:Compact, engine.seed,
+    Pair{Symbol, Any}[:inner => engine_record(engine.inner), :effort => engine.effort]; randomized = true)
 
 # A result keeps only the engine's name and seed, so the phrase names what
 # else must match to repeat the rows.

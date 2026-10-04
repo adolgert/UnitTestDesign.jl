@@ -51,7 +51,12 @@ using TestItemRunner
     "Each table line's cells: the row number, then one entry per shown column."
     cells(line) = split(strip(line))
 
-    const SOLVER_SUMMARY = "5 cases · strength 2 · IPOG · 3 parameters · 12 combinations"
+    # Beside the count, the lower bound recorded at generation (plan §6.1): the
+    # 4 feasible pairs of mode and solver need a case each.
+    const SOLVER_SUMMARY = "5 cases (lower bound 4) · strength 2 · IPOG · 3 parameters · 12 combinations"
+
+    "What the summary says beside a covering result's count: \"minimal\" or \"lower bound N\"."
+    size_note(cases) = cases.record.minimal ? "minimal" : "lower bound $(cases.record.lower_bound)"
     const SOLVER_EXCLUDED = "excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)"
 end
 
@@ -97,7 +102,7 @@ end
 
     # GND covers the same 11 pairs; its display names the seed.
     gnd = covering_cases(test_space(fable_solver); engine = GND())
-    @test lines(gnd)[1] == "$(length(gnd)) cases · strength 2 · GND seed 0 · 3 parameters · 12 combinations"
+    @test lines(gnd)[1] == "$(length(gnd)) cases ($(size_note(gnd))) · strength 2 · GND seed 0 · 3 parameters · 12 combinations"
     @test lines(gnd)[2] == SOLVER_EXCLUDED
     @test (gnd.required, gnd.covered) == (11, 11)
 end
@@ -187,7 +192,7 @@ end
     state = copy(rng)
     own = covering_cases(solver_space(); engine = GND(rng = rng))
     @test (own.engine, own.seed) == (:GND, nothing)
-    @test lines(own)[1] == "$(length(own)) cases · strength 2 · GND, caller's rng · 3 parameters · 12 combinations"
+    @test lines(own)[1] == "$(length(own)) cases ($(size_note(own))) · strength 2 · GND, caller's rng · 3 parameters · 12 combinations"
     @test rng == state
 
     ipog = covering_cases(solver_space())
@@ -258,14 +263,14 @@ end
     # are the valid rows.
     top = covering_cases(space; strength = 3)
     @test top.required == 5
-    @test lines(top)[1:2] == ["5 cases · strength 3 · IPOG · 3 parameters · 12 combinations, 5 valid",
+    @test lines(top)[1:2] == ["5 cases (minimal) · strength 3 · IPOG · 3 parameters · 12 combinations, 5 valid",
                               "excluded: 7 triples forbidden; see report(cases)"]
     @test Set(top) == Set(full)
     # Below full strength, and for excursions, the valid count is not known.
     @test !occursin("valid", repr(covering_cases(space)))
     @test !occursin("valid", repr(excursion_cases(space)))
     @test repr(covering_cases(space; strength = 1)) ==
-          "$(length(covering_cases(space; strength = 1))) cases · strength 1 · IPOG · 3 parameters · 12 combinations"
+          "$(length(covering_cases(space; strength = 1))) cases (minimal) · strength 1 · IPOG · 3 parameters · 12 combinations"
 end
 
 
@@ -279,7 +284,7 @@ end
     @test cases.stronger == [(:a, :b, :c) => 3]
     @test cases.stronger isa Vector{Pair{Tuple{Vararg{Symbol}}, Int}}
     @test (cases.strength, cases.strategy) == (2, :covering)
-    @test repr(cases) == "$(length(cases)) cases · strength 2, 3 within (a, b, c) · IPOG · 4 parameters · 16 combinations"
+    @test repr(cases) == "$(length(cases)) cases (minimal) · strength 2, 3 within (a, b, c) · IPOG · 4 parameters · 16 combinations"
     @test isempty(covering_cases(space).stronger)
     # Positional groups by index are recorded by name.
     pspace = TestSpace(:p1 => 1:2, :p2 => 1:2, :p3 => 1:2, :p4 => 1:2)
@@ -291,7 +296,7 @@ end
     @test must.n_must_include == 2
     @test must[1] == rows[1]
     @test must[2].mode === :fast
-    @test lines(must)[1] == "$(length(must)) cases (2 must-include) · strength 2 · IPOG · 3 parameters · 12 combinations"
+    @test lines(must)[1] == "$(length(must)) cases (2 must-include, lower bound 4) · strength 2 · IPOG · 3 parameters · 12 combinations"
     @test (must.required, must.covered) == (11, 11)
     @test covering_cases(solver_space()).n_must_include == 0
 end
@@ -300,7 +305,7 @@ end
 @testitem "testcases: Opus's space, with an implied target (§1.2, §1.4, §1.19)" setup=[CasesSetup, Checker] begin
     cases = covering_cases(test_space(opus_gpu))
     text = lines(cases)
-    @test text[1] == "$(length(cases)) cases · strength 2 · IPOG · 3 parameters · 12 combinations"
+    @test text[1] == "$(length(cases)) cases (lower bound 5) · strength 2 · IPOG · 3 parameters · 12 combinations"
     @test text[2] == "excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)"
     @test text[3] == "    os        gpu    driver"
     @test length(text) == 3 + length(cases)

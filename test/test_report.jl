@@ -91,6 +91,7 @@ end
     @test r.guarantee == "5 cases cover all 11 feasible pairs of a 12-combination space " *
                          "(3 pairs forbidden, 2 impossible under the constraints)"
     @test shown(r) == join([r.guarantee; "excluded:"; SOLVER_EXCLUDED;
+        "size: 5 cases; lower bound 4: the 4 feasible combinations of mode and solver need a case each";
         "bonus: 5 of 5 feasible triples covered";
         "prefix curve:";
         "  first 1 of 5 cover 27% (3 of 11)";
@@ -472,6 +473,8 @@ end
     cases = all_pairs(space)
     r = report(cases)
     @test split(shown(r), "\n")[2:end] == [
+        "size: 3 cases, minimal: the 1 combination of a and b needs a case; and 2 negative cases, bounded in " *
+        "the same way for each Invalid value",
         "bonus coverage not applicable: strength 3 exceeds the number of parameters, 2",
         "prefix curve:",
         "  first 1 of 3 cover 100% of ordinary pairs (1 of 1); negative 0 of 2",

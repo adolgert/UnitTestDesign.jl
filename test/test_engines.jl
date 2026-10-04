@@ -75,18 +75,22 @@ end
     gnd = engine_record(GND(seed = 7, candidates = 20))
     @test gnd.name === :GND && gnd.seed == 7 && gnd.parameters == [:candidates => 20]
     @test engine_record(GND(rng = Xoshiro(1))).seed === nothing
-    @test !_randomized(ipog) && _randomized(gnd)
+    @test !_randomized(ipog) && _randomized(gnd) && _randomized(engine_record(GND(rng = Xoshiro(1))))
     @test !_randomized(EngineRecord(:Excursion, nothing)) && !_randomized(EngineRecord(:FullFactorial, nothing))
-    # Results show the record as 0.5 showed GND's seed (§1.22, §9.5).
+    # Results show the record as 0.5 showed GND's seed (§1.22, §9.5): a randomized
+    # record shows its seed, or the caller's rng.
     @test _engine_phrase(EngineRecord(:IPOG, nothing)) == "IPOG"
-    @test _engine_phrase(EngineRecord(:GND, 3)) == "GND seed 3"
-    @test _engine_phrase(EngineRecord(:GND, nothing)) == "GND, caller's rng"
+    @test _engine_phrase(EngineRecord(:GND, 3; randomized = true)) == "GND seed 3"
+    @test _engine_phrase(EngineRecord(:GND, nothing; randomized = true)) == "GND, caller's rng"
     @test _seed_note(EngineRecord(:IPOG, nothing)) === nothing
-    @test _seed_note(EngineRecord(:GND, 3)) == "GND seed 3"
-    @test _seed_note(EngineRecord(:GND, nothing)) == "GND with the caller's rng"
+    @test _seed_note(EngineRecord(:GND, 3; randomized = true)) == "GND seed 3"
+    @test _seed_note(EngineRecord(:GND, nothing; randomized = true)) == "GND with the caller's rng"
     @test _seed_text(EngineRecord(:IPOG, nothing)) == "seed: none (IPOG uses no randomness)"
-    @test _seed_text(EngineRecord(:GND, 3)) == "seed: 3 (GND(seed = 3) repeats these cases)"
-    @test _seed_text(EngineRecord(:GND, nothing)) == "seed: none (GND drew from the caller's rng)"
+    @test _seed_text(EngineRecord(:GND, 3; randomized = true)) == "seed: 3 (GND(seed = 3) repeats these cases)"
+    @test _seed_text(EngineRecord(:GND, nothing; randomized = true)) == "seed: none (GND drew from the caller's rng)"
+    # A result keeps whether its engine is randomized in its record, beside engine and seed.
+    @test all_pairs(1:2, 1:3; engine = GND(seed = 3)).record.randomized
+    @test !all_pairs(1:2, 1:3).record.randomized
     # Both fit every request natively, and fall back on IPOG, which they never need.
     request = Request(TestSpace((a = [1, 2], b = [1, 2, 3], c = [:x, :y])); strength = 2)
     for engine in (IPOG(), GND())

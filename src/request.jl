@@ -585,8 +585,13 @@ and accepted counts) as a `NamedTuple`, and the negative bookkeeping, kept
 apart from the ordinary (contract §1.19, §5.10): `negative_required::Int`
 and `negative_covered::Int` (negative targets, §6) and
 `negative_excluded::Vector{Excluded}`, whose targets hold the invalid
-position. The nine-argument constructor leaves the negative bookkeeping
-empty.
+position; and `record`, what the result records of how it was made, as
+[`TestCases`](@ref)'s `record` documents it: whether the engine is randomized,
+a covering design's lower bound with its proof and whether the rows meet it
+(`_bound_record`), and what the engine found (`_cover_with_notes`). The
+nine-argument constructor leaves the negative bookkeeping empty, and both
+short forms record no bound (`_NO_BOUND`), as for an excursion or a full
+factorial.
 """
 struct Design
     matrix::Matrix{Int}
@@ -601,11 +606,20 @@ struct Design
     negative_required::Int
     negative_covered::Int
     negative_excluded::Vector{Excluded}
+    record::NamedTuple
 end
+
+"The record of a design that has no lower bound: an excursion or a full factorial, which use no randomness."
+const _NO_BOUND = (randomized = false, lower_bound = nothing, minimal = false, proof = "")
 
 Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes) =
     Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,
-           0, 0, Excluded[])
+           0, 0, Excluded[], _NO_BOUND)
+
+Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,
+       negative_required, negative_covered, negative_excluded) =
+    Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,
+           negative_required, negative_covered, negative_excluded, _NO_BOUND)
 
 """
     validate_design(request, matrix, required; strategy, negative = []) -> Int

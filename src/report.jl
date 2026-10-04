@@ -37,7 +37,10 @@ What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
   distance, base, dropped rows and values that never appear, a full
   factorial's "every valid row", and GND's seed.
 - `strategy::Symbol`, `n_cases::Int`, `engine::Symbol`, `seed`,
-  `n_must_include::Int`: as the result recorded them.
+  `n_must_include::Int`, `record::NamedTuple`: as the result recorded them
+  ([`TestCases`](@ref)); `record` holds a covering design's lower bound,
+  with its proof and whether the rows meet it, which `show` prints on its
+  "size:" line.
 - `strength::Int`: the strength measured: the result's, or `min(2, number of
   parameters)` for an excursion or a full factorial, which have none
   (contract §1.12).
@@ -100,6 +103,7 @@ struct Report
     seed::Union{Nothing, Int}
     engine::Symbol
     n_must_include::Int
+    record::NamedTuple
 end
 
 """
@@ -134,6 +138,7 @@ excluded:
   (mode = :exact, tol = 0.001): forbidden by rule 2 (exact mode needs a tight tolerance)
   (solver = :lu, tol = 0.001): impossible because rules 1 and 2 combine (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
   (solver = :qr, tol = 0.001): impossible because rules 1 and 2 combine (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
+size: 5 cases; lower bound 4: the 4 feasible combinations of mode and solver need a case each
 bonus: 5 of 5 feasible triples covered
 prefix curve:
   first 1 of 5 cover 27% (3 of 11)
@@ -205,7 +210,7 @@ function report(cases::TestCases; feasibility_limit = 1_000_000, explanation_lim
     return Report(_guarantee(cases, c), cases.strategy, length(cases), strength, c,
                   [c.ordinary.excluded; c.negative.excluded], recorded, bonus,
                   _prefix_points(prefix, c.ordinary), _prefix_points(negative, c.negative), cases.seed,
-                  cases.engine, cases.n_must_include)
+                  cases.engine, cases.n_must_include, cases.record)
 end
 
 "One prefix point per row: the part's targets the first `k` rows cover, out of its feasible and unknown."
@@ -433,11 +438,36 @@ function _print_bonus(io::IO, r::Report)
 end
 
 function _seed_text(r::Report)
-    record = EngineRecord(r.engine, r.seed)
+    record = EngineRecord(r.engine, r.seed; randomized = r.record.randomized)
     _randomized(record) && return _seed_text(record)
     r.strategy === :excursion && return "seed: none (an excursion uses no randomness)"
     r.strategy === :full_factorial && return "seed: none (a full factorial uses no randomness)"
     return _seed_text(record)
+end
+
+"""
+    _size_line(r) -> Union{Nothing, String}
+
+`report`'s line on a covering design's size (plan §6.1, D5): "size: 9 cases,
+minimal: the 3 × 3 = 9 combinations of a and b need a case each" when the
+rows equal the recorded lower bound, which is the one case in which a count
+is called minimal and the line names its proof (contract §8.4); otherwise
+"size: 13 cases; lower bound 9: …". A catalog design that is an orthogonal
+array adds that each combination is in exactly one case. The bound was
+proven at generation, from its classification, and is shown as recorded;
+`nothing` for a result without one.
+"""
+function _size_line(r::Report)
+    bound = get(r.record, :lower_bound, nothing)
+    bound === nothing && return nothing
+    size = _plural(r.n_cases, "case")
+    line = r.record.minimal ? "size: $size, minimal: $(r.record.proof)" :
+                              "size: $size; lower bound $bound: $(r.record.proof)"
+    # A catalog design that is an orthogonal array says so (plan §5.4, "Balance").
+    catalog = get(r.record, :catalog, nothing)
+    catalog !== nothing && catalog.orthogonal &&
+        (line *= "; an orthogonal array: each combination of $(r.strength) parameters' values is in exactly one case")
+    return line
 end
 
 Base.show(io::IO, r::Report) = print(io, r.guarantee)
@@ -457,6 +487,8 @@ function Base.show(io::IO, ::MIME"text/plain", r::Report)
         length(shown) > _SHOWN_EXCLUSIONS &&
             print(io, "\n  and ", length(shown) - _SHOWN_EXCLUSIONS, " more")
     end
+    size = _size_line(r)
+    size === nothing || print(io, "\n", size)
     print(io, "\n")
     _print_bonus(io, r)
     print(io, "\n")

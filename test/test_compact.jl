@@ -75,10 +75,10 @@ end
     @test inner isa EngineRecord && inner.name === :GND && inner.seed == 4
     @test record.parameters[2].second == 2
     @test _randomized(record)
-    @test _engine_phrase(EngineRecord(:Compact, 9)) == "Compact seed 9"
-    @test _seed_text(EngineRecord(:Compact, 9)) ==
+    @test _engine_phrase(EngineRecord(:Compact, 9; randomized = true)) == "Compact seed 9"
+    @test _seed_text(EngineRecord(:Compact, 9; randomized = true)) ==
           "seed: 9 (Compact(inner; seed = 9) with the same inner engine and effort repeats these cases)"
-    @test _seed_text(EngineRecord(:GND, 3)) == "seed: 3 (GND(seed = 3) repeats these cases)"   # unchanged
+    @test _seed_text(EngineRecord(:GND, 3; randomized = true)) == "seed: 3 (GND(seed = 3) repeats these cases)"   # unchanged
     # Results show it through the public entry points.
     space = TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:2, e = 1:2))
     cases = all_pairs(space; engine)
@@ -88,10 +88,11 @@ end
                    sprint(show, MIME"text/plain"(), report(cases)))
     @test length(cases) <= length(all_pairs(space))
     @test design_sizes(space; engine) isa DesignSizes
-    # The notes say what the reducer did; the harness records them (benchmark/scaling/metrics.jl).
-    @test cases.notes.reducer_start == length(all_pairs(space)) && cases.notes.reducer_rows == length(cases)
-    @test cases.notes.reducer_stop in (:bound, :budget, :work)
-    @test isempty(all_pairs(space).notes)
+    # The record says what the reducer did; the harness records it (benchmark/scaling/metrics.jl).
+    @test cases.record.reducer.start == length(all_pairs(space)) && cases.record.reducer.rows == length(cases)
+    @test cases.record.reducer.stop in (:bound, :budget, :work)
+    @test cases.record.randomized && isempty(cases.notes)
+    @test !haskey(all_pairs(space).record, :reducer) && isempty(all_pairs(space).notes)
     # Its fit is the inner engine's, reduced; past the index's cap, unreduced.
     profile = Profile(Request(space))
     f = fit(engine, profile)

@@ -200,8 +200,14 @@ row already holds `p = v` (§6.4).
 Returns, in engine positions: `seeds`, each negative must-include column's
 completed row, by column; `rows`, the generated negative rows, in `(p, v)`
 order; `required`, every required negative target, and `excluded`, the
-`Excluded` negative targets, each in target order, as `coverage` lists them.
-The caller validates the rows (`validate_design`).
+`Excluded` negative targets, each in target order, as `coverage` lists them;
+and `bound`, the fewest negative rows any design can have (plan §4.1). A
+negative row holds one invalid value (§5.7) and covers only negative targets
+(§5.9), so the rows at different `(p, v)` are different rows, and the bound
+is the sum over `(p, v)` of the sub-request's `_ordinary_bound`, its
+must-include rows being the negative ones at `(p, v)`, and at least one row
+when the target `(p = v)` alone is required. The caller validates the rows
+(`validate_design`).
 """
 function cover_negative(engine, request::Request, columns::Vector{Int})
     space = request.space
@@ -217,6 +223,7 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
     end
     seeds = Dict{Int, Vector{Int}}()
     rows = Vector{Int}[]
+    bound = 0
     for p in 1:n
         positions = (request.arity[p] + 1):length(request.candidates[p])   # p's invalid values
         isempty(positions) && continue
@@ -227,14 +234,17 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
         for position in positions
             at = [j for j in columns if must[p, j] == position]
             here = get(targets, (p, position), Vector{Int}[])
+            alone = findfirst(t -> count(!=(0), t) == 1, here)   # (p = v), a target at strength 1
             added = 0
             if pr !== nothing
                 sub = _negative_request(request, pr, must[pr.kept, at])
                 # Every target here but (p = v) alone is p = v beside a target of the sub-request.
                 sub_required = [t[pr.kept] for t in here if count(!=(0), t) > 1]
+                sub_targets = RequiredTargets(sub, sub_required)
+                bound += max(_ordinary_bound(sub, sub_targets).rows, alone === nothing ? 0 : 1)
                 matrix = try
                     # An engine that can't cover the sub-request hands it to its fallback (plan §4.2).
-                    cover_ordinary(_engine_for(engine, sub), sub, RequiredTargets(sub, sub_required))
+                    cover_ordinary(_engine_for(engine, sub), sub, sub_targets)
                 catch err
                     err isa ResourceLimitError || rethrow()
                     value = space.values[p][request.candidates[p][position]]
@@ -249,16 +259,16 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
                     added += 1
                 end
             else
+                bound += max(length(at), alone === nothing ? 0 : 1)
                 for j in at
                     row = must[:, j]
                     seeds[j] = any(==(0), row) ? witness(request, row) : row
                 end
             end
-            alone = findfirst(t -> count(!=(0), t) == 1, here)   # (p = v), a target at strength 1
             if alone !== nothing && isempty(at) && added == 0
                 push!(rows, witness(request, here[alone]))
             end
         end
     end
-    return (; seeds, rows, required, excluded)
+    return (; seeds, rows, required, excluded, bound)
 end

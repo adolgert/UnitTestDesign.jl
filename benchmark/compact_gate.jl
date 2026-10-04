@@ -22,7 +22,7 @@
 # - `--high`: strengths 4 to 6 on 20 parameters (plan §2.9), which take
 #   minutes.
 # - `--casa RESULTS.json` (repeatable): the CASA set, from the scaling
-#   harness's results of `Compact(IPOG())` jobs, whose notes hold IPOG's
+#   harness's results of `Compact(IPOG())` jobs, whose engine extras hold IPOG's
 #   rows (the reducer's start) beside the reduced rows. At strength 3, rows
 #   must fall 10% or more below IPOG's on most of the models that complete.
 #   The jobs run one at a time with an 8 GiB guard:
@@ -76,13 +76,13 @@ warm(f) = (f(); minimum(@elapsed(f()) for _ in 1:3))
 function compare(space, strength; timed = false)
     ipog = generate(IPOG(), Request(space; strength))
     compact = generate(Compact(IPOG()), Request(space; strength))
-    n = compact.notes
-    n.reducer_start == size(ipog.matrix, 2) || error("Compact's start is not IPOG's rows")
+    n = compact.record.reducer
+    n.start == size(ipog.matrix, 2) || error("Compact's start is not IPOG's rows")
     size(compact.matrix, 2) <= size(ipog.matrix, 2) || (NEVER_MORE[] = false)
     RESULTS_HASH[] = hash(compact.matrix, RESULTS_HASH[])
     seconds = timed ? warm(() -> generate(Compact(IPOG()), Request(space; strength))) : NaN
-    return (ipog = size(ipog.matrix, 2), rows = size(compact.matrix, 2), bound = n.reducer_bound,
-            stop = n.reducer_stop, steps = n.reducer_steps, seconds)
+    return (ipog = size(ipog.matrix, 2), rows = size(compact.matrix, 2), bound = n.bound,
+            stop = n.stop, steps = n.steps, seconds)
 end
 
 function mainstream()

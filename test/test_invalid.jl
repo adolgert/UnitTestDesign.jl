@@ -361,7 +361,7 @@ end
     space = test_space(invalid_beside_ordinary)
     cases = all_pairs(space)
     @test plain(cases) == """
-        6 cases · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets
+        6 cases (lower bound 5) · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets
         excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)
              n           m   k
          1   1           :b  :x
@@ -376,10 +376,10 @@ end
     @test sprint(show, r) == r.guarantee
     @test r.coverage.negative.covered == 4 && isempty(r.recorded)
     # The one-line summary, in a container.
-    @test sprint(show, cases) == "6 cases · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets"
+    @test sprint(show, cases) == "6 cases (lower bound 5) · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets"
     # At full strength the valid rows are known: 4 ordinary and 3 negative.
     @test startswith(plain(covering(space; strength = 3)),
-                     "7 cases · strength 3 · IPOG · 3 parameters · 12 combinations, 7 valid · 3 negative targets")
+                     "7 cases (minimal) · strength 3 · IPOG · 3 parameters · 12 combinations, 7 valid · 3 negative targets")
     # Excursions and full factorials have no negative targets to count.
     @test sprint(show, full_factorial(space)) == "7 cases · full factorial · 3 parameters · 12 combinations, 7 valid"
     @test startswith(sprint(show, excursions(space)), "4 cases · excursion, distance 1 from (n = 1, m = :a, k = :x)")
