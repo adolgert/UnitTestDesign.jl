@@ -1222,13 +1222,11 @@ function _two_constant_rows(A::Matrix{Int})
     N, k = size(A)
     pairs = [(i, j) for i in 1:N for j in (i + 1):N]
     found = findfirst(p -> all(A[p[1], c] != A[p[2], c] for c in 1:k), pairs)
-    if found === nothing
-        A = vcat(A, 1 .- A[1:1, :])
-        i, j = 1, N + 1
-    else
-        i, j = pairs[found]
-    end
-    B = [A[r, c] ⊻ A[i, c] for r in axes(A, 1), c in 1:k]
+    # One binding each: `A` is captured above, and a captured variable that is
+    # assigned again is boxed, which makes the result `Any`.
+    E = found === nothing ? vcat(A, 1 .- A[1:1, :]) : A
+    i, j = found === nothing ? (1, N + 1) : pairs[found]
+    B = [E[r, c] ⊻ E[i, c] for r in axes(E, 1), c in 1:k]
     return B[[i; j; setdiff(axes(B, 1), (i, j))], :]
 end
 
