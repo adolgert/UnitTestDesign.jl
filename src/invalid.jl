@@ -15,7 +15,8 @@
 # `parent_row` puts `p = v` back into each row. At strength 1 with no group
 # containing `p` there is no sub-request: the one target `(p = v)` takes one
 # witness row (§6.4), never a strength-0 public call. An engine whose `fit`
-# refuses a sub-request hands it to its fallback, IPOG (`_engine_for`).
+# refuses a sub-request hands it to its fallback (`_engine_for`, `_fallback`):
+# IPOG, or for `Compact` its inner engine's fallback reduced, `Compact(IPOG())`.
 #
 # Negative must-include rows count toward the negative targets they hold
 # (§10.6): those at `(p, v)` are the sub-request's must-include rows, so the
@@ -201,13 +202,13 @@ Returns, in engine positions: `seeds`, each negative must-include column's
 completed row, by column; `rows`, the generated negative rows, in `(p, v)`
 order; `required`, every required negative target, and `excluded`, the
 `Excluded` negative targets, each in target order, as `coverage` lists them;
-and `bound`, the fewest negative rows any design can have (plan §4.1). A
-negative row holds one invalid value (§5.7) and covers only negative targets
-(§5.9), so the rows at different `(p, v)` are different rows, and the bound
-is the sum over `(p, v)` of the sub-request's `_ordinary_bound`, its
-must-include rows being the negative ones at `(p, v)`, and at least one row
-when the target `(p = v)` alone is required. The caller validates the rows
-(`validate_design`).
+and `bound`, a number of negative rows that no design can have fewer of
+(plan §4.1). A negative row holds one invalid value (§5.7) and covers only
+negative targets (§5.9), so the rows at different `(p, v)` are different
+rows, and the bound is the sum over `(p, v)` of the sub-request's
+`_ordinary_bound`, its must-include rows being the negative ones at
+`(p, v)`, and at least one row when the target `(p = v)` alone is required.
+The caller validates the rows (`validate_design`).
 """
 function cover_negative(engine, request::Request, columns::Vector{Int})
     space = request.space

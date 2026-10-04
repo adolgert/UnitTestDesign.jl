@@ -142,8 +142,10 @@ groups, engine name and seed, the number of must-include rows, the excluded
 targets with attribution and explanation status, and covered-target counts,
 with ordinary and negative bookkeeping kept separate. Its `record` says
 whether the engine is randomized, gives a covering design's lower bound with
-its proof (§8.7), and what the engine chose or built (`Auto`'s choice, a
-catalog array, the row reducer's run).
+its proof (§8.7), what the engine chose or built (`Auto`'s choice for the
+ordinary rows, a catalog array, the row reducer's run), and the settings
+besides the seed that repeating the rows needs (`GND`'s `candidates`, when
+not the default).
 
 **1.20** A generated `TestCases` contains no target whose status is unknown
 (§3.6).
@@ -593,7 +595,8 @@ which `followups` reports as `inseparable` with no other suspects.
 
 **8.7** Every covering result records a lower bound on the rows of any valid
 design for its request, and the proof of it in words; `show` prints it
-beside the count, and says "minimal" instead when the count equals it. The
+beside the count when it is above 0, and says "minimal" instead when the
+count equals it. The
 bound is the largest, over the parameter sets that carry targets, of the
 must-include rows plus the required combinations of that set they cannot
 hold, each of which needs a row of its own; and, for each `Invalid` value,
@@ -649,13 +652,19 @@ allows are errors under §10.
 seed = 0, effort = 1)` are randomized: each seeds a fresh generator from
 `seed` at the start of every call, records the seed, and `report` prints it,
 as GND does (§9.5). Their budgets count steps and combinations read, never
-seconds, so the same inputs and seed give the same rows on any machine.
+seconds, so a machine's speed or load never changes the rows: the same
+inputs and seed give the same rows in every run and process, as §9.1
+promises for the same package and Julia versions.
 `seed` is an integer of at least 0 and `effort` a positive integer; another
 value is an `ArgumentError` naming the keyword.
 
-**9.12** `Auto` decides from the request alone: never from a search's
-result, a limit, the clock, or which other packages are loaded. When one of
-the engines it runs throws `ResourceLimitError`, the call throws (§3.6).
+**9.12** `Auto` decides from the request alone. Which engines it runs
+depends only on the request, never on a limit, the clock, or which other
+packages are loaded; where it runs two, it keeps the design with fewer rows,
+and those designs are themselves functions of the request (§9.1), so the
+choice is too. It never decides from a search's node count or how far a
+search got. When one of the engines it runs throws `ResourceLimitError`,
+the call throws (§3.6).
 
 ## 10. Must-include rows
 

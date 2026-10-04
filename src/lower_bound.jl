@@ -1,6 +1,6 @@
 # The lower bound a covering result records (plan §4.1, "State the bound";
-# §6.1; decision D5): the fewest rows any design for the request could have,
-# with its proof, and whether the result's rows meet it, which is the one
+# §6.1; decision D5): a number of rows that no design for the request can go
+# below, with its proof, and whether the result's rows meet it, which is the one
 # case this release calls a count minimal (contract §8.4). It is counted from
 # what classification and generation already know: the required targets on
 # each support, the must-include rows, and the negative targets of each
@@ -38,7 +38,8 @@ end
 """
     _ordinary_bound(request, targets::RequiredTargets) -> _SupportBound
 
-The fewest rows any covering design for `request` can have (plan §4.1): its
+A number of rows that no covering design for `request` can have fewer of
+(plan §4.1); the fewest a design can have may be more. The design's
 must-include rows `M`, `m` of them, are its first rows, and the rest cover
 what they leave. For each support `s` with `need(s)` required combinations,
 let `held(s)` count the distinct required combinations on `s` that the rows

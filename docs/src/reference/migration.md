@@ -8,11 +8,13 @@ This page lists every removed and deprecated spelling, with its replacement
 and a before-and-after example. The "after" code runs when the manual is
 built.
 
-Nothing changes for code that names no engine: the default is still
-[`IPOG`](@ref). 0.5 adds engines a call can name, [`Auto`](@ref),
+The cases don't change for code that names no engine: the default is
+still [`IPOG`](@ref). 0.5 adds engines a call can name, [`Auto`](@ref),
 [`Construction`](@ref) and [`Compact`](@ref), which give fewer cases on
-many spaces, and every result now shows a lower bound beside its count; see
-[Engines](../man/engines.md).
+many spaces. What a result shows and keeps does change: its summary line and
+[`report`](@ref) show a lower bound beside the count, [`TestCases`](@ref)
+and [`Report`](@ref) gain a `record` field, and [`DesignSizes`](@ref) gains
+`engines` and an `engine` on each row; see [Engines](../man/engines.md).
 
 ## Compat bounds
 

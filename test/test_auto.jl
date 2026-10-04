@@ -334,6 +334,10 @@ end
             @test !cases.record.minimal && length(cases) >= minimum
         end
     end
+    # The Engines page says no design for `smooth` has fewer than 11 cases: an
+    # exhaustive search over its 57 valid cases, here, shows it.
+    @test exhaustive_minimum(smooth, Request(smooth)) == 11
+    @test length(covering(smooth; engine = Auto(goal = :compact))) == 11
     # A must-include row is a row of the design, and those that hold combinations count once.
     must = all_pairs(uniform(3, 3); must_include = [(p1 = 1, p2 = 1, p3 = 1), (p1 = 1, p2 = 1, p3 = 1)])
     @test must.record.lower_bound == 10 && length(must) == 10 && must.record.minimal

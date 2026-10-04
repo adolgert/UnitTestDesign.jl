@@ -32,20 +32,24 @@ such as [`IPOG`](@ref)`()` or [`Construction`](@ref)`()`. It covers a
 request with `inner`, then removes rows from that design: delete the row
 whose removal leaves the fewest required combinations uncovered, repair the
 design at that row count, and repeat while each repair succeeds, stopping
-at the lower bound (`_compact`). The result never has more rows than
-`inner`'s and keeps its must-include rows, first and unchanged (contract
-§10.5). Every row it writes is checked against the rules on its own, so it
-never searches and its rows don't depend on `feasibility_limit` (§3.8). A
-smaller design covers fewer combinations of higher strength by accident:
-see the manual's Engines page. [`Auto`](@ref)`(goal = :compact)` runs it on
-the smaller of IPOG's design and the catalog's array.
+at the lower bound the result records (`_compact`). The result never has
+more rows than `inner`'s and keeps its must-include rows, first and
+unchanged (contract §10.5). Every row it writes is checked against the rules
+on its own, so it never searches and its rows don't depend on
+`feasibility_limit` (§3.8). A smaller design covers fewer combinations of
+higher strength by accident: see the manual's Engines page.
+[`Auto`](@ref)`(goal = :compact)` runs it on the start `Auto` keeps: the
+smaller of IPOG's design and the catalog's array where it builds both, else
+the one it builds.
 
 `seed`, an integer of at least 0, seeds a fresh generator for every call,
-so the same `inner`, `seed` and `effort` give the same rows (§9.5), and the
+so the same `inner`, `seed` and `effort` give the same rows (§9.11), and the
 result records the seed. `effort`, a positive integer, multiplies the
 reducer's two budgets, which count work, never seconds: at `effort = 1`,
-30,000 repair steps or one per combination to cover, whichever is more, and
-2·10⁹ combinations read, about 10 to 20 seconds on a laptop, which only
+30,000 repair steps or one per combination it indexes (every combination
+of each set of parameters that has targets, before the rules exclude any),
+whichever is more, and 2·10⁹ combinations read, about 10 to 20 seconds on a
+laptop, which strength 3 on larger spaces (30 parameters of 4 values) and
 strengths 4 to 6 reach. A request with more than 2^25 combinations to
 cover, counted before the rules, or whose start has more than 65,535 rows,
 gets `inner`'s rows unreduced. The result's record says what the reducer
@@ -104,8 +108,9 @@ time the reducer computes one row's combination on one support, to build the
 index, to score, make or undo a move, or to choose the row to delete, counts
 one, and so does each row it scans for a move. A step's cost grows with the
 rows and with the supports that hold a parameter, C(k − 1, t − 1) for k
-parameters at strength t, so where steps are expensive (strengths 4 to 6, or
-thousands of rows) this budget ends the search before the step budget does.
+parameters at strength t, so where steps are expensive (strength 3 on larger
+spaces, such as 30 parameters of 4 values; strengths 4 to 6; or thousands of
+rows) this budget ends the search before the step budget does.
 2·10⁹ reads take about 10 to 20 seconds on an Apple M2 (5–9 ns a read).
 """
 const _COMPACT_WORK = 2_000_000_000

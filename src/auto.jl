@@ -45,32 +45,38 @@ A covering engine that picks its method from the request (plan §6.1).
 | `:balanced` | the smaller of IPOG's design and the catalog's array ([`Construction`](@ref)) where the catalog applies | the default for `Auto` |
 | `:compact` | that, then the row reducer ([`Compact`](@ref)) with `effort` | expensive tests |
 
-`:balanced` never returns more cases than `:fast`. Where the catalog's
-array has as many rows as the lower bound, no design has fewer, so IPOG
-isn't run. Otherwise, where the space is small (at most
+Where the catalog's array has as many rows as the lower bound, no design
+has fewer, so IPOG isn't run. Otherwise, where the space is small (at most
 $(replace(_AUTO_SMALL_TEXT, r"(?<=\d)(?=(\d{3})+$)" => ",")) combinations
 to cover, counted before the rules) and the catalog applies, it builds both
 and keeps the one with fewer rows, IPOG's on a tie, so that it gives the
 cases `IPOG()` gives unless the catalog's are fewer. Above that size it
-builds the catalog's array for a space whose parameters all have the same
-number of values and no rules, and IPOG's design otherwise. `:compact`
-reduces that winner once, so it never has more rows than `:balanced`. The
-negative rows of a space with [`Invalid`](@ref) values are chosen the same
-way, for each invalid value.
+builds one: the catalog's array for a shape the catalog builds exactly
+(parameters that all have the same number of values, or `strength + 1`
+parameters, with no rules, no must-include rows other than negative ones,
+and no `stronger` groups), and IPOG's design otherwise. So `:balanced`
+never returns more cases than `:fast`, except that above that size the
+catalog's array is not compared with IPOG's design: on the package's
+benchmarks it was never larger, which is measured, not guaranteed.
+`:compact` reduces the winner once, so it never has more rows than
+`:balanced`. The negative rows of a space with [`Invalid`](@ref) values are
+chosen the same way, for each invalid value.
 
 `:fast` and `:balanced` use no randomness, and `seed` is not recorded. With
 `:compact` the reducer draws from a fresh generator seeded with `seed` (an
 integer of at least 0) on every call, so the same seed gives the same
-cases, and the result records the seed (contract §9.5). `effort`, a
-positive integer, multiplies the reducer's budget, which counts steps,
-never seconds.
+cases, and the result records the seed (contract §9.11). `effort`, a
+positive integer, multiplies the reducer's two budgets, of steps and of
+combinations read, never seconds (see [`Compact`](@ref), which also says
+when a design is too large to reduce).
 
-What `Auto` chose is in the result's record, `cases.record.chose`, with the
-rows of each start it ran in `cases.record.candidates`; the summary line
-names it, as in "Auto: Construction()". The choice depends only on the
-request, never on the clock or a limit, but a later version may choose
-differently (contract §9.8). To keep a design, save it and pass it back as
-`must_include` (§9.10).
+What `Auto` chose for the ordinary cases is in the result's record,
+`cases.record.chose`, with the rows of each start it ran in
+`cases.record.candidates`; the summary line names it, as in "Auto:
+Construction()". The negative rows' choices are not recorded. The choice
+depends only on the request, never on the clock or a limit, but a later
+version may choose differently (contract §9.8). To keep a design, save it
+and pass it back as `must_include` (§9.10).
 """
 struct Auto <: CoveringEngine
     goal::Symbol
@@ -409,9 +415,13 @@ goals: :fast (IPOG alone) known only after running; :balanced at most 76 cases; 
 covering(…; engine = Auto()) would use the smaller of IPOG() and Construction().
 ```
 
-The goals lean toward `:balanced` (decision D8): it never returns more cases
-than `:fast`, which is IPOG alone, and on a space whose parameters share one
-number of values it is often a quarter smaller or more.
+The goals lean toward `:balanced` (decision D8): it returns no more cases
+than `:fast`, which is IPOG alone, wherever it builds IPOG's design too or
+the catalog's array meets the lower bound, and on a space whose parameters
+share one number of values it is often a quarter smaller or more. Above
+$(replace(_AUTO_SMALL_TEXT, r"(?<=\d)(?=(\d{3})+$)" => ",")) combinations
+it may build the catalog's array alone, which on the package's benchmarks
+was never larger than IPOG's design, though that is not guaranteed.
 """
 function recommend(input...; strength = 2, stronger = [], must_include = nothing, goal = :balanced,
                    constraints = nothing, feasibility_limit = 1_000_000, explanation_limit = 1_000_000)

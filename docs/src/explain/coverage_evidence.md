@@ -14,8 +14,9 @@ and ``t`` is the *strength*. The word also has a plain use: in a result's
 summary line, such as
 `5 cases (lower bound 4) · strength 2 · IPOG · 3 parameters · 12 combinations`,
 it counts the full product, every way to give each parameter a value. The
-lower bound beside the count is the fewest cases any design could have: the
-4 feasible pairs of `mode` and `solver` each need a case of their own.
+lower bound beside the count is a number of cases no design can have fewer
+of: the 4 feasible pairs of `mode` and `solver` each need a case of their
+own.
 
 A combination is *feasible* when some valid case contains it. Rules can make
 a combination impossible, and then no suite needs to cover it (see

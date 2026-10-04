@@ -485,13 +485,18 @@ _engine_registry(seed::Integer = 0) =
 
 The engine's fit for the whole request (plan §4.2), or an `ArgumentError`
 with its reason when it is `:unsupported`, which names the engine as it was
-called and suggests `IPOG()` or `Auto()`, which cover any request. A directly named engine covers
-the whole request or says why not; it never hands the request to another
-engine, so a result's `engine` is always the engine that made it (option
-(c) of p0-protocol's judgment call 1). The parts of a request that
-generation hands an engine, the negative sub-requests, still go to its
-fallback (`_engine_for`). IPOG and GND fit every request, so for them this
-never throws.
+called and suggests `IPOG()` or `Auto()`, which cover any request. The fit
+reads the request's `Profile`, which describes the ordinary design (its
+must-include rows are the ordinary ones). A directly named engine covers
+the ordinary design or says why not; it never hands it to another engine,
+so a result's ordinary rows are always the named engine's, the `engine` it
+records (option (c) of p0-protocol's judgment call 1). The parts of a
+request that generation hands an engine, the negative sub-requests of a
+space with `Invalid` values, still go to its fallback where it refuses them
+(`_engine_for`), so those negative rows may be the fallback's: IPOG's for
+`Construction()`, which has no array for a sub-request's strength 1, and
+`Compact(IPOG())`'s for `Compact(Construction())`. IPOG and GND fit every
+request, so for them this never throws.
 """
 function _check_fit(engine::CoveringEngine, request::Request)
     f = fit(engine, Profile(request))

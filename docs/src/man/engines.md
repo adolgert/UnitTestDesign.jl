@@ -25,13 +25,14 @@ run for your space and why.
 ## The size of a design, and its lower bound
 
 No engine promises a minimum number of cases (§8.1). Every covering result
-does state a lower bound beside its count: the fewest cases any design for
-the same request could have. Each case holds exactly one combination of any
-set of parameters, so the combinations of one set need a case each; a
-must-include row is a case of every design; and the negative rows of each
-[`Invalid`](@ref) value are bounded the same way and added. The summary line
-shows the bound, and says "minimal" when the count meets it, which proves
-that no design has fewer cases (§8.4, §8.7):
+does state a lower bound beside its count: no design for the same request
+can have fewer cases than this, though the fewest a design can have may be
+more. Each case holds exactly one combination of any set of parameters, so
+the combinations of one set need a case each; a must-include row is a case
+of every design; and the negative rows of each [`Invalid`](@ref) value are
+bounded the same way and added. The summary line shows the bound, and says
+"minimal" when the count meets it, which proves that no design has fewer
+cases (§8.4, §8.7):
 
 ```@example engines
 using UnitTestDesign
@@ -46,7 +47,9 @@ all_pairs(fill(1:3, 4)...; engine = Auto())
 meets it; [`report`](@ref) prints them on its "size:" line. Where rules
 exclude combinations, the bound counts only the feasible ones. A count above
 the bound is not necessarily above the minimum: for 8 binary flags the bound
-is 4, and the smallest design that exists has 6 cases, which `Auto()` builds.
+is 4, and the smallest design that exists has 6 cases, by Kleitman and
+Spencer's theorem on pairwise arrays of two values (Kleitman and Spencer
+1973; Colbourn 2004, p. 127), which `Auto()` builds.
 
 ## IPOG
 
@@ -72,12 +75,13 @@ cost, which the space can't tell:
 | `:balanced`, the default | the smaller of IPOG's design and the catalog's array, where the catalog applies | most uses |
 | `:compact` | that, then the row reducer with `effort` | expensive tests |
 
-`:balanced` is never larger than `:fast`, and costs little more: where the
-catalog applies, building its array takes milliseconds. Where every
-parameter has the same number of values it is often a quarter smaller or
-more. On spaces whose parameters have different numbers of values the
-catalog seldom applies, and `:balanced` gives IPOG's cases. So `:fast` is
-what `IPOG()` already does, and not a recommendation.
+`:balanced` is never larger than `:fast` wherever it builds IPOG's design
+too, and costs little more: where the catalog applies, building its array
+takes milliseconds. Where every parameter has the same number of values it
+is often a quarter smaller or more. On spaces whose parameters have
+different numbers of values the catalog seldom applies, and `:balanced`
+gives IPOG's cases. So `:fast` is what `IPOG()` already does, and not a
+recommendation.
 
 How `:balanced` chooses, from the request alone:
 
@@ -88,13 +92,19 @@ How `:balanced` chooses, from the request alone:
 - where the space has at most 100,000 combinations to cover, counted before
   the rules, it builds both and keeps the one with fewer cases, IPOG's on a
   tie, so that it gives IPOG's cases unless the catalog's are fewer;
-- above that, it builds the catalog's array for a space with no rules, and
-  runs IPOG otherwise. In the package's benchmarks no such space had a
-  catalog array larger than IPOG's design.
+- above that, it builds the catalog's array for a shape the catalog builds
+  exactly (every parameter with the same number of values, or `strength + 1`
+  parameters, with no rules, no must-include rows other than negative ones,
+  and no `stronger` groups), and runs IPOG otherwise. In the package's
+  benchmarks no such space had a catalog array larger than IPOG's design,
+  but there the two are not compared, so that is measured, not guaranteed.
 
 `:compact` reduces that winner once, with the row reducer of
-[`Compact`](@ref). The negative rows of a space with `Invalid` values are
-chosen the same way, for each invalid value.
+[`Compact`](@ref), unless the space is past the reducer's limits (below),
+when it returns the winner as it is and the record's `chose` names the
+winner alone. The negative rows of a space with `Invalid` values are chosen
+the same way, for each invalid value; the record keeps only the ordinary
+cases' choice.
 
 ```@example engines
 eight = fill(1:7, 8)          # eight parameters with seven values each
@@ -142,7 +152,13 @@ they leave uncovered. With a few rules this is much smaller than IPOG alone;
 as rules forbid more of the array it helps less, which is why `Auto` builds
 both. A space it has no array for, such as parameters with different numbers
 of values, is refused with the reason, in an `ArgumentError` that suggests
-`IPOG()` or `Auto()`. The result's record names the array:
+`IPOG()` or `Auto()`. With `Invalid` values the ordinary cases are the
+catalog's, and the negative rows of each invalid value cover a request one
+strength lower on the other parameters; where the catalog has no array for
+that request, as at strength 1, those rows are IPOG's, though the result
+names `Construction`. The negative rows repeat some of the array's
+combinations, so the record of such a design never calls it an orthogonal
+array. The result's record names the array:
 
 ```@example engines
 cases = all_pairs(eight...; engine = Construction())
@@ -157,19 +173,22 @@ cases.record.catalog
 its design, after the tabu searches TCA and FastCA: it deletes the row whose
 removal uncovers the fewest combinations, repairs the design at that size by
 changing one value of a case or copying in a case from the start, and
-repeats while each repair succeeds, stopping at the lower bound. Every case
-it writes is checked against the rules on its own, so it never searches,
-can't stop at `feasibility_limit`, and its cases don't depend on it (§3.8).
-Must-include rows stay first and unchanged.
+repeats while each repair succeeds, stopping at the lower bound the result
+records. Every case it writes is checked against the rules on its own, so it
+never searches, can't stop at `feasibility_limit`, and its cases don't
+depend on it (§3.8). Must-include rows stay first and unchanged. The
+negative rows of a space with `Invalid` values are reduced too, for each
+invalid value; where `inner` refuses that request, as `Construction()` does
+at strength 1, IPOG's rows for it are reduced, as `Compact(IPOG())` would.
 
 On 100 random spaces of 4 to 12 parameters with 2 to 7 values, at strength
 2, it reached the lower bound, and so proved its design minimal, on 92, in
 under 50 ms each. From the catalog's array it ends lower than from IPOG's
 design. `seed` seeds a fresh generator for every call, so the same seed
-gives the same cases; `effort` multiplies its budgets, which count steps,
-never seconds (§9.11). Beyond 2²⁵ combinations to cover, or 65,535 cases,
-it returns `inner`'s design unreduced. The result's record says what it
-did, `cases.record.reducer`.
+gives the same cases; `effort` multiplies its two budgets, of steps and of
+combinations read, never seconds (§9.11). Beyond 2²⁵ combinations to cover,
+or 65,535 cases, it returns `inner`'s design unreduced. The result's record
+says what it did, `cases.record.reducer`.
 
 ## GND
 
@@ -262,9 +281,12 @@ below IPOG: over a sample of 132 such shapes at strength 2, IPOG returns a
 median of 30% more cases, and over 70 at strength 3, 38% more. On spaces of
 parameters with different numbers of values, `Auto()` is IPOG, and the
 reducer is what removes cases: on 100 random such spaces at strength 2 it
-saved 9% of IPOG's cases on average. The smallest design for `smooth` has
-11 cases, and for 8 binary flags 6, so those results are minimal although
-their bounds are lower.
+saved 9% of IPOG's cases on average. No design for `smooth` has fewer
+than 11 cases, which an exhaustive search over its 57 valid cases shows (the
+package's tests repeat it), and none for 8 binary flags has fewer than 6, by
+Kleitman and Spencer's theorem. Those results have the fewest cases
+possible, though their bounds are lower, and the package, which calls a
+count minimal only when it meets its bound, doesn't say so (§8.4).
 
 ## What a smaller design gives up
 
@@ -324,7 +346,8 @@ call that is too large; a design that can't be certified is not returned:
   machine fails as the operating system fails it.
 - **The reducer** returns its start unreduced beyond 2²⁵ combinations to
   cover or 65,535 cases, and its budgets count work: at the default effort
-  it takes up to about 20 seconds at strengths 4 to 6.
+  it takes up to about 20 seconds at strength 3 on larger spaces, such as
+  30 parameters of 4 values, and at strengths 4 to 6.
 - **Certification** reads every case for every set of `strength`
   parameters, whichever engine made the design.
 
@@ -333,8 +356,10 @@ call that is too large; a design that can't be certified is not returned:
 - **Use IPOG** when tests are cheap. It is the default, it is deterministic,
   it is fast, and it covers any request.
 - **Use `Auto()`** when cases cost something to run: it is never larger
-  than IPOG, and much smaller when every parameter has the same number of
-  values. [`recommend`](@ref) shows what it would do.
+  than IPOG where it builds both (and above 100,000 combinations, on the
+  package's benchmarks, it never was), and much smaller when every
+  parameter has the same number of values. [`recommend`](@ref) shows what
+  it would do.
 - **Use `Auto(goal = :compact)`**, or `Compact` around an engine you choose,
   when each case is expensive, such as a simulation or a hardware run. Its
   lower bound tells you how far from the minimum the design can be.
