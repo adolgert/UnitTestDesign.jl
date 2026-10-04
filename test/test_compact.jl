@@ -259,8 +259,9 @@ end
 
 
 @testitem "compact: it stops at the bound, at the must-include rows, at a budget, and past its caps (§5.3)" setup=[CompactSetup] begin
-    # At the bound: the most required combinations on one support. 3 × 3 at
-    # strength 2 has a bound of 9, which the reducer reaches from IPOG's 9 + k rows.
+    # At the bound: the result's lower bound (`_ordinary_bound`), here the most
+    # required combinations on one support. 3 × 3 at strength 2 has a bound of
+    # 9, which the reducer reaches from IPOG's 9 + k rows.
     space = TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:2, e = 1:2))
     request = Request(space)
     required, targets, start = start_of(request)
@@ -275,6 +276,22 @@ end
     @test same == start && notes.reducer_stop === :budget
     same, notes = _compact(request, targets, start; work_budget = 0)
     @test same == start && notes.reducer_stop === :work
+    # Must-include rows count in the bound the reducer stops at, which is the
+    # one the result records: four copies of one row hold one pair of a and b,
+    # so 4 + 8 = 12 rows, and IPOG's 12 are already there, with no step taken.
+    # (With the most required combinations on one support, 9, as its bound, the
+    # reducer spent its whole budget of 30,000 steps on a minimal design.)
+    four = [(a = 1, b = 1, c = 1, d = 1, e = 1) for _ in 1:4]
+    for engine in (Compact(IPOG()), Auto(goal = :compact))
+        cases = all_pairs(space; must_include = four, engine)
+        @test length(cases) == cases.record.lower_bound == cases.record.reducer.bound == 12
+        @test cases.record.minimal && cases.record.reducer.stop === :bound && cases.record.reducer.steps == 0
+    end
+    # Above the bound it searches, and its bound is still the record's: 17 for
+    # six parameters of 4 values with three must-include rows, two of them equal.
+    six = all_pairs(fill(1:4, 6)...; must_include = [Tuple(fill(1, 6)), Tuple(fill(1, 6)), Tuple(fill(2, 6))],
+                    engine = Auto(goal = :compact))
+    @test six.record.reducer.bound == six.record.lower_bound == 17 && length(six) >= 17
     # Every row a must-include row: nothing can go.
     named(j) = NamedTuple{Tuple(space.names)}(Tuple(start[:, j]))
     frozen = Request(space; must_include = [named(j) for j in axes(start, 2)])

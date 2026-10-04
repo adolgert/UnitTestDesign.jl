@@ -131,12 +131,13 @@ has more than `typemax(UInt16)` rows, or when no row can go: every row is a
 must-include row, or the design is at the bound.
 
 `notes` records the run: `reducer_start` and `reducer_rows`, the rows before
-and after; `reducer_bound`, the most required combinations on one support,
-below which no design goes (`_index_size`); `reducer_steps` and
+and after; `reducer_bound`, the lower bound below which no design for the
+request goes (`_ordinary_bound`, which counts the must-include rows, so the
+same bound the result records for its ordinary rows); `reducer_steps` and
 `reducer_budget`; `reducer_work` and `reducer_work_budget`, the combinations
-read; and `reducer_stop`, why it stopped: `:bound` (at the bound),
-`:budget` (the steps), `:work`, `:frozen` (only must-include rows could be
-left), or `:index_cap` or `:rows_cap` (not reduced).
+read; and `reducer_stop`, why it stopped: `:frozen` (only must-include rows
+are left), `:bound` (at the bound), `:budget` (the steps), `:work`, or
+`:index_cap` or `:rows_cap` (not reduced).
 
 `check = true` is a test mode: every changed row is checked against every
 rule, and every complete design is recounted from its rows. `tenure` and
@@ -148,7 +149,10 @@ function _compact(request::Request, targets::RequiredTargets, start::Matrix{Int}
                   tenure::Int = _TABU_TENURE, random_mode::Float64 = _RANDOM_MODE)
     m = n_must_include(request)
     rows = size(start, 2)
-    combinations, bound = _index_size(targets)
+    combinations = _index_size(targets)
+    # The result's own lower bound, which counts the must-include rows, so that
+    # the reducer stops where the result can be called minimal (plan §4.1).
+    bound = _ordinary_bound(request, targets).rows
     steps_budget = something(budget, _compact_budget(combinations, effort))
     reads_budget = something(work_budget, _saturating_mul(effort, _COMPACT_WORK))
     notes(stop, steps, work, kept) = (reducer_start = rows, reducer_rows = kept, reducer_bound = bound,
@@ -156,8 +160,8 @@ function _compact(request::Request, targets::RequiredTargets, start::Matrix{Int}
                                       reducer_work_budget = reads_budget, reducer_stop = stop)
     combinations > _COMPACT_MAX_COMBINATIONS && return start, notes(:index_cap, 0, 0, rows)
     rows > typemax(UInt16) && return start, notes(:rows_cap, 0, 0, rows)
-    rows <= bound && return start, notes(:bound, 0, 0, rows)
     rows <= m && return start, notes(:frozen, 0, 0, rows)
+    rows <= bound && return start, notes(:bound, 0, 0, rows)
     index = CoverageIndex(request, targets)
     design = [start[:, j] for j in axes(start, 2)]
     for row in design
@@ -176,21 +180,17 @@ function _compact(request::Request, targets::RequiredTargets, start::Matrix{Int}
 end
 
 """
-    _index_size(targets) -> (combinations, bound)
+    _index_size(targets) -> Int
 
 The combinations a coverage index for `targets` would count, over every
-support, saturating at `typemax(Int)`; and the most required combinations on
-one support, a lower bound on the rows of any design that covers them (plan
-§4.1, "State the bound").
+support, saturating at `typemax(Int)`.
 """
 function _index_size(targets::RequiredTargets)
     combinations = 0
-    bound = 0
     for s in eachindex(supports(targets))
         combinations = _saturating_add(combinations, ncombinations(targets, s))
-        bound = max(bound, nrequired(targets, s))
     end
-    return combinations, bound
+    return combinations
 end
 
 # TCA's tabu tenure (Lin et al. 2015, p.5) and the probability of its random
@@ -257,8 +257,8 @@ function _reduce!(index::CoverageIndex, rows::Vector{Vector{Int}}, values::Vecto
             kept = N
             check && _check_counts(index, rows, N)
             _forget_covered!(index)
-            N <= bound && return kept, steps, work, :bound
             N <= m && return kept, steps, work, :frozen
+            N <= bound && return kept, steps, work, :bound
             steps >= budget && return kept, steps, work, :budget
             work >= work_budget && return kept, steps, work, :work
             # Delete the row whose removal uncovers the fewest required
