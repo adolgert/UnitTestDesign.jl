@@ -48,5 +48,6 @@ include("partition.jl")
 include("interface.jl")
 include("diagnose.jl")
 include("export.jl")
+include("precompile.jl")  # last: it calls the rest (plan §5.1)
 
 end
