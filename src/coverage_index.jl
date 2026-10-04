@@ -105,15 +105,16 @@ function CoverageIndex(request::Request, targets::RequiredTargets)
                          falses(total), uncovered == 0, uncovered, 0)
 end
 
-# Every combination of an unconstrained request's TargetList is required.
+# Every combination of an unconstrained request's TargetList is required, and
+# such targets keep no bits.
 _required_bits(::RequiredTargets{TargetList}, offsets::Vector{Int}) = trues(last(offsets))
 
+# A list's bits are laid out as the index's ids are, combination `code` on
+# support `s` at `offsets[s] + code + 1` (`RequiredTargets`), so they are copied.
 function _required_bits(targets::RequiredTargets, offsets::Vector{Int})
-    required = falses(last(offsets))
-    for s in eachindex(supports(targets)), code in 0:(ncombinations(targets, s) - 1)
-        isrequired(targets, s, code) && (required[offsets[s] + code + 1] = true)
-    end
-    return required
+    offsets == targets.offsets && length(targets.bits) == last(offsets) ||
+        error("internal error: the coverage index's combinations are not laid out as its targets' bits")
+    return copy(targets.bits)
 end
 
 "The number of combinations the index counts, over every support: its length in counts."
@@ -145,11 +146,12 @@ function combination(index::CoverageIndex, s::Int, row::AbstractVector{<:Integer
 end
 
 # The hot loops read rows the index holds, whose positions were checked when
-# they were added (`add_row!`) or moved (`move_entry!`), on supports `s` of
-# the index, so every id they compute is in bounds and they skip the checks.
-# `_combination`, `_entry_score` and `_singly_covered` are those loops'
-# unchecked forms; `combination`, `entry_score` and `singly_covered` check
-# their arguments first.
+# they were added (`add_row!`) or moved (`move_entry!`, which checks the new
+# position only), on supports `s` of the index, so every id they compute is in
+# bounds and they skip the checks. `_combination`, `_entry_score` and
+# `_singly_covered` are those loops' unchecked forms; `combination`,
+# `entry_score` and `singly_covered` check their arguments first, and
+# `move_entry!` is unchecked but for the new position.
 @inline function _combination(index::CoverageIndex, s::Int, row::AbstractVector{<:Integer})
     @inbounds begin
         id = index.offsets[s] + 1
@@ -236,6 +238,12 @@ end
 Change entry `p` of `row`, a row the index holds, to position `w`, and move
 the row's count on every support that holds `p` from its old combination to
 its new one. Supports without `p` don't change.
+
+Unchecked but for `w`: the reducer's inner loop calls it on every move, and
+checking the whole row (`_check_row`) would read every entry for a move that
+reads only the supports holding `p`. So `row` must be a row the index holds,
+whose positions `add_row!` checked; a row of another length, or not held,
+reads or counts out of bounds without an error.
 """
 function move_entry!(index::CoverageIndex, row::AbstractVector{<:Integer}, p::Int, w::Int)
     1 <= w <= index.arity[p] || error("internal error: position $w for parameter $p, outside 1:$(index.arity[p])")
