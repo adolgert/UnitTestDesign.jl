@@ -72,12 +72,14 @@ function _ordinary_bound(request::Request, targets::RequiredTargets)
     must = request.must_include
     m = size(must, 2)
     best = _SupportBound(m, 0, 0, 0, 0, 0, m)
-    codes = Int[]
+    # Buffers for every support: the distinct codes held, at most one per
+    # must-include row, and a bit per combination of the largest support read.
+    codes, seen = sizehint!(Int[], m), falses(0)
     for s in eachindex(supports(targets))
         need = nrequired(targets, s)
         need > 0 || continue
         members = supports(targets)[s]
-        held, unset = _held_by(codes, must, targets, s, members)
+        held, unset = _held_by(codes, seen, must, targets, s, members)
         rows = m + max(0, need - held - unset)
         rows > best.rows || continue
         best = _SupportBound(rows, s, need, ncombinations(targets, s), held, unset, m)
@@ -86,15 +88,23 @@ function _ordinary_bound(request::Request, targets::RequiredTargets)
 end
 
 """
-    _held_by(codes, must, targets, s, members) -> (held, unset)
+    _held_by(codes, seen, must, targets, s, members) -> (held, unset)
 
 For the must-include rows `must` (parameters × rows, engine positions, 0 for
 unset): the distinct required combinations on support `s` that the rows set
 on all of `members` hold, and the rows that leave a member unset
-(`_ordinary_bound`). `codes` is a buffer, reused.
+(`_ordinary_bound`). `codes` and `seen` are buffers, reused: `seen` marks a
+code once it is counted, so each row costs a constant and nothing is sorted,
+which would allocate a sort's scratch space on every support with more than
+about 40 codes (Julia 1.10 and 1.13). It grows to the largest support's
+combinations, and is clear again on return.
 """
-function _held_by(codes::Vector{Int}, must::Matrix{Int}, targets::RequiredTargets, s::Int, members::Vector{Int})
+function _held_by(codes::Vector{Int}, seen::BitVector, must::Matrix{Int}, targets::RequiredTargets, s::Int,
+                  members::Vector{Int})
+    size(must, 2) == 0 && return 0, 0
     empty!(codes)
+    n = ncombinations(targets, s)
+    length(seen) < n && fill!(resize!(seen, n), false)
     unset = 0
     for j in axes(must, 2)
         row = view(must, :, j)
@@ -103,15 +113,15 @@ function _held_by(codes::Vector{Int}, must::Matrix{Int}, targets::RequiredTarget
             continue
         end
         code = _code(row, members, targets.arity)
-        isrequired(targets, s, code) && push!(codes, code)
+        if isrequired(targets, s, code) && !seen[code + 1]
+            seen[code + 1] = true
+            push!(codes, code)
+        end
     end
-    isempty(codes) && return 0, unset
-    sort!(codes)
-    held = 1
-    for k in 2:length(codes)
-        held += codes[k] != codes[k - 1]
+    for code in codes
+        seen[code + 1] = false
     end
-    return held, unset
+    return length(codes), unset
 end
 
 """

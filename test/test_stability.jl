@@ -434,4 +434,14 @@ end
     @test small == large && large <= 128
     with_rows(k) = Request(uniform(k, 3); must_include = [(p1 = 1, p2 = 2), (p3 = 3,), Tuple(fill(1, k))])
     @test bound_bytes(with_rows(10)) == bound_bytes(with_rows(40)) <= 256
+    # Many must-include rows, as when topping up a previous design: each
+    # support's held codes are marked in a reused bit buffer, not sorted, so
+    # the bound allocates its two buffers whether it reads 435 supports
+    # (strength 2) or 4,060 (strength 3). A sort per support took scratch
+    # space past about 40 codes, 980 KB for 200 rows at strength 3.
+    previous = collect(all_pairs(uniform(30, 3)))
+    topping(t, m) = Request(uniform(30, 3); strength = t, must_include = [previous[mod1(i, length(previous))] for i in 1:m])
+    for m in (60, 200)
+        @test bound_bytes(topping(2, m)) == bound_bytes(topping(3, m)) <= 8 * m + 512
+    end
 end
