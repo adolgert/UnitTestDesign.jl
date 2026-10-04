@@ -140,7 +140,10 @@ rows.
 `:full_factorial`), strength (0 for a strategy that has none), `stronger`
 groups, engine name and seed, the number of must-include rows, the excluded
 targets with attribution and explanation status, and covered-target counts,
-with ordinary and negative bookkeeping kept separate.
+with ordinary and negative bookkeeping kept separate. Its `record` says
+whether the engine is randomized, gives a covering design's lower bound with
+its proof (§8.7), and what the engine chose or built (`Auto`'s choice, a
+catalog array, the row reducer's run).
 
 **1.20** A generated `TestCases` contains no target whose status is unknown
 (§3.6).
@@ -570,8 +573,12 @@ fewest possible.
 **8.3** `design_sizes` reports the rows each engine produced. They are not
 lower bounds.
 
-**8.4** Documentation, docstrings, and printed output must not describe a case
-count as minimal, optimal, or fewest.
+**8.4** A case count may be called minimal in two cases, and each names its
+proof: it equals a proven lower bound on the rows of every valid design for
+the request (§8.7); or a search has shown that no smaller valid design
+exists. This release implements only the first. Otherwise documentation,
+docstrings, and printed output must not describe a case count as minimal,
+optimal, or fewest.
 
 **8.5** An implied-exclusion explanation is a sufficient rule set. It is
 labeled inclusion-minimal only under §3.16. No clause promises a
@@ -583,6 +590,17 @@ takes the cases and outcomes as observed. A case that breaks a rule, or
 holds more than one `Invalid` value, is ranked like any other. A failing
 case that broke the rules can leave a suspect that no valid case holds,
 which `followups` reports as `inseparable` with no other suspects.
+
+**8.7** Every covering result records a lower bound on the rows of any valid
+design for its request, and the proof of it in words; `show` prints it
+beside the count, and says "minimal" instead when the count equals it. The
+bound is the largest, over the parameter sets that carry targets, of the
+must-include rows plus the required combinations of that set they cannot
+hold, each of which needs a row of its own; and, for each `Invalid` value,
+the same bound on its negative rows, added. A row holds one combination of
+each set, a must-include row is a row of every such design (§10.5), and
+ordinary and negative rows cover only their own targets (§5.9), so no valid
+design has fewer rows. A design below its bound is an internal error.
 
 ## 9. Determinism
 
@@ -597,7 +615,8 @@ same request.
 **9.3** No result may depend on hash iteration order, object addresses, thread
 scheduling, the global random number generator, or the clock.
 
-**9.4** IPOG uses no randomness.
+**9.4** IPOG uses no randomness. Neither do `Construction` and `Auto` with
+`goal = :fast` or `:balanced`, which record no seed.
 
 **9.5** `GND(; seed = 0, candidates = 50, rng = nothing)` seeds a fresh
 generator from `seed` at the start of every call, so repeated calls with the
@@ -615,6 +634,8 @@ hashing.
 
 **9.8** Determinism across package versions is not promised. Any release may
 change rows, their order, or their count while keeping every guarantee.
+`Auto`'s choice of engine, and the catalog's choice of array, may change
+between versions too; the result records what was chosen.
 
 **9.9** Stability under edits is not promised. Changing a name, a value, value
 order, a rule, or rule order may change every generated row.
@@ -623,6 +644,18 @@ order, a rule, or rule order may change every generated row.
 result as `must_include` keeps every one of its rows, in order, and adds rows
 only for targets those rows leave uncovered. Rows the edited space no longer
 allows are errors under §10.
+
+**9.11** `Compact(inner; seed = 0, effort = 1)` and `Auto(goal = :compact,
+seed = 0, effort = 1)` are randomized: each seeds a fresh generator from
+`seed` at the start of every call, records the seed, and `report` prints it,
+as GND does (§9.5). Their budgets count steps and combinations read, never
+seconds, so the same inputs and seed give the same rows on any machine.
+`seed` is an integer of at least 0 and `effort` a positive integer; another
+value is an `ArgumentError` naming the keyword.
+
+**9.12** `Auto` decides from the request alone: never from a search's
+result, a limit, the clock, or which other packages are loaded. When one of
+the engines it runs throws `ResourceLimitError`, the call throws (§3.6).
 
 ## 10. Must-include rows
 

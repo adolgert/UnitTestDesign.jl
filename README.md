@@ -48,7 +48,7 @@ julia> space = TestSpace(
            ]);
 
 julia> cases = all_pairs(space)
-5 cases · strength 2 · IPOG · 3 parameters · 12 combinations
+5 cases (lower bound 4) · strength 2 · IPOG · 3 parameters · 12 combinations
 excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
  1  :exact  :qr     1.0e-6

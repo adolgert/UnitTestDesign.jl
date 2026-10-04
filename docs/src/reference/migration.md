@@ -8,6 +8,12 @@ This page lists every removed and deprecated spelling, with its replacement
 and a before-and-after example. The "after" code runs when the manual is
 built.
 
+Nothing changes for code that names no engine: the default is still
+[`IPOG`](@ref). 0.5 adds engines a call can name, [`Auto`](@ref),
+[`Construction`](@ref) and [`Compact`](@ref), which give fewer cases on
+many spaces, and every result now shows a lower bound beside its count; see
+[Engines](../man/engines.md).
+
 ## Compat bounds
 
 Under Julia's semantic versioning a minor release before 1.0 is breaking. A

@@ -157,6 +157,41 @@ them.
   `Partition`/`realize`, `diagnose`, `github_matrix`. Final list and
   one-line descriptions come from the Phase 8 docs.
 
+### New engines, and the lower bound (solver plan, Phase 3)
+
+Added 2026-10-04 by the solver plan's Phase 3
+(`design/20261003_solver_plan.md`, §6). The default engine is still `IPOG()`.
+
+- `Auto(; goal = :balanced, seed = 0, effort = 1)`, an engine that chooses.
+  `goal = :fast` is IPOG; `:balanced` keeps the smaller of IPOG's design and
+  the catalog's array, and is never larger than IPOG; `:compact` then
+  removes rows with the reducer. The result's `record.chose` says what it
+  ran. Its choice may change between releases (contract §9.8).
+- `Construction()`, algebraic covering arrays from a catalog (orthogonal
+  arrays, cover starters, products, the LFSR array and recursions), for
+  spaces whose parameters all have the same number of values or that have
+  `strength + 1` parameters; it seeds IPOG under rules. It refuses other
+  spaces with the reason.
+- `Compact(inner; seed = 0, effort = 1)`, a row reducer around any engine:
+  fewer cases for expensive tests, seeded, budgets in steps.
+- `recommend(space; …)` says what `Auto` would run, why, and how many cases
+  each goal can give where that is known without running; it returns a
+  `Recommendation`.
+- `design_sizes(space; engine = [IPOG(), Auto(goal = :compact)])` compares
+  engines, one row per engine per strength, and shows an engine that
+  doesn't cover a request as that row's status.
+- Every covering result states a proven lower bound beside its count, and
+  says "minimal" when the count meets it: the summary line reads
+  `5 cases (lower bound 4) · …` or `9 cases (minimal) · …`, and `report`
+  prints a `size:` line with the proof. `TestCases` and `Report` gain a
+  `record` field holding the bound, its proof, whether the engine is
+  randomized, and what the engine chose or built. Contract §8.4 now allows
+  "minimal" when a count equals a proven bound, and §8.7 defines the bound.
+- The error for an `engine` that isn't one names covering engines generally
+  ("a covering engine such as IPOG(), Construction(), Compact(IPOG()) or
+  Auto()"), and an engine that refuses a request suggests `IPOG()` or
+  `Auto()`.
+
 ### Fixed
 
 - Constraint handling: implicit constraints crashed IPOG and hung GND.

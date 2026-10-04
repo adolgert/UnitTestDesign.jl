@@ -303,12 +303,15 @@ excursions(space; from = (mode = :exact, solver = :lu, tol = 1e-6), distance = 1
 
 !!! note "Choosing an engine"
     [`IPOG`](@ref), the default, builds cases one parameter at a time and uses
-    no randomness. [`GND`](@ref) builds each case from random candidates
-    drawn from a fixed seed, so it too gives the same cases on every run, and
-    `GND(seed = 7)` gives a different design with the same guarantee. GND is
-    slower, and in the package's benchmarks it gave a shorter design only at
-    high strength. Both cover every feasible combination; neither promises a
-    minimum number of cases. See [Engines](engines.md).
+    no randomness. [`Auto`](@ref)`()` also builds the catalog's algebraic
+    array where every parameter has the same number of values, and keeps
+    whichever design is smaller; `Auto(goal = :compact)` then removes rows
+    with a reducer, for tests that are expensive to run. [`GND`](@ref) builds
+    each case from random candidates drawn from a fixed seed, so it too gives
+    the same cases on every run, and `GND(seed = 7)` gives a different design
+    with the same guarantee. Every engine covers every feasible combination;
+    none promises a minimum number of cases, but each result states a lower
+    bound beside its count. See [Engines](engines.md).
 
 ```@example tutorial
 all_pairs(space; engine = GND(seed = 7))
