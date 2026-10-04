@@ -204,6 +204,13 @@ end
 "The rows of `cover_ordinary(::Construction, …)` for the plan `_construction_plan` made."
 function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, entry::CatalogEntry,
                        members::Union{Nothing, Vector{Int}})
+    must = request.must_include
+    # At full strength every target is a whole row, so the design is the
+    # must-include rows, completed, and every valid row they don't hold,
+    # whatever the engine (contract §7.8, §11.2): IPOG's rows, where the
+    # catalog's would repeat a completed partial row.
+    size(must, 2) > 0 && request.strength == length(request.arity) &&
+        return full_strength_rows(request, _target_list(targets))
     if members === nothing
         rows = _engine_rows(entry, request.arity)
         f.kind === :exact && return rows
@@ -211,16 +218,8 @@ function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, 
         rows = zeros(Int, length(request.arity), entry.rows)   # the group's array, the others unset
         rows[members, :] .= _engine_rows(entry, request.arity[members])
     end
-    must = request.must_include
     kept = isconstrained(request) ? _allowed_rows(request, rows) : rows
-    if size(must, 2) > 0
-        # At full strength every target is a whole row, so the design is the
-        # must-include rows, completed, and every valid row they don't hold,
-        # whatever the engine (contract §7.8, §11.2): IPOG's rows, where the
-        # catalog's would repeat a completed partial row.
-        request.strength == length(request.arity) && return full_strength_rows(request, _target_list(targets))
-        kept = _new_coverage_rows(must, kept, targets)
-    end
+    size(must, 2) > 0 && (kept = _new_coverage_rows(must, kept, targets))
     seeds = hcat(must, kept)
     isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
     return ipog_multi_way(request.arity, _target_list(targets), isdead, seeds;
