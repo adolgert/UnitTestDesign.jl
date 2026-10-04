@@ -73,24 +73,9 @@ is_builtin(adapter) = adapter isa Union{IPOG,GND}
 
 # Certification of trial adapters is part of the timed operation. Ordinary
 # and negative target classification uses the same request as the validator.
-function negative_required(r)
-    required=Vector{Int}[]
-    n=length(r.arity)
-    for p in 1:n, position in (r.arity[p]+1):length(r.candidates[p])
-        if r.strength == 1
-            t=zeros(Int,n); t[p]=position
-            U._classify_negative(r,t) === nothing && push!(required,t)
-        end
-        if r.strength > 1 || any(g->p in g.first,r.groups[2:end])
-            sub=U._negative_request(r,p,zeros(Int,n-1,0))
-            for target in U.TargetList(sub)
-                t=U._with_invalid(target,p,position)
-                U._classify_negative(r,t) === nothing && push!(required,t)
-            end
-        end
-    end
-    return required
-end
+# The 0.5 merge replaced the per-target helpers this called (_classify_negative,
+# _with_invalid, _negative_request by parameter) with classify_negative_targets.
+negative_required(r) = first(U.classify_negative_targets(r))
 
 function certify(adapter_result,r)
     matrix = if adapter_result isa U.Design
