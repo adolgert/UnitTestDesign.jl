@@ -35,7 +35,10 @@ Use when every parameter has the same number of values, or there are only
 `strength + 1` parameters, and you want the design built from a catalog of
 algebraic constructions: often far fewer cases than [`IPOG`](@ref), built in
 milliseconds, and an orthogonal array, which shows every combination exactly
-once, where one exists.
+once, where the catalog has one: for a prime-power number q of values, at
+least the strength, on at most q + 1 parameters, and for `strength + 1`
+parameters. Other orthogonal arrays exist that it doesn't build, such as 100
+cases for 4 parameters of 10 values.
 
     Construction()
 
@@ -51,8 +54,10 @@ no `stronger` groups. Otherwise the catalog's rows that no rule forbids seed
 IPOG, which adds what they leave uncovered, after the must-include rows; a
 catalog row that holds nothing the must-include rows and the rows before it
 don't is left out, so a result passed back as `must_include` for the same
-space gains no cases. Above strength 3 the catalog offers only the arrays
-that meet the lower bound, the zero-sum and orthogonal arrays.
+space gains no cases. With `stronger` groups the seed is often the strongest
+group's own array, on that group's parameters. Above strength 3 the catalog
+offers only the arrays that meet the lower bound, the zero-sum and
+orthogonal arrays.
 
 It refuses, with its reason, a space it has no array for, such as
 parameters with different numbers of values (more than `strength + 1` of

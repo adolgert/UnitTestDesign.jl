@@ -136,11 +136,15 @@ zero-sum and orthogonal arrays, and refuses the rest. For 2 to 12 values and
 3 to 20 parameters at strength 2, the catalog's array equals the smallest
 known at 104 of 198 shapes and is within 10% of it at 166.
 
-With rules, must-include rows or `stronger` groups, the catalog's rows that
-no rule forbids are kept, after the must-include rows, and IPOG adds what
-they leave uncovered. With a few rules this is much smaller than IPOG alone;
-as rules forbid more of the array it helps less, which is why `Auto` builds
-both. A space it has no array for, such as parameters with different numbers
+With rules, must-include rows or `stronger` groups, the catalog's rows seed
+IPOG: those that no rule forbids are kept, after the must-include rows,
+except a row that holds nothing the must-include rows and the rows before it
+don't, so a result passed back as `must_include` for the same space gains no
+cases; then IPOG adds what they leave uncovered. With `stronger` groups the
+seed is often the strongest group's own array, on that group's parameters,
+which IPOG extends to the others. With a few rules this is much smaller than
+IPOG alone; as rules forbid more of the array it helps less, which is why
+`Auto` builds both. A space it has no array for, such as parameters with different numbers
 of values, is refused with the reason, in an `ArgumentError` that suggests
 `IPOG()` or `Auto()`. The result's record names the array:
 
