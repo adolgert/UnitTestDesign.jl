@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Serial, isolated Julia benchmarks with external wall/RSS watchdogs. Stdlib only."""
-import argparse, datetime, hashlib, json, math, os, pathlib, platform, re, signal, statistics, subprocess, time
+import argparse, datetime, hashlib, json, math, os, pathlib, platform, re, signal, statistics, subprocess, sys, time
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import families  # the generated families of plan §7.2 (--family)
 
 def specs(runs=3):
     jobs=[]
@@ -54,7 +56,7 @@ def stop_group(process, sig):
 
 def source_fingerprint(args):
     paths=sorted((ROOT/'src').glob('*.jl'))+[ROOT/'Project.toml', ROOT/'Manifest.toml',
-        HERE/'worker.jl', HERE/'run.py']+[ROOT/f for f in ('benchmark/fixtures.jl',
+        HERE/'worker.jl', HERE/'run.py']+[HERE/f for f in ('spaces.jl','model_specs.jl','metrics.jl')]+[ROOT/f for f in ('benchmark/fixtures.jl',
         'test/checker.jl','test/random_problems.jl','test/fixtures.jl','test/fixture_model.jl')]+[
         pathlib.Path(f).resolve() for f in args.adapter]
     return {str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p):
@@ -73,8 +75,10 @@ def payload_floor(s):
     if s['family'] not in ('none','noop_scoped','noop_whole','mixed'): return 0
     if s['usage'] in ('coverage','report','audit_half','audit_empty','feasibility','factorial','excursion'): return 0
     if s['solver']=='ipog' and s['family'] in ('none','mixed') and s['usage'] not in ('seed','stronger','upgrade','topup'): return 0
+    if any(f in s for f in ('space','model','adapt','forbid')): return 0
     n,v,t=s['n'],s['v'],s['strength']
     if s['family']=='mixed': targets=math.comb(n-1,t)*2**t+math.comb(n-1,t-1)*v*2**(t-1)
+    elif 'arity' in s: targets=families.targets(s['arity'],t)
     else: targets=math.comb(n,t)*v**t
     if s['usage']=='upgrade': targets=math.comb(n,3)*v**3
     if s['usage']=='stronger' and t<3: targets+=math.comb(min(6,n),3)*v**3
@@ -127,6 +131,7 @@ def run_job(s,out,args):
     errors=[e for e in events if e['event']=='error']
     done=[e for e in events if e['event']=='done']
     environments=[e for e in events if e['event']=='environment']
+    bounds=[e['bounds'] for e in events if e['event']=='bounds']
     phases=[];active_stage=None
     for e in events:
         if e['event']=='stage': active_stage=e['name']
@@ -137,7 +142,8 @@ def run_job(s,out,args):
         sampled_peak_rss_bytes=sampled_peak,measurements=measurements,errors=errors,
         validation=done[-1]['validation'] if done else None,command=command,
         completed_warm_runs=len(warm),sampled_stage_peak_rss_bytes=stage_peaks,monitor_error=monitor_error,
-        environment=environments[-1] if environments else None,phase_measurements=phases)
+        environment=environments[-1] if environments else None,phase_measurements=phases,
+        bounds=bounds[-1] if bounds else None)
     stderr=(jobdir/'stderr.txt').read_text()
     match=re.search(r'(\d+)\s+maximum resident set size',stderr) if platform.system()=='Darwin' else re.search(r'Maximum resident set size \(kbytes\):\s*(\d+)',stderr)
     result['os_peak_rss_bytes']=int(match[1])*(1 if platform.system()=='Darwin' else 1024) if match else None
@@ -170,6 +176,10 @@ def main():
     a.add_argument('--runs',type=int,default=3)
     a.add_argument('--filter',default='',help='Substring of job ID')
     a.add_argument('--specs',type=pathlib.Path,help='JSON array of custom job specs')
+    a.add_argument('--family',action='append',default=[],help='Generated family (families.py), repeatable; "all" for every one')
+    a.add_argument('--solver',action='append',default=[],help='Solver for generated families, repeatable; default ipog')
+    a.add_argument('--expensive',action='store_true',help='Include family points marked expensive')
+    a.add_argument('--shapes',action='store_true',help='Print "t v k" for each uniform unconstrained shape of the default grid and every family, expensive included')
     a.add_argument('--adapter',action='append',default=[])
     a.add_argument('--julia',default='julia')
     a.add_argument('--julia-arg',action='append',default=[],help='Extra Julia flag; use --julia-arg=--heap-size-hint=1G for a leading dash')
@@ -184,7 +194,12 @@ def main():
     a.add_argument('--resume',action='store_true')
     a.add_argument('--list',action='store_true')
     args=a.parse_args()
-    jobs=json.loads(args.specs.read_text()) if args.specs else specs(args.runs)
+    if args.shapes:
+        everything=specs(args.runs)+families.select(['all'],args.solver or ['ipog'],args.runs,expensive=True)
+        for t,v,k in families.uniform_shapes(everything): print(t,v,k)
+        return
+    jobs=json.loads(args.specs.read_text()) if args.specs else \
+        families.select(args.family,args.solver or ['ipog'],args.runs,args.expensive) if args.family else specs(args.runs)
     jobs=[s for s in jobs if args.filter in s['id']]
     for s in jobs: s['adapters']=[str(pathlib.Path(f).resolve()) for f in args.adapter]
     if args.list: print(json.dumps(jobs,indent=2));return
