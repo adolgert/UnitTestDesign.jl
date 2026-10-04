@@ -45,17 +45,18 @@ A covering engine that picks its method from the request (plan §6.1).
 | `:balanced` | the smaller of IPOG's design and the catalog's array ([`Construction`](@ref)) where the catalog applies | the default for `Auto` |
 | `:compact` | that, then the row reducer ([`Compact`](@ref)) with `effort` | expensive tests |
 
-`:balanced` never returns more cases than `:fast`. Where the space is small
-(at most `$(_AUTO_SMALL_TEXT)` combinations to cover, counted before the
-rules) and the catalog applies, it builds both and keeps the one with fewer
-rows, IPOG's on a tie, so that it gives the cases `IPOG()` gives unless the
-catalog's are fewer. Where the catalog's array has as many rows as the lower
-bound, no design has fewer, so IPOG isn't run. Above that
-size it builds the catalog's array for a space whose parameters all have
-the same number of values and no rules, and IPOG's design otherwise.
-`:compact` reduces that winner once, so it never has more rows than
-`:balanced`. The negative rows of a space with [`Invalid`](@ref) values are
-chosen the same way, for each invalid value.
+`:balanced` never returns more cases than `:fast`. Where the catalog's
+array has as many rows as the lower bound, no design has fewer, so IPOG
+isn't run. Otherwise, where the space is small (at most
+$(replace(_AUTO_SMALL_TEXT, r"(?<=\d)(?=(\d{3})+$)" => ",")) combinations
+to cover, counted before the rules) and the catalog applies, it builds both
+and keeps the one with fewer rows, IPOG's on a tie, so that it gives the
+cases `IPOG()` gives unless the catalog's are fewer. Above that size it
+builds the catalog's array for a space whose parameters all have the same
+number of values and no rules, and IPOG's design otherwise. `:compact`
+reduces that winner once, so it never has more rows than `:balanced`. The
+negative rows of a space with [`Invalid`](@ref) values are chosen the same
+way, for each invalid value.
 
 `:fast` and `:balanced` use no randomness, and `seed` is not recorded. With
 `:compact` the reducer draws from a fresh generator seeded with `seed` (an

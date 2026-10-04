@@ -107,9 +107,12 @@ values in 10 cases.
   fixed default seed. To keep a list of cases across releases and edits,
   commit it, or pass it back as `must_include`.
 
-The designs are compact, with no promise of a minimum number of cases;
-`design_sizes` shows how many cases each strategy gives before you choose one.
-The full statement is the [contract](docs/src/dev/contract.md).
+The designs are compact, with no promise of a minimum number of cases. Each
+result states a proven lower bound beside its count, and says "minimal" when
+the count meets it. `Auto()` chooses among the engines for your space,
+`recommend` says what it would choose, and `design_sizes` shows how many cases
+each strategy gives before you choose one. The full statement is the
+[contract](docs/src/dev/contract.md).
 
 * [Documentation](https://adolgert.github.io/UnitTestDesign.jl/stable), with a
   [tutorial](docs/src/man/tutorial.md) that builds up the example above

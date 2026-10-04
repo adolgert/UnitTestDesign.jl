@@ -10,9 +10,11 @@
 # unknown (`_recorded_exclusions`). `design_sizes` runs each strategy and
 # counts what its rows cover. Each call reads a set of rows once and keeps one
 # lazy-rule memo for all its measurements (§3.5). Neither prints a percentage
-# when a target is unresolved (§3.10, §3.12), and neither calls a case count
-# minimal (§8.3, §8.4). With `Invalid` values every figure comes in two
-# parts, ordinary and negative, measured and printed apart (§5.9, §5.10).
+# when a target is unresolved (§3.10, §3.12). `report` calls a case count
+# minimal only as the result recorded it, when the count equals its proven
+# lower bound, and names the proof (§8.4, §8.7); `design_sizes` never does
+# (§8.3). With `Invalid` values every figure comes in two parts, ordinary
+# and negative, measured and printed apart (§5.9, §5.10).
 
 
 ## report

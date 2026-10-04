@@ -1,8 +1,8 @@
 # The `Construction` engine (plan §5.4, Phase 2): a covering engine whose
 # designs are the catalog's algebraic arrays (construction_catalog.jl), for a
-# space of an exact shape, and a seed under a few rules. It is internal until
-# Phase 3 names engines for users (plan §3, §11); `UnitTestDesign.Construction()`
-# reaches it, and `_engine_registry` lists it, so the oracle loops check it.
+# space of an exact shape, and a seed under a few rules. It is exported since
+# Phase 3 (plan §3, §6.1), `Auto` runs it where it fits, and `_engine_registry`
+# lists it, so the oracle loops check it.
 #
 # How it enters the pipeline (plan §4.1, §5.4):
 #
