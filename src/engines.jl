@@ -209,8 +209,17 @@ end
 function _seed_text(record::EngineRecord)
     _randomized(record) || return "seed: none ($(record.name) uses no randomness)"
     record.seed === nothing && return "seed: none ($(record.name) drew from the caller's rng)"
-    return "seed: $(record.seed) ($(record.name)(seed = $(record.seed)) repeats these cases)"
+    return "seed: $(record.seed) ($(_repeat_call(Val(record.name), record.seed)) repeats these cases)"
 end
+
+"""
+    _repeat_call(::Val{name}, seed) -> String
+
+The call that repeats a randomized engine's rows, for `_seed_text`: its
+constructor with the seed, "GND(seed = 3)". A wrapper, whose constructor takes
+more than a seed, adds a method that names what else must match.
+"""
+_repeat_call(::Val{name}, seed) where {name} = "$(name)(seed = $(seed))"
 
 """
     Fit(kind, reason; rows = nothing)
@@ -438,7 +447,8 @@ only the package, reads the same list the tests run. Nothing in `src/` calls
 it.
 """
 _engine_registry(seed::Integer = 0) =
-    Pair{String, CoveringEngine}["IPOG()" => IPOG(), "GND()" => GND(; seed)]
+    Pair{String, CoveringEngine}["IPOG()" => IPOG(), "GND()" => GND(; seed),
+                                 "Compact(IPOG())" => Compact(IPOG(); seed)]
 
 """
     generate(engine::CoveringEngine, request::Request) -> Design
@@ -467,16 +477,16 @@ function generate(engine::CoveringEngine, request::Request)
     record = engine_record(engine)
     name, seed = record.name, record.seed
     if !_has_invalid(request.space)
-        matrix = cover_ordinary(engine, request, RequiredTargets(request, required))
+        matrix, notes = _cover_with_notes(engine, request, RequiredTargets(request, required))
         covered = validate_design(request, matrix, required)
         return Design(matrix, :covering, name, seed, length(required), covered, excluded,
-                      n_must_include(request), (;))
+                      n_must_include(request), notes)
     end
     must = request.must_include
     negative_columns = [j for j in axes(must, 2) if _holds_invalid(request, view(must, :, j))]
     ordinary_columns = [j for j in axes(must, 2) if !(j in negative_columns)]
     ordinary_request = _with_must_include(request, must[:, ordinary_columns])
-    ordinary = cover_ordinary(engine, ordinary_request, RequiredTargets(ordinary_request, required))
+    ordinary, notes = _cover_with_notes(engine, ordinary_request, RequiredTargets(ordinary_request, required))
     negative = cover_negative(engine, request, negative_columns)
     # Must-include rows in the order given, each completed by its kind's step.
     rows = Vector{Vector{Int}}(undef, size(must, 2))
@@ -491,6 +501,18 @@ function generate(engine::CoveringEngine, request::Request)
     matrix = isempty(rows) ? zeros(Int, length(request.arity), 0) : reduce(hcat, rows)
     covered = validate_design(request, matrix, required; negative = negative.required)
     return Design(matrix, :covering, name, seed, length(required), covered, excluded,
-                  n_must_include(request), (;), length(negative.required), length(negative.required),
+                  n_must_include(request), notes, length(negative.required), length(negative.required),
                   negative.excluded)
 end
+
+"""
+    _cover_with_notes(engine, request, targets) -> (matrix, notes::NamedTuple)
+
+`cover_ordinary`'s rows, with what the engine reports of the call, which
+`generate` keeps as the ordinary design's `notes` and the benchmark harness
+records as engine extras (benchmark/scaling/metrics.jl). An engine that
+reports nothing needs no method: the notes are empty. `Compact` reports its
+reducer's steps and why it stopped.
+"""
+_cover_with_notes(engine::CoveringEngine, request::Request, targets::RequiredTargets) =
+    (cover_ordinary(engine, request, targets), (;))

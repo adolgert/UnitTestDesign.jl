@@ -103,7 +103,7 @@ end
 @testitem "engines: the registry names every engine the oracle loops run (§4.2, §7.4)" setup=[EngineSetup] begin
     registry = _engine_registry()
     @test registry isa Vector{Pair{String, CoveringEngine}}
-    @test first.(registry) == ["IPOG()", "GND()"]
+    @test first.(registry) == ["IPOG()", "GND()", "Compact(IPOG())"]
     @test allunique(first.(registry))
     @test registry[1].second == IPOG()
     # A randomized engine takes the seed; the default is 0 (§9.5).

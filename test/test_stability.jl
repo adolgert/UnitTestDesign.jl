@@ -266,3 +266,68 @@ end
     @test (@inferred fit(GND(), profile)) isa Fit
     @test (@inferred Union{GND, IPOG} _engine_for(GND(), constrained)) isa GND
 end
+
+
+@testitem "stability: the coverage index and the reducer's moves answer in place" setup=[StabilitySetup] begin
+    using Random: Xoshiro
+    using UnitTestDesign: Request, RequiredTargets, CoverageIndex, classify_targets, cover_ordinary,
+                          combination, add_row!, remove_row!, move_entry!, entry_score, singly_covered,
+                          random_uncovered, decode!, nuncovered, _allows, _compact, _space_indices
+    # The coverage index (plan §4.3) and the reducer's inner loop (§5.3): a
+    # row's combination on a support, a move's score, a row's singly covered
+    # combinations, an entry move, a row added and removed, a draw of an
+    # uncovered combination and its decoding each infer their type and
+    # allocate nothing once the uncovered list has room, and a move's rule
+    # check allocates nothing once a lazy rule's verdict is in the memo
+    # (tabulated, lazy and whole-case rules, as in `stability_space`). The
+    # reducer's steps allocate nothing: a run of 100,000 steps allocates what
+    # a run of 20,000 does (about 37 KB on Julia 1.13, all of it set-up and
+    # the buffers' first growth).
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    request = Request(stability_space(); strength = 2, stronger = [(:a, :b, :c) => 3])
+    required, _ = classify_targets(request)
+    targets = RequiredTargets(request, required)
+    index = @inferred CoverageIndex(request, targets)
+    start = cover_ordinary(IPOG(), request, targets)
+    rows = [start[:, j] for j in axes(start, 2)]
+    foreach(row -> add_row!(index, row), rows)
+    @test nuncovered(index) == 0
+    row = rows[2]
+    @test (@inferred combination(index, 1, row)) isa Int
+    @test (@inferred entry_score(index, row, 1, 3 - min(row[1], 2))) isa Int
+    @test (@inferred singly_covered(index, row)) isa Int
+    @test measured(x -> combination(x[1], length(x[1].supports), x[2]), (index, row)) == 0
+    @test measured(x -> entry_score(x[1], x[2], 1, 3 - min(x[2][1], 2)), (index, row)) == 0
+    @test measured(x -> singly_covered(x[1], x[2]), (index, row)) == 0
+    there_and_back(x) = (move_entry!(x[1], x[2], 4, x[3]); move_entry!(x[1], x[2], 4, x[4]))
+    @test measured(there_and_back, (index, row, row[4] == 1 ? 2 : 1, row[4])) == 0
+    out_and_in(x) = (remove_row!(x[1], x[2]); add_row!(x[1], x[2]))
+    @test measured(out_and_in, (index, row)) == 0
+    @test (@inferred remove_row!(index, row)) === index
+    @test nuncovered(index) > 0
+    rng = Xoshiro(1)
+    @test (@inferred random_uncovered(index, rng)) isa Int
+    @test measured(x -> random_uncovered(x[1], x[2]), (index, rng)) == 0
+    values = zeros(Int, 3)
+    @test (@inferred decode!(values, index, random_uncovered(index, rng))) isa Int
+    @test measured(x -> decode!(x[1], x[2], 1), (values, index)) == 0
+    add_row!(index, row)
+    # A move's rule check: every rule reads `a`; the second call finds each verdict.
+    f = request.feasibility
+    value_row = _space_indices(request, row)
+    @test length(f.param_tables[1]) == 3
+    @test (@inferred _allows(f, value_row, 1, 3)) isa Bool
+    @test measured(x -> _allows(x[1], x[2], 1, 3), (f, value_row)) == 0
+    @test value_row == _space_indices(request, row)   # restored
+    # The reducer: a concrete result, and steps that allocate nothing. Ten
+    # four-valued parameters never reach the bound of 16, so every run spends
+    # its whole budget.
+    @test (@inferred _compact(request, targets, start)) isa Tuple{Matrix{Int}, NamedTuple}
+    flat = Request(TestSpace([Symbol(:x, i) for i in 1:10], [1:4 for _ in 1:10], Constraint[], 10^5))
+    flat_targets = RequiredTargets(flat, first(classify_targets(flat)))
+    flat_start = cover_ordinary(IPOG(), flat, flat_targets)
+    run(budget) = (_compact(flat, flat_targets, flat_start; budget); @allocated _compact(flat, flat_targets, flat_start; budget))
+    short, long = run(20_000), run(100_000)
+    @test last(_compact(flat, flat_targets, flat_start; budget = 20_000)).reducer_stop === :budget
+    @test long <= short + 1024
+end
