@@ -2,7 +2,10 @@
 using UnitTestDesign, JSON, Random
 using Combinatorics: combinations
 const U = UnitTestDesign
-const ADAPTERS = Dict{String,Any}("ipog" => IPOG(), "gnd" => GND(seed=0),
+# A job's solver is a registered engine by its registry name, "IPOG()" or
+# "GND()" (U._engine_registry, seed 0), or one of the names the specs have used.
+const ENGINES = Dict{String,Any}(U._engine_registry(0))
+const ADAPTERS = Dict{String,Any}(ENGINES..., "ipog" => ENGINES["IPOG()"], "gnd" => ENGINES["GND()"],
                                   "gnd10" => GND(seed=0, candidates=10))
 # Extension file may register engine objects with generate(engine, request), or
 # functions (space, keywords) -> TestCases. See README for the complete contract.
@@ -64,7 +67,8 @@ function model(s)
 end
 
 const LAST_REQUEST = Ref{Any}(nothing)
-is_builtin(adapter) = adapter isa Union{IPOG,GND}
+# Any covering engine goes through the package's own generate, which certifies it.
+is_builtin(adapter) = adapter isa U.CoveringEngine
 
 # Certification of trial adapters is part of the timed operation. Ordinary
 # and negative target classification uses the same request as the validator.
@@ -146,17 +150,17 @@ function operation(s,m,prepared)
         is_builtin(adapter) || certify(design,r)
         return design
     elseif usage == "named"
-        is_builtin(adapter) || throw(ArgumentError("usage=named uses the public API, which accepts only IPOG/GND; use reuse for trial adapters"))
+        is_builtin(adapter) || throw(ArgumentError("usage=named uses the public API, which accepts only covering engines; use reuse for trial adapters"))
         s["family"] in ("lazy_scope","lazy_scoped") && throw(ArgumentError("usage=named cannot preserve forced-lazy tabulation_limit; use public or reuse"))
         LAST_REQUEST[] = nothing
         return covering(NamedTuple{Tuple(m.names)}(Tuple(m.domains)); constraints=m.space.constraints,engine=adapter,m.kw...)
     elseif usage == "positional"
-        is_builtin(adapter) || throw(ArgumentError("usage=positional uses the public API, which accepts only IPOG/GND; use reuse for trial adapters"))
+        is_builtin(adapter) || throw(ArgumentError("usage=positional uses the public API, which accepts only covering engines; use reuse for trial adapters"))
         isempty(m.space.constraints) || throw(ArgumentError("usage=positional cannot preserve the named model's constraints; use named or reuse"))
         LAST_REQUEST[] = nothing
         return covering(m.domains...; engine=adapter,m.kw...)
     elseif usage == "public"
-        is_builtin(adapter) || throw(ArgumentError("usage=public accepts only IPOG/GND; use reuse for trial adapters"))
+        is_builtin(adapter) || throw(ArgumentError("usage=public accepts only covering engines; use reuse for trial adapters"))
         LAST_REQUEST[] = nothing
         return covering(m.space;engine=adapter,m.kw...)
     elseif usage == "coverage"

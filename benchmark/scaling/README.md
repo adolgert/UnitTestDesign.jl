@@ -230,10 +230,14 @@ An engine-object adapter can extend
 `UnitTestDesign.Design`, then register an instance. It supports `core` and
 the internal-generation paths. The harness certifies its matrix with the
 package's index-space validation before converting it into public cases.
-The public API currently restricts
-`engine` to IPOG/GND, so a new engine object cannot use the direct public input
-jobs without a separate integration change. These internal types are tied to
-the checked-out package revision.
+The public API accepts only covering engines, so such an object cannot use
+the direct public input jobs. A covering engine, a subtype of
+`UnitTestDesign.CoveringEngine` with the methods its docstring lists (plan
+§4.2), can: the package's own `generate` certifies it, as it does IPOG and
+GND. An engine in the package's registry (`UnitTestDesign._engine_registry`)
+needs no adapter: a job names it by its registry name, such as `"IPOG()"` or
+`"GND()"`, beside the older names `ipog`, `gnd` and `gnd10`. These internal
+types are tied to the checked-out package revision.
 
 Certification is included in measured trial-adapter time. An adapter that
 calls public `covering` already receives built-in certification and then the
