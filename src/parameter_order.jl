@@ -13,13 +13,16 @@ has not been chosen, this fills in the last parameters for each test case.
 """
 function choose_last_parameter!(taller, allc)
     param_idx  = size(taller, 1)
+    # Each test case is read in place, and one histogram serves them all (plan §5.2).
+    match_hist = zeros(eltype(allc), allc.arity[param_idx])
     for set_col_idx in axes(taller, 2)
-        if any(taller[:, set_col_idx] .== 0)
-            match_hist = matches_from_missing(allc, taller[:, set_col_idx], param_idx)
-            if (any(match_hist .> 0))
+        test_case = view(taller, :, set_col_idx)
+        if any(==(0), test_case)
+            matches_from_missing!(match_hist, allc, test_case, param_idx)
+            if any(>(0), match_hist)
                 # The argmax tie-breaks in a consistent manner.
                 taller[param_idx, set_col_idx] = argmax(match_hist)
-                add_coverage!(allc, taller[:, set_col_idx])
+                add_coverage!(allc, test_case)
             end  # else don't set this entry by leaving it zero.
         end
     end
@@ -47,13 +50,15 @@ add the tuple at the end as its own test.
 """
 function insert_tuple_into_tests(test_set, allc)
     add_tests = Array{eltype(allc), 1}[]
+    # Tuples and test cases are read and filled in place; only a tuple that
+    # starts a new test case is copied (plan §5.2).
     for find_cover_idx in allc.remain:-1:1
-        tuple = allc.allc[:, find_cover_idx]
+        tuple = view(allc.allc, :, find_cover_idx)
         unmatched = true
         for test_idx in axes(test_set, 2)
-            test_case = test_set[:, test_idx]
+            test_case = view(test_set, :, test_idx)
             if case_compatible_with_tuple(test_case, tuple)
-                test_set[:, test_idx] = put_tuple_in_case(tuple, test_case)
+                put_tuple_in_case(tuple, test_case)
                 unmatched = false
                 break
             end
@@ -62,18 +67,18 @@ function insert_tuple_into_tests(test_set, allc)
             for tc_idx in eachindex(add_tests)
                 test_case = add_tests[tc_idx]
                 if case_compatible_with_tuple(test_case, tuple)
-                    add_tests[tc_idx] = put_tuple_in_case(tuple, test_case)
+                    put_tuple_in_case(tuple, test_case)
                     unmatched = false
                     break
                 end
             end
         end
         if unmatched
-            push!(add_tests, tuple)
+            push!(add_tests, collect(tuple))
         end
     end
     allc.remain = 0
-    hcat(test_set, add_tests...)
+    isempty(add_tests) ? test_set : hcat(test_set, stack(add_tests))
 end
 
 

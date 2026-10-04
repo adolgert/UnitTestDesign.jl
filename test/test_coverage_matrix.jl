@@ -205,6 +205,44 @@ end
 end
 
 
+@testitem "add_coverage! moves the columns the two-pass form moved" begin
+    using Random
+    using UnitTestDesign: MatrixCoverage, add_coverage!, case_covers_tuple
+    # The form at 2798ecf: find every covered column, then swap each with the
+    # last uncovered one, from the last covered down. The one pass that
+    # replaced it must leave the same columns in the same order (plan §5.2).
+    function two_pass!(mc, entry)
+        covers = [c for c in 1:mc.remain if case_covers_tuple(entry, mc.allc[:, c])]
+        for c in reverse(covers)
+            if mc.remain > 1
+                save = mc.allc[:, mc.remain]
+                mc.allc[:, mc.remain] = mc.allc[:, c]
+                mc.allc[:, c] = save
+            end
+            mc.remain -= 1
+        end
+        mc.remain
+    end
+    "Whether the two forms differ on a random matrix and entry, and whether two or more targets were covered."
+    function trial(rng)
+        n = rand(rng, 2:6)
+        arity = rand(rng, 1:3, n)
+        cols = rand(rng, 0:30)
+        allc = [rand(rng, Bool) ? 0 : rand(rng, 1:arity[i]) for i in 1:n, _ in 1:cols]
+        remain = rand(rng, 0:cols)
+        entry = [rand(rng) < 0.2 ? 0 : rand(rng, 1:arity[i]) for i in 1:n]
+        one = MatrixCoverage(copy(allc), remain, arity)
+        two = MatrixCoverage(copy(allc), remain, arity)
+        differ = add_coverage!(one, entry) != two_pass!(two, entry) || one.allc != two.allc
+        return differ, one.remain < remain - 1
+    end
+    rng = Xoshiro(928347)
+    results = [trial(rng) for _ in 1:2000]
+    @test !any(first, results)
+    @test count(last, results) > 500  # many trials cover two or more targets
+end
+
+
 @testitem "match_score" begin
     ms_cases = [
         [[1 1 0; 1 2 0; 0 1 3]', 3, 2, [4,4,4], 0],

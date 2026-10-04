@@ -213,12 +213,39 @@ hold that value and that the entry partially covers
 """
 function matches_from_missing(mc::MatrixCoverage, entry, missing_param)
     hist = zeros(eltype(mc), mc.arity[missing_param])
+    matches_from_missing!(hist, mc, entry, missing_param)
+end
+
+
+"""
+    matches_from_missing!(hist, mc::MatrixCoverage, entry, missing_param)
+
+`matches_from_missing` written into `hist`, which it zeroes first. It reads
+the first `length(entry)` rows of each tuple, in place, as the zip of
+`case_partial_cover` did, so a call allocates nothing (plan §5.2).
+"""
+function matches_from_missing!(hist, mc::MatrixCoverage, entry, missing_param)
+    fill!(hist, 0)
+    allc = mc.allc
+    n = length(entry)
+    # The loops index nothing else, so they skip the checks.
+    checkbounds(entry, 1:n)
+    checkbounds(allc, 1:n, 1:mc.remain)
+    checkbounds(allc, missing_param, 1:mc.remain)
     for tuple_idx in 1:mc.remain
-        if mc.allc[missing_param, tuple_idx] != 0
-            if case_partial_cover(entry, mc.allc[:, tuple_idx])
-                hist[mc.allc[missing_param, tuple_idx]] += 1
+        value = @inbounds allc[missing_param, tuple_idx]
+        value == 0 && continue  # No matches unless the particular column is nonzero.
+        # case_partial_cover(entry, tuple): some value in common, none in conflict.
+        anymatch = false
+        clash = false
+        @inbounds for i in 1:n
+            a = entry[i]
+            b = allc[i, tuple_idx]
+            if a != 0 && b != 0
+                a == b ? (anymatch = true) : (clash = true; break)
             end
-        end  # No matches unless the particular column is nonzero.
+        end
+        (anymatch && !clash) && (hist[value] += 1)
     end
     hist
 end
@@ -234,26 +261,32 @@ covered, this moves those to the end. It returns a new `row_cnt` which is
 the number of initial uncovered rows.
 """
 function add_coverage!(mc::MatrixCoverage, entry)
-    param_cnt = length(entry)
-
-    covers = zeros(Int, mc.remain)
-    cover_cnt = 0
-    # Find matches before reordering them to the end.
-    for col_idx in 1:mc.remain
-        if case_covers_tuple(entry, mc.allc[:, col_idx])
-            cover_cnt += 1
-            covers[cover_cnt] = col_idx
+    allc = mc.allc
+    # Like matches_from_missing!, this tests the first `length(entry)` rows.
+    n = length(entry)
+    checkbounds(entry, 1:n)
+    checkbounds(allc, 1:n, 1:mc.remain)
+    # Swap each covered tuple with the last uncovered one, in place, working
+    # from the end. A swap moves only columns at or after the current one, so
+    # each column is tested as it was on entry, and the swaps are the ones the
+    # two-pass form made (find every covered column, then swap from the last
+    # one down; 2798ecf), which leaves the columns in the same order without
+    # a list of the covered ones (plan §5.2).
+    for col_idx in mc.remain:-1:1
+        # case_covers_tuple(entry, tuple): every value of the tuple is in the entry.
+        covered = true
+        @inbounds for i in 1:n
+            b = allc[i, col_idx]
+            if b != 0 && entry[i] != b
+                covered = false
+                break
+            end
         end
-    end
-    # Given the matches, we can swap them to the end of the matrix.
-    # Work from the end in case a match is near row_cnt.
-    for cover_idx in cover_cnt:-1:1
-        if mc.remain > 1
-            save = mc.allc[:, mc.remain]
-            mc.allc[:, mc.remain] = mc.allc[:, covers[cover_idx]]
-            mc.allc[:, covers[cover_idx]] = save
-            mc.remain -= 1
-        else
+        if covered
+            last = mc.remain
+            for i in axes(allc, 1)
+                allc[i, col_idx], allc[i, last] = allc[i, last], allc[i, col_idx]
+            end
             mc.remain -= 1
         end
     end
