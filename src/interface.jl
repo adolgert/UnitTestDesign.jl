@@ -213,8 +213,10 @@ function _from_row(from, space::TestSpace, positional::Bool)
     return from isa AbstractVector ? Tuple(from) : from
 end
 
+# Any covering engine (`CoveringEngine`, plan §4.2). The engines a caller can
+# name are IPOG() and GND(), and the message says so.
 function _check_engine(engine)
-    engine isa Union{IPOG, GND} || throw(ArgumentError(
+    engine isa CoveringEngine || throw(ArgumentError(
         "`engine` is IPOG() or GND(); got $(repr(engine))"))
     return engine
 end

@@ -414,13 +414,14 @@ end
 
 
 """
-    cover_ordinary(::IPOG, request::Request, required) -> Matrix{Int}
+    cover_ordinary(::IPOG, request::Request, targets::RequiredTargets) -> Matrix{Int}
 
 IPOG's rows for `request` (contract §1.3): the must-include rows first, then
-rows until every target in `required` (the classified required targets,
-engine positions) is in some row, each row valid under the request's rules.
-`generate` classifies the targets, calls this, and validates the result
-(§1.21). The request's must-include rows are ordinary. Cases:
+rows until every required target (`targets`, whose list of classified
+required targets in engine positions IPOG reads as `required`) is in some
+row, each row valid under the request's rules. `generate` classifies the
+targets, calls this, and validates the result (§1.21). The request's
+must-include rows are ordinary. Cases:
 
 1. No required target and no must-include row gives no rows: a proven
    empty space (§1.24).
@@ -433,7 +434,8 @@ engine positions) is in some row, each row valid under the request's rules.
 
 IPOG uses no randomness (§9.4).
 """
-function cover_ordinary(::IPOG, request::Request, required)
+function cover_ordinary(::IPOG, request::Request, targets::RequiredTargets)
+    required = _target_list(targets)
     n = length(request.arity)
     seeds = request.must_include
     if isempty(required) && isempty(seeds)
@@ -448,5 +450,7 @@ function cover_ordinary(::IPOG, request::Request, required)
                           order = ipog_order(request.arity, request.groups))
 end
 
-_engine_name(::IPOG) = :IPOG
-_engine_seed(::IPOG) = nothing
+engine_record(::IPOG) = EngineRecord(:IPOG, nothing)
+
+# Both paths take any request, a negative sub-request at base strength 0 included.
+fit(::IPOG, ::Profile) = Fit(:native, "IPOG covers any request")

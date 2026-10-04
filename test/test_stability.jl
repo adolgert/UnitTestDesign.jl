@@ -213,3 +213,56 @@ end
     # allocated 255 MiB, a new matrix of targets per step and a copy per read.
     @test allocated(ipog, fill(2, 128), 2) <= 16 * 2^20
 end
+
+
+@testitem "stability: the targets interface answers in place, and a profile lists no target" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, RequiredTargets, Profile, TargetList, classify_targets, supports,
+                          ncombinations, isrequired, nrequired, engine_record, fit, _engine_for, Fit, EngineRecord
+    # The engine protocol (plan §4.2): an engine reads its targets through
+    # `supports`, `ncombinations`, `isrequired` and `nrequired` in its inner
+    # loops, so each infers its type and a pass over every combination of
+    # every support allocates nothing, for a constrained request's list and
+    # for an unconstrained one's TargetList.
+    "The required combinations, counted through the interface."
+    function count_required(t)
+        c = 0
+        for s in eachindex(supports(t)), code in 0:(ncombinations(t, s) - 1)
+            c += isrequired(t, s, code)
+        end
+        return c
+    end
+    # One argument and no varargs: Julia 1.10 doesn't specialize `allocated`'s
+    # varargs here and boxes the Int that `count_required` returns.
+    measured(f, x) = (f(x); @allocated f(x))
+    constrained = Request(stability_space(); strength = 2, stronger = [(:a, :b, :c) => 3, (:b, :c, :d) => 3])
+    free = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4, d = 1:5)); strength = 3)
+    for request in (constrained, free)
+        required, _ = classify_targets(request)
+        t = @inferred RequiredTargets(request, required)
+        @test count_required(t) == length(required) == nrequired(t)
+        @test measured(count_required, t) == 0
+        @test (@inferred isrequired(t, 1, 0)) isa Bool
+        @test (@inferred nrequired(t, 1)) isa Int
+        @test (@inferred ncombinations(t, 2)) isa Int
+        @test (@inferred supports(t)) isa Vector{Vector{Int}}
+    end
+    @test RequiredTargets(free, first(classify_targets(free))) isa RequiredTargets{TargetList}
+    # A profile is computed from the parameters, groups and rules, never the
+    # targets: about 4.8 KB on Julia 1.13 and 5.5 KB on 1.10 for 250 binary
+    # parameters, at strength 2 or 4, where TargetList would list C(250, 4)
+    # supports. Two overlapping groups at one strength add about 1 KB.
+    wide = TestSpace([Symbol(:x, i) for i in 1:250], [1:2 for _ in 1:250], Constraint[], 10^5)
+    for strength in (2, 4)
+        request = Request(wide; strength)
+        @test (@inferred Profile(request)) isa Profile
+        @test measured(Profile, request) <= 8 * 1024
+    end
+    @test (@inferred Profile(constrained)).targets == length(TargetList(constrained))
+    @test measured(Profile, constrained) <= 8 * 1024
+    # The protocol's other answers infer too; `_engine_for` is the engine or IPOG.
+    profile = Profile(constrained)
+    @test (@inferred engine_record(GND())) isa EngineRecord
+    @test (@inferred fit(IPOG(), profile)) isa Fit
+    @test (@inferred fit(GND(), profile)) isa Fit
+    @test (@inferred Union{GND, IPOG} _engine_for(GND(), constrained)) isa GND
+end
