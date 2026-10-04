@@ -219,16 +219,20 @@ end
 
 
 """
-    cover_ordinary(engine::GND, request::Request, required) -> Matrix{Int}
+    cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) -> Matrix{Int}
 
 GND's rows for `request` (contract §1.3): the must-include rows first and
-unchanged (§10.5), then rows until every target in `required` (the classified
-required targets, engine positions) is covered (`gnd_cover`). `generate`
-classifies the targets, calls this, and validates the result (§1.21). The
-request's must-include rows are ordinary.
+unchanged (§10.5), then rows until every required target (`targets`, whose
+list of classified required targets in engine positions GND reads) is
+covered (`gnd_cover`). `generate` classifies the targets, calls this, and
+validates the result (§1.21). The request's must-include rows are ordinary.
 """
-cover_ordinary(engine::GND, request::Request, required) = first(gnd_cover(engine, request, required))
+cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) =
+    first(gnd_cover(engine, request, _target_list(targets)))
 
-_engine_name(::GND) = :GND
-"The seed recorded in the result: `engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6)."
-_engine_seed(engine::GND) = engine.seed
+"The record: the seed is `engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6)."
+engine_record(engine::GND) = EngineRecord(:GND, engine.seed, Pair{Symbol, Any}[:candidates => engine.candidates])
+
+_randomized(::Val{:GND}) = true
+
+fit(::GND, ::Profile) = Fit(:native, "GND covers any request")

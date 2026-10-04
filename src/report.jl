@@ -303,11 +303,12 @@ end
 The guarantee line of `report`, from the measurement `c` and what the result
 recorded (§1.19): for a covering design, what the rows cover in a space of
 how many combinations, what was excluded, the must-include rows kept first,
-and GND's seed; for an excursion, the must-include rows kept first, which
-the distance does not bind (§7.5, §7.9), then the rows within the distance
-of the base, the dropped rows and missing values, that it is not a covering
-design, and what it covers at the measured strength; for a full factorial,
-that it is every valid row, and what it covers. With `Invalid` values, the
+and a randomized engine's seed (`_seed_note`); for an excursion, the
+must-include rows kept first, which the distance does not bind (§7.5, §7.9),
+then the rows within the distance of the base, the dropped rows and missing
+values, that it is not a covering design, and what it covers at the measured
+strength; for a full factorial, that it is every valid row, and what it
+covers. With `Invalid` values, the
 negative targets' coverage and exclusions follow, after "negative:", stated
 apart from the ordinary guarantee (§5.10).
 """
@@ -322,9 +323,8 @@ function _guarantee(tc::TestCases, c::Coverage)
         claim, rest = _covers_text(c, length(tc) == 1 ? "covers" : "cover"; with_strength = true)
         head = claim === nothing ? "$lead: no $noun of $space is feasible" : "$lead $claim of $space"
         head *= _excluded_note(c) * rest
-        if tc.engine === :GND
-            push!(tail, tc.seed === nothing ? "GND with the caller's rng" : "GND seed $(tc.seed)")
-        end
+        seed = _seed_note(_engine_record(tc))
+        seed === nothing || push!(tail, seed)
         return join([head * _negative_note(c); tail], "; ")
     end
     if tc.strategy === :excursion
@@ -433,11 +433,11 @@ function _print_bonus(io::IO, r::Report)
 end
 
 function _seed_text(r::Report)
-    r.engine === :GND && return r.seed === nothing ? "seed: none (GND drew from the caller's rng)" :
-                                                     "seed: $(r.seed) (GND(seed = $(r.seed)) repeats these cases)"
+    record = EngineRecord(r.engine, r.seed)
+    _randomized(record) && return _seed_text(record)
     r.strategy === :excursion && return "seed: none (an excursion uses no randomness)"
     r.strategy === :full_factorial && return "seed: none (a full factorial uses no randomness)"
-    return "seed: none ($(r.engine) uses no randomness)"
+    return _seed_text(record)
 end
 
 Base.show(io::IO, r::Report) = print(io, r.guarantee)
@@ -597,7 +597,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
         design = _attempt(() -> excursions(space; distance = d, from, limits...))
         push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, space; memos, feasibility_limit))
     end
-    return DesignSizes(copy(space.names), length(space), valid, nameof(typeof(engine)), limit,
+    return DesignSizes(copy(space.names), length(space), valid, engine_record(engine).name, limit,
                        _has_invalid(space), rows)
 end
 

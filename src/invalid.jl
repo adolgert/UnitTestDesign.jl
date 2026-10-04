@@ -14,7 +14,8 @@
 # target without `p`: those are the sub-request's required targets, and
 # `parent_row` puts `p = v` back into each row. At strength 1 with no group
 # containing `p` there is no sub-request: the one target `(p = v)` takes one
-# witness row (§6.4), never a strength-0 public call.
+# witness row (§6.4), never a strength-0 public call. An engine whose `fit`
+# refuses a sub-request hands it to its fallback, IPOG (`_engine_for`).
 #
 # Negative must-include rows count toward the negative targets they hold
 # (§10.6): those at `(p, v)` are the sub-request's must-include rows, so the
@@ -190,9 +191,11 @@ unknown. Then, for each invalid value `v` of each parameter `p`, in
 parameter order and then domain order, cover the required targets at
 `(p, v)` with `engine` through `_negative_request`, whose must-include rows
 are the negative must-include rows at `(p, v)` (the request's must-include
-`columns` that hold an invalid value). At strength 1 the target `(p = v)`
-alone, when it is required, takes one witness row unless a must-include or
-generated row already holds `p = v` (§6.4).
+`columns` that hold an invalid value). An engine whose `fit` refuses that
+sub-request, which may have base strength 0, hands it to its fallback
+(`_engine_for`, plan §4.2). At strength 1 the target `(p = v)` alone, when
+it is required, takes one witness row unless a must-include or generated
+row already holds `p = v` (§6.4).
 
 Returns, in engine positions: `seeds`, each negative must-include column's
 completed row, by column; `rows`, the generated negative rows, in `(p, v)`
@@ -230,7 +233,8 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
                 # Every target here but (p = v) alone is p = v beside a target of the sub-request.
                 sub_required = [t[pr.kept] for t in here if count(!=(0), t) > 1]
                 matrix = try
-                    cover_ordinary(engine, sub, sub_required)
+                    # An engine that can't cover the sub-request hands it to its fallback (plan §4.2).
+                    cover_ordinary(_engine_for(engine, sub), sub, RequiredTargets(sub, sub_required))
                 catch err
                     err isa ResourceLimitError || rethrow()
                     value = space.values[p][request.candidates[p][position]]

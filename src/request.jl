@@ -489,6 +489,90 @@ function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
 end
 
 """
+    RequiredTargets(request, required)
+
+The targets an engine must cover, as the engine protocol asks for them (plan
+§4.2, `CoveringEngine`). For each support `s` of the request, the parameter
+sets that carry targets (`supports`, in target order), each combination of
+engine positions has a code, the mixed-radix code `_code(row, supports(t)[s],
+request.arity)` that orders the targets in `TargetList` (contract §9.7). The
+codes on support `s` are `0:ncombinations(t, s) - 1`, `_decode!` turns one
+back into a row, and `isrequired(t, s, code)` says whether it is a required
+target; `nrequired(t, s)` counts them. All four answer in constant time and
+allocate nothing.
+
+`required` is what `classify_targets` returned, or a negative sub-request's
+targets (`cover_negative`): a `TargetList`, every target required, or a
+`Vector` of the required targets as full-width partial rows, in any order.
+It is kept as given, and IPOG and GND read it through `_target_list`. For a
+`Vector` the constructor marks each target's bit, one bit for every
+combination of every support, in one pass. Phase 5 builds those bits in
+classification in place of the list (plan §5.6); an engine written against
+the four functions doesn't change then.
+"""
+struct RequiredTargets{L <: AbstractVector{Vector{Int}}}
+    list::L
+    arity::Vector{Int}
+    supports::Vector{Vector{Int}}
+    offsets::Vector{Int}    # as in TargetList: offsets[s] combinations come before support s
+    counts::Vector{Int}     # the required targets on each support; empty for a TargetList
+    bits::BitVector         # bit offsets[s] + code + 1 is set for a required target; empty for a TargetList
+end
+
+# Every target of a TargetList is required, so there is nothing to mark or count.
+RequiredTargets(::Request, required::TargetList) =
+    RequiredTargets(required, required.arity, required.supports, required.offsets, Int[], BitVector())
+
+function RequiredTargets(request::Request, required::Vector{Vector{Int}})
+    every = TargetList(request)
+    position = Dict(support => k for (k, support) in enumerate(every.supports))
+    counts = zeros(Int, length(every.supports))
+    bits = falses(length(every))
+    support = Int[]   # one target's support, reused
+    for t in required
+        length(t) == length(every.arity) || error("internal error: required target $t is not a full-width row")
+        empty!(support)
+        for i in eachindex(t)
+            t[i] == 0 && continue
+            1 <= t[i] <= every.arity[i] || error("internal error: required target $t is not in engine positions")
+            push!(support, i)
+        end
+        k = get(position, support, 0)
+        k == 0 && error("internal error: required target $t is on no support of the request")
+        b = every.offsets[k] + _code(t, every.supports[k], every.arity) + 1
+        bits[b] && error("internal error: required target $t is listed twice")
+        bits[b] = true
+        counts[k] += 1
+    end
+    return RequiredTargets(required, every.arity, every.supports, every.offsets, counts, bits)
+end
+
+"The parameter sets that carry targets, in target order; `s` in the other functions indexes them. Not to be changed."
+supports(t::RequiredTargets) = t.supports
+
+"The number of combinations on support `s`: its codes are `0:ncombinations(t, s) - 1`."
+ncombinations(t::RequiredTargets, s::Integer) = t.offsets[s + 1] - t.offsets[s]
+
+"Whether the combination whose code is `code` on support `s` is a required target."
+@inline function isrequired(t::RequiredTargets{TargetList}, s::Integer, code::Integer)
+    @boundscheck 0 <= code < ncombinations(t, s) || throw(BoundsError(t, (s, code)))
+    return true
+end
+
+@inline function isrequired(t::RequiredTargets, s::Integer, code::Integer)
+    @boundscheck 0 <= code < ncombinations(t, s) || throw(BoundsError(t, (s, code)))
+    return @inbounds t.bits[t.offsets[s] + code + 1]
+end
+
+"The number of required targets on support `s`, or on every support."
+nrequired(t::RequiredTargets{TargetList}, s::Integer) = ncombinations(t, s)
+nrequired(t::RequiredTargets, s::Integer) = t.counts[s]
+nrequired(t::RequiredTargets) = length(t.list)
+
+"The required targets as `classify_targets` lists them, for the engines that read the list (IPOG, GND)."
+_target_list(t::RequiredTargets) = t.list
+
+"""
     Design
 
 What `generate(engine, request)` returns: `matrix` (parameters × cases,

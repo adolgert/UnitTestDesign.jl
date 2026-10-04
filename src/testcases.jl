@@ -341,10 +341,10 @@ function _valid_count(tc::TestCases)
     return nothing
 end
 
-function _engine_phrase(tc::TestCases)
-    tc.engine === :GND || return string(tc.engine)
-    return tc.seed === nothing ? "GND, caller's rng" : "GND seed $(tc.seed)"
-end
+"The record of the engine that made `tc`, from what it keeps: `engine` and `seed` (`EngineRecord`)."
+_engine_record(tc::TestCases) = EngineRecord(tc.engine, tc.seed)
+
+_engine_phrase(tc::TestCases) = _engine_phrase(_engine_record(tc))
 
 _shown(io::IO, x) = sprint(show, x; context = IOContext(io, :typeinfo => Any))
 
