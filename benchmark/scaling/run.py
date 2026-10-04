@@ -71,10 +71,12 @@ def fingerprint(s,args,sources):
 def payload_floor(s):
     # Proven raw integer payload for native dense target storage, only when
     # all targets are known feasible. Other families/solvers get runtime guards.
-    if s['solver'] not in ('ipog','gnd','gnd10'): return 0
+    # IPOG and GND by their registry names are the same engines as 'ipog' and 'gnd'.
+    solver={'IPOG()':'ipog','GND()':'gnd'}.get(s['solver'],s['solver'])
+    if solver not in ('ipog','gnd','gnd10'): return 0
     if s['family'] not in ('none','noop_scoped','noop_whole','mixed'): return 0
     if s['usage'] in ('coverage','report','audit_half','audit_empty','feasibility','factorial','excursion'): return 0
-    if s['solver']=='ipog' and s['family'] in ('none','mixed') and s['usage'] not in ('seed','stronger','upgrade','topup'): return 0
+    if solver=='ipog' and s['family'] in ('none','mixed') and s['usage'] not in ('seed','stronger','upgrade','topup'): return 0
     if any(f in s for f in ('space','model','adapt','forbid')): return 0
     n,v,t=s['n'],s['v'],s['strength']
     if s['family']=='mixed': targets=math.comb(n-1,t)*2**t+math.comb(n-1,t-1)*v*2**(t-1)

@@ -51,5 +51,10 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(runner.payload_floor(s),0)
         s.update(family='none',solver='gnd')
         self.assertGreater(runner.payload_floor(s),2**30)
+        # The registry's names are the same engines.
+        self.assertEqual(runner.payload_floor({**s,'solver':'GND()'}),runner.payload_floor(s))
+        self.assertEqual(runner.payload_floor({**s,'solver':'IPOG()','usage':'seed'}),
+                         runner.payload_floor({**s,'solver':'ipog','usage':'seed'}))
+        self.assertEqual(runner.payload_floor({**s,'solver':'Auto()'}),0)
 
 if __name__=='__main__': unittest.main()
