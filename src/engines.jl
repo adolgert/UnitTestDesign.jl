@@ -441,13 +441,33 @@ _engine_registry(seed::Integer = 0) =
     Pair{String, CoveringEngine}["IPOG()" => IPOG(), "GND()" => GND(; seed)]
 
 """
+    _check_fit(engine, request) -> Fit
+
+The engine's fit for the whole request (plan §4.2), or an `ArgumentError`
+with its reason when it is `:unsupported`. A directly named engine covers
+the whole request or says why not; it never hands the request to another
+engine, so a result's `engine` is always the engine that made it (option
+(c) of p0-protocol's judgment call 1). The parts of a request that
+generation hands an engine, the negative sub-requests, still go to its
+fallback (`_engine_for`). IPOG and GND fit every request, so for them this
+never throws.
+"""
+function _check_fit(engine::CoveringEngine, request::Request)
+    f = fit(engine, Profile(request))
+    f.kind === :unsupported || return f
+    name, other = engine_record(engine).name, engine_record(_fallback(engine)).name
+    throw(ArgumentError("$(name)() does not cover this request: $(f.reason); $(other)() covers any request"))
+end
+
+"""
     generate(engine::CoveringEngine, request::Request) -> Design
 
 The one engine entry point (plan Phase 3 step 1): a covering design for
 `request` in index space, certified by `validate_design` before it returns
 (contract §1.21). Every [`CoveringEngine`](@ref) builds covering designs
 (§1.3) through `cover_ordinary`, and the result records it by
-`engine_record`. Every target classification, must-include completion and
+`engine_record`. An engine whose `fit` refuses the request is an
+`ArgumentError` before anything is classified (`_check_fit`). Every target classification, must-include completion and
 placement decision is resolved or the call throws `ResourceLimitError`
 (§3.6); a design is never returned with a target unresolved or dropped.
 
@@ -463,6 +483,7 @@ then the generated negative rows (§5.12). The two kinds' bookkeeping is kept
 apart (§1.19).
 """
 function generate(engine::CoveringEngine, request::Request)
+    _check_fit(engine, request)
     required, excluded = classify_targets(request)
     record = engine_record(engine)
     name, seed = record.name, record.seed
