@@ -438,7 +438,8 @@ only the package, reads the same list the tests run. Nothing in `src/` calls
 it.
 """
 _engine_registry(seed::Integer = 0) =
-    Pair{String, CoveringEngine}["IPOG()" => IPOG(), "GND()" => GND(; seed)]
+    Pair{String, CoveringEngine}["IPOG()" => IPOG(), "GND()" => GND(; seed),
+                                 "Construction()" => Construction()]
 
 """
     _check_fit(engine, request) -> Fit

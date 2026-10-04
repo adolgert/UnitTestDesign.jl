@@ -49,6 +49,7 @@ include("construction_fields.jl")     # the catalog engine, Construction (plan Â
 include("construction_starters.jl")
 include("construction_arrays.jl")
 include("construction_catalog.jl")
+include("construction.jl")
 include("interface.jl")
 include("diagnose.jl")
 include("export.jl")

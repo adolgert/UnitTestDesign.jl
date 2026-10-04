@@ -12,14 +12,17 @@ using TestItemRunner
 # the registry is checked here with no change to this file.
 #
 # There is no expected failure. Every problem must return a certified design
-# from every engine; an exception from any engine is logged with its problem
-# and fails the gate. Before Phase 3 the 0.4 IPOG crashed on about 40% of
+# from every engine whose fit accepts it; an exception from any engine is
+# logged with its problem and fails the gate. An engine whose fit refuses a
+# problem, as `Construction` refuses mixed value counts, must refuse it by
+# name with an `ArgumentError` (`_check_fit`); the gate counts the refusals,
+# and every engine must be checked on some problems. Before Phase 3 the 0.4 IPOG crashed on about 40% of
 # these problems and the 0.4 GND never returned on those with an implied
 # target (issue #51).
 
 @testsnippet RandomGate begin
     using Random
-    using UnitTestDesign: Request, generate, to_cases, _engine_registry
+    using UnitTestDesign: Request, generate, to_cases, _engine_registry, fit, Profile
 
     """
     The tally key for one engine's count: the registry name in lower case and
@@ -36,7 +39,7 @@ using TestItemRunner
     function random_gate(strength, seed, n_problems)
         rng = Xoshiro(seed)
         tally = Dict(k => 0 for k in (:problems, :implied, :planted, :empty))
-        for (name, _) in _engine_registry(), what in (:checked, :error, :rows)
+        for (name, _) in _engine_registry(), what in (:checked, :error, :rows, :refused)
             tally[engine_key(name, what)] = 0
         end
         for index in 1:n_problems
@@ -49,6 +52,18 @@ using TestItemRunner
             space = test_space(problem.space)
             for (name, engine) in _engine_registry(engine_seed)
                 request = Request(space; strength)
+                if fit(engine, Profile(request)).kind === :unsupported
+                    refused = try
+                        generate(engine, request)
+                        false
+                    catch err
+                        err isa ArgumentError
+                    end
+                    refused || @error("$engine's fit refuses random problem $index, and generate did not " *
+                                      "refuse it with an ArgumentError", problem)
+                    tally[engine_key(name, refused ? :refused : :error)] += 1
+                    continue
+                end
                 design = try
                     generate(engine, request)
                 catch err
@@ -118,14 +133,20 @@ using TestItemRunner
         return nothing
     end
 
-    "Assert the tallies: every problem gave every registered engine a design the oracle accepts."
+    """
+    Assert the tallies: every problem gave every registered engine a design the
+    oracle accepts, or a refusal by name; IPOG and GND refuse none, and every
+    engine was checked on some problems.
+    """
     function gate_verdicts(gate, n_problems)
         tally = gate.tally
         @test tally[:problems] == n_problems
         for (name, _) in _engine_registry()
             @test tally[engine_key(name, :error)] == 0
-            @test tally[engine_key(name, :checked)] == n_problems
+            @test tally[engine_key(name, :checked)] + tally[engine_key(name, :refused)] == n_problems
+            @test tally[engine_key(name, :checked)] > 0
         end
+        @test tally[engine_key("IPOG()", :checked)] == tally[engine_key("GND()", :checked)] == n_problems
     end
 
     "500 problems at multiplier 1.0, and at least 50."
@@ -196,16 +217,18 @@ end
 
 @testitem "random problems: one Invalid value, pairwise through every registered engine, both parts (§5, §6)" setup=[UTSetup, Checker] begin
     using Random
-    using UnitTestDesign: _engine_registry
+    using UnitTestDesign: _engine_registry, fit, Profile, Request
     # Plan Phase 6 step 5: each problem gives one random parameter the value
     # Invalid(-1) (domains hold 0:9, so it is a new choice). Every registered
     # engine generates at strength 2, a randomized one with the problem's
     # index as its seed, and the oracle judges the ordinary and the negative
-    # part; the negative bookkeeping must match its counts.
+    # part; the negative bookkeeping must match its counts. An engine whose
+    # fit refuses a problem must refuse it with an ArgumentError.
     as_check(x::Invalid) = CheckInvalid(x.value)
     as_check(x) = x
     rng = Xoshiro(0x2026_0927_0006 ⊻ seed_mod())
     checked = Ref(0)
+    refused = Ref(0)
     for index in 1:100
         problem = random_problem(rng; strength = 2)
         p = rand(rng, eachindex(problem.names))
@@ -214,6 +237,11 @@ end
         cs = CheckSpace(problem.space.names, domains, problem.space.rules)
         space = test_space(cs)
         for (_, engine) in _engine_registry(index)
+            if fit(engine, Profile(Request(space; strength = 2))).kind === :unsupported
+                @test_throws ArgumentError covering(space; strength = 2, engine)
+                refused[] += 1
+                continue
+            end
             cases = try
                 covering(space; strength = 2, engine)
             catch err
@@ -235,5 +263,6 @@ end
             checked[] += ok
         end
     end
-    @test checked[] == 100 * length(_engine_registry())
+    @test checked[] + refused[] == 100 * length(_engine_registry())
+    @test checked[] > 100 * (length(_engine_registry()) - 1)
 end
