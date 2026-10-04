@@ -265,7 +265,15 @@ and rules, never in the targets.
 - `strength` and `groups`: as the request has them, the base group first,
   then each `stronger` group with its strength. A negative sub-request's base
   strength may be 0.
-- `n_must_include`: the must-include rows, ordinary and negative.
+- `n_must_include`: the ordinary must-include rows, those that hold no
+  [`Invalid`](@ref) value. They are the must-include rows of the ordinary
+  design, which `generate` builds from the ordinary request (the request with
+  the negative must-include rows set apart), so the whole request's profile
+  and the ordinary request's are the same, and a fit reads what the engine
+  will cover. A negative must-include row is a must-include row of the
+  negative sub-request of its invalid value (`cover_negative`), over the
+  other parameters, where it holds no invalid value, so that sub-request's
+  profile counts it.
 - `n_invalid`: the [`Invalid`](@ref) values, over every parameter.
 - `rules`: for each rule, in order, its scope size and kind: `:tabulated`,
   `:lazy` (a scoped rule evaluated on demand, §12.19), or `:whole_case`
@@ -295,8 +303,10 @@ function Profile(request::Request)
         (scope = length(t.scope), kind = isempty(c.scope) ? :whole_case : t.lazy === nothing ? :tabulated : :lazy)
         for (t, c) in zip(space.tables, space.constraints)]
     groups = Pair{Vector{Int}, Int}[copy(members) => s for (members, s) in request.groups]
+    must = request.must_include
+    ordinary = count(j -> !_holds_invalid(request, view(must, :, j)), axes(must, 2))
     return Profile(arity, BitVector(_is_prime_power.(arity)), request.strength, groups,
-                   n_must_include(request), n_invalid, rules, _target_count(arity, groups))
+                   ordinary, n_invalid, rules, _target_count(arity, groups))
 end
 
 nparameters(p::Profile) = length(p.arity)

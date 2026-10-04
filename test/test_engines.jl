@@ -185,7 +185,15 @@ end
     @test p.arity == [3, 3, 2, 3, 2, 6, 1, 8, 2]
     @test p.prime_power == [true, true, true, true, true, false, false, true, true]
     @test p.rules == [(scope = 2, kind = :tabulated), (scope = 3, kind = :lazy), (scope = 9, kind = :whole_case)]
-    @test p.n_must_include == 2 && p.n_invalid == 3
+    # The ordinary must-include rows only: the negative one is a must-include
+    # row of its value's negative sub-request, whose profile counts it.
+    @test p.n_must_include == 1 && p.n_invalid == 3
+    sub = UnitTestDesign._negative_request(request, UnitTestDesign.NegativeProjection(space, 5),
+                                           request.must_include[[1, 2, 3, 4, 6, 7, 8, 9], [2]])
+    @test Profile(sub).n_must_include == 1
+    # So the whole request's profile is the ordinary request's, which `generate` builds the ordinary rows from.
+    ordinary = Profile(UnitTestDesign._with_must_include(request, request.must_include[:, [1]]))
+    @test all(name -> getfield(p, name) == getfield(ordinary, name), fieldnames(Profile))
     @test p.groups == [collect(1:9) => 2, [1, 2, 3] => 3]
     @test p.targets == length(TargetList(request))
     @test [UnitTestDesign._is_prime_power(q) for q in 1:32] ==

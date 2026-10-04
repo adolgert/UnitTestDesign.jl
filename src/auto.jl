@@ -429,7 +429,10 @@ end
 
 `recommend`'s answer for a request it built: `_auto_plan` on the request's
 `Profile`, the bound `_request_bound` knows without classifying, the sizes
-each goal can give, and the notes.
+each goal can give, and the notes. A profile counts only the ordinary
+must-include rows, so it is the profile of the ordinary request that
+`generate` hands `Auto` (the negative must-include rows set apart), and the
+plan is the one `Auto` makes.
 """
 function _recommendation(engine::Auto, request::Request)
     p = Profile(request)

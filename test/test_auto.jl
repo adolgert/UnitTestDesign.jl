@@ -388,9 +388,24 @@ end
         @test said.lower_bound == cases.record.lower_bound
         @test said.proof == cases.record.proof
     end
+    # Negative must-include rows are the negative sub-requests' own (§10.6), so
+    # recommend plans from the ordinary request, as Auto does, and counts them
+    # among the must-include rows it shows. Every row Invalid in `a`: the
+    # catalog's array meets the bound, so Auto runs it alone; and above the
+    # threshold the catalog alone, not IPOG.
+    invalid = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
     doms = Any[1:4 for _ in 1:40]
     doms[1] = [1, 2, 3, 4, Invalid(0)]
     wide = TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:40)}(Tuple(doms)))
+    for (space, t, must) in ((invalid, 2, [(a = Invalid(0), b = 1, c = 1, d = 1)]), (wide, 3, [(p1 = Invalid(0),)]))
+        said = recommend(space; strength = t, must_include = must)
+        cases = covering(space; strength = t, must_include = must, engine = Auto())
+        @test [c.engine for c in cases.record.candidates] == [c.engine for c in said.candidates if c.runs] ==
+              ["Construction()"]
+        @test said.engine == cases.record.chose == "Construction()" && said.n_must_include == 1
+        @test fit(Construction(), Profile(Request(space; strength = t, must_include = must))).kind === :exact
+        @test !cases.record.catalog.seeded && cases[1][first(keys(must[1]))] == Invalid(0)
+    end
     # Past the reducer's caps, `:compact` returns the start as it is, and says so.
     seventeen = TestSpace([Symbol(:x, i) for i in 1:17], [1:3 for _ in 1:17], Constraint[], 10^5)
     said = recommend(seventeen; strength = 7, goal = :compact)   # 42,532,776 combinations, above 2^25
