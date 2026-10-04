@@ -307,10 +307,10 @@ call that is too large; a design that can't be certified is not returned:
   work.
 - **Rules.** With any rule, every required combination keeps full-width
   bookkeeping: at least 24 bytes per parameter for each combination, and
-  measured several times more than that. Twenty binary parameters at
-  strength 6 with one rule peaked at 4.3 to 6.5 GiB, where that figure
-  gives 1.5 GiB, and the CASA benchmark models at strength 3 passed 2 GiB
-  from 55 parameters up. At
+  a process's peak measured several times that. Twenty binary parameters at
+  strength 6 with one rule peaked at 4.3 to 6.5 GiB, where 24 bytes per
+  parameter per combination comes to 1.1 GiB, and the CASA benchmark models
+  at strength 3 passed 2 GiB from 55 parameters up. At
   the start of this release's work, 200 options with 24 rules took 3
   seconds and 1.4 GiB, and 400 options with 46 rules 19 seconds and 6.2 GiB. A rule that reads the whole case is checked
   only on complete cases, which makes its search far longer than a scoped
