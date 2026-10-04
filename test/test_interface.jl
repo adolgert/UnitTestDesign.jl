@@ -602,8 +602,9 @@ end
     @test occursin("argument 1 of all_pairs is a TestSpace among other arguments",
                    message(() -> all_pairs(TestSpace((a = [1, 2],)), [1, 2])))
     @test occursin("parameter names are Symbols", message(() -> covering("a" => [1, 2], "b" => [3, 4])))
-    @test occursin("`engine` is IPOG() or GND(); got :ipog", message(() -> covering([1, 2], [3, 4]; engine = :ipog)))
-    @test occursin("`engine` is IPOG() or GND()", message(() -> all_pairs((a = [1, 2], b = [3, 4]); engine = "GND")))
+    @test occursin("`engine` is a covering engine such as IPOG(), Construction(), Compact(IPOG()) or Auto(); got :ipog",
+                   message(() -> covering([1, 2], [3, 4]; engine = :ipog)))
+    @test occursin("`engine` is a covering engine such as", message(() -> all_pairs((a = [1, 2], b = [3, 4]); engine = "GND")))
 end
 
 

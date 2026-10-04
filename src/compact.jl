@@ -21,29 +21,40 @@
 # start that keep-the-smallest chose (§4.1 step 3).
 
 """
+Use when each case is expensive to run and you want fewer of them: it removes
+rows from another engine's design, with the same guarantee, in a fraction of
+a second for most spaces.
+
     Compact(inner; seed = 0, effort = 1)
 
-The row reducer of plan §5.3, wrapped around the covering engine `inner`
-(internal; not exported until Phase 3). It covers a request with `inner`,
-then removes rows from that design: delete the row whose removal leaves the
-fewest required combinations uncovered, repair the design at that row count,
-and repeat while each repair succeeds (`_compact`). The result never has
-more rows than `inner`'s and keeps its must-include rows, first and
-unchanged (contract §10.5).
+The row reducer of plan §5.3, wrapped around the covering engine `inner`,
+such as [`IPOG`](@ref)`()` or [`Construction`](@ref)`()`. It covers a
+request with `inner`, then removes rows from that design: delete the row
+whose removal leaves the fewest required combinations uncovered, repair the
+design at that row count, and repeat while each repair succeeds, stopping
+at the lower bound (`_compact`). The result never has more rows than
+`inner`'s and keeps its must-include rows, first and unchanged (contract
+§10.5). Every row it writes is checked against the rules on its own, so it
+never searches and its rows don't depend on `feasibility_limit` (§3.8). A
+smaller design covers fewer combinations of higher strength by accident:
+see the manual's Engines page. [`Auto`](@ref)`(goal = :compact)` runs it on
+the smaller of IPOG's design and the catalog's array.
 
 `seed`, an integer of at least 0, seeds a fresh generator for every call,
-so the same `inner`, `seed` and `effort` give the same rows (§9.5). `effort`,
-a positive integer, multiplies the step budget (`_compact_budget`) and the
-work budget (`_COMPACT_WORK`); budgets count steps and combinations read,
-never seconds. A request whose coverage index would hold more than
-`_COMPACT_MAX_COMBINATIONS` combinations, or whose start has more than
-`typemax(UInt16)` rows, gets `inner`'s rows unreduced.
+so the same `inner`, `seed` and `effort` give the same rows (§9.5), and the
+result records the seed. `effort`, a positive integer, multiplies the
+reducer's two budgets, which count work, never seconds: at `effort = 1`,
+30,000 repair steps or one per combination to cover, whichever is more, and
+2·10⁹ combinations read, about 10 to 20 seconds on a laptop, which only
+strengths 4 to 6 reach. A request with more than 2^25 combinations to
+cover, counted before the rules, or whose start has more than 65,535 rows,
+gets `inner`'s rows unreduced. The result's record says what the reducer
+did, `cases.record.reducer`: the rows before and after, the steps, and why
+it stopped.
 
-The negative rows of a space with [`Invalid`](@ref) values are reduced too:
-`cover_negative` hands each sub-request to `Compact`, which reduces the inner
-engine's rows for it as for any request (plan §4.1, "Negative rows need
-nothing new"). Where the inner engine's `fit` refuses a sub-request, its
-fallback's rows are reduced (`_fallback`).
+The negative rows of a space with [`Invalid`](@ref) values are reduced too,
+for each invalid value as for any request (plan §4.1). Where the inner
+engine refuses one of them, IPOG's rows for it are reduced.
 """
 struct Compact{E <: CoveringEngine} <: CoveringEngine
     inner::E

@@ -153,7 +153,7 @@ end
         err isa ArgumentError ? sprint(showerror, err) : "not an ArgumentError"
     end
     @test message == "ArgumentError: Construction() does not cover this request: mixed value counts on 5 " *
-                     "parameters; the catalog covers equal value counts, or t + 1 = 3 parameters; IPOG() covers any request"
+                     "parameters; the catalog covers equal value counts, or t + 1 = 3 parameters; IPOG() or Auto() covers any request"
     request = Request(space)
     @test_throws ArgumentError generate(C, request)
     @test_throws ArgumentError cover_ordinary(C, request, RequiredTargets(request, first(classify_targets(request))))

@@ -28,19 +28,43 @@
 # functions of the shape alone.
 
 """
+Use when every parameter has the same number of values, or there are only
+`strength + 1` parameters, and you want the design built from a catalog of
+algebraic constructions: often far fewer cases than [`IPOG`](@ref), built in
+milliseconds, and an orthogonal array, which shows every combination exactly
+once, where one exists.
+
     Construction()
 
-The catalog engine (plan §5.4; internal until Phase 3, decision D7): for a
-space whose parameters all have the same number of values, or that has at
-most `strength + 1` parameters, the smallest algebraic covering array the
-catalog has (`_catalog_entry`), chosen from sizes alone, with no search and
-no randomness. Under rules, must-include rows or `stronger` groups the array
-seeds IPOG's general path. `fit` says which, and why it refuses the rest.
+The catalog engine (plan §5.4). For a space whose parameters all have the
+same number of values, or that has at most `strength + 1` parameters, it
+chooses the smallest array the catalog's constructions give for that shape,
+from sizes alone: orthogonal arrays on prime-power numbers of values, the
+zero-sum array for `strength + 1` parameters of any sizes, Kleitman and
+Spencer's arrays for two values, cover starters, products of arrays, and at
+strength 3 the LFSR array and its copies, small group arrays and recursions.
+The array is the design when the space has no rules, no must-include rows
+and no `stronger` groups. Otherwise the catalog's rows that no rule forbids
+seed IPOG, which adds what they leave uncovered, after the must-include
+rows. Above strength 3 the catalog offers only the arrays that meet the
+lower bound, the zero-sum and orthogonal arrays.
+
+It refuses, with its reason, a space it has no array for, such as
+parameters with different numbers of values (more than `strength + 1` of
+them): naming it is then an `ArgumentError` that suggests `IPOG()` or
+[`Auto`](@ref)`()`, which cover any request. `Auto()` uses it where it fits
+and is smaller. The result's record says which array it built,
+`cases.record.catalog`, with its source and whether it is an orthogonal
+array. It uses no randomness (contract §9.4); its arrays are those of the
+package version, so a later version may build a smaller one (§9.8).
 """
 struct Construction <: CoveringEngine
 end
 
 engine_record(::Construction) = EngineRecord(:Construction, nothing)
+
+# As the caller writes it, also inside a wrapper's display: "Compact(Construction(); …)".
+Base.show(io::IO, ::Construction) = print(io, "Construction()")
 
 """
     _construction_plan(profile) -> (fit, entry, members)

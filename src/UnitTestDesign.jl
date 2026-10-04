@@ -11,7 +11,8 @@ of cases with [`coverage`](@ref).
 """
 module UnitTestDesign
 
-export IPOG, GND
+export IPOG, GND, Construction, Compact, Auto
+export recommend, Recommendation
 export covering, all_values, all_pairs, all_triples, excursions, full_factorial
 export TestCases, Exclusion
 # Deprecated aliases, kept for one release (contract §13.1, §13.2).
@@ -53,6 +54,7 @@ include("construction_starters.jl")
 include("construction_arrays.jl")
 include("construction_catalog.jl")
 include("construction.jl")
+include("auto.jl")          # Auto and recommend (plan §6)
 include("interface.jl")
 include("diagnose.jl")
 include("export.jl")

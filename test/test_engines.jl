@@ -27,6 +27,7 @@ using TestItemRunner
     Refusing(least::Int) = Refusing(least, Int[])
 
     UnitTestDesign.engine_record(::Refusing) = EngineRecord(:Refusing, nothing)
+    Base.show(io::IO, e::Refusing) = print(io, "Refusing($(e.least))")
     UnitTestDesign.fit(e::Refusing, p::Profile) =
         p.strength >= e.least ? Fit(:native, "IPOG's rows") : Fit(:unsupported, "strength below $(e.least)")
     function UnitTestDesign.cover_ordinary(e::Refusing, request::Request, targets::RequiredTargets)
@@ -303,7 +304,7 @@ end
     catch err
         sprint(showerror, err)
     end
-    @test message == "ArgumentError: Refusing() does not cover this request: strength below 3; IPOG() covers any request"
+    @test message == "ArgumentError: Refusing(3) does not cover this request: strength below 3; IPOG() or Auto() covers any request"
     @test length(covering(space; strength = 3, engine)) == 12 && engine.covered == [3]
     # IPOG and GND fit every request, so nothing changes for them.
     for e in (IPOG(), GND())
@@ -324,7 +325,8 @@ end
     catch e
         sprint(showerror, e)
     end
-    @test occursin("`engine` is IPOG() or GND(); got :ipog", message)
+    @test occursin("`engine` is a covering engine such as IPOG(), Construction(), Compact(IPOG()) or Auto(); got :ipog",
+                   message)
     # design_sizes names the engine by its record.
     t = design_sizes((a = [1, 2], b = [:x, :y], c = [true, false]); engine, distances = 1:1)
     @test t.engine === :Refusing

@@ -437,8 +437,10 @@ engine here on every random problem and check each design with the
 independent oracle (test/checker.jl), so an engine added here is checked with
 no other change to the tests. The benchmark harness (benchmark/scaling/
 worker.jl) resolves a job's `solver` by these names. A name is the engine's
-constructor call without its seed, such as `"IPOG()"`; a wrapper's would be
-`"Compact(IPOG())"`.
+constructor call without its seed, such as `"IPOG()"` or `"Compact(IPOG())"`.
+`Auto`'s two pipelines are here, `"Auto()"` and `"Auto(goal = :compact)"`, so
+that every pipeline it can choose (IPOG, the catalog, and either reduced) is
+checked as `Auto` runs it.
 
 The list is in the package, not in test/, so that the harness, which loads
 only the package, reads the same list the tests run. Nothing in `src/` calls
@@ -447,13 +449,16 @@ it.
 _engine_registry(seed::Integer = 0) =
     Pair{String, CoveringEngine}["IPOG()" => IPOG(), "GND()" => GND(; seed),
                                  "Compact(IPOG())" => Compact(IPOG(); seed),
-                                 "Construction()" => Construction()]
+                                 "Construction()" => Construction(),
+                                 "Auto()" => Auto(),
+                                 "Auto(goal = :compact)" => Auto(; goal = :compact, seed)]
 
 """
     _check_fit(engine, request) -> Fit
 
 The engine's fit for the whole request (plan §4.2), or an `ArgumentError`
-with its reason when it is `:unsupported`. A directly named engine covers
+with its reason when it is `:unsupported`, which names the engine as it was
+called and suggests `IPOG()` or `Auto()`, which cover any request. A directly named engine covers
 the whole request or says why not; it never hands the request to another
 engine, so a result's `engine` is always the engine that made it (option
 (c) of p0-protocol's judgment call 1). The parts of a request that
@@ -464,8 +469,8 @@ never throws.
 function _check_fit(engine::CoveringEngine, request::Request)
     f = fit(engine, Profile(request))
     f.kind === :unsupported || return f
-    name, other = engine_record(engine).name, engine_record(_fallback(engine)).name
-    throw(ArgumentError("$(name)() does not cover this request: $(f.reason); $(other)() covers any request"))
+    throw(ArgumentError("$(_engine_label(engine)) does not cover this request: $(f.reason); " *
+                        "IPOG() or Auto() covers any request"))
 end
 
 """

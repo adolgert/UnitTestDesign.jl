@@ -213,11 +213,12 @@ function _from_row(from, space::TestSpace, positional::Bool)
     return from isa AbstractVector ? Tuple(from) : from
 end
 
-# Any covering engine (`CoveringEngine`, plan §4.2). The engines a caller can
-# name are IPOG() and GND(), and the message says so.
+# Any covering engine (`CoveringEngine`, plan §4.2). The message names the
+# engines a caller can name, as the manual's Engines page lists them.
 function _check_engine(engine)
     engine isa CoveringEngine || throw(ArgumentError(
-        "`engine` is IPOG() or GND(); got $(repr(engine))"))
+        "`engine` is a covering engine such as IPOG(), Construction(), Compact(IPOG()) or Auto(); " *
+        "got $(repr(engine))"))
     return engine
 end
 
@@ -325,9 +326,16 @@ result counts the two kinds of targets separately (§5.10).
   with one `Invalid` value is a negative row, judged and completed under the
   negative policy, with ordinary values elsewhere; a partial row without one
   is completed as an ordinary row; a row with two is an error (§5.7, §7.9).
-- `engine = IPOG()`: [`IPOG`](@ref) or [`GND`](@ref). Both are deterministic
-  for the same inputs (§9.1). Neither guarantees a particular number of
-  cases, and neither is always smaller than the other (§8.1).
+- `engine = IPOG()`: the covering engine. [`IPOG`](@ref), the default, is
+  fast and covers any request; [`Auto`](@ref)`()` keeps the smaller of
+  IPOG's design and the catalog's array ([`Construction`](@ref)) where the
+  catalog applies, and `Auto(goal = :compact)` then removes rows with the
+  row reducer ([`Compact`](@ref)); [`GND`](@ref) is a seeded greedy search.
+  [`recommend`](@ref) says what `Auto` would run. Every engine is
+  deterministic for the same inputs (§9.1). None guarantees a particular
+  number of cases, and none is always smaller than another (§8.1); the
+  result records a lower bound beside its count, and says "minimal" when the
+  count meets it (§8.4).
 - `feasibility_limit = 1_000_000`: the node budget of each search that
   decides whether a combination, a partial must-include row or a placement
   has a valid completion (§3.3, §3.4). Generation resolves every one of them

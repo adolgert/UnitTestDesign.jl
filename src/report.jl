@@ -502,10 +502,10 @@ end
 
 const _SizeCounts = _PartCounts
 const _SizeRow = NamedTuple{(:strategy, :kind, :level, :status, :message, :cases, :share, :pairs, :triples,
-                             :negative_cases, :negative_pairs, :negative_triples),
+                             :negative_cases, :negative_pairs, :negative_triples, :engine),
     Tuple{String, Symbol, Int, Symbol, String, Union{Nothing, Int}, Union{Nothing, Float64},
           Union{Nothing, _SizeCounts}, Union{Nothing, _SizeCounts},
-          Union{Nothing, Int}, Union{Nothing, _SizeCounts}, Union{Nothing, _SizeCounts}}}
+          Union{Nothing, Int}, Union{Nothing, _SizeCounts}, Union{Nothing, _SizeCounts}, Union{Nothing, String}}}
 
 """
 Use when you read the table [`design_sizes`](@ref) returns: one row per
@@ -516,15 +516,19 @@ strategy, with its case count, its share of the valid cases, and its coverage.
 The table [`design_sizes`](@ref) returns. Fields: `parameters` (the names),
 `total` (the full product), `valid` (the valid rows, ordinary and negative,
 or `nothing` when the product is above `limit` and they were not counted),
-`engine`, `limit`, `has_invalid` (whether the space has [`Invalid`](@ref)
-values, so that each figure has a negative part), and `rows`, one per
-strategy run, each a `NamedTuple`:
+`engine` (the name the results record of the first engine, such as `:IPOG`),
+`limit`, `has_invalid` (whether the space has [`Invalid`](@ref) values, so
+that each figure has a negative part), `rows`, one per strategy run, and
+`engines`, every engine compared, as its constructor call (`"IPOG()"`,
+`"Auto(goal = :compact)"`). Each row is a `NamedTuple`:
 
 - `strategy`: `"full_factorial"`, `"covering(s)"` or `"excursions(d)"`;
   `kind` (`:full_factorial`, `:covering`, `:excursion`) and `level` (the
   strength or distance, 0 for the full factorial).
 - `status`: `:ok`; `:resource_limit` when the strategy stopped at a limit,
-  with `message` naming it, and no case count or share (§3.12); or
+  with `message` naming it, and no case count or share (§3.12);
+  `:unsupported` when the engine does not cover the request, with `message`
+  giving its reason, as `Construction()` refuses mixed value counts; or
   `:invalid_base` for an excursion whose default base breaks a rule.
 - `cases`: the rows the strategy produced, ordinary and negative, and
   `share`, `cases / valid` (`nothing` when `valid` is unknown).
@@ -536,6 +540,8 @@ strategy run, each a `NamedTuple`:
   negative targets (§6) at strength 2 and 3, in the same form. 0 and zero
   counts when the space has no `Invalid` values; `nothing` where `cases` or
   `pairs` and `triples` are.
+- `engine`: for a covering row, the engine that made it, as in `engines`;
+  `nothing` for the full factorial and the excursions, which use none.
 
 Every figure keeps the ordinary and negative parts apart (§5.9, §5.10).
 Case counts are what the engine produced, not lower bounds (§8.3).
@@ -548,6 +554,7 @@ struct DesignSizes
     limit::Int
     has_invalid::Bool
     rows::Vector{_SizeRow}
+    engines::Vector{String}
 end
 
 """
@@ -557,6 +564,7 @@ each strategy produces for your space, and what each covers.
     design_sizes(space; strengths = 1:3, distances = 1:2, engine = IPOG(), limit = 10^6,
                  from = nothing, feasibility_limit = 1_000_000,
                  explanation_limit = 1_000_000) -> DesignSizes
+    design_sizes(space; engine = [IPOG(), Auto(goal = :compact)], kwargs...)
     design_sizes(domains::NamedTuple; constraints = [], kwargs...)
     design_sizes(name => domain, ...; constraints = [], kwargs...)
     design_sizes(domain, domain, ...; kwargs...)
@@ -588,6 +596,12 @@ limit is shown with its status in place of a count (§3.12); the others still
 run. The counts are the rows each strategy produced with `engine`, not lower
 bounds (§8.3). The space comes in the forms `covering` takes.
 
+`engine` may be a vector of engines, to compare them: each covering strength
+then has one row per engine, in the order given, under an `engine` column.
+An engine that does not cover a request, such as [`Construction`](@ref) on
+parameters with different numbers of values, shows its reason in place of a
+count, as a resource limit does.
+
 With [`Invalid`](@ref) values each count is two figures, ordinary + negative
 (§5.10): `cases` as "4 + 3", the ordinary rows and the negative rows, and
 `pairs` and `triples` as "9/9 + 4/4", the ordinary targets covered of the
@@ -599,7 +613,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
                       explanation_limit = 1_000_000)
     strengths = _check_levels(:strengths, strengths, 1, "§11.1")
     distances = _check_levels(:distances, distances, 0, "§7.5")
-    _check_engine(engine)
+    engines = _check_engines(engine)
     limit = _check_integer(:limit, limit, 1, "§7.3")
     _check_limits(feasibility_limit, explanation_limit)
     space, _ = _space(:design_sizes, input, constraints)
@@ -613,25 +627,44 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     ff = _attempt(() -> full_factorial(space; limit, limits...))
     valid = ff isa TestCases ? length(ff) : nothing
     push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, space; memos, feasibility_limit))
-    for s in strengths
+    labels = _engine_label.(engines)
+    for s in strengths, (e, label) in zip(engines, labels)
         s <= n || continue
-        design = _attempt(() -> covering(space; strength = s, engine, limits...))
-        push!(rows, _size_row("covering($s)", :covering, s, design, valid, space; memos, feasibility_limit))
+        # `covering(space; strength = s, engine = e, limits...)`, after asking the
+        # engine's fit, so that a refusal is a row's status rather than an error.
+        request = Request(space; strength = s, limits...)
+        f = fit(e, Profile(request))
+        if f.kind === :unsupported
+            push!(rows, _SizeRow(("covering($s)", :covering, s, :unsupported, f.reason, nothing, nothing,
+                                  nothing, nothing, none..., label)))
+            continue
+        end
+        design = _attempt(() -> TestCases(request, generate(e, request)))
+        push!(rows, _size_row("covering($s)", :covering, s, design, valid, space; memos, feasibility_limit,
+                              engine = label))
     end
     for d in distances
         base = from === nothing ? _default_base(space) : nothing
         if base !== nothing && !isallowed(space, base)
             push!(rows, _SizeRow(("excursions($d)", :excursion, d, :invalid_base,
                 "the default base $(_text(base)) breaks a rule; pass `from`", nothing, nothing,
-                nothing, nothing, none...)))
+                nothing, nothing, none..., nothing)))
             continue
         end
         design = _attempt(() -> excursions(space; distance = d, from, limits...))
         push!(rows, _size_row("excursions($d)", :excursion, d, design, valid, space; memos, feasibility_limit))
     end
-    return DesignSizes(copy(space.names), length(space), valid, engine_record(engine).name, limit,
-                       _has_invalid(space), rows)
+    return DesignSizes(copy(space.names), length(space), valid, engine_record(first(engines)).name, limit,
+                       _has_invalid(space), rows, labels)
 end
+
+"`design_sizes`'s `engine`: one covering engine or a nonempty vector of them, each checked (`_check_engine`)."
+function _check_engines(engine)
+    engine isa AbstractVector || return CoveringEngine[_check_engine(engine)]
+    isempty(engine) && throw(ArgumentError("`engine` is a covering engine or a vector of them; got an empty vector"))
+    return CoveringEngine[_check_engine(e) for e in engine]
+end
+
 
 "A list of strengths or distances: integers of at least `least`, read before anything runs."
 function _check_levels(keyword::Symbol, levels, least::Integer, section)
@@ -674,11 +707,12 @@ One line of `design_sizes`: `design`, generated from `space`, or the
 `ResourceLimitError` that stopped it. The design's rows are measured in
 `space`, not in `design.space`, because `memos` memoize `space`'s rules.
 """
-function _size_row(strategy, kind, level, design, valid, space::TestSpace; memos, feasibility_limit)
+function _size_row(strategy, kind, level, design, valid, space::TestSpace; memos, feasibility_limit,
+                   engine::Union{Nothing, String} = nothing)
     if design isa ResourceLimitError
         message = "$(design.keyword) = $(_grouped(design.limit)) reached: $(design.what)"
         return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing,
-                         nothing, nothing, nothing))
+                         nothing, nothing, nothing, engine))
     end
     share = valid === nothing ? nothing : (valid == 0 ? nothing : length(design) / valid)
     # The rows are read once for both strengths, and only when one is measured.
@@ -686,7 +720,7 @@ function _size_row(strategy, kind, level, design, valid, space::TestSpace; memos
     pairs, negative_pairs = _size_counts(design, space, prepared, 2; memos, feasibility_limit)
     triples, negative_triples = _size_counts(design, space, prepared, 3; memos, feasibility_limit)
     return _SizeRow((strategy, kind, level, :ok, "", length(design), share, pairs, triples,
-                     count(hasinvalid, design), negative_pairs, negative_triples))
+                     count(hasinvalid, design), negative_pairs, negative_triples, engine))
 end
 
 # A share as a percentage: one decimal, but never 0.0% for a nonzero share nor
@@ -722,14 +756,18 @@ Base.show(io::IO, t::DesignSizes) =
     print(io, "DesignSizes: ", _plural(length(t.rows), "strategy", "strategies"), " for ", _plural(length(t.parameters), "parameter"))
 
 function Base.show(io::IO, ::MIME"text/plain", t::DesignSizes)
-    header = ["strategy", "cases", "share", "pairs", "triples"]
+    # With several engines, an engine column follows the strategy (left-aligned, as it is).
+    several = length(t.engines) > 1
+    header = several ? ["strategy", "engine", "cases", "share", "pairs", "triples"] :
+                       ["strategy", "cases", "share", "pairs", "triples"]
     counts(row, part) = t.has_invalid ? _count_cell(row[part], row[Symbol(:negative_, part)]) :
                                         _count_cell(row[part])
-    table = [[row.strategy, _cases_cell(t, row),
-              row.share === nothing ? "—" : _share_cell(row.share),
-              counts(row, :pairs), counts(row, :triples)] for row in t.rows]
+    table = [[row.strategy; several ? [something(row.engine, "")] : String[]; _cases_cell(t, row);
+              row.share === nothing ? "—" : _share_cell(row.share);
+              counts(row, :pairs); counts(row, :triples)] for row in t.rows]
     widths = [maximum(textwidth, [header[j]; [r[j] for r in table]]) for j in eachindex(header)]
-    cell(text, j) = j == 1 ? rpad(text, widths[j]) : lpad(text, widths[j])
+    left = several ? 2 : 1
+    cell(text, j) = j <= left ? rpad(text, widths[j]) : lpad(text, widths[j])
     print(io, rstrip(join((cell(header[j], j) for j in eachindex(header)), "  ")))
     for (row, texts) in zip(t.rows, table)
         line = join((cell(texts[j], j) for j in eachindex(header)), "  ")
@@ -738,7 +776,8 @@ function Base.show(io::IO, ::MIME"text/plain", t::DesignSizes)
     end
     t.has_invalid && print(io, "\ncells with + read ordinary + negative: rows without and with an Invalid ",
                            "value, and the targets each kind covers")
-    print(io, "\ncase counts are the rows each strategy produced with $(t.engine), not lower bounds")
+    print(io, "\ncase counts are the rows each strategy produced with ",
+          several ? "each engine" : string(t.engine), ", not lower bounds")
     return nothing
 end
 
@@ -817,12 +856,12 @@ function plain(r::Report)
             coverage = plain(r.coverage), excluded = NamedTuple[_plain_exclusion(e) for e in r.excluded],
             recorded = NamedTuple[_plain_exclusion(e) for e in r.recorded], bonus = r.bonus,
             prefix = copy(r.prefix), prefix_negative = copy(r.prefix_negative), seed = r.seed,
-            engine = r.engine, n_must_include = r.n_must_include)
+            engine = r.engine, n_must_include = r.n_must_include, record = r.record)
 end
 
 function plain(t::DesignSizes)
     total = t.total isa Int ? t.total : (typemin(Int) <= t.total <= typemax(Int) ? Int(t.total) : string(t.total))
     return (parameters = copy(t.parameters), total = total, valid = t.valid, engine = t.engine,
             limit = t.limit, has_invalid = t.has_invalid,
-            rows = NamedTuple[NamedTuple{keys(row)}(values(row)) for row in t.rows])
+            rows = NamedTuple[NamedTuple{keys(row)}(values(row)) for row in t.rows], engines = copy(t.engines))
 end

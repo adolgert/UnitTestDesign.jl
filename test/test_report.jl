@@ -353,7 +353,8 @@ end
     @test d.total == 12 && d.valid == 5 && !d.has_invalid && d.rows[2] == (strategy = "covering(1)",
         kind = :covering, level = 1, status = :ok, message = "", cases = 3, share = 0.6,
         pairs = (covered = 8, feasible = 11, unknown = 0), triples = (covered = 3, feasible = 5, unknown = 0),
-        negative_cases = 0, negative_pairs = none, negative_triples = none)
+        negative_cases = 0, negative_pairs = none, negative_triples = none, engine = "IPOG()")
+    @test d.engines == ["IPOG()"]
     # Above `limit` the valid count is unknown; above typemax(Int) the total is a string of digits.
     wide = plain(design_sizes(fill(1:10, 5)...; strengths = Int[], distances = Int[], limit = 10))
     @test wide.total === 100_000 && wide.valid === nothing && plain_tree(wide)
