@@ -203,21 +203,31 @@ function _seed_note(record::EngineRecord)
     return record.seed === nothing ? "$(record.name) with the caller's rng" : "$(record.name) seed $(record.seed)"
 end
 
-"`report`'s seed line for a covering design (§9.5): the seed and how to repeat it, or why there is none."
-function _seed_text(record::EngineRecord)
+"""
+    _seed_text(record, notes = (;)) -> String
+
+`report`'s seed line for a covering design (§9.5): the seed and how to repeat
+it, or why there is none. `notes` is the result's `record`, which holds what
+else a repeat needs (`_repeat_call`).
+"""
+function _seed_text(record::EngineRecord, notes::NamedTuple = (;))
     _randomized(record) || return "seed: none ($(record.name) uses no randomness)"
     record.seed === nothing && return "seed: none ($(record.name) drew from the caller's rng)"
-    return "seed: $(record.seed) ($(_repeat_call(Val(record.name), record.seed)) repeats these cases)"
+    return "seed: $(record.seed) ($(_repeat_call(Val(record.name), record.seed, notes)) repeats these cases)"
 end
 
 """
-    _repeat_call(::Val{name}, seed) -> String
+    _repeat_call(::Val{name}, seed[, notes]) -> String
 
 The call that repeats a randomized engine's rows, for `_seed_text`: its
 constructor with the seed, "GND(seed = 3)". A wrapper, whose constructor takes
-more than a seed, adds a method that names what else must match.
+more than a seed, adds a method that names what else must match. An engine
+whose other settings change its rows records them in the result's `record`
+(`notes`), and its three-argument method names them: "GND(seed = 3,
+candidates = 20)".
 """
 _repeat_call(::Val{name}, seed) where {name} = "$(name)(seed = $(seed))"
+_repeat_call(name::Val, seed, ::NamedTuple) = _repeat_call(name, seed)
 
 """
     Fit(kind, reason; rows = nothing)

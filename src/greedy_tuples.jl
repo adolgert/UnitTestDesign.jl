@@ -235,3 +235,14 @@ engine_record(engine::GND) = EngineRecord(:GND, engine.seed, Pair{Symbol, Any}[:
                                           randomized = true)
 
 fit(::GND, ::Profile) = Fit(:native, "GND covers any request")
+
+# A result keeps the engine's name and seed, not its settings, so a GND that
+# draws other than the default 50 candidates a row records how many: repeating
+# its cases needs them (`_repeat_call`). The default records nothing.
+function _cover_with_notes(engine::GND, request::Request, targets::RequiredTargets)
+    rows = cover_ordinary(engine, request, targets)
+    return rows, engine.candidates == 50 ? (;) : (gnd = (candidates = engine.candidates,),)
+end
+
+_repeat_call(::Val{:GND}, seed, notes::NamedTuple) =
+    haskey(notes, :gnd) ? "GND(seed = $seed, candidates = $(notes.gnd.candidates))" : "GND(seed = $seed)"

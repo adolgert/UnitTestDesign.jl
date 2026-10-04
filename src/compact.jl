@@ -62,11 +62,13 @@ struct Compact{E <: CoveringEngine} <: CoveringEngine
     effort::Int
 
     function Compact(inner::E; seed = 0, effort = 1) where {E <: CoveringEngine}
-        return new{E}(inner, _check_integer(:seed, seed, 0, "§9.5"), _check_integer(:effort, effort, 1, "§9.5"))
+        return new{E}(inner, _check_integer(:seed, seed, 0, "§9.11"), _check_integer(:effort, effort, 1, "§9.11"))
     end
 end
 
-Base.show(io::IO, e::Compact) = print(io, "Compact(", e.inner, "; seed = ", e.seed, ", effort = ", e.effort, ")")
+# As the caller writes it, the inner engine as its constructor call (`_engine_label`): "Compact(GND(seed = 2); …)".
+Base.show(io::IO, e::Compact) =
+    print(io, "Compact(", _engine_label(e.inner), "; seed = ", e.seed, ", effort = ", e.effort, ")")
 
 """
     _COMPACT_MAX_COMBINATIONS

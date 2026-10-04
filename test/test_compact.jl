@@ -59,8 +59,13 @@ end
 @testitem "compact: a wrapper engine with a record, a fit, a fallback and a seed (§4.2, §5.3)" setup=[CompactSetup] begin
     engine = Compact(IPOG())
     @test engine isa CoveringEngine && engine.seed == 0 && engine.effort == 1
-    @test repr(Compact(GND(seed = 3); seed = 2, effort = 5)) == "Compact($(repr(GND(seed = 3))); seed = 2, effort = 5)"
-    @test repr(engine) == "Compact($(repr(IPOG())); seed = 0, effort = 1)"
+    # As the caller writes it, the inner engine as its constructor call, also in a table or a message.
+    @test repr(Compact(GND(seed = 3); seed = 2, effort = 5)) == "Compact(GND(seed = 3); seed = 2, effort = 5)"
+    @test repr(engine) == "Compact(IPOG(); seed = 0, effort = 1)"
+    @test UnitTestDesign._engine_label(Compact(GND(seed = 2, candidates = 7))) ==
+          "Compact(GND(seed = 2, candidates = 7); seed = 0, effort = 1)"
+    @test repr(Compact(Compact(Construction()); seed = 1)) ==
+          "Compact(Compact(Construction(); seed = 0, effort = 1); seed = 1, effort = 1)"
     # Arguments are checked as GND's are (§9.5).
     @test_throws ArgumentError Compact(IPOG(); seed = -1)
     @test_throws ArgumentError Compact(IPOG(); effort = 0)

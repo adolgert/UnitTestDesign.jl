@@ -441,10 +441,10 @@ end
 
 function _seed_text(r::Report)
     record = EngineRecord(r.engine, r.seed; randomized = r.record.randomized)
-    _randomized(record) && return _seed_text(record)
+    _randomized(record) && return _seed_text(record, r.record)
     r.strategy === :excursion && return "seed: none (an excursion uses no randomness)"
     r.strategy === :full_factorial && return "seed: none (a full factorial uses no randomness)"
-    return _seed_text(record)
+    return _seed_text(record, r.record)
 end
 
 """

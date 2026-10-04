@@ -89,6 +89,20 @@ end
     @test _seed_text(EngineRecord(:IPOG, nothing)) == "seed: none (IPOG uses no randomness)"
     @test _seed_text(EngineRecord(:GND, 3; randomized = true)) == "seed: 3 (GND(seed = 3) repeats these cases)"
     @test _seed_text(EngineRecord(:GND, nothing; randomized = true)) == "seed: none (GND drew from the caller's rng)"
+    # GND's rows depend on `candidates` too, so a GND that draws other than the
+    # default 50 records them, and the seed line names the call that repeats
+    # its cases; the default's record and line are as before.
+    @test _seed_text(EngineRecord(:GND, 3; randomized = true), (gnd = (candidates = 20,),)) ==
+          "seed: 3 (GND(seed = 3, candidates = 20) repeats these cases)"
+    twenty = covering(fill(1:4, 6)...; engine = GND(seed = 3, candidates = 20))
+    @test twenty.record.gnd == (candidates = 20,)
+    @test "seed: 3 (GND(seed = 3, candidates = 20) repeats these cases)" in
+          split(sprint(show, MIME"text/plain"(), report(twenty)), '\n')
+    @test covering(fill(1:4, 6)...; engine = GND(seed = 3, candidates = 20)) == twenty
+    @test covering(fill(1:4, 6)...; engine = GND(seed = 3)) != twenty   # why the line names candidates
+    fifty = covering(fill(1:4, 6)...; engine = GND(seed = 3))
+    @test !haskey(fifty.record, :gnd) && "seed: 3 (GND(seed = 3) repeats these cases)" in
+          split(sprint(show, MIME"text/plain"(), report(fifty)), '\n')
     # A result keeps whether its engine is randomized in its record, beside engine and seed.
     @test all_pairs(1:2, 1:3; engine = GND(seed = 3)).record.randomized
     @test !all_pairs(1:2, 1:3).record.randomized

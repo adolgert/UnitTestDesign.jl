@@ -123,7 +123,9 @@ factorials); measurement of such a result needs an explicit strength.
   values, whose negative rows repeat ordinary combinations), and whether the
   array only `seeded` the design under rules; for the row reducer
   ([`Compact`](@ref), `Auto(goal = :compact)`), `reducer`, with the rows it
-  started from and ended with, its steps and budgets, and why it stopped.
+  started from and ended with, its steps and budgets, and why it stopped;
+  for [`GND`](@ref) with other than the default 50 `candidates`, `gnd`,
+  with its `candidates`, which repeating its cases needs beside the seed.
 
 # Display
 

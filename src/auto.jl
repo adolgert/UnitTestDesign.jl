@@ -80,7 +80,7 @@ struct Auto <: CoveringEngine
     function Auto(; goal = :balanced, seed = 0, effort = 1)
         goal in (:fast, :balanced, :compact) || throw(ArgumentError(
             "goal is :fast, :balanced or :compact; got $(repr(goal)) (see `Auto`)"))
-        return new(goal, _check_integer(:seed, seed, 0, "§9.5"), _check_integer(:effort, effort, 1, "§9.5"))
+        return new(goal, _check_integer(:seed, seed, 0, "§9.11"), _check_integer(:effort, effort, 1, "§9.11"))
     end
 end
 
