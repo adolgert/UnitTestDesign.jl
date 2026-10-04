@@ -6,6 +6,7 @@
 # repository root:
 #
 #     julia --project=. --startup-file=no benchmark/construction_vs_ipog.jl [SETS...] [--expensive]
+#         [--expensive-cost=C] [--only-expensive]
 #
 # SETS (default: all four):
 #
@@ -19,7 +20,10 @@
 #
 # A family's expensive points (families.py: over 2·10^6 targets, or targets
 # times the bound over 4·10^8) get only the catalog's size, from sizes alone,
-# unless --expensive is given. Every other point runs both engines through
+# unless --expensive is given, or --expensive-cost=C and their targets times
+# the bound is at most C (families.py's estimate is 4·10^8 for ten seconds of
+# IPOG). --only-expensive skips the other points, for a second run. Every
+# other point runs both engines through
 # `covering`, which certifies each design (contract §1.21), once to compile
 # and once timed. The rows are exact; the times are one warm call each, and
 # provisional on a busy machine. It prints one line per point and a summary
@@ -32,6 +36,16 @@ const ROOT = normpath(joinpath(@__DIR__, ".."))
 const C = UnitTestDesign.Construction()
 const SETS = filter(a -> !startswith(a, "--"), ARGS)
 const EXPENSIVE = "--expensive" in ARGS
+const ONLY_EXPENSIVE = "--only-expensive" in ARGS
+
+"The C of `--expensive-cost=C`, or 0."
+function cost_cap()
+    for a in ARGS
+        startswith(a, "--expensive-cost=") && return parse(Float64, a[(length("--expensive-cost=") + 1):end])
+    end
+    return 0.0
+end
+const COST_CAP = cost_cap()
 selected(name) = isempty(SETS) || name in SETS
 
 compare_shapes() =
@@ -39,13 +53,13 @@ compare_shapes() =
      [(3, v, k) for v in (2, 3, 4, 5, 6, 7, 8, 10) for k in (4, 5, 6, 8, 10, 12, 16, 20, 30)
       if v^3 * binomial(k, 3) <= 1_500_000]]
 
-"(t, v, k, expensive) for each point of a uniform family, from families.py itself."
+"(t, v, k, expensive, cost) for each point of a uniform family, from families.py itself."
 function family_shapes(name)
     code = "import sys; sys.path.insert(0, 'benchmark/scaling'); import families\n" *
            "for j in families.FAMILIES['$name'](['ipog'], 1): " *
-           "print(j['strength'], j['v'], j['n'], int(bool(j.get('expensive'))))"
+           "print(j['strength'], j['v'], j['n'], int(bool(j.get('expensive'))), j['cost'])"
     lines = split(strip(read(Cmd(`python3 -c $code`; dir = ROOT), String)), '\n')
-    return [(parse(Int, a), parse(Int, b), parse(Int, c), e == "1") for (a, b, c, e) in split.(lines)]
+    return [(parse(Int, a), parse(Int, b), parse(Int, c), e == "1", parse(Float64, d)) for (a, b, c, e, d) in split.(lines)]
 end
 
 "Rows and warm seconds of `covering` with `engine`, after one call to compile and warm it."
@@ -63,7 +77,8 @@ function run_set(name, shapes)
     println("\n== $name: $(length(shapes)) shapes")
     println(join(["t", "v", "k", "ipog", "construction", "best_known", "ipog_s", "construction_s", "mark", "entry"], '\t'))
     larger, equal, smaller, over = Tuple{Int, Int, Int}[], 0, 0, Float64[]
-    for (t, v, k, expensive) in shapes
+    for (t, v, k, expensive, cost) in shapes
+        ONLY_EXPENSIVE && !expensive && continue
         entry = UnitTestDesign._catalog_entry(t, v, k)
         best = best_known(t, v, k)
         best = best === nothing ? nothing : best.N
@@ -72,7 +87,7 @@ function run_set(name, shapes)
             continue
         end
         ipog = ipog_s = ours = ours_s = nothing
-        if !expensive || EXPENSIVE
+        if !expensive || EXPENSIVE || cost <= COST_CAP
             space = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
             ipog, ipog_s = timed_rows(space, t, IPOG())
             ours, ours_s = timed_rows(space, t, C)
@@ -142,7 +157,7 @@ end
 
 function main()
     covering(TestSpace((a = 1:2, b = 1:2, c = 1:2)); engine = C)
-    selected("compare") && run_set("compare", [(t, v, k, false) for (t, v, k) in compare_shapes()])
+    selected("compare") && run_set("compare", [(t, v, k, false, 0.0) for (t, v, k) in compare_shapes()])
     for family in ("uniform-pp", "uniform-npp")
         selected(family) && run_set(family, family_shapes(family))
     end
