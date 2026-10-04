@@ -339,6 +339,9 @@ end
     @test must.record.lower_bound == 10 && length(must) == 10 && must.record.minimal
     @test must.record.proof == "the 2 must-include rows hold at most 1 of the 3 × 3 = 9 combinations of p1 and p2, " *
                                "and the other 8 need a case each"
+    one = all_pairs(uniform(3, 3); must_include = [(p1 = 1, p2 = 1, p3 = 1)])
+    @test one.record.proof == "the 1 must-include row holds at most 1 of the 3 × 3 = 9 combinations of p1 and p2, " *
+                              "and the other 8 need a case each"
     # Excluded combinations are not required.
     ruled = all_pairs(TestSpace((a = 1:3, b = 1:3, c = 1:2); constraints = [forbid((a = 1, b = 1))]))
     @test ruled.record.lower_bound == 8

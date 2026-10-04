@@ -173,7 +173,7 @@ function _bound_proof(b::_SupportBound, names::Vector{Symbol}, arity::Vector{Int
     b.m == 0 && return "the $combinations " * (b.need == 1 ? "needs a case" : "need a case each")
     b.rows == b.m && return "the $musts"
     rest = b.rows - b.m == 1 ? "the other needs a case" : "the other $(b.rows - b.m) need a case each"
-    return "the $musts hold at most $(b.held + b.unset) of the $combinations, and $rest"
+    return "the $musts $(b.m == 1 ? "holds" : "hold") at most $(b.held + b.unset) of the $combinations, and $rest"
 end
 
 "\"a\", \"a and b\", \"a, b and c\"."
