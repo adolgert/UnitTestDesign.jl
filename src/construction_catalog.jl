@@ -191,6 +191,10 @@ function _pairwise(memo::_CatalogMemo, k::Int, v::Int)
         push!(candidates, _entry(:lemma35, 2, v, k, (r + 1) * q^2 - r * q - 2d,
                                  _fused_name("Lemma 3.5 (r = $r)", q, d); q, fused = d, n = r))
     end
+    # No array has fewer than v^2 rows, and a tie goes to the first candidate,
+    # so an array at v^2 already offered is the choice: the rest need not be
+    # weighed. Only the time changes (Auto looks up small shapes often).
+    any(c -> c.rows == v^2, candidates) && return _smallest(candidates)
     wide = _wide(memo, k, v)
     if wide !== nothing
         name = occursin(" x ", wide.name) ? "partitioned product: " * wide.name : wide.name
@@ -418,6 +422,8 @@ function _strength3(memo::_CatalogMemo, k::Int, v::Int)
             k <= q^2 + q + 1 &&
                 push!(candidates, _entry(:lfsr, 3, v, k, 2q^3 - 1 - 2d, _fused_name("LFSR", q, d); q, fused = d))
         end
+        # As in `_pairwise`: an array at v^3 already offered is the choice.
+        any(c -> c.rows == v^3, candidates) && return _smallest(candidates)
         v == 3 && k <= 6 && push!(candidates, _entry(:group_ca33, 3, 3, k, 33, "group array"))
         v == 3 && k <= 8 && push!(candidates, _entry(:ck_ca45, 3, 3, k, 45, "Chateauneuf-Kreher Figure 7"))
         v == 3 && k <= 9 && push!(candidates, _entry(:ck_ca51, 3, 3, k, 51, "Chateauneuf-Kreher Figure 8"))

@@ -64,6 +64,17 @@ function _construction_plan(p::Profile)
                    "mixed value counts on $k parameters; the catalog covers equal value counts, " *
                    "or t + 1 = $(t + 1) parameters"), nothing, nothing
     end
+    if t > 3
+        # Above strength 3 the catalog has only the zero-sum array and the Bush
+        # array, which fused can be hundreds of times the best known size, so it
+        # offers only the arrays at the lower bound (p2-construction's judgment
+        # call 4, option b, decided for Phase 3).
+        bound = _describe(entry).lower_bound
+        entry.rows == bound || return Fit(:unsupported,
+            "the catalog's array for $k parameters of $(first(p.arity)) values at strength $t ($(entry.name)) " *
+            "has $(entry.rows) rows, above the lower bound of $bound; above strength 3 " *
+            "the catalog offers only arrays at the lower bound"), nothing, nothing
+    end
     if isempty(p.rules) && p.n_must_include == 0 && length(p.groups) == 1
         p.n_invalid == 0 && return Fit(:exact, "$(entry.name): $(entry.rows) rows"; rows = entry.rows), entry, nothing
         return Fit(:exact, "$(entry.name): $(entry.rows) ordinary rows, then the negative rows"), entry, nothing
@@ -120,15 +131,48 @@ and keeps each row completable (`dead`). The request records only its own
 must-include rows (§10.5); the catalog's are ordinary rows. A request `fit`
 refuses is an `ArgumentError`.
 """
-function cover_ordinary(engine::Construction, request::Request, targets::RequiredTargets)
+cover_ordinary(engine::Construction, request::Request, targets::RequiredTargets) =
+    first(_cover_with_notes(engine, request, targets))
+
+"""
+    _cover_with_notes(::Construction, request, targets) -> (matrix, (catalog = …,))
+
+`cover_ordinary`'s rows, with the catalog's array in the result's record
+(plan §5.4, "Balance"): `_describe(entry)`, and `seeded`, whether the array
+seeded IPOG rather than being the design. `orthogonal` is the design's: true
+only when the design is the array and the array shows every combination
+exactly once.
+"""
+function _cover_with_notes(engine::Construction, request::Request, targets::RequiredTargets)
     f, entry, members = _construction_plan(Profile(request))
     f.kind === :unsupported && throw(ArgumentError("Construction() does not cover this request: $(f.reason)"))
+    return _construction_cover(request, targets, f, entry::CatalogEntry, members)
+end
+
+"""
+    _construction_cover(request, targets, fit, entry, members) -> (matrix, notes)
+
+`_cover_with_notes(::Construction, …)` for a plan `_construction_plan` already
+made, which `Auto` hands over rather than look the shape up again.
+"""
+function _construction_cover(request::Request, targets::RequiredTargets, f::Fit, entry::CatalogEntry,
+                             members::Union{Nothing, Vector{Int}})
+    d = _describe(entry)
+    seeded = f.kind === :seeded
+    notes = (catalog = (name = d.name, family = d.family, source = d.source, rows = d.rows,
+                        lower_bound = d.lower_bound, orthogonal = d.orthogonal && !seeded, seeded = seeded),)
+    return _construction_rows(request, targets, f, entry, members), notes
+end
+
+"The rows of `cover_ordinary(::Construction, …)` for the plan `_construction_plan` made."
+function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, entry::CatalogEntry,
+                       members::Union{Nothing, Vector{Int}})
     if members === nothing
-        rows = _engine_rows(entry::CatalogEntry, request.arity)
+        rows = _engine_rows(entry, request.arity)
         f.kind === :exact && return rows
     else
         rows = zeros(Int, length(request.arity), entry.rows)   # the group's array, the others unset
-        rows[members, :] .= _engine_rows(entry::CatalogEntry, request.arity[members])
+        rows[members, :] .= _engine_rows(entry, request.arity[members])
     end
     seeds = hcat(request.must_include, isconstrained(request) ? _allowed_rows(request, rows) : rows)
     isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
