@@ -209,12 +209,14 @@ end
 @testitem "compact: must-include rows, stronger groups and Invalid values pass the oracle (§5.3, §7.4)" setup=[CompactSetup, Checker, UTSetup] begin
     # The registry's oracle loops have no must-include rows or stronger
     # groups, so this loop adds them, with an Invalid value in a third of the
-    # problems: each design must satisfy the independent oracle, keep the
-    # must-include rows first and unchanged where they were set, and have no
-    # more ordinary rows than IPOG's.
+    # problems, and with IPOG or GND as the inner engine: each design must
+    # satisfy the independent oracle, keep the must-include rows first and
+    # unchanged where they were set, and have no more ordinary rows than its
+    # inner engine's.
     as_check(x::Invalid) = CheckInvalid(x.value)
     as_check(x) = x
     rng = Xoshiro(0x2026_1004_04 ⊻ seed_mod())
+    inner(index) = isodd(index) ? IPOG() : GND(seed = index)   # Compact(GND()) is not in the registry
     checked = Ref(0)
     n_problems = max(10, round(Int, 25 * test_run_multiplier()))
     for index in 1:n_problems
@@ -233,7 +235,7 @@ end
         must = isempty(valid) ? [] : [valid[rand(rng, eachindex(valid))] for _ in 1:rand(rng, 0:2)]
         must = [rand(rng) < 0.5 ? row : NamedTuple{keys(row)[1:2]}(Tuple(row)[1:2]) for row in must]
         cases = try
-            covering(space; strength, stronger, must_include = must, engine = Compact(IPOG(); seed = index))
+            covering(space; strength, stronger, must_include = must, engine = Compact(inner(index); seed = index))
         catch err
             err isa InterruptException && rethrow()
             @error("Compact threw on problem $index", problem, stronger, must, exception = (err, catch_backtrace()))
@@ -245,8 +247,8 @@ end
         ok = complete(check.ordinary) && (!invalid || complete(check.negative)) &&
              cases.required == check.ordinary.counts.feasible &&
              all(k -> all(name -> rows[k][name] == must[k][name], keys(must[k])), eachindex(must))
-        ipog = covering(space; strength, stronger, must_include = must)
-        ok &= count(!hasinvalid, rows) <= count(!hasinvalid, collect(ipog))
+        start = covering(space; strength, stronger, must_include = must, engine = inner(index))
+        ok &= count(!hasinvalid, rows) <= count(!hasinvalid, collect(start))
         ok || @error("Compact's design fails the oracle", index, problem, stronger, must, check)
         @test ok
         checked[] += ok

@@ -43,9 +43,11 @@ combination (§2.8). Each row adds one to exactly one combination of each
 support, and an entry move takes it from one combination to another, so a
 count is at most the number of rows the index holds. `add_row!` refuses a row
 past `typemax(UInt16)` = 65,535 rows with an internal error, so a count never
-wraps. A design of more rows (the largest the package builds in its supported
-scale is IPOG's 7,168 rows for 8 × 64) needs a wider count, which a later
-consumer can make a type parameter.
+wraps. The supported scale holds designs of more rows (three parameters of
+64 values at strength 3 need 262,144), which `Compact` leaves unreduced
+(`:rows_cap`); the designs it reduces have thousands (IPOG's 7,168 for
+8 × 64). A consumer that counts more rows needs a wider count, which can
+become a type parameter.
 
 The structure is read-only for its consumers; its fields are internal. The
 supports are `targets`' own vectors, not copies, and must not be changed.
