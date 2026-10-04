@@ -105,7 +105,9 @@ end
         @test iscomplete(coverage(seeded)) && length(seeded) <= length(plain)
     end
     # Must-include rows come first and unchanged, partial ones completed in
-    # place, and only they count as must-include rows (contract §10.5).
+    # place, and only they count as must-include rows (contract §10.5). Each
+    # row of the orthogonal array holds a pair none of them holds, so all 49
+    # follow them.
     space = space_of(uniform)
     must = [(p1 = 1, p2 = 2), (p1 = 3, p3 = 3, p4 = 4), (p1 = 7, p2 = 7, p3 = 7, p4 = 7, p5 = 7, p6 = 7, p7 = 7, p8 = 7)]
     cases = all_pairs(space; engine = C, must_include = must)
@@ -140,6 +142,46 @@ end
     # A rule with t + 1 parameters of mixed counts.
     space = space_of([4, 3, 2]; constraints = [forbid((p1 = 1, p2 = 1))])
     @test iscomplete(coverage(all_pairs(space; engine = C)))
+end
+
+
+@testitem "construction: with must-include rows, a catalog row is kept only for what they leave uncovered" setup=[CatalogSetup, ConstructionSetup] begin
+    C = Construction()
+    # Contract §9.10, §10.6: a result passed back as `must_include` keeps its
+    # rows, in order, and gains rows only for targets they leave uncovered, so
+    # a Construction() result passed back gains none, as with IPOG and Auto:
+    # an exact array, one seeded under a rule, strength 3, a `stronger` group
+    # (its rows partial), and the zero-sum array on mixed counts. Before the
+    # review of Phase 2 the catalog's whole array came again after them.
+    for (space, t, extra) in ((space_of(fill(7, 8)), 2, (;)),
+                              (space_of(fill(7, 8); constraints = [@forbid(p1 == p2)]), 2, (;)),
+                              (space_of(fill(3, 12)), 3, (;)),
+                              (space_of(fill(4, 16)), 2, (; stronger = [(:p1, :p2, :p3, :p4) => 3])),
+                              (space_of([5, 4, 3]), 2, (;)))
+        rows = collect(covering(space; strength = t, engine = C, extra...))
+        for engine in (C, IPOG(), Auto())
+            again = covering(space; strength = t, engine, must_include = rows, extra...)
+            @test collect(again) == rows && again.n_must_include == length(rows)
+        end
+        # Half of them: the catalog adds only what the other half held, never more than before.
+        half = covering(space; strength = t, engine = C, must_include = rows[1:cld(length(rows), 2)], extra...)
+        @test iscomplete(coverage(half)) && length(half) <= length(rows)
+    end
+    # One must-include row equal to a row of the orthogonal array: that row isn't repeated.
+    oa = collect(all_pairs(space_of(fill(7, 8)); engine = C))
+    cases = all_pairs(space_of(fill(7, 8)); engine = C, must_include = [oa[5]])
+    @test length(cases) == 49 && allunique(collect(cases)) && cases[1] == oa[5] && Set(collect(cases)) == Set(oa)
+    # At full strength every target is a whole row: the must-include rows,
+    # completed, then every valid row they don't hold, IPOG's design exactly
+    # (contract §7.8), whether they are complete, partial or repeated.
+    for (space, t, must) in ((space_of([3, 4]), 2, [(p1 = 1, p2 = 1), (p1 = 2, p2 = 3)]),
+                             (space_of([3, 4]), 2, [(p1 = 1,), (p1 = 2, p2 = 3)]),
+                             (space_of([3, 4]), 2, [(p1 = 1, p2 = 1), (p1 = 1, p2 = 1)]),
+                             (space_of([3, 3, 2]; constraints = [forbid((p1 = 1, p2 = 1))]), 3, [(p1 = 3,)]))
+        full = covering(space; strength = t, engine = C, must_include = must)
+        @test collect(full) == collect(covering(space; strength = t, must_include = must))
+        @test full.n_must_include == length(must)
+    end
 end
 
 

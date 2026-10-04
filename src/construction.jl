@@ -12,13 +12,16 @@
 #   is the design.
 # - Seeded. The same shapes with rules, must-include rows or `stronger`
 #   groups: the caller's must-include rows first, unchanged (contract §10.5),
-#   then catalog rows that no rule forbids, as further seeds of IPOG's
-#   general path, which adds what they leave uncovered, the `stronger`
-#   targets included (§4.1, stage 2, "Extend"). Probe 11 found this never
-#   worse than IPOG with a few rules. With `stronger` groups the seed is the
-#   strongest group's own array, on its parameters, when that array is at
-#   strength 2 or 3 and no smaller than the base one: seeded with the base
-#   array, IPOG's rows for a group whose bound dominates come on top of it.
+#   then catalog rows that no rule forbids and, with must-include rows, that
+#   hold a target those and the rows before don't (§9.10, §10.6), as further
+#   seeds of IPOG's general path, which adds what they leave uncovered, the
+#   `stronger` targets included (§4.1, stage 2, "Extend"). At full strength
+#   with must-include rows the design is IPOG's, every valid row (§7.8).
+#   Probe 11 found this never worse than IPOG with a few rules. With
+#   `stronger` groups the seed is the strongest group's own array, on its
+#   parameters, when that array is at strength 2 or 3 and no smaller than the
+#   base one: seeded with the base array, IPOG's rows for a group whose bound
+#   dominates come on top of it.
 # - Anything else, mixed value counts on more than t + 1 parameters above
 #   all, is refused (`fit` says why); a negative sub-request it refuses goes
 #   to IPOG (`_engine_for`), and `generate` refuses the whole request by name
@@ -32,7 +35,10 @@ Use when every parameter has the same number of values, or there are only
 `strength + 1` parameters, and you want the design built from a catalog of
 algebraic constructions: often far fewer cases than [`IPOG`](@ref), built in
 milliseconds, and an orthogonal array, which shows every combination exactly
-once, where one exists.
+once, where the catalog has one: for a prime-power number q of values, at
+least the strength, on at most q + 1 parameters, and for `strength + 1`
+parameters. Other orthogonal arrays exist that it doesn't build, such as 100
+cases for 4 parameters of 10 values.
 
     Construction()
 
@@ -43,11 +49,15 @@ from sizes alone: orthogonal arrays on prime-power numbers of values, the
 zero-sum array for `strength + 1` parameters of any sizes, Kleitman and
 Spencer's arrays for two values, cover starters, products of arrays, and at
 strength 3 the LFSR array and its copies, small group arrays and recursions.
-The array is the design when the space has no rules, no must-include rows
-and no `stronger` groups. Otherwise the catalog's rows that no rule forbids
-seed IPOG, which adds what they leave uncovered, after the must-include
-rows. Above strength 3 the catalog offers only the arrays that meet the
-lower bound, the zero-sum and orthogonal arrays.
+The array is the design when the space has no rules, no must-include rows and
+no `stronger` groups. Otherwise the catalog's rows that no rule forbids seed
+IPOG, which adds what they leave uncovered, after the must-include rows; a
+catalog row that holds nothing the must-include rows and the rows before it
+don't is left out, so a result passed back as `must_include` for the same
+space gains no cases. With `stronger` groups the seed is often the strongest
+group's own array, on that group's parameters. Above strength 3 the catalog
+offers only the arrays that meet the lower bound, the zero-sum and
+orthogonal arrays.
 
 It refuses, with its reason, a space it has no array for, such as
 parameters with different numbers of values (more than `strength + 1` of
@@ -148,12 +158,15 @@ end
 
 The catalog's rows for `request` (plan §5.4). For an exact shape, the array
 itself. Seeded, the request's must-include rows first (contract §10.5), then
-the catalog's rows that no rule forbids (`_allowed_rows`), and then IPOG's
-general path (`ipog_multi_way`) with all of them as must-include rows, which
-completes a partial row, adds rows until every required target is covered,
-and keeps each row completable (`dead`). The request records only its own
-must-include rows (§10.5); the catalog's are ordinary rows. A request `fit`
-refuses is an `ArgumentError`.
+the catalog's rows that no rule forbids (`_allowed_rows`) and, when there are
+must-include rows, that hold a target they and the rows kept before don't
+(`_new_coverage_rows`, §9.10), and then IPOG's general path (`ipog_multi_way`)
+with all of them as must-include rows, which completes a partial row, adds
+rows until every required target is covered, and keeps each row completable
+(`dead`). At full strength with must-include rows the design is every valid
+row after them (`full_strength_rows`, §7.8), as IPOG gives it. The request
+records only its own must-include rows (§10.5); the catalog's are ordinary
+rows. A request `fit` refuses is an `ArgumentError`.
 """
 cover_ordinary(engine::Construction, request::Request, targets::RequiredTargets) =
     first(_cover_with_notes(engine, request, targets))
@@ -193,6 +206,13 @@ end
 "The rows of `cover_ordinary(::Construction, …)` for the plan `_construction_plan` made."
 function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, entry::CatalogEntry,
                        members::Union{Nothing, Vector{Int}})
+    must = request.must_include
+    # At full strength every target is a whole row, so the design is the
+    # must-include rows, completed, and every valid row they don't hold,
+    # whatever the engine (contract §7.8, §11.2): IPOG's rows, where the
+    # catalog's would repeat a completed partial row.
+    size(must, 2) > 0 && request.strength == length(request.arity) &&
+        return full_strength_rows(request, _target_list(targets))
     if members === nothing
         rows = _engine_rows(entry, request.arity)
         f.kind === :exact && return rows
@@ -200,7 +220,9 @@ function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, 
         rows = zeros(Int, length(request.arity), entry.rows)   # the group's array, the others unset
         rows[members, :] .= _engine_rows(entry, request.arity[members])
     end
-    seeds = hcat(request.must_include, isconstrained(request) ? _allowed_rows(request, rows) : rows)
+    kept = isconstrained(request) ? _allowed_rows(request, rows) : rows
+    size(must, 2) > 0 && (kept = _new_coverage_rows(must, kept, targets))
+    seeds = hcat(must, kept)
     isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
     return ipog_multi_way(request.arity, _target_list(targets), isdead, seeds;
                           order = ipog_order(request.arity, request.groups))
@@ -221,4 +243,42 @@ function _allowed_rows(request::Request, rows::Matrix{Int})
         allowed && push!(keep, j)
     end
     return rows[:, keep]
+end
+
+"""
+    _new_coverage_rows(must, rows, targets) -> Matrix{Int}
+
+The rows (columns of `rows`, in order) that each hold a required target that
+neither the must-include rows `must` nor the rows kept before it hold: with
+must-include rows the catalog's rows cover only what those leave uncovered
+(contract §9.10, §10.6), so a `Construction()` result passed back as
+`must_include` gains no rows, and a must-include row equal to a catalog row
+is not repeated. Greedy in the catalog's order, so deterministic. A row
+holds the targets on the supports it sets in full; a partial must-include
+row holds only those, since its completion is IPOG's to choose.
+"""
+function _new_coverage_rows(must::Matrix{Int}, rows::Matrix{Int}, targets::RequiredTargets)
+    held = falses(last(targets.offsets))      # by id, offsets[s] + code + 1, as in `RequiredTargets`
+    for j in axes(must, 2)
+        _hold!(held, view(must, :, j), targets)
+    end
+    keep = Int[]
+    for j in axes(rows, 2)
+        _hold!(held, view(rows, :, j), targets) && push!(keep, j)
+    end
+    return rows[:, keep]
+end
+
+"Mark in `held` the required targets that `row` holds (`_new_coverage_rows`); whether one was not marked before."
+function _hold!(held::BitVector, row::AbstractVector{Int}, targets::RequiredTargets)
+    new = false
+    for (s, support) in enumerate(supports(targets))
+        any(p -> row[p] == 0, support) && continue
+        code = _code(row, support, targets.arity)
+        isrequired(targets, s, code) || continue
+        id = targets.offsets[s] + code + 1
+        new |= !held[id]
+        held[id] = true
+    end
+    return new
 end

@@ -34,6 +34,9 @@ const _STAR = -1
 "Replace every `_STAR` by the symbol 0."
 _fill_stars(A::Matrix{Int}) = max.(A, 0)
 
+"`_fill_stars`, in place, for an array just built."
+_fill_stars!(A::Matrix{Int}) = (A .= max.(A, 0))
+
 
 ## Any strength: zero-sum, fusion, derivation, products of two arrays
 
@@ -271,22 +274,60 @@ column f of B and column g of A; the columns from the last l2 of B and the
 last k2 of A together are dropped. When `A` is an SCA, so is the result.
 """
 function _sca_product(A::Matrix{Int}, K::Tuple{Int, Int}, B::Matrix{Int}, L::Tuple{Int, Int}, v::Int)
+    nfirst, n = K[1] * L[1], _sca_width(K, L)
+    return _sca_product_columns(A, axes(A, 2), K, B, L, v, 1:n), (nfirst, n - nfirst)
+end
+
+"The number of columns of `_sca_product` for the partitions `K` of A and `L` of B: k1 l1 + k1 l2 + k2 l1."
+_sca_width(K::Tuple{Int, Int}, L::Tuple{Int, Int}) = K[1] * L[1] + K[1] * L[2] + K[2] * L[1]
+
+"""
+    _sca_pair(c, K, L) -> (f, g)
+
+The columns that column `c` of `_sca_product` pairs: column f of B and column
+g of A. In the product's order, f slowest throughout: the first group, f in
+1:l1 with g in 1:k1; then the pairs of a first group and a second, f in 1:l1
+with g in the last k2 of A, and f in the last l2 of B with g in 1:k1.
+"""
+function _sca_pair(c::Int, K::Tuple{Int, Int}, L::Tuple{Int, Int})
     (k1, k2), (l1, l2) = K, L
+    1 <= c <= _sca_width(K, L) || throw(BoundsError(1:_sca_width(K, L), c))
+    c <= l1 * k1 && return (div(c - 1, k1) + 1, rem(c - 1, k1) + 1)
+    c -= l1 * k1
+    c <= l1 * k2 && return (div(c - 1, k2) + 1, k1 + rem(c - 1, k2) + 1)
+    c -= l1 * k2
+    return (l1 + div(c - 1, k1) + 1, rem(c - 1, k1) + 1)
+end
+
+"""
+    _sca_product_columns(A, acols, K, B, L, v, cols) -> Matrix{Int}
+
+Columns `cols` of `first(_sca_product(A, K, B, L, v))`, in that order, for
+an `A` that holds only the columns `acols` (increasing) of the PCA and the
+whole SCA `B`: a column of the product is made of one column of each, so
+the rest of `A` is never needed (`_sca_pair`). `_sca_product` is this with
+every column; the catalog's wide products build only the columns they keep
+(`_partitioned_columns`).
+"""
+function _sca_product_columns(A::Matrix{Int}, acols::AbstractVector{Int}, K::Tuple{Int, Int}, B::Matrix{Int},
+                              L::Tuple{Int, Int}, v::Int, cols::AbstractVector{Int})
+    k1 = K[1]
+    nfirst = k1 * L[1]
     NA, NB = size(A, 1) - v, size(B, 1) - v      # the rows above the special rows
-    order = Tuple{Int, Int}[(f, g) for f in 1:l1 for g in 1:k1]
-    nfirst = length(order)
-    append!(order, (f, g) for f in 1:(l1 + l2) for g in 1:(k1 + k2) if !(f <= l1 && g <= k1) && !(f > l1 && g > k1))
-    C = zeros(Int, NA + NB + v, length(order))
-    for (c, (f, g)) in enumerate(order)
-        C[1:NA, c] .= view(A, 1:NA, g)
-        C[(NA + 1):(NA + NB), c] .= view(B, 1:NB, f)
+    C = zeros(Int, NA + NB + v, length(cols))
+    for (j, c) in enumerate(cols)
+        f, g = _sca_pair(c, K, L)
+        a = searchsortedfirst(acols, g)
+        (a <= length(acols) && acols[a] == g) || error("internal error: column $g of the PCA was not built")
+        C[1:NA, j] .= view(A, 1:NA, a)
+        C[(NA + 1):(NA + NB), j] .= view(B, 1:NB, f)
         for i in 0:(v - 1)
             # Under the first group, the constant rows. Under a column from the last k2 of A,
             # the last rows of A, which for an SCA hold 0. Under a column from the last l2 of B, 0.
-            C[NA + NB + i + 1, c] = c <= nfirst ? i : (g > k1 ? A[NA + i + 1, g] : 0)
+            C[NA + NB + i + 1, j] = c <= nfirst ? i : (g > k1 ? A[NA + i + 1, a] : 0)
         end
     end
-    return C, (nfirst, length(order) - nfirst)
+    return C
 end
 
 """
@@ -328,7 +369,7 @@ function _partitioned(C::Matrix{Int}, rows::AbstractVector{Int}, v::Int)
         held = C[rows, c]
         symbols = filter(!=(_STAR), held)
         relabel = collect(0:(v - 1))
-        if allunique(symbols)
+        if _first_group(held)
             missing_symbols = setdiff(0:(v - 1), symbols)
             for (i, x) in enumerate(held)
                 x == _STAR && (held[i] = popfirst!(missing_symbols); P[rows[i], c] = held[i])
@@ -354,6 +395,9 @@ function _partitioned(C::Matrix{Int}, rows::AbstractVector{Int}, v::Int)
     others = setdiff(axes(C, 1), rows)
     return P[[others; rows], [first; second]], (length(first), length(second)), issca
 end
+
+"Whether `_partitioned` puts a column whose special rows hold `held` in its first group: no symbol twice, stars aside."
+_first_group(held::AbstractVector{Int}) = allunique(filter(!=(_STAR), held))
 
 "The number of columns of `_lemma35(F, r)`: T_0 = q + 1, T_1 = q^2 + 2q, T_(r+1) = q (T_r + T_(r-1))."
 function _lemma35_columns(q::Int, r::Int)
@@ -1178,13 +1222,11 @@ function _two_constant_rows(A::Matrix{Int})
     N, k = size(A)
     pairs = [(i, j) for i in 1:N for j in (i + 1):N]
     found = findfirst(p -> all(A[p[1], c] != A[p[2], c] for c in 1:k), pairs)
-    if found === nothing
-        A = vcat(A, 1 .- A[1:1, :])
-        i, j = 1, N + 1
-    else
-        i, j = pairs[found]
-    end
-    B = [A[r, c] ⊻ A[i, c] for r in axes(A, 1), c in 1:k]
+    # One binding each: `A` is captured above, and a captured variable that is
+    # assigned again is boxed, which makes the result `Any`.
+    E = found === nothing ? vcat(A, 1 .- A[1:1, :]) : A
+    i, j = found === nothing ? (1, N + 1) : pairs[found]
+    B = [E[r, c] ⊻ E[i, c] for r in axes(E, 1), c in 1:k]
     return B[[i; j; setdiff(axes(B, 1), (i, j))], :]
 end
 

@@ -526,7 +526,10 @@ end
 The array `entry` describes: rows × columns, symbols `0:v-1`, exactly
 `entry.k` columns (a partitioned array has its `k1 + k2`, in partitioned
 form: first group first, special rows last). Its ingredients are built from
-their own entries. Deterministic: the same entry gives the same array.
+their own entries. Deterministic: the same entry gives the same array. A
+product of partitioned arrays, and Lemma 3.5's, is built only on the columns
+it keeps (`_partitioned_columns`): cut from the whole product, 80 columns of
+64 values cost 533 MiB for a 5 MiB array (review of Phase 2, finding 4).
 """
 function _build(e::CatalogEntry)::Matrix{Int}
     A = _build_full(e)
@@ -543,9 +546,9 @@ function _build_full(e::CatalogEntry)::Matrix{Int}
     end
     kind === :bush && return _fused(_bush(GaloisField(e.q), e.t, k), e.q, e.fused)
     kind === :bush_even && return _fused(_bush_even(GaloisField(e.q), k), e.q, e.fused)
-    kind === :lemma35 && return _fused(_lemma35(GaloisField(e.q), e.n)[:, 1:k], e.q, e.fused)
+    kind === :lemma35 && return _fused(_partitioned_columns(_lemma35_entry(e.q, e.n), 1:k), e.q, e.fused)
     kind === :lfsr && return _fused(_lfsr_array(GaloisField(e.q), k), e.q, e.fused)
-    kind === :wide && return _fill_stars(_build(e.parts[1]))
+    kind === :wide && return _fill_stars!(_partitioned_columns(e.parts[1], 1:k))
     kind === :tripling && return _od_triple(_build(e.parts[1]), v)
     kind === :symbol_product && return _symbol_product(_build(e.parts[1]), _build(e.parts[2]), e.n)
     kind === :searched_cover && return _fixed_starter_array(_parse_starter(_SEARCHED_COVER_STARTERS[e.n][3]), v, 1)
@@ -591,19 +594,98 @@ function _build_full(e::CatalogEntry)::Matrix{Int}
     kind === :printed && return _special_rows_last(_printed(_CMMSSY_PRINTED[e.n]), v, (e.k1, k - e.k1))
     kind === :projection_pca &&
         return first(_partitioned(_projection(GaloisField(e.q), e.q - v; stars = true), 1:v, v))
-    if kind === :sca_times
-        x, y = e.parts[1], e.parts[2]
-        return first(_sca_product(_build(x), (x.k1, x.k - x.k1), _build(y), (y.k1, y.k - y.k1), v))
-    end
-    if kind === :sca_times_wide
-        x, base = e.parts[1], e.parts[2]
-        C, _ = _sca_product(_build(x), (x.k1, x.k - x.k1), _build(base), (base.k1, base.k - base.k1), v)
-        P, KP, issca = _partitioned(C, (size(C, 1) - v^2 + 1):(size(C, 1) - v^2 + v), v)
-        (KP == (e.k1, k - e.k1) && issca) ||
-            error("internal error: Theorem 3.3 gave the partition $KP, expected ($(e.k1), $(k - e.k1))")
-        return P
-    end
+    (kind === :sca_times || kind === :sca_times_wide) && return _partitioned_columns(e, 1:k)
     error("internal error: no builder for a catalog entry of kind $(repr(kind))")
+end
+
+"""
+    _partitioned_columns(entry, cols) -> Matrix{Int}
+
+Columns `cols` (increasing) of the partitioned array `entry`, one of
+`_wide`'s atoms or products, entry for entry those of the whole array. A
+product (CMMSSY 2006, Theorems 3.2 and 3.3) builds only those columns, from
+only the columns of its first factor they are made of (`_sca_pair`); its
+second factor is an atom, built whole. So a product cut to `k` columns costs
+about the `k` columns, where the whole product has up to `v` times as many
+(4,224 columns for 80 parameters of 64 values).
+"""
+function _partitioned_columns(e::CatalogEntry, cols::AbstractVector{Int})::Matrix{Int}
+    e.kind === :sca_times && return _product_columns(e.parts[1], _build(e.parts[2]), e.parts[2], e.v, cols)
+    e.kind === :sca_times_wide && return _wide_product_columns(e, cols)
+    A = _build(e)
+    return cols == axes(A, 2) ? A : A[:, cols]
+end
+
+# Columns `cols` of the product (Theorem 3.2) of the PCA `x` and the SCA `B`
+# that the atom `y` builds, built from the columns of `x` they need.
+function _product_columns(x::CatalogEntry, B::Matrix{Int}, y::CatalogEntry, v::Int, cols::AbstractVector{Int})
+    K, L = (x.k1, x.k - x.k1), (y.k1, y.k - y.k1)
+    acols = sort!(unique!([last(_sca_pair(c, K, L)) for c in cols]))
+    return _sca_product_columns(_partitioned_columns(x, acols), acols, K, B, L, v, cols)
+end
+
+"""
+    _wide_product_columns(entry, cols) -> Matrix{Int}
+
+Columns `cols` (increasing) of a `:sca_times_wide` entry (Theorem 3.3,
+`_times_wide`): the product of `x` with the orthogonal array `base`, put in
+partitioned form (`_partitioned`) with the product's rows from the base's
+lines of slope 1 as its special rows. Those rows of a product column are
+rows of its column f of the base, so which group the column goes into
+depends on f alone, and the columns of the result, the first group's in
+product order and then the second's, are listed without building the
+product. Only the product columns kept are built and partitioned; the
+partition of each column is its own, so they are the whole result's columns.
+"""
+function _wide_product_columns(e::CatalogEntry, cols::AbstractVector{Int})
+    x, base, v = e.parts[1], e.parts[2], e.v
+    K, L = (x.k1, x.k - x.k1), (base.k1, base.k - base.k1)
+    B = _build(base)
+    slope = (size(B, 1) - v^2 + 1):(size(B, 1) - v^2 + v)    # the special rows, as rows of B
+    (first(slope) >= 1 && last(slope) <= size(B, 1) - v) ||
+        error("internal error: Theorem 3.3 needs a base of v^2 rows")
+    firsts = [_first_group(view(B, slope, f)) for f in axes(B, 2)]
+    n1 = sum(f -> firsts[f] ? (f <= L[1] ? K[1] + K[2] : K[1]) : 0, axes(B, 2))    # product columns with each f
+    (n1 == e.k1 && _sca_width(K, L) == e.k) ||
+        error("internal error: Theorem 3.3 gives $n1 of $(_sca_width(K, L)) columns in the first group, " *
+              "expected $(e.k1) of $(e.k)")
+    source = zeros(Int, length(cols))        # the product column of each column kept
+    found, ahead, behind = 0, 0, n1
+    for c in 1:_sca_width(K, L)
+        found == length(cols) && break
+        p = firsts[first(_sca_pair(c, K, L))] ? (ahead += 1) : (behind += 1)
+        i = searchsortedfirst(cols, p)
+        if i <= length(cols) && cols[i] == p
+            source[i] = c
+            found += 1
+        end
+    end
+    found == length(cols) || throw(BoundsError(1:e.k, cols))
+    C = _product_columns(x, B, base, v, source)
+    special = (size(C, 1) - v^2 + 1):(size(C, 1) - v^2 + v)
+    m1 = count(<=(n1), cols)
+    all(j -> _first_group(view(C, special, j)) == (j <= m1), axes(C, 2)) ||
+        error("internal error: Theorem 3.3's columns are not in the groups their base columns put them in")
+    P, KP, issca = _partitioned(C, special, v)
+    (KP == (m1, length(cols) - m1) && issca) ||
+        error("internal error: Theorem 3.3 gave the partition $KP, expected ($m1, $(length(cols) - m1))")
+    return P
+end
+
+"""
+    _lemma35_entry(q, r) -> CatalogEntry
+
+`_lemma35(GaloisField(q), r)` as the entry of a product: Theorem 3.3 applied
+`r` times to the orthogonal array (`_times_wide`), which `_lemma35` does step
+by step, so `_partitioned_columns` builds only its columns that are kept.
+"""
+function _lemma35_entry(q::Int, r::Int)
+    base = _entry(:oa_sca, 2, q, q + 1, q^2, "orthogonal array"; q, k1 = q, issca = true)
+    x = base
+    for _ in 1:r
+        x = _times_wide(x, base, q)
+    end
+    return x
 end
 
 "A covering array whose last v rows are already its special rows, in partitioned form with the partition `K`."

@@ -418,6 +418,70 @@ end
 end
 
 
+@testitem "catalog: a product builds only the columns it keeps, and they are the whole product's" setup=[CatalogSetup] begin
+    using UnitTestDesign: _sca_pair, _sca_width, _partitioned_columns, _lemma35_entry
+    let
+        # Review of Phase 2, finding 4: `_build` cut a wide product from the
+        # whole of it (4,224 columns for 80 parameters of 64 values). Now it
+        # builds the kept columns alone, which must be the whole product's,
+        # entry for entry. The whole product here is built as `_build` built it
+        # before, from `_sca_product` and `_partitioned` on every column.
+        function whole(e::CatalogEntry)
+            e.kind in (:sca_times, :sca_times_wide) || return _build(e)
+            x, y, v = e.parts[1], e.parts[2], e.v
+            C, _ = _sca_product(whole(x), (x.k1, x.k - x.k1), whole(y), (y.k1, y.k - y.k1), v)
+            e.kind === :sca_times && return C
+            return first(_partitioned(C, (size(C, 1) - v^2 + 1):(size(C, 1) - v^2 + v), v))
+        end
+        # A product's column order (CMMSSY 2006, Theorem 3.2), as `_sca_product` listed its pairs.
+        for (K, L) in (((3, 1), (3, 1)), ((14, 6), (3, 1)), ((4, 3), (6, 3)), ((5, 0), (4, 2)), ((2, 3), (5, 0)))
+            (k1, k2), (l1, l2) = K, L
+            order = [[(f, g) for f in 1:l1 for g in 1:k1];
+                     [(f, g) for f in 1:(l1 + l2) for g in 1:(k1 + k2) if !(f <= l1 && g <= k1) && !(f > l1 && g > k1)]]
+            @test [_sca_pair(c, K, L) for c in 1:_sca_width(K, L)] == order
+        end
+        # Products of every kind of atom, one and two deep, Theorem 3.3's
+        # among them, each product in the recipe on all its columns, a random
+        # dozen and its last.
+        products(e) = e.kind in (:sca_times, :sca_times_wide) ? [e; reduce(vcat, products.(e.parts))] : CatalogEntry[]
+        rng = Xoshiro(0x2026_1004_4)
+        cut, deep = 0, 0
+        for (v, k) in ((3, 21), (3, 40), (3, 95), (3, 300), (4, 55), (4, 113), (4, 137), (4, 166), (4, 177), (5, 42),
+                       (5, 70), (6, 31), (6, 90), (7, 64), (7, 80), (8, 100), (8, 117), (9, 90), (10, 170), (16, 270))
+            e = _catalog_entry(2, v, k)
+            @test e.kind === :wide && e.parts[1].kind === :sca_times
+            W = whole(e.parts[1])
+            @test size(W, 2) == e.parts[1].k >= k
+            cut += size(W, 2) > k
+            @test _build(e) == _fill_stars(W)[:, 1:k] && is_covering(_build(e), 2, v)
+            for x in products(e.parts[1])
+                X = x === e.parts[1] ? W : whole(x)
+                deep += x.kind === :sca_times_wide
+                for cols in (1:size(X, 2), sort!(unique!(rand(rng, 1:size(X, 2), 12))), [size(X, 2)])
+                    @test _partitioned_columns(x, cols) == X[:, cols]
+                end
+            end
+        end
+        @test cut >= 15 && deep >= 4
+        # Lemma 3.5 as a chain of Theorem 3.3's products: `_lemma35`'s array,
+        # and the catalog's Lemma 3.5 arrays from their kept columns alone.
+        for (q, r) in ((3, 1), (3, 2), (3, 3), (4, 1), (4, 2), (5, 1), (7, 1), (11, 1))
+            chain = _lemma35_entry(q, r)
+            A = _lemma35(GaloisField(q), r)
+            @test chain.k == size(A, 2) == _lemma35_columns(q, r) && chain.rows == size(A, 1)
+            @test _partitioned_columns(chain, 1:chain.k) == A
+            @test _partitioned_columns(chain, 1:(q + 2)) == A[:, 1:(q + 2)]
+        end
+        lemma = [(v, k) for v in (6, 10, 12, 14, 15) for k in 8:4:60 if _catalog_entry(2, v, k).kind === :lemma35]
+        @test length(lemma) >= 8
+        for (v, k) in lemma
+            e = _catalog_entry(2, v, k)
+            @test _build(e) == _fused(_lemma35(GaloisField(e.q), e.n)[:, 1:k], e.q, e.fused)
+        end
+    end
+end
+
+
 @testitem "catalog: sizes from sizes alone, and what an entry says of itself" setup=[CatalogSetup] begin
     let
         # The catalog's column of plan §2.1's table, and some of §5.4's.

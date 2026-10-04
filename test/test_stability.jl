@@ -486,3 +486,51 @@ end
         @test bound_bytes(topping(2, m)) == bound_bytes(topping(3, m)) <= 8 * m + 512
     end
 end
+
+
+@testitem "stability: a wide product builds only its kept columns, and the builders under `_build` infer" setup=[StabilitySetup] begin
+    using UnitTestDesign: GaloisField, Request, RequiredTargets, classify_targets, _catalog_entry, _build, _sca_base,
+        _sca_pair, _sca_product_columns, _product_columns, _wide_product_columns, _partitioned_columns, _lemma35_entry,
+        _two_constant_rows, _paley12, _zero_sum, _engine_rows, _new_coverage_rows, _hold!
+    # `_build` and `_build_full` declare `::Matrix{Int}`, which `@inferred
+    # _build(…)` then only restates (review of Phase 2, finding 5); the
+    # functions under them are checked here. `_two_constant_rows` was `Any`
+    # (a captured variable assigned again), on both of its paths: a pair of
+    # rows made constant (zero-sum) and a complement added (Hadamard 12).
+    @test (@inferred _two_constant_rows(_zero_sum([2, 2, 2, 2]))) isa Matrix{Int}
+    @test (@inferred _two_constant_rows(_paley12())) isa Matrix{Int}
+    B = _sca_base(GaloisField(7))
+    @test (@inferred _sca_pair(50, (7, 1), (7, 1))) isa Tuple{Int, Int}
+    @test (@inferred _sca_product_columns(B, axes(B, 2), (7, 1), B, (7, 1), 7, [1, 9, 60])) isa Matrix{Int}
+    wide = _catalog_entry(2, 64, 80)          # partitioned product: orthogonal array x orthogonal array
+    x, y = wide.parts[1].parts
+    @test (@inferred _product_columns(x, _build(y), y, 64, 1:80)) isa Matrix{Int}
+    chain = @inferred _lemma35_entry(7, 2)
+    @test (@inferred _wide_product_columns(chain, 1:100)) isa Matrix{Int}
+    @test (@inferred _partitioned_columns(chain, [3, 70, 497])) isa Matrix{Int}
+    # A wide product cut to its parameters allocates a small multiple of what
+    # it keeps (review of Phase 2, finding 4). At 80 parameters of 64 values
+    # the whole product has 4,224 columns, and `_build` allocated 533 MiB,
+    # 107 times its 5 MiB result; now 11.2 MiB, 2.25 times, on Julia 1.13 and
+    # 1.10. Lemma 3.5 at 41 symbols for 130 parameters has 1,763 columns:
+    # 149 MiB before, 45 times its 3.3 MiB result, now 15.8 MiB, 4.8 times
+    # (`_partitioned` copies what it keeps twice, and fusion once).
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    @test measured(_build, wide) <= 3 * sizeof(_build(wide))
+    lemma = _catalog_entry(2, 40, 130)
+    @test lemma.kind === :lemma35 && measured(_build, lemma) <= 6 * sizeof(_build(lemma))
+    # With must-include rows the catalog's rows are filtered by what they hold
+    # (finding 1): a concrete result, and a row read without allocating.
+    names = [Symbol(:p, i) for i in 1:8]
+    request = Request(TestSpace(names, [1:7 for _ in 1:8], Constraint[], 10^5);
+                      must_include = [(1, 2, 3, 4, 5, 6, 7, 1)])
+    targets = RequiredTargets(request, first(classify_targets(request)))
+    rows = _engine_rows(_catalog_entry(2, 7, 8), request.arity)
+    @test (@inferred _new_coverage_rows(request.must_include, rows, targets)) isa Matrix{Int}
+    held = falses(last(targets.offsets))
+    @test (@inferred _hold!(held, view(rows, :, 1), targets)) === true
+    @test measured(x -> _hold!(x[1], view(x[2], :, 2), x[3]), (held, rows, targets)) == 0
+    # It allocates its bits, one per combination, and the rows it keeps.
+    filtered(r) = _new_coverage_rows(r.must_include, rows, targets)
+    @test measured(filtered, request) <= sizeof(rows) + cld(last(targets.offsets), 8) + 8192
+end
