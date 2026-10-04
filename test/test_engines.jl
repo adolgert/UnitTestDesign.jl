@@ -103,7 +103,9 @@ end
 @testitem "engines: the registry names every engine the oracle loops run (§4.2, §7.4)" setup=[EngineSetup] begin
     registry = _engine_registry()
     @test registry isa Vector{Pair{String, CoveringEngine}}
-    @test first.(registry) == ["IPOG()", "GND()", "Compact(IPOG())"]
+    @test first.(registry)[1:2] == ["IPOG()", "GND()"]
+    @test "Construction()" in first.(registry)
+    @test "Compact(IPOG())" in first.(registry)
     @test allunique(first.(registry))
     @test registry[1].second == IPOG()
     # A randomized engine takes the seed; the default is 0 (§9.5).
@@ -277,6 +279,32 @@ end
     cases = covering(space; strength = 1, stronger = [(:a, :b) => 2], engine)
     @test engine.covered == [1]
     @test collect(cases) == collect(covering(space; strength = 1, stronger = [(:a, :b) => 2], engine = IPOG()))
+end
+
+
+@testitem "engines: a directly named engine that refuses the request is an ArgumentError (§4.2)" setup=[EngineSetup] begin
+    using UnitTestDesign: generate, _check_fit
+    # Option (c) of p0-protocol's judgment call 1: `generate` refuses, with
+    # the fit's reason, a request the named engine's fit refuses, before
+    # anything is classified, and never hands it to another engine. Only the
+    # negative sub-requests go to the fallback (the item above).
+    space = TestSpace((a = [1, 2], b = [:x, :y, :z], c = [true, false]))
+    engine = Refusing(3)
+    request = Request(space; strength = 2)
+    @test_throws ArgumentError generate(engine, request)
+    @test isempty(engine.covered)
+    message = try
+        covering(space; strength = 2, engine)
+        ""
+    catch err
+        sprint(showerror, err)
+    end
+    @test message == "ArgumentError: Refusing() does not cover this request: strength below 3; IPOG() covers any request"
+    @test length(covering(space; strength = 3, engine)) == 12 && engine.covered == [3]
+    # IPOG and GND fit every request, so nothing changes for them.
+    for e in (IPOG(), GND())
+        @test _check_fit(e, request).kind === :native
+    end
 end
 
 

@@ -66,10 +66,13 @@ is missing from `uniform_shapes.csv`.
 
 ## The catalog column
 
-`catalog` is empty until the package can say what size its `Construction`
-engine gives for a shape without building it (plan §5.4, Phase 2).
-`BestKnown.catalog_rows` is the hook: it calls
-`UnitTestDesign._catalog_rows(t, v, k)` when the package defines it, and
-returns `missing` today. Phase 2 either defines that function, returning the
-rows or `nothing`, or changes the one name in `BestKnown.jl`; then rerun
-`write_table.jl`.
+`catalog` is the size of the array the `Construction` engine builds for the
+shape, which the package's catalog says without building it (plan §5.4,
+Phase 2): `BestKnown.catalog_rows` calls `UnitTestDesign._catalog_rows(t, v,
+k)`, which returns the rows or `nothing` where no entry applies. Every
+strength-2 and strength-3 shape has one. At strengths 4 to 6 the catalog has
+only the zero-sum array (k ≤ t + 1) and the Bush array, fused (k ≤ q + 1 for
+a prime power q ≥ t), so 36 of the 473 shapes are empty, and the two filled
+strength-6 shapes, 531,427 and 531,429 rows for 10 parameters of 2 and 3
+values, are far above the best known. Rerun `write_table.jl` after the
+catalog changes.

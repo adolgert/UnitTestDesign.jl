@@ -17,8 +17,8 @@
 
 The calls a first session makes: the example on the front page of the
 documentation, the tutorial's calls, each result's display, both engines at
-strengths 2 and 3, spaces of other value types and rules, and the row
-reducer `Compact`.
+strengths 2 and 3, spaces of other value types and rules, the row
+reducer `Compact`, and the catalog engine on an exact shape.
 """
 function _precompile_workload()
     io = IOContext(IOBuffer(), :limit => true, :displaysize => (24, 80))
@@ -61,6 +61,11 @@ function _precompile_workload()
     # The row reducer (plan §5.3), on the front page's space and at strength 3.
     show(io, text, all_pairs(space; engine = Compact(IPOG())))
     show(io, text, covering(other; strength = 3, engine = Compact(IPOG())))
+    # The catalog engine (plan §5.4; internal until Phase 3) on an exact shape:
+    # one call compiles the lookup, every builder and the engine. A strength-3
+    # call and a seeded one, tried here too, made no first call faster and
+    # cost precompile time.
+    show(io, text, all_pairs(TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:3, e = 1:3)); engine = Construction()))
     return nothing
 end
 

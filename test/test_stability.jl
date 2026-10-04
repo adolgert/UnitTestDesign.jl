@@ -331,3 +331,56 @@ end
     @test last(_compact(flat, flat_targets, flat_start; budget = 20_000)).reducer_stop === :budget
     @test long <= short + 1024
 end
+
+
+@testitem "stability: the catalog's lookup and builders infer, and a builder allocates its result" setup=[StabilitySetup] begin
+    using UnitTestDesign: GaloisField, CatalogEntry, Construction, Fit, Profile, Request, RequiredTargets,
+        classify_targets, cover_ordinary, fit, _catalog_entry, _catalog_rows, _build, _describe, _engine_rows,
+        _bush, _bush_even, _kleitman_spencer, _zero_sum, _fuse, _lfsr_array, _lemma35, _lfsr_copies, _sca_base,
+        _sca_product, _partitioned, _od_triple, _projection, _group_ca88, _ck_ca185, _od_strength3, _CCL_TABLE3,
+        _cmtw_multiply, _primitive_cubic, _plus, _times
+    # The catalog (plan §5.4): a lookup returns an entry or `nothing`, a size
+    # an Int or `nothing`, and every builder a Matrix{Int}; `_build` recurses
+    # through the ingredients and keeps its declared type.
+    F = @inferred GaloisField(7)
+    @test (@inferred _plus(F, 3, 5)) isa Int && (@inferred _times(F, 3, 5)) isa Int
+    @test (@inferred _primitive_cubic(F)) isa NTuple{3, Int}
+    @test (@inferred Union{Nothing, CatalogEntry} _catalog_entry(2, 7, 8)) isa CatalogEntry
+    @test (@inferred Union{Nothing, CatalogEntry} _catalog_entry(3, [5, 4, 3, 2])) isa CatalogEntry
+    @test (@inferred Union{Nothing, Int} _catalog_rows(3, 5, 155)) == 485
+    @test (@inferred _describe(_catalog_entry(2, 7, 8))).orthogonal
+    for (t, v, k) in ((2, 2, 20), (2, 3, 40), (2, 10, 20), (2, 6, 20), (3, 3, 20), (3, 6, 6), (3, 2, 30), (3, 5, 155))
+        @test (@inferred _build(_catalog_entry(t, v, k))) isa Matrix{Int}
+    end
+    G = GaloisField(3)
+    for A in (@inferred(_bush(F, 3)), @inferred(_bush_even(GaloisField(4))), @inferred(_kleitman_spencer(20)),
+              @inferred(_zero_sum([3, 3, 3])), @inferred(_fuse(_bush(F, 2), 7)), @inferred(_lfsr_array(F)),
+              @inferred(_lemma35(F, 1)), @inferred(_lfsr_copies(G, 3)), @inferred(_od_triple(_bush(F, 2), 7)),
+              @inferred(_projection(F, 2)), @inferred(_group_ca88()), @inferred(_ck_ca185()),
+              @inferred(_od_strength3(GaloisField(5), _CCL_TABLE3)), @inferred(_cmtw_multiply(_bush(G, 3), _bush(G, 2), G)))
+        @test A isa Matrix{Int}
+    end
+    @test (@inferred _sca_product(_sca_base(F), (7, 1), _sca_base(F), (7, 1), 7)) isa Tuple{Matrix{Int}, Tuple{Int, Int}}
+    @test (@inferred _partitioned(_sca_base(F), 43:49, 7)) isa Tuple{Matrix{Int}, Tuple{Int, Int}, Bool}
+    # The engine's protocol answers infer too.
+    request = Request(TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:3, e = 1:3)))
+    @test (@inferred fit(Construction(), Profile(request))) isa Fit
+    targets = RequiredTargets(request, first(classify_targets(request)))
+    @test (@inferred cover_ordinary(Construction(), request, targets)) isa Matrix{Int}
+    # A builder allocates its result and a few small buffers: the bound is the
+    # result, rounded up as the allocator rounds a large array, plus 8 KiB; a
+    # value boxed per entry would cost several times the result. One argument
+    # and no varargs (see the targets-interface item).
+    measured(f, x) = (f(x); @allocated f(x))
+    budget(A) = sizeof(A) + sizeof(A) ÷ 8 + 8192
+    for (f, x) in ((F -> _bush(F, 3), F), (F -> _bush(F, 2), F), (_lfsr_array, F), (_kleitman_spencer, 200),
+                   (_zero_sum, [6, 6, 6, 6]), (A -> _fuse(A, 7), _bush(F, 3)))
+        @test measured(f, x) <= budget(f(x))
+    end
+    # A field is its tables: 1 MiB for 256 symbols, and little beside.
+    @test measured(GaloisField, 256) <= 2 * 256^2 * 8 + 64 * 1024
+    # A lookup builds nothing: 37 KB at strength 2 on 10 parameters of 5 values
+    # and 0.57 MB at strength 3 on 250 of 7 on Julia 1.13; 76 KB and 0.97 MB on 1.10.
+    @test measured(k -> _catalog_entry(2, 5, k), 10) <= 128 * 1024
+    @test measured(k -> _catalog_entry(3, 7, k), 250) <= 2 * 2^20
+end

@@ -131,8 +131,9 @@ const CATALOG_LOOKUP = :_catalog_rows
 """
     catalog_rows(t, v, k) -> Union{Int, Nothing, Missing}
 
-The `Construction` engine's size for the shape: `missing` while the package
-has no catalog lookup (today), `nothing` when it has one and no entry applies.
+The `Construction` engine's size for the shape: `nothing` when no entry of
+the package's catalog applies, and `missing` for a package without the
+catalog lookup (before Phase 2).
 """
 function catalog_rows(t::Integer, v::Integer, k::Integer)
     isdefined(UnitTestDesign, CATALOG_LOOKUP) || return missing
