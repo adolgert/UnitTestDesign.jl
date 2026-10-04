@@ -3,9 +3,10 @@
 # parameter_order.jl (IPOG) and greedy_tuples.jl (GND); this file defines the
 # public structs, the protocol every engine implements (`CoveringEngine`),
 # what an engine's `fit` reads of a request (`Profile`), the fallback for a
-# part of a request an engine can't cover, and `generate`, the one entry
-# point. The protocol is internal: nothing here but `IPOG` and `GND` is
-# exported or documented for users (decision D7).
+# part of a request an engine can't cover, the registry of engines the tests
+# and the benchmark harness run, and `generate`, the one entry point. The
+# protocol is internal: nothing here but `IPOG` and `GND` is exported or
+# documented for users (decision D7).
 
 using Random: AbstractRNG, Xoshiro
 
@@ -34,8 +35,10 @@ in its own file:
 An engine may also define `_fallback(engine)`, the engine that covers what
 its `fit` refuses (IPOG by default); a randomized engine defines
 `_randomized(::Val{name}) = true` for its record's name, so that results show
-its seed. Give its inner loops `@inferred` and `@allocated` tests in
-test/test_stability.jl (no JET).
+its seed. Add the engine to `_engine_registry`, so that the oracle loops of
+test/test_random_problems.jl check it against the independent oracle
+(test/checker.jl) and the benchmark harness can name it; and give its inner
+loops `@inferred` and `@allocated` tests in test/test_stability.jl (no JET).
 
 Every engine keeps these rules.
 
@@ -417,6 +420,25 @@ function _engine_for(engine::CoveringEngine, request::Request)
     fit(engine, Profile(request)).kind === :unsupported || return engine
     return _fallback(engine)
 end
+
+"""
+    _engine_registry(seed = 0) -> Vector{Pair{String, CoveringEngine}}
+
+Every engine the package checks, by name, with `seed` for each randomized one
+(plan §4.2, §7.4). The oracle loops of test/test_random_problems.jl run every
+engine here on every random problem and check each design with the
+independent oracle (test/checker.jl), so an engine added here is checked with
+no other change to the tests. The benchmark harness (benchmark/scaling/
+worker.jl) resolves a job's `solver` by these names. A name is the engine's
+constructor call without its seed, such as `"IPOG()"`; a wrapper's would be
+`"Compact(IPOG())"`.
+
+The list is in the package, not in test/, so that the harness, which loads
+only the package, reads the same list the tests run. Nothing in `src/` calls
+it.
+"""
+_engine_registry(seed::Integer = 0) =
+    Pair{String, CoveringEngine}["IPOG()" => IPOG(), "GND()" => GND(; seed)]
 
 """
     generate(engine::CoveringEngine, request::Request) -> Design

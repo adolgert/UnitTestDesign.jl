@@ -3,16 +3,17 @@ using TestItemRunner
 
 # The internal engine protocol (src/engines.jl; plan §4.2): `CoveringEngine`
 # with its three methods, the targets interface (`RequiredTargets`), the
-# `Profile` that `fit` reads, and the fallback for a negative sub-request an engine
-# refuses. Nothing here is public (decision D7). The inference and allocation
-# guards are in test_stability.jl.
+# `Profile` that `fit` reads, the fallback for a negative sub-request an engine
+# refuses, and the registry the oracle loops of test_random_problems.jl and the
+# benchmark harness run. Nothing here is public (decision D7). The inference
+# and allocation guards are in test_stability.jl.
 
 @testsnippet EngineSetup begin
     using Random: Xoshiro
     using UnitTestDesign: CoveringEngine, EngineRecord, Fit, Profile, Request, RequiredTargets, TargetList,
                           NegativeProjection, classify_targets, engine_record, fit, cover_ordinary,
                           supports, ncombinations, isrequired, nrequired, nparameters, _engine_for,
-                          _negative_request, _decode!, _randomized, _target_list
+                          _engine_registry, _negative_request, _decode!, _randomized, _target_list
 
     """
     An engine for the tests: IPOG's rows, but it refuses a request below
@@ -96,6 +97,25 @@ end
     end
     @test Fit(:exact, "a catalog array"; rows = 9).rows == 9
     @test_throws ArgumentError Fit(:sometimes, "no such kind")
+end
+
+
+@testitem "engines: the registry names every engine the oracle loops run (§4.2, §7.4)" setup=[EngineSetup] begin
+    registry = _engine_registry()
+    @test registry isa Vector{Pair{String, CoveringEngine}}
+    @test first.(registry) == ["IPOG()", "GND()"]
+    @test allunique(first.(registry))
+    @test registry[1].second == IPOG()
+    # A randomized engine takes the seed; the default is 0 (§9.5).
+    @test registry[2].second.seed == 0 && registry[2].second.candidates == 50
+    @test _engine_registry(17)[2].second.seed == 17
+    @test _engine_registry(17)[1].second == IPOG()
+    # Every engine there covers a small request through the public entry point.
+    for (name, engine) in registry
+        cases = all_pairs(TestSpace((a = [1, 2], b = [:x, :y], c = [true, false])); engine)
+        @test iscomplete(coverage(cases))
+        @test cases.engine === engine_record(engine).name
+    end
 end
 
 

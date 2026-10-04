@@ -2,43 +2,52 @@ using Test
 using TestItemRunner
 
 # The random-problem gate (plan Phase 1 step 4, mandatory from Phase 3 step 8).
-# Random constrained problems go through `generate` with IPOG and with GND, at
-# strengths 2 and 3, and every design is checked by the independent oracle
-# (checker.jl): every row valid and every feasible target covered (contract
-# §1.3). The design's bookkeeping must agree with the oracle too: its required
-# count is the oracle's feasible count, and each excluded target has the
-# oracle's status, with the same rules when it is directly forbidden (§1.4).
+# Random constrained problems go through `generate` with every engine of the
+# registry (`_engine_registry`, src/engines.jl; plan §4.2), at strengths 2 and
+# 3, and every design is checked by the independent oracle (checker.jl): every
+# row valid and every feasible target covered (contract §1.3). The design's
+# bookkeeping must agree with the oracle too: its required count is the
+# oracle's feasible count, and each excluded target has the oracle's status,
+# with the same rules when it is directly forbidden (§1.4). An engine added to
+# the registry is checked here with no change to this file.
 #
 # There is no expected failure. Every problem must return a certified design
-# from both engines; an exception from either engine is logged with its
-# problem and fails the gate. Before Phase 3 the 0.4 IPOG crashed on about 40%
-# of these problems and the 0.4 GND never returned on those with an implied
+# from every engine; an exception from any engine is logged with its problem
+# and fails the gate. Before Phase 3 the 0.4 IPOG crashed on about 40% of
+# these problems and the 0.4 GND never returned on those with an implied
 # target (issue #51).
 
 @testsnippet RandomGate begin
     using Random
-    using UnitTestDesign: Request, generate, to_cases
+    using UnitTestDesign: Request, generate, to_cases, _engine_registry
 
     """
-    Run `n_problems` problems at `strength` through IPOG and GND and check each
-    design with the oracle. Returns the tallies and the stream `seed`. Problem
-    `index` is the `index`-th draw of the stream; `gate_problem` redraws it.
+    The tally key for one engine's count: the registry name in lower case and
+    without punctuation, so that `IPOG()`'s checked designs are `:ipog_checked`.
+    """
+    engine_key(name, what) = Symbol(strip(replace(lowercase(name), r"[^a-z0-9]+" => "_"), '_'), :_, what)
+
+    """
+    Run `n_problems` problems at `strength` through every registered engine and
+    check each design with the oracle. Returns the tallies and the stream
+    `seed`. Problem `index` is the `index`-th draw of the stream;
+    `gate_problem` redraws it. A randomized engine takes the problem's seed.
     """
     function random_gate(strength, seed, n_problems)
         rng = Xoshiro(seed)
-        tally = Dict(k => 0 for k in (
-            :problems, :implied, :planted, :empty,
-            :ipog_checked, :ipog_error, :ipog_rows,
-            :gnd_checked, :gnd_error, :gnd_rows))
+        tally = Dict(k => 0 for k in (:problems, :implied, :planted, :empty))
+        for (name, _) in _engine_registry(), what in (:checked, :error, :rows)
+            tally[engine_key(name, what)] = 0
+        end
         for index in 1:n_problems
             problem = random_problem(rng; strength)
-            gnd_seed = Int(rand(rng, UInt64) >> 1)  # one draw per problem, as gate_problem expects
+            engine_seed = Int(rand(rng, UInt64) >> 1)  # one draw per problem, as gate_problem expects
             tally[:problems] += 1
             tally[:implied] += problem.implied > 0
             tally[:planted] += problem.planted
             tally[:empty] += problem.feasible == 0
             space = test_space(problem.space)
-            for (key, engine) in ((:ipog, IPOG()), (:gnd, GND(seed = gnd_seed)))
+            for (name, engine) in _engine_registry(engine_seed)
                 request = Request(space; strength)
                 design = try
                     generate(engine, request)
@@ -48,11 +57,11 @@ using TestItemRunner
                     @error("$engine threw on random problem $index; redraw it with " *
                            "gate_problem($strength, $(repr(seed)), $index)",
                            problem, exception = (err, catch_backtrace()))
-                    tally[Symbol(key, :_error)] += 1
+                    tally[engine_key(name, :error)] += 1
                     continue
                 end
-                tally[Symbol(key, :_checked)] += 1
-                tally[Symbol(key, :_rows)] += size(design.matrix, 2)
+                tally[engine_key(name, :checked)] += 1
+                tally[engine_key(name, :rows)] += size(design.matrix, 2)
                 check_returned(design, request, problem, engine, (strength, seed, index))
             end
         end
@@ -64,7 +73,7 @@ using TestItemRunner
         rng = Xoshiro(seed)
         for _ in 1:(index - 1)
             random_problem(rng; strength)
-            rand(rng, UInt64)  # the GND seed random_gate draws after each problem
+            rand(rng, UInt64)  # the engines' seed random_gate draws after each problem
         end
         return random_problem(rng; strength)
     end
@@ -109,14 +118,14 @@ using TestItemRunner
         return nothing
     end
 
-    "Assert the tallies: every problem gave both engines a design the oracle accepts."
+    "Assert the tallies: every problem gave every registered engine a design the oracle accepts."
     function gate_verdicts(gate, n_problems)
         tally = gate.tally
         @test tally[:problems] == n_problems
-        @test tally[:ipog_error] == 0
-        @test tally[:gnd_error] == 0
-        @test tally[:ipog_checked] == n_problems
-        @test tally[:gnd_checked] == n_problems
+        for (name, _) in _engine_registry()
+            @test tally[engine_key(name, :error)] == 0
+            @test tally[engine_key(name, :checked)] == n_problems
+        end
     end
 
     "500 problems at multiplier 1.0, and at least 50."
@@ -169,7 +178,7 @@ end
 end
 
 
-@testitem "random problems: pairwise through IPOG and GND" setup=[UTSetup, Checker, RandomGate] begin
+@testitem "random problems: pairwise through every registered engine" setup=[UTSetup, Checker, RandomGate] begin
     n_problems = gate_count()
     gate = random_gate(2, 0x2026_0926_0000_0002 ⊻ seed_mod(), n_problems)
     @info "Random pairwise problems" seed = gate.seed tally = (; sort(collect(gate.tally))...)
@@ -177,7 +186,7 @@ end
 end
 
 
-@testitem "random problems: three-way through IPOG and GND" setup=[UTSetup, Checker, RandomGate] begin
+@testitem "random problems: three-way through every registered engine" setup=[UTSetup, Checker, RandomGate] begin
     n_problems = gate_count()
     gate = random_gate(3, 0x2026_0926_0000_0003 ⊻ seed_mod(), n_problems)
     @info "Random three-way problems" seed = gate.seed tally = (; sort(collect(gate.tally))...)
@@ -185,12 +194,14 @@ end
 end
 
 
-@testitem "random problems: one Invalid value, pairwise through IPOG and GND, both parts (§5, §6)" setup=[UTSetup, Checker] begin
+@testitem "random problems: one Invalid value, pairwise through every registered engine, both parts (§5, §6)" setup=[UTSetup, Checker] begin
     using Random
+    using UnitTestDesign: _engine_registry
     # Plan Phase 6 step 5: each problem gives one random parameter the value
-    # Invalid(-1) (domains hold 0:9, so it is a new choice). Both engines
-    # generate at strength 2, and the oracle judges the ordinary and the
-    # negative part; the negative bookkeeping must match its counts.
+    # Invalid(-1) (domains hold 0:9, so it is a new choice). Every registered
+    # engine generates at strength 2, a randomized one with the problem's
+    # index as its seed, and the oracle judges the ordinary and the negative
+    # part; the negative bookkeeping must match its counts.
     as_check(x::Invalid) = CheckInvalid(x.value)
     as_check(x) = x
     rng = Xoshiro(0x2026_0927_0006 ⊻ seed_mod())
@@ -202,7 +213,7 @@ end
         push!(domains[p], CheckInvalid(-1))
         cs = CheckSpace(problem.space.names, domains, problem.space.rules)
         space = test_space(cs)
-        for engine in (IPOG(), GND(seed = index))
+        for (_, engine) in _engine_registry(index)
             cases = try
                 covering(space; strength = 2, engine)
             catch err
@@ -224,5 +235,5 @@ end
             checked[] += ok
         end
     end
-    @test checked[] == 200
+    @test checked[] == 100 * length(_engine_registry())
 end
