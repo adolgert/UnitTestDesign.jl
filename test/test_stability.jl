@@ -17,6 +17,7 @@ using TestItemRunner
 @testsnippet StabilitySetup begin
     using UnitTestDesign: Feasibility, forbids, _violates, _candidates
     using Base.CoreLogging: with_logger, NullLogger
+    using Profile: Allocs    # not `Profile`, which the items import from UnitTestDesign
 
     # Every domain has a concrete element type and no predicate allocates, so
     # a check allocates nothing anywhere. With tabulation_limit = 12, rule 1
@@ -34,6 +35,27 @@ using TestItemRunner
     function allocated(g, args...)
         g(args...)
         return @allocated g(args...)
+    end
+
+    """
+    Bytes `f(x)` asks for: the sizes of all its allocations, as the allocation
+    profiler records each one, after a first call has compiled it. For guards
+    on builders of large arrays. From Julia 1.11.5 and 1.12 (JuliaLang/julia
+    #55223), `@allocated` counts a large array at the size of the block the C
+    allocator hands back, and on macOS that can be a larger block freed
+    earlier, so its reading depends on what ran before: the Lemma 3.5 build
+    read from 4.79 to 6.53 times its result, in the same items run again,
+    while asking for the same bytes every time. What a call asks for depends
+    only on the call, apart from a few bytes a finalizer run during it may
+    ask for. One argument and no varargs (see the targets-interface item).
+    """
+    function requested(f, x)
+        f(x)
+        Allocs.clear()
+        Allocs.@profile sample_rate = 1 f(x)
+        bytes = sum(a -> a.size, Allocs.fetch().allocs; init = 0)
+        Allocs.clear()
+        return bytes
     end
 end
 
@@ -559,19 +581,22 @@ end
     # A wide product cut to its parameters allocates a small multiple of what
     # it keeps (review of Phase 2, finding 4). At 80 parameters of 64 values
     # the whole product has 4,224 columns, and `_build` allocated 533 MiB,
-    # 107 times its 5 MiB result; now 11.2 MiB, 2.25 times, on Julia 1.13 and
-    # 1.10. Lemma 3.5 at 41 symbols for 130 parameters has 1,763 columns:
-    # 149 MiB before, 45 times its 3.3 MiB result, now 15.8 MiB, 4.8 times
-    # (`_partitioned` copies what it keeps twice, and fusion once). The bound
-    # is 4 times: in one order of the full suite on Julia 1.13 this call
-    # measured 15.8 MB, 3.05 times, the same to the byte on every run, though
-    # the same build measures 11.7 MB alone, in `Main` after that suite, and in
-    # an item run after the same items. 4 times still fails the 107 times it
-    # guards against.
-    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
-    @test measured(_build, wide) <= 4 * sizeof(_build(wide))
+    # 107 times its 5 MiB result. Now it asks for 11,706,328 bytes on Julia
+    # 1.13 and 11,706,467 on 1.10, 2.25 times: the result, its two factors,
+    # and the first factor cut to the 64 columns it needs. Lemma 3.5 at 41
+    # symbols for 130 parameters has 1,763 columns: 149 MiB before, 45 times
+    # its 3.3 MiB result; now 16,416,452 and 16,566,736 bytes, 4.76 and 4.80
+    # times (`_partitioned` copies what it keeps twice, and fusion once). The
+    # bounds, 2.5 and 5 times, are those readings plus at least a fifth of the
+    # result (1.3 and 0.7 MB): less than one more copy of the result, or, for
+    # the wide product, of a factor. `@allocated` read the same builds at 2.25
+    # to 3.05 and 4.79 to 6.53 times on Julia 1.13 under macOS, by what had
+    # run before (see `requested`), past the 3 and 6 times these guards first
+    # had; the first had since been widened to 4.
+    @test requested(_build, wide) <= 5 * sizeof(_build(wide)) ÷ 2
     lemma = _catalog_entry(2, 40, 130)
-    @test lemma.kind === :lemma35 && measured(_build, lemma) <= 6 * sizeof(_build(lemma))
+    @test lemma.kind === :lemma35 && requested(_build, lemma) <= 5 * sizeof(_build(lemma))
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
     # With must-include rows the catalog's rows are filtered by what they hold
     # (finding 1): a concrete result, and a row read without allocating.
     names = [Symbol(:p, i) for i in 1:8]
