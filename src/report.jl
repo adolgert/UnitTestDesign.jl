@@ -632,16 +632,17 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     labels = _engine_label.(engines)
     for s in strengths, (e, label) in zip(engines, labels)
         s <= n || continue
-        # `covering(space; strength = s, engine = e, limits...)`, after asking the
-        # engine's fit, so that a refusal is a row's status rather than an error.
+        # `covering(space; strength = s, engine = e, limits...)`, from the plan
+        # whose fit is asked first, so that a refusal is a row's status rather
+        # than an error, and the plan is prepared once.
         request = Request(space; strength = s, limits...)
-        f = fit(e, Profile(request))
-        if f.kind === :unsupported
-            push!(rows, _SizeRow(("covering($s)", :covering, s, :unsupported, f.reason, nothing, nothing,
+        plan = _prepare(e, Profile(request))
+        if plan.fit.kind === :unsupported
+            push!(rows, _SizeRow(("covering($s)", :covering, s, :unsupported, plan.fit.reason, nothing, nothing,
                                   nothing, nothing, none..., label)))
             continue
         end
-        design = _attempt(() -> TestCases(request, generate(e, request)))
+        design = _attempt(() -> TestCases(request, _generate(plan, request)))
         push!(rows, _size_row("covering($s)", :covering, s, design, valid, space; memos, feasibility_limit,
                               engine = label))
     end

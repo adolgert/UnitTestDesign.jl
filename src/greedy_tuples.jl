@@ -238,8 +238,10 @@ fit(::GND, ::Profile) = Fit(:native, "GND covers any request")
 
 # A result keeps the engine's name and seed, not its settings, so a GND that
 # draws other than the default 50 candidates a row records how many: repeating
-# its cases needs them (`_repeat_call`). The default records nothing.
-function _cover_with_notes(engine::GND, request::Request, targets::RequiredTargets)
+# its cases needs them (`_repeat_call`). The default records nothing. GND's
+# plan is the default one (`_DefaultPlan`).
+function _execute(plan::_DefaultPlan{GND}, request::Request, targets::RequiredTargets)
+    engine = plan.engine
     rows = cover_ordinary(engine, request, targets)
     return rows, engine.candidates == 50 ? (;) : (gnd = (candidates = engine.candidates,),)
 end

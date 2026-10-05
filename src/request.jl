@@ -588,7 +588,7 @@ and `negative_covered::Int` (negative targets, §6) and
 position; and `record`, what the result records of how it was made, as
 [`TestCases`](@ref)'s `record` documents it: whether the engine is randomized,
 a covering design's lower bound with its proof and whether the rows meet it
-(`_bound_record`), and what the engine found (`_cover_with_notes`). The
+(`_bound_record`), and what the engine found (`_execute`). The
 nine-argument constructor leaves the negative bookkeeping empty, and both
 short forms record no bound (`_NO_BOUND`), as for an excursion or a full
 factorial.

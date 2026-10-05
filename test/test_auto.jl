@@ -200,7 +200,7 @@ end
     ruled = TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:40)}(Tuple(1:4 for _ in 1:40));
                       constraints = [forbid((p1 = 1, p2 = 1))])
     p = plan(ruled; strength = 3)
-    @test p.candidates[2].fit.kind === :seeded && [(c.label, c.runs) for c in p.candidates] == [("IPOG()", true), ("Construction()", false)]
+    @test p.candidates[2].plan.fit.kind === :seeded && [(c.label, c.runs) for c in p.candidates] == [("IPOG()", true), ("Construction()", false)]
     # Not covered by the catalog (mixed counts): IPOG alone, and the same rows as IPOG.
     mixed = TestSpace((a = 1:2, b = 1:3, c = 1:4, d = 1:2))
     @test [(c.label, c.runs) for c in plan(mixed).candidates] == [("IPOG()", true), ("Construction()", false)]
@@ -269,8 +269,8 @@ end
     for engine in (Auto(), Auto(goal = :compact))
         @test _auto_plan(engine, Profile(Request(ruled))).candidates[1].runs   # IPOG's start runs first
         tight = Request(ruled; feasibility_limit = 1)
-        @test_throws "placing a value: the feasibility search for" UnitTestDesign._cover_with_notes(
-            engine, tight, UnitTestDesign.RequiredTargets(tight, required))
+        @test_throws "placing a value: the feasibility search for" UnitTestDesign._execute(
+            UnitTestDesign._prepare(engine, Profile(tight)), tight, UnitTestDesign.RequiredTargets(tight, required))
         @test iscomplete(coverage(all_pairs(ruled; engine)))
     end
 end

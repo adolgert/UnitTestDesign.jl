@@ -279,6 +279,52 @@ end
 end
 
 
+@testitem "stability: every engine's plan infers, its execution infers, and a plan builds nothing" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, RequiredTargets, Profile, Fit, Design, NegativeProjection, classify_targets, fit,
+        generate, _prepare, _execute, _prepare_for, _negative_request, _catalog_entry, _DefaultPlan,
+        _ConstructionPlan, _CompactPlan, _AutoPlan
+    # The engine protocol's plans (plan §4.2): `_prepare` is concrete for each
+    # engine, `fit` is a `Fit`, and executing a concrete plan gives concrete
+    # rows and notes; `Auto` executes its candidates' plans, of different
+    # types, behind an asserted result, and `generate` is a `Design` whatever
+    # the engine.
+    uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
+    request = Request(uniform(8, 7))
+    profile = Profile(request)
+    targets = RequiredTargets(request, first(classify_targets(request)))
+    @test (@inferred _prepare(IPOG(), profile)) isa _DefaultPlan{IPOG}
+    @test (@inferred _prepare(GND(), profile)) isa _DefaultPlan{GND}
+    @test (@inferred _prepare(Construction(), profile)) isa _ConstructionPlan
+    @test (@inferred _prepare(Compact(IPOG()), profile)) isa _CompactPlan{IPOG, _DefaultPlan{IPOG}}
+    @test (@inferred _prepare(Compact(Construction()), profile)) isa _CompactPlan{Construction, _ConstructionPlan}
+    @test (@inferred _prepare(Auto(), profile)) isa _AutoPlan
+    for engine in (IPOG(), GND(), Construction(), Compact(Construction()), Auto(), Auto(goal = :compact))
+        @test (@inferred fit(engine, profile)) isa Fit
+        @test (@inferred generate(engine, request)) isa Design
+    end
+    for engine in (IPOG(), Construction(), Compact(IPOG()), Compact(Construction()))
+        rows, notes = @inferred _execute(_prepare(engine, profile), request, targets)
+        @test rows isa Matrix{Int} && isconcretetype(typeof(notes))
+    end
+    @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _execute(_prepare(Auto(), profile), request, targets)) isa
+          Matrix{Int}
+    # A negative sub-request the catalog refuses (strength 1) takes IPOG's plan: a union of two.
+    space = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
+    sub = _negative_request(Request(space), NegativeProjection(space, 1), zeros(Int, 3, 0))
+    @test (@inferred Union{_ConstructionPlan, _DefaultPlan{IPOG}} _prepare_for(Construction(), Profile(sub))) isa
+          _DefaultPlan{IPOG}
+    # A plan lists no target and builds nothing: `Auto`'s, which prepares the
+    # catalog's once, allocates the catalog's lookup and a few KB, 0.51 MB at
+    # strength 3 on 250 parameters of 7 values (Julia 1.13), where a second
+    # lookup would double it.
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    wide = Profile(Request(uniform(250, 7); strength = 3))
+    lookup = measured(k -> _catalog_entry(3, 7, k), 250)
+    @test measured(p -> _prepare(Auto(), p), wide) <= lookup + 64 * 1024
+    @test measured(p -> _prepare(Compact(Construction()), p), wide) <= lookup + 64 * 1024
+end
+
+
 @testitem "stability: the coverage index and the reducer's moves answer in place" setup=[StabilitySetup] begin
     using Random: Xoshiro
     using UnitTestDesign: Request, RequiredTargets, CoverageIndex, classify_targets, cover_ordinary,
@@ -439,14 +485,14 @@ end
 
 @testitem "stability: Auto's choice, the lower bound and recommend infer, and the bound reads supports in place" setup=[StabilitySetup] begin
     using UnitTestDesign: Profile, Request, RequiredTargets, classify_targets, _auto_plan, _AutoPlan, _ordinary_bound,
-        _SupportBound, _bound_record, _request_bound, _recommendation, _construction_plan, _construction_cover,
-        _cover_with_notes
+        _SupportBound, _bound_record, _request_bound, _recommendation, _prepare, _execute
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     # Auto's choice (plan §4.1) is a function of the profile, with one concrete type,
     # whichever rule it takes: the catalog alone, both starts, or IPOG alone.
     for space in (uniform(8, 7), uniform(15, 6), TestSpace((a = 1:2, b = 1:3, c = 1:4, d = 1:2)))
         for goal in (:fast, :balanced, :compact)
             @test (@inferred _auto_plan(Auto(; goal), Profile(Request(space)))) isa _AutoPlan
+            @test (@inferred _prepare(Auto(; goal), Profile(Request(space)))) isa _AutoPlan
         end
     end
     # The bound (plan §4.1): one concrete type, and its record a NamedTuple of concrete fields.
@@ -461,11 +507,12 @@ end
     @test (@inferred Union{Tuple{Int, String}, Tuple{Nothing, String}} _request_bound(request)) == (49, _request_bound(request)[2])
     @test (@inferred _recommendation(Auto(), request)) isa Recommendation
     @test (@inferred recommend(uniform(8, 7))) isa Recommendation
-    # A start's rows are a Matrix{Int}; the notes are one of a few NamedTuples, as the winner decides.
+    # A start's rows are a Matrix{Int} with concrete notes; Auto's notes are one
+    # of a few NamedTuples, as the winner decides, behind an asserted barrier.
     all_targets = RequiredTargets(request, first(classify_targets(request)))
-    f, entry, members = _construction_plan(Profile(request))
-    @test first(@inferred _construction_cover(request, all_targets, f, entry, members)) isa Matrix{Int}
-    @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _cover_with_notes(Auto(), request, all_targets)) isa Matrix{Int}
+    @test first(@inferred _execute(_prepare(Construction(), Profile(request)), request, all_targets)) isa Matrix{Int}
+    @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _execute(_prepare(Auto(), Profile(request)), request,
+                                                                  all_targets)) isa Matrix{Int}
     # The bound reads every support in place, 45 or 7,140 of them: without
     # must-include rows it allocates nothing, and with them its two buffers,
     # whatever the supports (192 bytes for 3 rows on Julia 1.13, 320 on 1.10).

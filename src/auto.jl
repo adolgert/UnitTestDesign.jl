@@ -12,9 +12,12 @@
 # The choice is a pure function of the request (contract §9.1): `_auto_plan`
 # reads the `Profile` and nothing else, never a search result, a limit or
 # the clock (§3.8, §9.3), and the candidates are a fixed list, so loading a
-# package that defines another engine changes nothing (plan §5.9). A
-# candidate that throws `ResourceLimitError` makes the call throw: nothing
-# here catches it. Only the winner is certified, by `generate`.
+# package that defines another engine changes nothing (plan §5.9). Each
+# candidate is prepared through the engine protocol (`_prepare`), and `Auto`
+# reads its plan only through `_known_rows`, `_at_bound` and `_plan_line` and
+# executes it with `_execute`, so it knows no candidate's recipe. A candidate that
+# throws `ResourceLimitError` makes the call throw: nothing here catches it.
+# Only the winner is certified, by `generate`.
 
 """
     _AUTO_SMALL
@@ -101,16 +104,16 @@ end
 """
     _AutoCandidate
 
-One start `Auto` considers (`_auto_plan`): `label`, its constructor call;
-`engine`; its `fit` for the request; `runs`, whether `Auto` runs it; `rows`,
-its size when known without running it (the catalog's array for an exact
-shape); and `reason`, one line on why it runs or not, which `recommend`
-shows.
+One start `Auto` considers (`_auto_plan`): `label`, its engine's
+constructor call; `plan`, its engine's plan for the request (`_prepare`),
+whose `fit` says how it fits; `runs`, whether `Auto` runs it; `rows`, its
+size when known without running it (`_known_rows`: the catalog's array for
+an exact shape); and `reason`, one line on why it runs or not, which
+`recommend` shows.
 """
 struct _AutoCandidate
     label::String
-    engine::Union{Construction, IPOG}
-    fit::Fit
+    plan::_Plan
     runs::Bool
     rows::Union{Nothing, Int}
     reason::String
@@ -119,37 +122,40 @@ end
 """
     _AutoPlan
 
-What `Auto` runs for a request (`_auto_plan`): `goal`; `candidates`, in the
-fixed order of a tie, IPOG first, then the catalog; `smallest`, whether it
-runs more than one and keeps the fewest rows; `bound`, the lower bound the
-catalog's array would meet, when its fit is exact (`nothing` otherwise);
-`why`, one line on the rule; and the catalog's `entry` and `members`
-(`_construction_plan`), which the catalog start builds.
+`Auto`'s plan for a request (`_prepare`, `_auto_plan`): `engine`; `fit`,
+which covers any request; `candidates`, in the fixed order of a tie, IPOG
+first, then the catalog; `smallest`, whether it runs more than one and keeps
+the fewest rows; and `why`, one line on the rule.
 """
-struct _AutoPlan
-    goal::Symbol
+struct _AutoPlan <: _Plan
+    engine::Auto
+    fit::Fit
     candidates::Vector{_AutoCandidate}
     smallest::Bool
-    bound::Union{Nothing, Int}
     why::String
-    entry::Union{Nothing, CatalogEntry}
-    members::Union{Nothing, Vector{Int}}
 end
 
+# The starts, in the fixed order of a tie: IPOG, which covers any request, then the catalog.
+_auto_engines() = (IPOG(), Construction())
+
+"The candidates' plans for a request with this profile, in `_auto_engines`' order, each prepared once."
+_auto_starts(p::Profile) = map(e -> _prepare(e, p), _auto_engines())
+
 """
-    _auto_plan(engine::Auto, profile) -> _AutoPlan
+    _auto_plan(engine::Auto, profile, starts = _auto_starts(profile)) -> _AutoPlan
 
 The starts `engine` runs for a request with this `Profile`, from the profile
-alone (plan §4.1): no target is classified and nothing is built, so the
-choice depends only on the request (contract §9.1), and `recommend` shows it
-without generating.
+alone (plan §4.1), and from the candidates' plans `starts`, IPOG's and the
+catalog's, which `recommend` prepares once for every goal it reports: no
+target is classified and nothing is built, so the choice depends only on the
+request (contract §9.1), and `recommend` shows it without generating.
 
 - `:fast`: IPOG alone.
-- Otherwise, when the catalog's `fit` is `:unsupported`: IPOG alone.
-- When it is `:exact` and the array has as many rows as the lower bound, the
-  product of the `t` largest value counts (an orthogonal array, a zero-sum
-  array): the catalog alone. IPOG can't have fewer rows, and the array is
-  balanced (an orthogonal array shows each combination once).
+- Otherwise, when the catalog's fit is `:unsupported`: IPOG alone.
+- When the catalog's array is known to have as many rows as the lower bound
+  (`_at_bound`: an orthogonal array, a zero-sum array): the catalog alone.
+  IPOG can't have fewer rows, and the array is balanced (an orthogonal array
+  shows each combination once).
 - When the request has at most `_AUTO_SMALL` targets: both, and the fewer rows
   are kept, IPOG's on a tie (keep the smallest), so that `Auto` gives IPOG's
   cases wherever the catalog is not smaller.
@@ -158,55 +164,42 @@ without generating.
 - Above it, `:seeded`: IPOG alone, since a seeded design's size is known
   only after running it.
 """
-function _auto_plan(engine::Auto, p::Profile)
-    f, entry, members = _construction_plan(p)
-    ipog = Fit(:native, "IPOG covers any request")
+function _auto_plan(engine::Auto, p::Profile, starts = _auto_starts(p))
+    ipog, catalog = starts
+    f = catalog.fit
     targets = "$(p.targets) combinations to cover"
-    rows = f.kind === :exact ? (entry::CatalogEntry).rows : nothing
-    bound = f.kind === :exact ? _describe(entry::CatalogEntry).lower_bound : nothing
-    exact = rows === nothing ? f.reason : _exact_reason(entry::CatalogEntry, f.rows === nothing)
-    plan(candidates, smallest, why) = _AutoPlan(engine.goal, candidates, smallest, bound, why, entry, members)
-    catalog(runs, reason) = _AutoCandidate("Construction()", Construction(), f, runs, rows, reason)
-    start(runs, reason) = _AutoCandidate("IPOG()", IPOG(), ipog, runs, nothing, reason)
+    rows = _known_rows(catalog)
+    line = _plan_line(catalog)
+    plan(candidates, smallest, why) =
+        _AutoPlan(engine, Fit(:native, "Auto covers any request: IPOG, or the catalog's array where it fits"),
+                  candidates, smallest, why)
+    array(runs, reason) = _AutoCandidate(_engine_label(catalog.engine), catalog, runs, rows, reason)
+    start(runs, reason) = _AutoCandidate(_engine_label(ipog.engine), ipog, runs, _known_rows(ipog), reason)
     if engine.goal === :fast
         return plan([start(true, "IPOG alone, as goal = :fast asks"),
-                     catalog(false, "not run: goal = :fast is IPOG alone")], false, "goal = :fast runs IPOG alone")
+                     array(false, "not run: goal = :fast is IPOG alone")], false, "goal = :fast runs IPOG alone")
     elseif f.kind === :unsupported
-        return plan([start(true, "covers any request"), catalog(false, "not run: $(f.reason)")], false,
+        return plan([start(true, "covers any request"), array(false, "not run: $(f.reason)")], false,
                     "the catalog doesn't cover this request")
-    elseif rows !== nothing && rows == bound
+    elseif _at_bound(catalog)
         return plan([start(false, "not run: no design has fewer rows than the catalog's array, which meets the " *
-                                  "lower bound"), catalog(true, exact)], false,
+                                  "lower bound"), array(true, line)], false,
                     "the catalog's array meets the lower bound")
     elseif p.targets <= _AUTO_SMALL
-        return plan([start(true, "covers any request"), catalog(true, exact)], true,
+        return plan([start(true, "covers any request"), array(true, line)], true,
                     "$targets, at most $_AUTO_SMALL_TEXT: both run, and the fewer rows are kept, IPOG's on a tie")
     elseif f.kind === :exact
         return plan([start(false, "not run: above $_AUTO_SMALL_TEXT combinations Auto runs one start, and for an " *
-                                  "exact shape that is the catalog's array"), catalog(true, exact)], false,
+                                  "exact shape that is the catalog's array"), array(true, line)], false,
                     "$targets, above $_AUTO_SMALL_TEXT: one start, the catalog's array")
     end
     return plan([start(true, "covers any request"),
-                 catalog(false, "not run: above $_AUTO_SMALL_TEXT combinations Auto runs one start, and a " *
-                                "seeded array's size is known only after running")],
+                 array(false, "not run: above $_AUTO_SMALL_TEXT combinations Auto runs one start, and a " *
+                            "seeded array's size is known only after running")],
                 false, "$targets, above $_AUTO_SMALL_TEXT: one start, IPOG")
 end
 
-"""
-    _exact_reason(entry, negative) -> String
-
-The catalog candidate's line for an exact shape (`_auto_plan`, `recommend`):
-its size and construction, from `_describe`, as "49 rows: Bush orthogonal
-array, every combination exactly once" or "76 rows: Tripling (tripling from
-5 columns)"; with `negative`, a space with `Invalid` values, the rows are
-the ordinary ones, and the negative rows follow.
-"""
-function _exact_reason(entry::CatalogEntry, negative::Bool)
-    d = _describe(entry)
-    name = startswith(lowercase(d.family), lowercase(d.name)) ? "" : " ($(d.name))"
-    return "$(d.rows) $(negative ? "ordinary rows" : "rows"): $(d.family)$name" *
-           (d.orthogonal ? ", every combination exactly once" : "") * (negative ? ", then the negative rows" : "")
-end
+_prepare(engine::Auto, p::Profile) = _auto_plan(engine, p)
 
 """
     _auto_label(plan, profile) -> String
@@ -219,7 +212,7 @@ return the start unreduced (`_unreduced`).
 function _auto_label(plan::_AutoPlan, p::Profile)
     labels = [c.label for c in plan.candidates if c.runs]
     label = length(labels) == 1 ? only(labels) : "the smaller of " * _and_list(labels)
-    return plan.goal === :compact && _unreduced(plan, p) === nothing ? "Compact($label)" : label
+    return plan.engine.goal === :compact && _unreduced(plan, p) === nothing ? "Compact($label)" : label
 end
 
 """
@@ -230,7 +223,7 @@ the profile shows it, or `nothing`: the coverage index would hold more than
 `_COMPACT_MAX_COMBINATIONS` combinations, or the one start that runs is the
 catalog's array, of more rows than an index counts (`typemax(UInt16)`). A
 start of IPOG's past that many rows is known only after running it, when
-`Auto`'s record says so (`_cover_with_notes(::Auto)`).
+`Auto`'s record says so (`_execute(::_AutoPlan, …)`).
 """
 function _unreduced(plan::_AutoPlan, p::Profile)
     p.targets > _COMPACT_MAX_COMBINATIONS &&
@@ -267,40 +260,37 @@ engine_record(e::Auto) = EngineRecord(:Auto, e.goal === :compact ? e.seed : noth
 # Only `goal = :compact` is randomized, so the call that repeats the rows names it.
 _repeat_call(::Val{:Auto}, seed) = "Auto(goal = :compact, seed = $seed) with the same effort"
 
-fit(::Auto, ::Profile) = Fit(:native, "Auto covers any request: IPOG, or the catalog's array where it fits")
+fit(engine::Auto, p::Profile) = _prepare(engine, p).fit
 
-cover_ordinary(engine::Auto, request::Request, targets::RequiredTargets) =
-    first(_cover_with_notes(engine, request, targets))
+cover_ordinary(engine::Auto, request::Request, targets::RequiredTargets) = _cover(engine, request, targets)
 
 """
-    _cover_with_notes(::Auto, request, targets) -> (matrix, notes)
+    _execute(plan::_AutoPlan, request, targets) -> (matrix, notes)
 
-The plan's starts (`_auto_plan`), each through its own `_cover_with_notes`, in
-the fixed order; the one with the fewest rows is kept, the first on a tie;
-then, for `goal = :compact`, `_compact` on it, once (plan §4.1 step 3). A
-start that throws `ResourceLimitError` ends the call (plan §6.1). `notes`
-record `chose`, the pipeline that made the rows, as "Construction()" or
-"Compact(IPOG())", or the start alone when the reducer returned it
-unreduced past its caps; `candidates`, each start that ran with its rows, in
-order; then the winner's own notes (the catalog's array) and the reducer's
-run.
+The plan's starts, each through the engine protocol (`_execute` of its
+plan), in the fixed order; the one with the fewest rows is kept, the first
+on a tie; then, for `goal = :compact`, `_compact` on it, once (plan §4.1
+step 3). A start that throws `ResourceLimitError` ends the call (plan §6.1).
+`notes` record `chose`, the pipeline that made the rows, as
+"Construction()" or "Compact(IPOG())", or the start alone when the reducer
+returned it unreduced past its caps; `candidates`, each start that ran with
+its rows, in order; then the winner's own notes (the catalog's array) and
+the reducer's run. The starts' plans are of different types, so each
+execution's result type is asserted, a function barrier.
 """
-function _cover_with_notes(engine::Auto, request::Request, targets::RequiredTargets)
-    plan = _auto_plan(engine, Profile(request))
+function _execute(plan::_AutoPlan, request::Request, targets::RequiredTargets)
+    engine = plan.engine
     candidates = @NamedTuple{engine::String, rows::Int}[]
     best, notes, label = zeros(Int, length(request.arity), 0), (;), ""
     for c in plan.candidates
         c.runs || continue
-        # The catalog's start builds the entry the plan looked up, not looking it up again.
-        rows, found = c.engine isa Construction ?
-            _construction_cover(request, targets, c.fit, plan.entry::CatalogEntry, plan.members) :
-            _cover_with_notes(c.engine, request, targets)
+        rows, found = _execute(c.plan, request, targets)::Tuple{Matrix{Int}, NamedTuple}
         push!(candidates, (engine = c.label, rows = size(rows, 2)))
         if isempty(label) || size(rows, 2) < size(best, 2)
             best, notes, label = rows, found, c.label
         end
     end
-    plan.goal === :compact || return best, merge((chose = label, candidates), notes)
+    engine.goal === :compact || return best, merge((chose = label, candidates), notes)
     matrix, reduced = _compact(request, targets, best; seed = engine.seed, effort = engine.effort)
     # Past the index's cap or the rows a count holds, the start comes back as it was.
     chose = reduced.reducer_stop in (:index_cap, :rows_cap) ? label : "Compact($label)"
@@ -437,30 +427,34 @@ end
 """
     _recommendation(engine::Auto, request) -> Recommendation
 
-`recommend`'s answer for a request it built: `_auto_plan` on the request's
-`Profile`, the bound `_request_bound` knows without classifying, the sizes
-each goal can give, and the notes. A profile counts only the ordinary
+`recommend`'s answer for a request it built: `Auto`'s plan for the request's
+`Profile` (`_auto_plan`), and `Auto()`'s for the sizes and the notes of
+another goal, both from the candidates' plans prepared once
+(`_auto_starts`); the bound `_request_bound` knows without classifying; the
+sizes each goal can give; and the notes. A profile counts only the ordinary
 must-include rows, so it is the profile of the ordinary request that
 `generate` hands `Auto` (the negative must-include rows set apart), and the
 plan is the one `Auto` makes.
 """
 function _recommendation(engine::Auto, request::Request)
     p = Profile(request)
-    plan = _auto_plan(engine, p)
-    candidates = [(engine = c.label, fit = c.fit.kind, runs = c.runs, rows = c.fit.rows, reason = c.reason)
+    starts = _auto_starts(p)
+    plan = _auto_plan(engine, p, starts)
+    balanced = engine.goal === :balanced ? plan : _auto_plan(Auto(), p, starts)
+    candidates = [(engine = c.label, fit = c.plan.fit.kind, runs = c.runs, rows = c.plan.fit.rows, reason = c.reason)
                   for c in plan.candidates]
     bound, proof = _request_bound(request)
     # `:balanced` keeps the smaller of the starts it runs, so it has at most the
     # catalog's rows whenever it runs the catalog on an exact shape, and
     # `:compact` reduces that. IPOG's size is known only after running.
-    catalog = only(c for c in _auto_plan(Auto(), p).candidates if c.engine isa Construction)
-    balanced = catalog.runs ? catalog.fit.rows : nothing
-    sizes = (fast = nothing, balanced = balanced, compact = balanced)
+    catalog = last(balanced.candidates)   # in the fixed order: IPOG, then the catalog
+    most = catalog.runs ? catalog.plan.fit.rows : nothing
+    sizes = (fast = nothing, balanced = most, compact = most)
     space = request.space
     stronger = Pair{Tuple{Vararg{Symbol}}, Int}[Tuple(space.names[g]) => s for (g, s) in request.groups[2:end]]
     return Recommendation(engine.goal, _auto_label(plan, p), candidates, plan.why, bound, proof, sizes,
-                          _recommend_notes(request, p, plan), copy(space.names), copy(p.arity), p.strength,
-                          stronger, n_must_include(request), p.n_invalid, length(p.rules), p.targets)
+                          _recommend_notes(request, p, plan, balanced), copy(space.names), copy(p.arity),
+                          p.strength, stronger, n_must_include(request), p.n_invalid, length(p.rules), p.targets)
 end
 
 """
@@ -506,17 +500,17 @@ function _request_bound(request::Request)
 end
 
 """
-    _recommend_notes(request, profile, plan) -> Vector{String}
+    _recommend_notes(request, profile, plan, balanced) -> Vector{String}
 
 `recommend`'s notes: what about the space changes the choice or its cost.
 Whole-case rules (STUDY.md, "Rules: writing the same condition differently
 changes the problem"), the rules, must-include rows, `stronger` groups and
 `Invalid` values as `Auto` treats them; for `goal = :fast`, how `:balanced`
-compares (decision D8): never larger where it builds IPOG's design too or
-the catalog's array meets the bound, else measured; and for `:compact`,
-whether the reducer runs (`_unreduced`).
+(the plan `balanced`) compares (decision D8): never larger where it builds
+IPOG's design too or the catalog's array meets the bound, else measured; and
+for `:compact`, whether the reducer runs (`_unreduced`).
 """
-function _recommend_notes(request::Request, p::Profile, plan::_AutoPlan)
+function _recommend_notes(request::Request, p::Profile, plan::_AutoPlan, balanced::_AutoPlan)
     notes = String[]
     whole = count(r -> r.kind === :whole_case, p.rules)
     whole > 0 && push!(notes, "$(_plural(whole, "whole-case rule")): generation checks " *
@@ -528,15 +522,14 @@ function _recommend_notes(request::Request, p::Profile, plan::_AutoPlan)
                              "$(lazy == 1 ? "is" : "are") evaluated on demand, which makes generation slower")
     p.n_invalid > 0 && push!(notes, "$(_plural(p.n_invalid, "Invalid value")): the negative rows of each are " *
                                     "chosen the same way, on the other parameters")
-    if plan.goal === :fast
-        balanced = _auto_plan(Auto(), p)
+    if plan.engine.goal === :fast
         ipog, catalog = balanced.candidates   # in the fixed order: IPOG, then the catalog
-        push!(notes, ipog.runs || (catalog.rows !== nothing && catalog.rows == balanced.bound) ?
+        push!(notes, ipog.runs || _at_bound(catalog.plan) ?
                      "goal = :fast is IPOG alone; goal = :balanced never gives more cases" :
                      "goal = :fast is IPOG alone; goal = :balanced builds only the catalog's array here, above " *
                      "$_AUTO_SMALL_TEXT combinations, which on the package's benchmarks was never larger than " *
                      "IPOG's design, though that is not guaranteed")
-    elseif plan.goal === :compact
+    elseif plan.engine.goal === :compact
         why = _unreduced(plan, p)
         push!(notes, why === nothing ?
                      "goal = :compact runs the row reducer once on the start it keeps, seeded with seed = 0" :

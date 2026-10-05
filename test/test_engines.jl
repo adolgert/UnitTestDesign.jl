@@ -330,7 +330,7 @@ end
     @test length(covering(space; strength = 3, engine)) == 12 && engine.covered == [3]
     # IPOG and GND fit every request, so nothing changes for them.
     for e in (IPOG(), GND())
-        @test _check_fit(e, request).kind === :native
+        @test _check_fit(e, request).fit.kind === :native
     end
 end
 
@@ -354,4 +354,52 @@ end
     @test t.engine === :Refusing
     @test occursin("produced with Refusing", sprint(show, MIME"text/plain"(), t))
     @test design_sizes((a = [1, 2], b = [:x, :y]); engine = GND(seed = 2), distances = 1:1).engine === :GND
+end
+
+
+@testitem "engines: generation prepares a plan once, and so do negative sub-requests and design_sizes (§4.2)" setup=[EngineSetup] begin
+    using UnitTestDesign: _Plan, generate
+    # A probe engine that counts the plans it prepares, by the strength of the
+    # request, and refuses a request below strength 2. Its rows are IPOG's.
+    struct Counting <: CoveringEngine
+        prepared::Vector{Int}
+    end
+    Counting() = Counting(Int[])
+    struct CountingPlan <: _Plan
+        engine::Counting
+        fit::Fit
+    end
+    UnitTestDesign.engine_record(::Counting) = EngineRecord(:Counting, nothing)
+    Base.show(io::IO, ::Counting) = print(io, "Counting()")
+    function UnitTestDesign._prepare(e::Counting, p::Profile)
+        push!(e.prepared, p.strength)
+        return CountingPlan(e, p.strength >= 2 ? Fit(:native, "IPOG's rows") : Fit(:unsupported, "strength below 2"))
+    end
+    UnitTestDesign.fit(e::Counting, p::Profile) = UnitTestDesign._prepare(e, p).fit
+    UnitTestDesign._execute(::CountingPlan, request::Request, targets::RequiredTargets) =
+        (cover_ordinary(IPOG(), request, targets), (;))
+    space = TestSpace((a = 1:3, b = 1:3, c = 1:2, d = 1:2))
+    # `generate` prepares the plan once and executes it: its check of the fit is the plan's.
+    e = Counting()
+    @test collect(covering(space; strength = 2, engine = e)) == collect(covering(space; strength = 2))
+    @test e.prepared == [2]
+    # A negative sub-request prepares once too; one the engine refuses (strength
+    # 1) takes the fallback's plan, IPOG's.
+    invalid = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:2, d = 1:2))
+    e = Counting()
+    cases = covering(invalid; strength = 3, engine = e)
+    @test e.prepared == [3, 2] && collect(cases) == collect(covering(invalid; strength = 3))
+    e = Counting()
+    cases = covering(invalid; strength = 2, engine = e)
+    @test e.prepared == [2, 1]
+    @test collect(cases) == collect(covering(invalid; strength = 2))
+    # A refusal is an ArgumentError after one plan; design_sizes reads the
+    # plan's fit for each strength and generates from that same plan.
+    e = Counting()
+    @test_throws "Counting() does not cover this request: strength below 2" generate(e, Request(space; strength = 1))
+    @test e.prepared == [1]
+    e = Counting()
+    t = design_sizes(space; engine = e, distances = 1:1)
+    @test e.prepared == [1, 2, 3]
+    @test [r.status for r in t.rows if r.kind === :covering] == [:unsupported, :ok, :ok]
 end

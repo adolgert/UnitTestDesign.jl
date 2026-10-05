@@ -17,7 +17,8 @@
 # (contract §3.8).
 #
 # `_compact` is the core: it reduces any start design for a request. `Compact`
-# applies it to its inner engine's rows; Phase 3's `Auto` applies it to the
+# applies it to its inner engine's rows, from the inner engine's plan, which
+# its own plan holds (`_CompactPlan`); Phase 3's `Auto` applies it to the
 # start that keep-the-smallest chose (§4.1 step 3).
 
 """
@@ -453,16 +454,57 @@ function _check_counts(index::CoverageIndex, rows::Vector{Vector{Int}}, N::Int)
 end
 
 """
+    _CompactPlan
+
+`Compact`'s plan for a request (`_prepare`): `engine`; `fit`, the inner
+engine's, reduced (`fit(::Compact, …)`); and `inner`, the inner engine's
+plan, which execution runs for the start.
+"""
+struct _CompactPlan{E <: CoveringEngine, P <: _Plan} <: _Plan
+    engine::Compact{E}
+    fit::Fit
+    inner::P
+end
+
+"""
+    _prepare(engine::Compact, profile) -> _CompactPlan
+
+The inner engine's plan, and its fit, reduced: `:native` where the inner
+engine covers the request and the index fits (`_COMPACT_MAX_COMBINATIONS`);
+the inner engine's own fit where the index would be larger, since `Compact`
+then returns its rows unreduced; and `:unsupported` where the inner engine
+is.
+"""
+function _prepare(engine::Compact, profile::Profile)
+    inner = _prepare(engine.inner, profile)
+    f = inner.fit
+    reduced = f.kind === :unsupported ? f :
+              profile.targets > _COMPACT_MAX_COMBINATIONS ?
+              Fit(f.kind, "$(f.reason), unreduced: the coverage index would hold $(profile.targets) combinations, " *
+                          "above Compact's $(_COMPACT_MAX_COMBINATIONS)"; rows = f.rows) :
+              Fit(:native, "$(f.reason), then reduced")
+    return _CompactPlan(engine, reduced, inner)
+end
+
+fit(engine::Compact, profile::Profile) = _prepare(engine, profile).fit
+
+"""
     cover_ordinary(engine::Compact, request::Request, targets::RequiredTargets) -> Matrix{Int}
 
 The inner engine's rows for `request`, reduced by `_compact` (plan §5.3).
 """
-cover_ordinary(engine::Compact, request::Request, targets::RequiredTargets) =
-    first(_cover_with_notes(engine, request, targets))
+cover_ordinary(engine::Compact, request::Request, targets::RequiredTargets) = _cover(engine, request, targets)
 
-function _cover_with_notes(engine::Compact, request::Request, targets::RequiredTargets)
-    start, inner = _cover_with_notes(engine.inner, request, targets)
-    matrix, notes = _compact(request, targets, start; seed = engine.seed, effort = engine.effort)
+"""
+    _execute(plan::_CompactPlan, request, targets) -> (matrix, notes)
+
+The inner plan's rows, reduced by `_compact` with the engine's seed and
+effort. The notes are the inner engine's, then the reducer's run, `reducer`
+(`_reducer_record`).
+"""
+function _execute(plan::_CompactPlan, request::Request, targets::RequiredTargets)
+    start, inner = _execute(plan.inner, request, targets)
+    matrix, notes = _compact(request, targets, start; seed = plan.engine.seed, effort = plan.engine.effort)
     return matrix, merge(inner, (reducer = _reducer_record(notes),))
 end
 
@@ -485,23 +527,6 @@ engine_record(engine::Compact) = EngineRecord(:Compact, engine.seed,
 # A result keeps only the engine's name and seed, so the phrase names what
 # else must match to repeat the rows.
 _repeat_call(::Val{:Compact}, seed) = "Compact(inner; seed = $seed) with the same inner engine and effort"
-
-"""
-    fit(engine::Compact, profile) -> Fit
-
-The inner engine's fit, reduced: `:native` where the inner engine covers the
-request and the index fits (`_COMPACT_MAX_COMBINATIONS`); the inner engine's
-own fit where the index would be larger, since `Compact` then returns its
-rows unreduced; and `:unsupported` where the inner engine is.
-"""
-function fit(engine::Compact, profile::Profile)
-    inner = fit(engine.inner, profile)
-    inner.kind === :unsupported && return inner
-    profile.targets > _COMPACT_MAX_COMBINATIONS && return Fit(inner.kind,
-        "$(inner.reason), unreduced: the coverage index would hold $(profile.targets) combinations, " *
-        "above Compact's $(_COMPACT_MAX_COMBINATIONS)"; rows = inner.rows)
-    return Fit(:native, "$(inner.reason), then reduced")
-end
 
 # What the inner engine refuses goes to its fallback, reduced the same way.
 _fallback(engine::Compact) = Compact(_fallback(engine.inner); seed = engine.seed, effort = engine.effort)

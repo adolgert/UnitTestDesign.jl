@@ -24,8 +24,12 @@
 #   dominates come on top of it.
 # - Anything else, mixed value counts on more than t + 1 parameters above
 #   all, is refused (`fit` says why); a negative sub-request it refuses goes
-#   to IPOG (`_engine_for`), and `generate` refuses the whole request by name
+#   to IPOG (`_prepare_for`), and `generate` refuses the whole request by name
 #   (`_check_fit`).
+#
+# Its plan (`_ConstructionPlan`, plan §4.2) holds the fit and the entry it
+# builds, looked up once per request; `Auto` and `recommend` read the plan
+# through `_known_rows`, `_at_bound` and `_plan_line`, never the entry.
 #
 # It uses no randomness (contract §9.4): the lookup and the builders are
 # functions of the shape alone.
@@ -65,8 +69,9 @@ them): naming it is then an `ArgumentError` that suggests `IPOG()` or
 [`Auto`](@ref)`()`, which cover any request. `Auto()` uses it where it fits
 and is smaller. The result's record says which array it built,
 `cases.record.catalog`, with its source and whether it is an orthogonal
-array. It uses no randomness (contract §9.4); its arrays are those of the
-package version, so a later version may build a smaller one (§9.8).
+array. It uses no randomness (contract §9.4); its arrays are
+those of the package version, so a later version may build a smaller one
+(§9.8).
 """
 struct Construction <: CoveringEngine
 end
@@ -77,26 +82,40 @@ engine_record(::Construction) = EngineRecord(:Construction, nothing)
 Base.show(io::IO, ::Construction) = print(io, "Construction()")
 
 """
-    _construction_plan(profile) -> (fit, entry, members)
+    _ConstructionPlan
 
-`fit(Construction(), profile)`, the catalog entry it builds, and the
-parameters that entry covers (`nothing` for all of them), from the profile
-alone (plan §4.2): no target is listed and nothing is built. The entry is
-the base strength's array, or, seeded with `stronger` groups, the first of
-the strongest group's (see the file header). The lookup costs well under a
-millisecond for the shapes of plan §5.4's tables and about 2 ms at strength
-3 on 250 parameters of 25 values.
+`Construction`'s plan for a request (`_prepare`): `engine`; `fit`; `entry`,
+the catalog entry it builds (`nothing` when the fit is `:unsupported`); and
+`members`, the parameters that entry covers (`nothing` for all of them).
 """
-function _construction_plan(p::Profile)
+struct _ConstructionPlan <: _Plan
+    engine::Construction
+    fit::Fit
+    entry::Union{Nothing, CatalogEntry}
+    members::Union{Nothing, Vector{Int}}
+end
+
+"""
+    _prepare(::Construction, profile) -> _ConstructionPlan
+
+`Construction`'s fit, the catalog entry it builds, and the parameters that
+entry covers, from the profile alone (plan §4.2): no target is listed and
+nothing is built. The entry is the base strength's array, or, seeded with
+`stronger` groups, the first of the strongest group's (see the file
+header). The lookup costs well under a millisecond for the shapes of plan
+§5.4's tables and about 2 ms at strength 3 on 250 parameters of 25 values.
+"""
+function _prepare(engine::Construction, p::Profile)
+    refuse(reason) = _ConstructionPlan(engine, Fit(:unsupported, reason), nothing, nothing)
     t, k = p.strength, nparameters(p)
-    t >= 1 || return Fit(:unsupported, "a base strength of 0, where only `stronger` groups carry targets; " *
-                                       "the catalog builds for a base strength"), nothing, nothing
+    t >= 1 || return refuse("a base strength of 0, where only `stronger` groups carry targets; " *
+                            "the catalog builds for a base strength")
     entry = _catalog_entry(t, p.arity)
     if entry === nothing
-        return Fit(:unsupported, allequal(p.arity) ?
-                   "no catalog entry for $k parameters of $(first(p.arity)) values at strength $t" :
-                   "mixed value counts on $k parameters; the catalog covers equal value counts, " *
-                   "or t + 1 = $(t + 1) parameters"), nothing, nothing
+        return refuse(allequal(p.arity) ?
+                      "no catalog entry for $k parameters of $(first(p.arity)) values at strength $t" :
+                      "mixed value counts on $k parameters; the catalog covers equal value counts, " *
+                      "or t + 1 = $(t + 1) parameters")
     end
     if t > 3
         # Above strength 3 the catalog has only the zero-sum array and the Bush
@@ -104,14 +123,15 @@ function _construction_plan(p::Profile)
         # offers only the arrays at the lower bound (p2-construction's judgment
         # call 4, option b, decided for Phase 3).
         bound = _describe(entry).lower_bound
-        entry.rows == bound || return Fit(:unsupported,
+        entry.rows == bound || return refuse(
             "the catalog's array for $k parameters of $(first(p.arity)) values at strength $t ($(entry.name)) " *
             "has $(entry.rows) rows, above the lower bound of $bound; above strength 3 " *
-            "the catalog offers only arrays at the lower bound"), nothing, nothing
+            "the catalog offers only arrays at the lower bound")
     end
     if isempty(p.rules) && p.n_must_include == 0 && length(p.groups) == 1
-        p.n_invalid == 0 && return Fit(:exact, "$(entry.name): $(entry.rows) rows"; rows = entry.rows), entry, nothing
-        return Fit(:exact, "$(entry.name): $(entry.rows) ordinary rows, then the negative rows"), entry, nothing
+        f = p.n_invalid == 0 ? Fit(:exact, "$(entry.name): $(entry.rows) rows"; rows = entry.rows) :
+                               Fit(:exact, "$(entry.name): $(entry.rows) ordinary rows, then the negative rows")
+        return _ConstructionPlan(engine, f, entry, nothing)
     end
     members = nothing
     if length(p.groups) > 1
@@ -126,11 +146,38 @@ function _construction_plan(p::Profile)
     members === nothing || push!(extras, "on the `stronger` group of $(length(members)) parameters at strength $(entry.t)")
     isempty(p.rules) || push!(extras, "the rows a rule forbids dropped")
     p.n_must_include > 0 && push!(extras, "after the must-include rows")
-    return Fit(:seeded, "$(entry.name), $(entry.rows) rows as seeds" * join((", " * x for x in extras)) *
-                        "; IPOG adds what they leave uncovered"), entry, members
+    f = Fit(:seeded, "$(entry.name), $(entry.rows) rows as seeds" * join((", " * x for x in extras)) *
+                     "; IPOG adds what they leave uncovered")
+    return _ConstructionPlan(engine, f, entry, members)
 end
 
-fit(::Construction, p::Profile) = first(_construction_plan(p))
+fit(engine::Construction, p::Profile) = _prepare(engine, p).fit
+
+# For an exact shape the array's rows are known before building it, and an
+# orthogonal or zero-sum array meets the lower bound, the product of the `t`
+# largest value counts (`_describe`), so no design has fewer: `Auto` then
+# builds it alone.
+_known_rows(plan::_ConstructionPlan) = plan.fit.kind === :exact ? (plan.entry::CatalogEntry).rows : nothing
+_at_bound(plan::_ConstructionPlan) =
+    plan.fit.kind === :exact && (plan.entry::CatalogEntry).rows == _describe(plan.entry::CatalogEntry).lower_bound
+_plan_line(plan::_ConstructionPlan) =
+    plan.fit.kind === :exact ? _exact_reason(plan.entry::CatalogEntry, plan.fit.rows === nothing) : plan.fit.reason
+
+"""
+    _exact_reason(entry, negative) -> String
+
+The line on an exact shape's plan (`_plan_line`, which `Auto` and `recommend`
+show): its size and construction, from `_describe`, as "49 rows: Bush
+orthogonal array, every combination exactly once" or "76 rows: Tripling
+(tripling from 5 columns)"; with `negative`, a space with `Invalid` values,
+the rows are the ordinary ones, and the negative rows follow.
+"""
+function _exact_reason(entry::CatalogEntry, negative::Bool)
+    d = _describe(entry)
+    name = startswith(lowercase(d.family), lowercase(d.name)) ? "" : " ($(d.name))"
+    return "$(d.rows) $(negative ? "ordinary rows" : "rows"): $(d.family)$name" *
+           (d.orthogonal ? ", every combination exactly once" : "") * (negative ? ", then the negative rows" : "")
+end
 
 """
     _engine_rows(entry, arity) -> Matrix{Int}
@@ -168,33 +215,23 @@ row after them (`full_strength_rows`, §7.8), as IPOG gives it. The request
 records only its own must-include rows (§10.5); the catalog's are ordinary
 rows. A request `fit` refuses is an `ArgumentError`.
 """
-cover_ordinary(engine::Construction, request::Request, targets::RequiredTargets) =
-    first(_cover_with_notes(engine, request, targets))
+cover_ordinary(engine::Construction, request::Request, targets::RequiredTargets) = _cover(engine, request, targets)
 
 """
-    _cover_with_notes(::Construction, request, targets) -> (matrix, (catalog = …,))
+    _execute(plan::_ConstructionPlan, request, targets) -> (matrix, (catalog = …,))
 
-`cover_ordinary`'s rows, with the catalog's array in the result's record
-(plan §5.4, "Balance"): `_describe(entry)`, and `seeded`, whether the array
-seeded IPOG rather than being the design. `orthogonal` is the design's: true
-only when the design is the array and the array shows every combination
-exactly once, so never for a space with `Invalid` values, whose negative
-rows repeat ordinary combinations.
+`cover_ordinary`'s rows for the plan's entry, with the catalog's array in
+the notes (plan §5.4, "Balance"): `_describe(entry)`, and `seeded`, whether
+the array seeded IPOG rather than being the design. `orthogonal` is the
+design's: true only when the design is the array and the array shows every
+combination exactly once, so never for a space with `Invalid` values, whose
+negative rows repeat ordinary combinations. A plan whose fit is
+`:unsupported` is an `ArgumentError`.
 """
-function _cover_with_notes(engine::Construction, request::Request, targets::RequiredTargets)
-    f, entry, members = _construction_plan(Profile(request))
+function _execute(plan::_ConstructionPlan, request::Request, targets::RequiredTargets)
+    f = plan.fit
     f.kind === :unsupported && throw(ArgumentError("Construction() does not cover this request: $(f.reason)"))
-    return _construction_cover(request, targets, f, entry::CatalogEntry, members)
-end
-
-"""
-    _construction_cover(request, targets, fit, entry, members) -> (matrix, notes)
-
-`_cover_with_notes(::Construction, …)` for a plan `_construction_plan` already
-made, which `Auto` hands over rather than look the shape up again.
-"""
-function _construction_cover(request::Request, targets::RequiredTargets, f::Fit, entry::CatalogEntry,
-                             members::Union{Nothing, Vector{Int}})
+    entry, members = plan.entry::CatalogEntry, plan.members
     d = _describe(entry)
     seeded = f.kind === :seeded
     orthogonal = d.orthogonal && !seeded && !_has_invalid(request.space)   # the negative rows repeat combinations
@@ -203,7 +240,7 @@ function _construction_cover(request::Request, targets::RequiredTargets, f::Fit,
     return _construction_rows(request, targets, f, entry, members), notes
 end
 
-"The rows of `cover_ordinary(::Construction, …)` for the plan `_construction_plan` made."
+"The rows of `cover_ordinary(::Construction, …)` for the plan `_prepare` made."
 function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, entry::CatalogEntry,
                        members::Union{Nothing, Vector{Int}})
     must = request.must_include
