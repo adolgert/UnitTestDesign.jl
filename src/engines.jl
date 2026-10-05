@@ -4,10 +4,11 @@
 # public structs, the protocol every engine implements (`CoveringEngine`),
 # what an engine's `fit` reads of a request (`Profile`), the plan an engine
 # prepares from it and generation executes (`_prepare`, `_execute`), the
-# fallback for a part of a request an engine can't cover, the registry of
-# engines the tests and the benchmark harness run, and `generate`, the one
-# entry point. The protocol is internal: nothing here but `IPOG` and `GND` is
-# exported or documented for users (decision D7).
+# fallback for a part of a request an engine can't cover, the configuration
+# and stages a result records, the registry of engines the tests and the
+# benchmark harness run, and `generate`, the one entry point. The protocol is
+# internal: nothing here but `IPOG` and `GND` is exported or documented for
+# users (decision D7).
 
 using Random: AbstractRNG, Xoshiro
 
@@ -22,8 +23,11 @@ and `recommend`, `design_sizes` and the negative sub-requests read the same
 plans. An engine defines, in its own file, `engine_record` and one of two
 forms.
 
-- `engine_record(engine) -> EngineRecord`: the name, seed and settings that a
-  result records and shows.
+- `engine_record(engine) -> EngineRecord`: its name, seed and settings, a
+  wrapped engine among them as the engine itself. A result records them as
+  its configuration, `record.engine` (`_engine_config`), and names the
+  engine by its constructor call (`_engine_label`, its `show`), which must
+  repeat its rows, since `report`'s seed line offers that call.
 - **An engine that decides nothing ahead**, as IPOG and GND, defines
   - `fit(engine, profile::Profile) -> Fit`: whether it covers a request of
     this shape, read from the request alone, never by running; and
@@ -60,10 +64,11 @@ through `supports`, `ncombinations`, `isrequired` and `nrequired`
 (`RequiredTargets`). `generate` certifies the result (`validate_design`,
 §1.21), so a wrong design is an internal error, never a wrong answer.
 
-What an engine reports stays in its own stage of the result's record, its
-`ordinary` stage, beside the `engine` and `rows` that `_run` writes there
-and an engine may not. The record's own fields, the lower bound, whether the
-design is minimal, the proof, and whether the engine is randomized, are the
+What an engine reports stays in its own stage of the result's record (its
+`ordinary` stage, or a negative sub-request's in `negative`), beside the
+`engine` and `rows` that `_run` writes there and an engine may not. The
+record's own fields, the lower bound, whether the design is minimal, the
+proof, whether the engine is randomized, and the configuration, are the
 pipeline's, and no engine sets them (`_covering_record`).
 
 An engine may also define `_fallback(engine)`, the engine that covers what
@@ -71,7 +76,8 @@ its `fit` refuses (IPOG by default); a randomized engine says so in its
 record (`EngineRecord`'s `randomized`), so that results show its seed. Add
 the engine to `_engine_registry`, so that the oracle loops of
 test/test_random_problems.jl check it against the independent oracle
-(test/checker.jl) and the benchmark harness can name it; and give its plan
+(test/checker.jl), the seed-line test of test/test_engines.jl runs the call
+its results name, and the benchmark harness can name it; and give its plan
 and inner loops `@inferred` and `@allocated` tests in
 test/test_stability.jl (no JET).
 
@@ -197,22 +203,20 @@ engine_rng(engine::GND) = engine.rng === nothing ? Xoshiro(engine.seed) : copy(e
 """
     EngineRecord(name, seed, parameters = Pair{Symbol, Any}[]; randomized = false)
 
-What a result records of the engine that made it (plan §4.2), from
-`engine_record(engine)`: `name`, the `Symbol` that a `Design` and a
-[`TestCases`](@ref) keep as `engine`; `seed`, the seed a randomized engine
-drew from, or `nothing` when it drew from a caller's `rng` (contract §9.6)
-or uses no randomness; `parameters`, the engine's other settings as
-`keyword => value` pairs, for display; and `randomized`, whether the engine
-draws random numbers, so that results show its seed (§9.5). A result keeps
-`randomized` in its record (`TestCases`'s `record`), beside `engine` and
-`seed`, so its display rebuilds the record from those three
-(`_engine_phrase`, `_seed_note`, `_seed_text`). `Auto` is randomized only
-with `goal = :compact`, which is why this is a field of the record and not a
-fact about the name.
+What an engine says of itself (plan §4.2), from `engine_record(engine)`:
+`name`, the `Symbol` that a `Design` and a [`TestCases`](@ref) keep as
+`engine`; `seed`, the seed a randomized engine draws from, or `nothing` when
+it draws from a caller's `rng` (contract §9.6) or uses no randomness;
+`parameters`, its other settings as `keyword => value` pairs, each value
+plain data (a number, `Symbol`, `String`, `Bool` or `nothing`) or a covering
+engine, as a wrapper's `inner` is, or a vector of them, as `Auto`'s
+candidates are; and `randomized`, whether the engine draws random numbers,
+so that results show its seed (§9.5). `Auto` is randomized only with `goal =
+:compact`, which is why this is a field and not a fact about the name.
 
-`generate` reads the record once per call, and puts `randomized` into the
-result's record, beside the lower bound and the engine's stage (`_run`: what
-`Auto` chose, the catalog's array, the reducer's run).
+`generate` reads it once per call, as the result's configuration,
+`record.engine` (`_engine_config`), which the display reads (`_engine_phrase`,
+`_seed_note`, `_seed_text`).
 """
 struct EngineRecord
     name::Symbol
@@ -224,46 +228,124 @@ end
 EngineRecord(name::Symbol, seed, parameters::Vector{Pair{Symbol, Any}} = Pair{Symbol, Any}[];
              randomized::Bool = false) = EngineRecord(name, seed, parameters, randomized)
 
-"Whether the engine that made a result drew random numbers, so that its seed is shown (contract §9.5)."
+"Whether an engine draws random numbers, so that its seed is shown (contract §9.5)."
 _randomized(record::EngineRecord) = record.randomized
 
-"How a summary line names the engine: \"IPOG\", \"GND seed 3\", or \"GND, caller's rng\" (§1.22)."
-function _engine_phrase(record::EngineRecord)
-    _randomized(record) || return string(record.name)
-    return record.seed === nothing ? "$(record.name), caller's rng" : "$(record.name) seed $(record.seed)"
-end
-
-"A randomized engine's seed in `report`'s guarantee line, or `nothing` for an engine without one."
-function _seed_note(record::EngineRecord)
-    _randomized(record) || return nothing
-    return record.seed === nothing ? "$(record.name) with the caller's rng" : "$(record.name) seed $(record.seed)"
-end
-
 """
-    _seed_text(record, notes = (;)) -> String
+    _engine_label(engine) -> String
 
-`report`'s seed line for a covering design (§9.5): the seed and how to repeat
-it, or why there is none. `notes` is the result's `record`, which holds what
-else a repeat needs (`_repeat_call`).
+An engine as its constructor call, for the record, tables and messages:
+"IPOG()", "GND(seed = 3)", "Construction()", "Compact(IPOG(); seed = 0,
+effort = 1)", "Auto(goal = :compact)": its `show`, which for GND names the
+seed and any other number of candidates than 50. Run in a module that uses
+the package, the call gives an engine that makes the same rows, unless it
+draws from a caller's generator, shown as "GND(rng = Xoshiro(…))".
 """
-function _seed_text(record::EngineRecord, notes::NamedTuple = (;))
-    _randomized(record) || return "seed: none ($(record.name) uses no randomness)"
-    record.seed === nothing && return "seed: none ($(record.name) drew from the caller's rng)"
-    return "seed: $(record.seed) ($(_repeat_call(Val(record.name), record.seed, notes)) repeats these cases)"
+_engine_label(engine::CoveringEngine) = sprint(show, engine)
+_engine_label(::IPOG) = "IPOG()"   # `show` would name the module where the package isn't loaded in `Main`
+function _engine_label(e::GND)
+    settings = e.rng === nothing ? ["seed = $(e.seed)"] : ["rng = $(nameof(typeof(e.rng)))(…)"]
+    e.candidates == 50 || push!(settings, "candidates = $(e.candidates)")
+    return "GND(" * join(settings, ", ") * ")"
 end
 
 """
-    _repeat_call(::Val{name}, seed[, notes]) -> String
+    _engine_config(engine) -> NamedTuple
 
-The call that repeats a randomized engine's rows, for `_seed_text`: its
-constructor with the seed, "GND(seed = 3)". A wrapper, whose constructor takes
-more than a seed, adds a method that names what else must match. An engine
-whose other settings change its rows records them in the result's `record`
-(`notes`), and its three-argument method names them: "GND(seed = 3,
-candidates = 20)".
+The configuration a covering result records of its engine, `record.engine`,
+as plain data (plan §4.2): `name`; `call`, the constructor call
+(`_engine_label`); `seed`; `randomized`; and `settings`, the record's other
+`parameters` as a `NamedTuple`, in which a covering engine, such as
+`Compact`'s `inner` or each of `Auto`'s `candidates`, is its own
+configuration, nested the same way. So `Compact(GND(seed = 17); seed = 3,
+effort = 2)` records `(name = :Compact, call = "Compact(GND(seed = 17); seed
+= 3, effort = 2)", seed = 3, randomized = true, settings = (inner = (name =
+:GND, call = "GND(seed = 17)", seed = 17, randomized = true, settings =
+(candidates = 50,)), effort = 2))`.
 """
-_repeat_call(::Val{name}, seed) where {name} = "$(name)(seed = $(seed))"
-_repeat_call(name::Val, seed, ::NamedTuple) = _repeat_call(name, seed)
+function _engine_config(engine::CoveringEngine)
+    r = engine_record(engine)
+    keys = Tuple(first(p) for p in r.parameters)
+    settings = NamedTuple{keys}(Tuple(_config_value(last(p)) for p in r.parameters))
+    return (name = r.name, call = _engine_label(engine), seed = r.seed, randomized = r.randomized,
+            settings = settings)
+end
+
+_config_value(v::CoveringEngine) = _engine_config(v)
+_config_value(v::AbstractVector{<:CoveringEngine}) = NamedTuple[_engine_config(e) for e in v]
+_config_value(v) = v
+
+"The configurations nested in one: a wrapper's `inner` and `Auto`'s `candidates`, in order."
+function _nested_configs(config::NamedTuple)
+    nested = NamedTuple[]
+    for v in values(config.settings)
+        v isa NamedTuple && haskey(v, :call) && push!(nested, v)
+        v isa AbstractVector && append!(nested, (c for c in v if c isa NamedTuple && haskey(c, :call)))
+    end
+    return nested
+end
+
+"""
+    _drew_from_rng(config) -> Union{Nothing, NamedTuple}
+
+The first configuration in `config`'s tree, itself included, of an engine
+that drew from a caller's generator (randomized, with no seed), whose rows
+no seed repeats (contract §9.6); `nothing` when there is none.
+"""
+function _drew_from_rng(config::NamedTuple)
+    config.randomized && config.seed === nothing && return config
+    for nested in _nested_configs(config)
+        found = _drew_from_rng(nested)
+        found === nothing || return found
+    end
+    return nothing
+end
+
+# The engine's name, a wrapped engine shown as its call: "IPOG", "Compact(GND(seed = 17))".
+function _engine_name(config::NamedTuple)
+    inner = get(config.settings, :inner, nothing)
+    return inner isa NamedTuple ? "$(config.name)($(inner.call))" : string(config.name)
+end
+
+"""
+    _engine_phrase(config, chose = nothing) -> String
+
+How the summary line names the engine that made a result, from the
+configuration it recorded (`record.engine`, §1.22): "IPOG", "GND seed 3",
+"GND, caller's rng", "Compact(GND(seed = 17)) seed 3", and with what `Auto`
+chose (its stage's `chose`), "Auto: Construction()" or "Auto:
+Compact(Construction()) seed 0".
+"""
+function _engine_phrase(config::NamedTuple, chose::Union{Nothing, AbstractString} = nothing)
+    phrase = chose === nothing ? _engine_name(config) : "$(_engine_name(config)): $chose"
+    config.randomized || return phrase
+    return config.seed === nothing ? "$phrase, caller's rng" : "$phrase seed $(config.seed)"
+end
+
+"A randomized engine's seed in `report`'s guarantee line, from its configuration, or `nothing` for an engine without one."
+function _seed_note(config::NamedTuple)
+    config.randomized || return nothing
+    name = _engine_name(config)
+    return config.seed === nothing ? "$name with the caller's rng" : "$name seed $(config.seed)"
+end
+
+"""
+    _seed_text(config) -> String
+
+`report`'s seed line for a covering design (§9.5), from its configuration
+(`record.engine`): the seed and the call that repeats the cases, the
+configuration's `call`, "seed: 3 (Compact(GND(seed = 17); seed = 3, effort =
+2) repeats these cases)"; or why no seed repeats them: the engine uses no
+randomness, or an engine in it drew from the caller's generator.
+"""
+function _seed_text(config::NamedTuple)
+    config.randomized || return "seed: none ($(config.name) uses no randomness)"
+    config.seed === nothing && return "seed: none ($(config.name) drew from the caller's rng)"
+    drew = _drew_from_rng(config)
+    drew === nothing || return "seed: $(config.seed) ($(drew.name) inside $(config.name) drew from the caller's " *
+                               "rng, so no seed repeats these cases)"
+    return "seed: $(config.seed) ($(config.call) repeats these cases)"
+end
 
 """
     Fit(kind, reason; rows = nothing)
@@ -634,7 +716,7 @@ engine's, the `engine` it records (option (c) of p0-protocol's judgment call
 1). The parts of a request that generation hands an engine, the negative
 sub-requests of a space with `Invalid` values, still go to its fallback
 where it refuses them (`_prepare_for`), so those negative rows may be the
-fallback's: IPOG's for
+fallback's, as the record's `negative` stages say: IPOG's for
 `Construction()`, which has no array for a sub-request's strength 1, and
 `Compact(IPOG())`'s for `Compact(Construction())`. IPOG and GND fit every
 request, so for them this never throws.
@@ -675,17 +757,19 @@ then covers the negative targets of §6 with the same engine, or its fallback
 where its fit refuses a sub-request (`_prepare_for`). The rows are the
 must-include rows in the order given, each completed under its own row
 policy (§7.9), then the generated ordinary rows, then the generated negative
-rows (§5.12). The two kinds' bookkeeping is kept apart (§1.19). The result
-records the engine by `engine_record`, and in `record` (`_covering_record`)
-the lower bound on its rows (`_ordinary_bound`, and the negative rows' from
-`cover_negative`) and the ordinary design's stage. Only the ordinary
-design's stage is kept; a negative sub-request's is not.
+rows (§5.12). The two kinds' bookkeeping is kept apart (§1.19).
+
+The result's record (`_covering_record`) holds the lower bound on its rows
+(`_ordinary_bound`, and the negative rows' from `cover_negative`), the
+engine's configuration (`_engine_config`), and the stages that ran: the
+ordinary design's, and each negative sub-request's.
 """
 function _generate(plan::_Plan, request::Request)
     engine = plan.engine
     required, excluded = classify_targets(request)
     record = engine_record(engine)
     name, seed = record.name, record.seed
+    config = _engine_config(engine)
     names = request.space.names
     if !_has_invalid(request.space)
         targets = RequiredTargets(request, required)
@@ -694,7 +778,8 @@ function _generate(plan::_Plan, request::Request)
         bound = _bound_record(size(matrix, 2), _ordinary_bound(request, targets), 0, names, request.arity,
                               supports(targets))
         return Design(matrix, :covering, name, seed, length(required), covered, excluded,
-                      n_must_include(request), (;), 0, 0, Excluded[], _covering_record(record, bound, stage))
+                      n_must_include(request), (;), 0, 0, Excluded[],
+                      _covering_record(config, bound, stage, NamedTuple[]))
     end
     must = request.must_include
     negative_columns = [j for j in axes(must, 2) if _holds_invalid(request, view(must, :, j))]
@@ -719,21 +804,22 @@ function _generate(plan::_Plan, request::Request)
                           request.arity, supports(targets))
     return Design(matrix, :covering, name, seed, length(required), covered, excluded,
                   n_must_include(request), (;), length(negative.required), length(negative.required),
-                  negative.excluded, _covering_record(record, bound, stage))
+                  negative.excluded, _covering_record(config, bound, stage, negative.stages))
 end
 
 """
-    _covering_record(record, bound, ordinary) -> NamedTuple
+    _covering_record(config, bound, ordinary, negative) -> NamedTuple
 
 A covering result's record (`TestCases`'s `record`; contract §1.19, §8.7).
 The pipeline's fields come first, and only `generate` sets them:
-`randomized`, from the engine's record (`EngineRecord`), and `lower_bound`,
-`minimal` and `proof`, from the bound the pipeline proved and checked
-against the certified rows (`_bound_record`). Then `ordinary`, the ordinary
-design's stage (`_run`). What an engine reports is only ever inside its
-stage, so it can't claim the bound, minimality, a proof or randomness for
-the result.
+`randomized`, from the engine's record; `lower_bound`, `minimal` and
+`proof`, from the bound the pipeline proved and checked against the
+certified rows (`_bound_record`); and `engine`, the configuration
+(`_engine_config`). Then the stages: `ordinary`, the ordinary design's
+(`_run`), and `negative`, one per invalid value (`cover_negative`). What an
+engine reports is only ever inside a stage, so it can't claim the bound,
+minimality, a proof or randomness for the result.
 """
-_covering_record(record::EngineRecord, bound::NamedTuple, ordinary::NamedTuple) =
-    (randomized = record.randomized, lower_bound = bound.lower_bound, minimal = bound.minimal, proof = bound.proof,
-     ordinary = ordinary)
+_covering_record(config::NamedTuple, bound::NamedTuple, ordinary::NamedTuple, negative::Vector{NamedTuple}) =
+    (randomized = config.randomized, lower_bound = bound.lower_bound, minimal = bound.minimal, proof = bound.proof,
+     engine = config, ordinary = ordinary, negative = negative)

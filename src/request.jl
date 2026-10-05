@@ -577,21 +577,22 @@ _target_list(t::RequiredTargets) = t.list
 
 What `generate(engine, request)` returns: `matrix` (parameters × cases,
 engine positions, complete), `strategy` (`:covering`, `:excursion`,
-`:full_factorial`), `engine::Symbol`, `seed` (GND's seed or `nothing`),
-`required::Int` and `covered::Int` (ordinary targets, for covering designs),
-`excluded::Vector{Excluded}` (ordinary), `n_must_include::Int`, `notes`
-(strategy specific: an excursion's dropped rows, a full factorial's candidate
-and accepted counts) as a `NamedTuple`, and the negative bookkeeping, kept
+`:full_factorial`), `engine::Symbol`, `seed` (a randomized engine's seed or
+`nothing`), `required::Int` and `covered::Int` (ordinary targets, for
+covering designs), `excluded::Vector{Excluded}` (ordinary),
+`n_must_include::Int`, `notes` (strategy specific: an excursion's dropped
+rows, a full factorial's candidate and accepted counts) as a `NamedTuple`,
+and the negative bookkeeping, kept
 apart from the ordinary (contract §1.19, §5.10): `negative_required::Int`
 and `negative_covered::Int` (negative targets, §6) and
 `negative_excluded::Vector{Excluded}`, whose targets hold the invalid
 position; and `record`, what the result records of how it was made, as
 [`TestCases`](@ref)'s `record` documents it: whether the engine is randomized,
 a covering design's lower bound with its proof and whether the rows meet it
-(`_bound_record`), and the engine's stage (`_covering_record`). The
-nine-argument constructor leaves the negative bookkeeping empty, and both
-short forms record no bound and no stage (`_NO_BOUND`), as for an excursion
-or a full factorial.
+(`_bound_record`), the engine's configuration, and the stages that ran
+(`_covering_record`). The nine-argument constructor leaves the negative
+bookkeeping empty, and both short forms record no bound and no engine
+(`_NO_BOUND`), as for an excursion or a full factorial.
 """
 struct Design
     matrix::Matrix{Int}
@@ -610,7 +611,8 @@ struct Design
 end
 
 "The record of a design that has no lower bound and no engine: an excursion or a full factorial, which use no randomness."
-const _NO_BOUND = (randomized = false, lower_bound = nothing, minimal = false, proof = "", ordinary = nothing)
+const _NO_BOUND = (randomized = false, lower_bound = nothing, minimal = false, proof = "", engine = nothing,
+                   ordinary = nothing, negative = nothing)
 
 Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes) =
     Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,

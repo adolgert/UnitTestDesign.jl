@@ -76,10 +76,11 @@ when a design is too large to reduce).
 What `Auto` chose for the ordinary cases is in the result's record,
 `cases.record.ordinary.chose`, with each start it ran, its rows and what it
 built, in `cases.record.ordinary.starts`, the one kept at `kept`; the
-summary line names it, as in "Auto: Construction()". The negative rows'
-choices are not recorded. The choice depends only on the request, never on
-the clock or a limit, but a later version may choose differently (contract
-§9.8). To keep a design, save it and pass it back as `must_include` (§9.10).
+summary line names it, as in "Auto: Construction()". Each invalid value's
+choice is in `cases.record.negative`. The choice depends only on the
+request, never on the clock or a limit, but a later version may choose
+differently (contract §9.8). To keep a design, save it and pass it back as
+`must_include` (§9.10).
 """
 struct Auto <: CoveringEngine
     goal::Symbol
@@ -237,28 +238,13 @@ function _unreduced(plan::_AutoPlan, p::Profile)
     return nothing
 end
 
-"""
-    _engine_label(engine) -> String
-
-An engine as its constructor call, for tables and messages: "IPOG()",
-"GND(seed = 3)", "Construction()", "Compact(IPOG(); seed = 0, effort = 1)",
-"Auto(goal = :compact)".
-"""
-_engine_label(engine::CoveringEngine) = sprint(show, engine)
-_engine_label(::IPOG) = "IPOG()"
-_engine_label(::Construction) = "Construction()"
-function _engine_label(e::GND)
-    settings = e.rng === nothing ? ["seed = $(e.seed)"] : ["rng = $(typeof(e.rng))(…)"]
-    e.candidates == 50 || push!(settings, "candidates = $(e.candidates)")
-    return "GND(" * join(settings, ", ") * ")"
-end
-
+# The record: randomized only with `goal = :compact`, which alone has a seed;
+# the goal, the effort, and the candidates, whose configurations the
+# result's record nests (`_engine_config`).
 engine_record(e::Auto) = EngineRecord(:Auto, e.goal === :compact ? e.seed : nothing,
-                                      Pair{Symbol, Any}[:goal => e.goal, :effort => e.effort];
+                                      Pair{Symbol, Any}[:goal => e.goal, :effort => e.effort,
+                                                        :candidates => CoveringEngine[_auto_engines()...]];
                                       randomized = e.goal === :compact)
-
-# Only `goal = :compact` is randomized, so the call that repeats the rows names it.
-_repeat_call(::Val{:Auto}, seed) = "Auto(goal = :compact, seed = $seed) with the same effort"
 
 fit(engine::Auto, p::Profile) = _prepare(engine, p).fit
 

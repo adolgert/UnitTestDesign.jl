@@ -16,7 +16,7 @@ using TestItemRunner
     using UnitTestDesign: Compact, CoveringEngine, EngineRecord, Fit, Profile, Request, RequiredTargets,
                           NegativeProjection, classify_targets, cover_ordinary, engine_record, fit, generate,
                           validate_design, _compact, _negative_request, _fallback, _randomized, _engine_phrase,
-                          _seed_text, _engine_registry, _COMPACT_MAX_COMBINATIONS
+                          _seed_text, _engine_config, _engine_registry, _COMPACT_MAX_COMBINATIONS
 
     "A request's required targets, through the targets interface, and IPOG's rows for it."
     function start_of(request; engine = IPOG())
@@ -72,24 +72,25 @@ end
     @test_throws ArgumentError Compact(IPOG(); effort = 1.5)
     @test_throws ArgumentError Compact(IPOG(); seed = true)
     @test_throws MethodError Compact(:IPOG)
-    # The record names the reducer, its seed and its settings, the inner engine's record among them.
+    # The record names the reducer, its seed and its settings, the inner engine among them,
+    # whose configuration a result nests in its own (`_engine_config`).
     record = engine_record(Compact(GND(seed = 4); seed = 9, effort = 2))
     @test record.name === :Compact && record.seed == 9
     @test first.(record.parameters) == [:inner, :effort]
-    inner = record.parameters[1].second
-    @test inner isa EngineRecord && inner.name === :GND && inner.seed == 4
+    @test record.parameters[1].second === GND(seed = 4)
     @test record.parameters[2].second == 2
     @test _randomized(record)
-    @test _engine_phrase(EngineRecord(:Compact, 9; randomized = true)) == "Compact seed 9"
-    @test _seed_text(EngineRecord(:Compact, 9; randomized = true)) ==
-          "seed: 9 (Compact(inner; seed = 9) with the same inner engine and effort repeats these cases)"
-    @test _seed_text(EngineRecord(:GND, 3; randomized = true)) == "seed: 3 (GND(seed = 3) repeats these cases)"   # unchanged
+    config = _engine_config(Compact(GND(seed = 4); seed = 9, effort = 2))
+    @test config.settings.inner == _engine_config(GND(seed = 4)) && config.settings.effort == 2
+    @test _engine_phrase(config) == "Compact(GND(seed = 4)) seed 9"
+    @test _seed_text(config) == "seed: 9 (Compact(GND(seed = 4); seed = 9, effort = 2) repeats these cases)"
+    @test _seed_text(_engine_config(GND(seed = 3))) == "seed: 3 (GND(seed = 3) repeats these cases)"   # unchanged
     # Results show it through the public entry points.
     space = TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:2, e = 1:2))
     cases = all_pairs(space; engine)
     @test cases.engine === :Compact && cases.seed == 0
-    @test occursin("Compact seed 0", sprint(show, MIME"text/plain"(), cases))
-    @test occursin("Compact(inner; seed = 0) with the same inner engine and effort repeats these cases",
+    @test occursin("Compact(IPOG()) seed 0", sprint(show, MIME"text/plain"(), cases))
+    @test occursin("seed: 0 (Compact(IPOG(); seed = 0, effort = 1) repeats these cases)",
                    sprint(show, MIME"text/plain"(), report(cases)))
     @test length(cases) <= length(all_pairs(space))
     @test design_sizes(space; engine) isa DesignSizes

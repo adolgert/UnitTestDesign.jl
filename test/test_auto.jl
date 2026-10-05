@@ -167,8 +167,7 @@ end
     @test occursin("\nsize: 49 cases, minimal: the 7 × 7 = 49 combinations of p1 and p2 need a case each; " *
                    "an orthogonal array", text)
     @test endswith(text, "seed: none (Auto uses no randomness)")
-    @test endswith(sprint(show, MIME"text/plain"(), report(compact)),
-                   "seed: 0 (Auto(goal = :compact, seed = 0) with the same effort repeats these cases)")
+    @test endswith(sprint(show, MIME"text/plain"(), report(compact)), "seed: 0 (Auto(goal = :compact) repeats these cases)")
 end
 
 

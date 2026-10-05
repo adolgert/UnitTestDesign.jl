@@ -520,13 +520,11 @@ _reducer_record(n::NamedTuple) =
     (start = n.reducer_start, rows = n.reducer_rows, bound = n.reducer_bound, steps = n.reducer_steps,
      budget = n.reducer_budget, work = n.reducer_work, work_budget = n.reducer_work_budget, stop = n.reducer_stop)
 
-"The record: randomized, Compact's seed, and its inner engine's record and its effort as settings (plan §4.2)."
+# The record: randomized, Compact's seed, and as settings its inner engine,
+# whose configuration the result's record nests (`_engine_config`), and its
+# effort (plan §4.2).
 engine_record(engine::Compact) = EngineRecord(:Compact, engine.seed,
-    Pair{Symbol, Any}[:inner => engine_record(engine.inner), :effort => engine.effort]; randomized = true)
-
-# A result keeps only the engine's name and seed, so the phrase names what
-# else must match to repeat the rows.
-_repeat_call(::Val{:Compact}, seed) = "Compact(inner; seed = $seed) with the same inner engine and effort"
+    Pair{Symbol, Any}[:inner => engine.inner, :effort => engine.effort]; randomized = true)
 
 # What the inner engine refuses goes to its fallback, reduced the same way.
 _fallback(engine::Compact) = Compact(_fallback(engine.inner); seed = engine.seed, effort = engine.effort)

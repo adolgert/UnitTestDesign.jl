@@ -68,7 +68,7 @@ end
 
 
 @testitem "engines: IPOG and GND are covering engines, each with a record and a fit (§4.2)" setup=[EngineSetup] begin
-    using UnitTestDesign: _engine_phrase, _seed_note, _seed_text, _fallback
+    using UnitTestDesign: _engine_phrase, _seed_note, _seed_text, _fallback, _engine_config
     @test IPOG <: CoveringEngine && GND <: CoveringEngine
     # The record keeps what 0.5 recorded: the engine's name and its seed.
     ipog = engine_record(IPOG())
@@ -78,30 +78,35 @@ end
     @test engine_record(GND(rng = Xoshiro(1))).seed === nothing
     @test !_randomized(ipog) && _randomized(gnd) && _randomized(engine_record(GND(rng = Xoshiro(1))))
     @test !_randomized(EngineRecord(:Excursion, nothing)) && !_randomized(EngineRecord(:FullFactorial, nothing))
-    # Results show the record as 0.5 showed GND's seed (§1.22, §9.5): a randomized
-    # record shows its seed, or the caller's rng.
-    @test _engine_phrase(EngineRecord(:IPOG, nothing)) == "IPOG"
-    @test _engine_phrase(EngineRecord(:GND, 3; randomized = true)) == "GND seed 3"
-    @test _engine_phrase(EngineRecord(:GND, nothing; randomized = true)) == "GND, caller's rng"
-    @test _seed_note(EngineRecord(:IPOG, nothing)) === nothing
-    @test _seed_note(EngineRecord(:GND, 3; randomized = true)) == "GND seed 3"
-    @test _seed_note(EngineRecord(:GND, nothing; randomized = true)) == "GND with the caller's rng"
-    @test _seed_text(EngineRecord(:IPOG, nothing)) == "seed: none (IPOG uses no randomness)"
-    @test _seed_text(EngineRecord(:GND, 3; randomized = true)) == "seed: 3 (GND(seed = 3) repeats these cases)"
-    @test _seed_text(EngineRecord(:GND, nothing; randomized = true)) == "seed: none (GND drew from the caller's rng)"
-    # GND's rows depend on `candidates` too, so a GND that draws other than the
-    # default 50 records them, and the seed line names the call that repeats
-    # its cases; the default's record and line are as before.
-    @test _seed_text(EngineRecord(:GND, 3; randomized = true), (ordinary = (gnd = (candidates = 20,),),)) ==
+    # A result records the engine's configuration (`record.engine`), and shows
+    # it as 0.5 showed GND's seed (§1.22, §9.5): a randomized engine shows its
+    # seed, or the caller's rng.
+    config(e) = _engine_config(e)
+    @test config(IPOG()) == (name = :IPOG, call = "IPOG()", seed = nothing, randomized = false, settings = (;))
+    @test config(GND(seed = 7, candidates = 20)) ==
+          (name = :GND, call = "GND(seed = 7, candidates = 20)", seed = 7, randomized = true, settings = (candidates = 20,))
+    @test _engine_phrase(config(IPOG())) == "IPOG"
+    @test _engine_phrase(config(GND(seed = 3))) == "GND seed 3"
+    @test _engine_phrase(config(GND(rng = Xoshiro(1)))) == "GND, caller's rng"
+    @test _seed_note(config(IPOG())) === nothing
+    @test _seed_note(config(GND(seed = 3))) == "GND seed 3"
+    @test _seed_note(config(GND(rng = Xoshiro(1)))) == "GND with the caller's rng"
+    @test _seed_text(config(IPOG())) == "seed: none (IPOG uses no randomness)"
+    @test _seed_text(config(GND(seed = 3))) == "seed: 3 (GND(seed = 3) repeats these cases)"
+    @test _seed_text(config(GND(rng = Xoshiro(1)))) == "seed: none (GND drew from the caller's rng)"
+    # GND's rows depend on `candidates` too, so the configuration keeps them
+    # and the seed line names the call that repeats its cases; the default's
+    # line is as before.
+    @test _seed_text(config(GND(seed = 3, candidates = 20))) ==
           "seed: 3 (GND(seed = 3, candidates = 20) repeats these cases)"
     twenty = covering(fill(1:4, 6)...; engine = GND(seed = 3, candidates = 20))
-    @test twenty.record.ordinary.gnd == (candidates = 20,)
+    @test twenty.record.engine.settings == (candidates = 20,)
     @test "seed: 3 (GND(seed = 3, candidates = 20) repeats these cases)" in
           split(sprint(show, MIME"text/plain"(), report(twenty)), '\n')
     @test covering(fill(1:4, 6)...; engine = GND(seed = 3, candidates = 20)) == twenty
     @test covering(fill(1:4, 6)...; engine = GND(seed = 3)) != twenty   # why the line names candidates
     fifty = covering(fill(1:4, 6)...; engine = GND(seed = 3))
-    @test !haskey(fifty.record.ordinary, :gnd) && "seed: 3 (GND(seed = 3) repeats these cases)" in
+    @test fifty.record.engine.settings == (candidates = 50,) && "seed: 3 (GND(seed = 3) repeats these cases)" in
           split(sprint(show, MIME"text/plain"(), report(fifty)), '\n')
     # A result keeps whether its engine is randomized in its record, beside engine and seed.
     @test all_pairs(1:2, 1:3; engine = GND(seed = 3)).record.randomized
@@ -393,12 +398,13 @@ end
     stage = cases.record.ordinary
     @test stage.engine == "Boasting()" && stage.rows == length(cases)
     @test stage.minimal && stage.lower_bound == length(cases) && stage.proof == "no design has fewer"
-    # With Invalid values too.
+    # The same for each negative sub-request's stage.
     invalid = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
     cases = covering(invalid; strength = 3, engine = Boasting())
     @test collect(cases) == collect(covering(invalid; strength = 3))
     @test cases.record.minimal == (length(cases) == cases.record.lower_bound)
     @test cases.record.lower_bound == covering(invalid; strength = 3).record.lower_bound
+    @test only(cases.record.negative).stage.minimal && only(cases.record.negative).stage.engine == "Boasting()"
     # A stage's `engine` and `rows` are the pipeline's too: an engine that sets
     # them is an internal error, never a record that misstates its rows.
     struct Miscounting <: CoveringEngine end
@@ -443,14 +449,14 @@ end
     @test collect(covering(space; strength = 2, engine = e)) == collect(covering(space; strength = 2))
     @test e.prepared == [2]
     # A negative sub-request prepares once too; one the engine refuses (strength
-    # 1) takes the fallback's plan, IPOG's.
+    # 1) takes the fallback's plan, IPOG's, and its stage says so.
     invalid = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:2, d = 1:2))
     e = Counting()
     cases = covering(invalid; strength = 3, engine = e)
-    @test e.prepared == [3, 2] && collect(cases) == collect(covering(invalid; strength = 3))
+    @test e.prepared == [3, 2] && only(cases.record.negative).stage.engine == "Counting()"
     e = Counting()
     cases = covering(invalid; strength = 2, engine = e)
-    @test e.prepared == [2, 1]
+    @test e.prepared == [2, 1] && only(cases.record.negative).stage.engine == "IPOG()"
     @test collect(cases) == collect(covering(invalid; strength = 2))
     # A refusal is an ArgumentError after one plan; design_sizes reads the
     # plan's fit for each strength and generates from that same plan.
@@ -461,4 +467,88 @@ end
     t = design_sizes(space; engine = e, distances = 1:1)
     @test e.prepared == [1, 2, 3]
     @test [r.status for r in t.rows if r.kind === :covering] == [:unsupported, :ok, :ok]
+    @test all(r -> r.engine == "Counting()", (r for r in t.rows if r.kind === :covering))
+end
+
+
+@testitem "engines: a result records its engine's configuration and every stage, and its seed line names a call that repeats its cases (§9.5)" setup=[EngineSetup] begin
+    using UnitTestDesign: _engine_config, _engine_phrase
+    # Every registry engine and nested ones, on spaces of one value count
+    # (the catalog's), with Invalid values, and with mixed counts and a rule.
+    # A result's configuration names its engine's call, which run again is the
+    # same engine; a randomized engine's seed line names a call, and running
+    # that call gives the same cases.
+    spaces = [TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:3)),
+              TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = [1, 2, 3, Invalid(:x)])),
+              TestSpace((a = 1:2, b = 1:3, c = 1:4, d = 1:2); constraints = [forbid((a = 1, b = 1))])]
+    nested = CoveringEngine[Compact(GND(seed = 17); seed = 3, effort = 2), Compact(Compact(GND(seed = 2)); seed = 5),
+                            Compact(Auto(goal = :compact, seed = 4)), Auto(goal = :compact, seed = 7, effort = 2),
+                            GND(seed = 3, candidates = 20), Compact(Construction(); seed = 1), Auto(goal = :fast)]
+    engines = vcat(last.(_engine_registry(0)), last.(_engine_registry(7)), nested)
+    run(call) = Core.eval(@__MODULE__, Meta.parse(call))
+    checked = Ref(0)
+    for space in spaces, strength in (2, 3), engine in engines
+        fit(engine, Profile(Request(space; strength))).kind === :unsupported && continue
+        cases = covering(space; strength, engine)
+        config = cases.record.engine
+        @test config == _engine_config(engine) && run(config.call) === engine
+        line = last(split(sprint(show, MIME"text/plain"(), report(cases)), '\n'))
+        if config.randomized
+            m = match(r"^seed: (\d+) \((.*) repeats these cases\)$", line)
+            @test m !== nothing && parse(Int, m[1]) == cases.seed
+            @test collect(covering(space; strength, engine = run(m[2]))) == collect(cases)
+        else
+            @test line == "seed: none ($(config.name) uses no randomness)"
+            @test collect(covering(space; strength, engine = run(config.call))) == collect(cases)
+        end
+        # The stages: the ordinary design's names the engine and its rows, and
+        # one per invalid value names the engine that covered its sub-request.
+        @test cases.record.ordinary.engine == config.call
+        @test cases.record.ordinary.rows == length(cases) - count(hasinvalid, cases)
+        @test [(n.parameter, n.value) for n in cases.record.negative] ==
+              (UnitTestDesign._has_invalid(space) ? [(:a, "Invalid(0)"), (:d, "Invalid(:x)")] : [])
+        @test sum(n -> n.rows, cases.record.negative; init = 0) == count(hasinvalid, cases)
+        checked[] += 1
+    end
+    @test checked[] > 3 * length(engines)
+    # The maintainer's example: a wrapper's inner engine keeps its seed, and the
+    # wrapper its effort, in the configuration and in the call that repeats the cases.
+    space = first(spaces)
+    engine = Compact(GND(seed = 17); seed = 3, effort = 2)
+    cases = all_pairs(space; engine)
+    @test cases.record.engine ==
+          (name = :Compact, call = "Compact(GND(seed = 17); seed = 3, effort = 2)", seed = 3, randomized = true,
+           settings = (inner = (name = :GND, call = "GND(seed = 17)", seed = 17, randomized = true,
+                                settings = (candidates = 50,)),
+                       effort = 2))
+    stage = cases.record.ordinary
+    @test stage.start.engine == "GND(seed = 17)" && stage.reducer.start == stage.start.rows
+    @test stage.reducer.rows == stage.rows == length(cases)
+    @test occursin(" · Compact(GND(seed = 17)) seed 3 · ", repr(cases))
+    text = sprint(show, MIME"text/plain"(), report(cases))
+    @test endswith(text, "seed: 3 (Compact(GND(seed = 17); seed = 3, effort = 2) repeats these cases)")
+    @test occursin("; Compact(GND(seed = 17)) seed 3", report(cases).guarantee)
+    t = design_sizes(space; engine, distances = 1:1)
+    @test t.engines == ["Compact(GND(seed = 17); seed = 3, effort = 2)"] &&
+          all(r -> r.engine == t.engines[1], (r for r in t.rows if r.kind === :covering))
+    # Auto's candidates are part of its configuration; its negative rows' choice
+    # is in each invalid value's stage; the catalog's refusal at strength 1
+    # sends those rows to IPOG, and its stage names IPOG.
+    invalid = spaces[2]
+    auto = all_pairs(invalid; engine = Auto())
+    @test [c.call for c in auto.record.engine.settings.candidates] == ["IPOG()", "Construction()"]
+    @test all(n -> n.stage.engine == "Auto()" && haskey(n.stage, :chose), auto.record.negative)
+    @test all(n -> n.stage.engine == "IPOG()", all_pairs(invalid; engine = Construction()).record.negative)
+    @test all(n -> startswith(n.stage.engine, "Compact(IPOG()"),
+              all_pairs(invalid; engine = Compact(Construction())).record.negative)
+    # An engine inside another that drew from the caller's generator: no seed
+    # repeats the cases, and the line says which engine drew.
+    drew = all_pairs(space; engine = Compact(GND(rng = Xoshiro(1)); seed = 3))
+    @test endswith(sprint(show, MIME"text/plain"(), report(drew)),
+                   "seed: 3 (GND inside Compact drew from the caller's rng, so no seed repeats these cases)")
+    @test _engine_phrase(drew.record.engine) == "Compact(GND(rng = Xoshiro(…))) seed 3"
+    # An excursion and a full factorial have no engine.
+    for other in (excursions(space; distance = 1), full_factorial(space))
+        @test other.record.engine === nothing && other.record.ordinary === nothing && other.record.negative === nothing
+    end
 end

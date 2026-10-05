@@ -190,11 +190,17 @@ Added 2026-10-04 by the solver plan's Phase 3
   says "minimal" when the count meets it: the summary line reads
   `5 cases (lower bound 4) · …` or `9 cases (minimal) · …`, and `report`
   prints a `size:` line with the proof. `TestCases` and `Report` gain a
-  `record` field holding the bound, its proof, whether the engine is
-  randomized, and, in its `ordinary` stage, what the engine chose or built.
+  `record` field holding the bound, its proof and whether the count meets
+  it, whether the engine is randomized, the engine's configuration (`engine`:
+  each engine's name, constructor call, seed and settings, nested for
+  `Compact`'s inner engine and `Auto`'s candidates), and the stages that ran
+  (`ordinary`: what `Auto` chose, the catalog's array, the reducer's run;
+  `negative`: which engine covered each `Invalid` value's negative rows).
   The bound, the proof and "minimal" are the package's own, never an
-  engine's. Contract §8.4 now allows
-  "minimal" when a count equals a proven bound, and §8.7 defines the bound.
+  engine's. `report`'s seed line names the constructor call that repeats
+  the cases, such as `Compact(GND(seed = 17); seed = 3, effort = 2)`.
+  Contract §8.4 now allows "minimal" when a count equals a proven bound, and
+  §8.7 defines the bound.
 - The error for an `engine` that isn't one names covering engines generally
   ("a covering engine such as IPOG(), Construction(), Compact(IPOG()) or
   Auto()"), and an engine that refuses a request suggests `IPOG()` or

@@ -273,8 +273,9 @@ An engine reports extras through the covering `Design` it returns: the
 package's engines through its `record`, whose ordinary stage holds what
 `Auto` chose and what each start gave, the catalog's array and the reducer's
 run, flattened as `chose`, `starts`, `catalog_name`, `reducer_steps`, …
-(metrics.jl), beside the lower bound; an adapter's `Design` through its
-`notes` NamedTuple, which `TestCases` keeps, such as `(reducer_steps = 1200,
+(metrics.jl), beside the configuration (`engine`, `engine_call`), the lower
+bound and the negative stages; an adapter's `Design` through its `notes`
+NamedTuple, which `TestCases` keeps, such as `(reducer_steps = 1200,
 stopped_at_bound = true)`. A trial adapter may instead call
 `record_extra(name, value)` during its call. The worker empties the extras
 before each timed call and records them with that call's measurement as

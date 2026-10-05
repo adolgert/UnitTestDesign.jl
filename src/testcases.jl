@@ -112,34 +112,58 @@ checked by generation, never reported by an engine:
   `lower_bound`: then no design for the request has fewer, and this is the
   one case in which the package calls a count minimal (contract §8.4).
   `nothing`, `false` and `""` for an excursion or a full factorial.
+- `engine`: the engine's configuration, the whole tree of it: `name`;
+  `call`, its constructor call, which with the same request repeats the
+  cases unless an engine in it drew from a caller's `rng`; `seed`;
+  `randomized`; and `settings`, its other settings, where an engine it wraps
+  (`inner` of [`Compact`](@ref)) or chooses among (`candidates` of
+  [`Auto`](@ref)) is a configuration of the same form. For
+  `Compact(GND(seed = 17); seed = 3, effort = 2)`:
 
-Then the stage that made the ordinary cases, `ordinary`: a `NamedTuple`
-whose `engine` is the call of the engine that ran and `rows` the rows it
-made, followed by what that engine reports. [`Auto`](@ref) reports `chose`,
-the engine call that made the ordinary cases, such as `"Construction()"` or
-`"Compact(IPOG())"`; `starts`, the stage of each start it ran; `kept`, the
-index of the one kept among them; and with `goal = :compact` `reducer` (the
-negative rows of each [`Invalid`](@ref) value are chosen apart, the same
-way, and not recorded). A catalog array ([`Construction`](@ref)) reports
-`catalog`, with the construction's `name`, `family`, `source`, `rows`, the
-array's `lower_bound`, whether the design is an `orthogonal` array (every
-combination of `strength` parameters exactly once, so never with `Invalid`
-values, whose negative rows repeat ordinary combinations), and whether the
-array only `seeded` the design under rules. The row reducer
-([`Compact`](@ref)) reports `start`, the stage of its inner engine, and
-`reducer`, with the rows it started from and ended with, its bound, its
-steps and budgets, and why it stopped. [`GND`](@ref) with other than the
-default 50 `candidates` reports `gnd`, with its `candidates`, which
-repeating its cases needs beside the seed. For `Auto()` on eight parameters
-of seven values:
+  ```
+  (name = :Compact, call = "Compact(GND(seed = 17); seed = 3, effort = 2)", seed = 3, randomized = true,
+   settings = (inner = (name = :GND, call = "GND(seed = 17)", seed = 17, randomized = true,
+                        settings = (candidates = 50,)),
+               effort = 2))
+  ```
 
-```
-(engine = "Auto()", rows = 49, chose = "Construction()",
- starts = [(engine = "Construction()", rows = 49, catalog = (name = "Bush", family = "Bush orthogonal array", …))],
- kept = 1)
-```
+Then the stages that ran, each a `NamedTuple` whose `engine` is the call of
+the engine that ran and `rows` the rows it made, followed by what that
+engine reports:
 
-An excursion and a full factorial have no engine: `ordinary` is `nothing`.
+- `ordinary`: the ordinary design's stage. [`Auto`](@ref) reports `chose`,
+  the engine call that made the ordinary cases, such as `"Construction()"`
+  or `"Compact(IPOG())"`; `starts`, the stage of each start it ran; `kept`,
+  the index of the one kept among them; and with `goal = :compact`
+  `reducer`. A catalog array ([`Construction`](@ref)) reports `catalog`,
+  with the construction's `name`, `family`, `source`, `rows`, the array's
+  `lower_bound`, whether the design is an `orthogonal` array (every
+  combination of `strength` parameters exactly once, so never with
+  `Invalid` values, whose negative rows repeat ordinary combinations), and
+  whether the array only `seeded` the design under rules. The row reducer
+  ([`Compact`](@ref)) reports `start`, the stage of its inner engine, and
+  `reducer`, with the rows it started from and ended with, its bound, its
+  steps and budgets, and why it stopped. [`IPOG`](@ref) and [`GND`](@ref)
+  report nothing more. For `Auto()` on eight parameters of seven values:
+
+  ```
+  (engine = "Auto()", rows = 49, chose = "Construction()",
+   starts = [(engine = "Construction()", rows = 49, catalog = (name = "Bush", family = "Bush orthogonal array", …))],
+   kept = 1)
+  ```
+
+- `negative`: for each [`Invalid`](@ref) value, in parameter and domain
+  order, `(parameter, value, rows, stage)`: the parameter's name, the value
+  as its `repr`, the cases that hold it, and the stage that covered its
+  negative targets, a request one strength lower on the other parameters,
+  whose `engine` says which engine ran: the same one, or IPOG where the
+  engine has nothing for that request, as `Construction` at strength 1.
+  `stage` is `nothing` where the value needs no such request (strength 1,
+  with no `stronger` group holding the parameter), and `negative` is empty
+  without `Invalid` values.
+
+An excursion and a full factorial have no engine: `engine`, `ordinary` and
+`negative` are `nothing`.
 
 # Display
 
@@ -393,23 +417,21 @@ function _valid_count(tc::TestCases)
     return nothing
 end
 
-"The record of the engine that made `tc`, from what it keeps: `engine`, `seed` and `record.randomized` (`EngineRecord`)."
-_engine_record(tc::TestCases) = EngineRecord(tc.engine, tc.seed; randomized = tc.record.randomized)
-
 """
     _engine_phrase(tc) -> String
 
-How the summary line names the engine: "IPOG", "GND seed 3", and for `Auto`
-what it ran, "Auto: Construction()" or "Auto: Compact(Construction()) seed 0"
-(its stage's `chose`, `record.ordinary.chose`).
+How the summary line names the engine, from the configuration the result
+recorded (`record.engine`) and, for `Auto`, what it ran (its stage's
+`chose`): "IPOG", "GND seed 3", "Compact(GND(seed = 17)) seed 3", "Auto:
+Construction()" or "Auto: Compact(Construction()) seed 0" (`_engine_phrase`
+of a configuration). A result made without a record, which no engine of the
+package returns, shows the name it keeps.
 """
 function _engine_phrase(tc::TestCases)
-    record = _engine_record(tc)
+    config = get(tc.record, :engine, nothing)
+    config isa NamedTuple || return string(tc.engine)
     stage = get(tc.record, :ordinary, nothing)
-    stage isa NamedTuple && haskey(stage, :chose) || return _engine_phrase(record)
-    phrase = "$(tc.engine): $(stage.chose)"
-    _randomized(record) || return phrase
-    return record.seed === nothing ? "$phrase, caller's rng" : "$phrase seed $(record.seed)"
+    return _engine_phrase(config, stage isa NamedTuple ? get(stage, :chose, nothing) : nothing)
 end
 
 """

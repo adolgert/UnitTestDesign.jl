@@ -230,25 +230,11 @@ validates the result (§1.21). The request's must-include rows are ordinary.
 cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) =
     first(gnd_cover(engine, request, _target_list(targets)))
 
-"The record: randomized; the seed is `engine.seed`, or `nothing` when the engine was given an `rng` (§9.5, §9.6)."
+# The record: randomized; the seed is `engine.seed`, or `nothing` when the
+# engine was given an `rng` (§9.5, §9.6); and `candidates`, which its rows
+# depend on too, so that a result's configuration (`record.engine`) and the
+# call its seed line names, "GND(seed = 3, candidates = 20)", keep them.
 engine_record(engine::GND) = EngineRecord(:GND, engine.seed, Pair{Symbol, Any}[:candidates => engine.candidates];
                                           randomized = true)
 
 fit(::GND, ::Profile) = Fit(:native, "GND covers any request")
-
-# A result keeps the engine's name and seed, not its settings, so a GND that
-# draws other than the default 50 candidates a row records how many: repeating
-# its cases needs them (`_repeat_call`). The default records nothing. GND's
-# plan is the default one (`_DefaultPlan`).
-function _execute(plan::_DefaultPlan{GND}, request::Request, targets::RequiredTargets)
-    engine = plan.engine
-    rows = cover_ordinary(engine, request, targets)
-    return rows, engine.candidates == 50 ? (;) : (gnd = (candidates = engine.candidates,),)
-end
-
-# `record` is the result's, whose ordinary stage holds GND's notes.
-function _repeat_call(::Val{:GND}, seed, record::NamedTuple)
-    stage = get(record, :ordinary, nothing)
-    stage isa NamedTuple && haskey(stage, :gnd) || return "GND(seed = $seed)"
-    return "GND(seed = $seed, candidates = $(stage.gnd.candidates))"
-end

@@ -1,7 +1,7 @@
 # Negative generation (plan Phase 6 step 1; contract §5, §6, §7.9, §10).
 #
 # The covering design is built over ordinary values only (`generate` in
-# engines.jl, `_execute`). Then every negative target of §6 is
+# engines.jl, `_run`). Then every negative target of §6 is
 # classified by the negative-row search of its invalid value (`feasibility_for`
 # with `p = v`: candidates `[v]` at `p`, ordinary values elsewhere, the rules
 # whose scope omits `p`, §5.5, §6.2), in target order, by the walk `coverage`
@@ -17,7 +17,8 @@
 # witness row (§6.4), never a strength-0 public call. An engine whose plan's
 # fit refuses a sub-request hands it to its fallback (`_prepare_for`,
 # `_fallback`): IPOG, or for `Compact` its inner engine's fallback reduced,
-# `Compact(IPOG())`.
+# `Compact(IPOG())`. The result's record keeps, for each invalid value, the
+# stage that covered its sub-request.
 #
 # Negative must-include rows count toward the negative targets they hold
 # (§10.6): those at `(p, v)` are the sub-request's must-include rows, so the
@@ -185,7 +186,7 @@ function classify_negative_targets(request::Request)
 end
 
 """
-    cover_negative(engine, request, columns) -> (; seeds, rows, required, excluded)
+    cover_negative(engine, request, columns) -> (; seeds, rows, required, excluded, bound, stages)
 
 Negative generation (contract §6.7). First classify every negative target
 (`classify_negative_targets`), stopping with `ResourceLimitError` on any
@@ -203,8 +204,13 @@ Returns, in engine positions: `seeds`, each negative must-include column's
 completed row, by column; `rows`, the generated negative rows, in `(p, v)`
 order; `required`, every required negative target, and `excluded`, the
 `Excluded` negative targets, each in target order, as `coverage` lists them;
-and `bound`, a number of negative rows that no design can have fewer of
-(plan §4.1). A negative row holds one invalid value (§5.7) and covers only
+`bound`, a number of negative rows that no design can have fewer of (plan
+§4.1); and `stages`, one per invalid value in the same order, for the
+result's record (`negative`): `(parameter, value, rows, stage)`, the
+parameter's name, the invalid value as its `repr`, the design's rows that
+hold it (its must-include rows, generated rows and witness row), and the
+sub-request's stage (`_run`: the engine that covered it, its rows and what it
+found), or `nothing` without a sub-request. A negative row holds one invalid value (§5.7) and covers only
 negative targets (§5.9), so the rows at different `(p, v)` are different
 rows, and the bound is the sum over `(p, v)` of the sub-request's
 `_ordinary_bound`, its must-include rows being the negative ones at
@@ -225,6 +231,7 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
     end
     seeds = Dict{Int, Vector{Int}}()
     rows = Vector{Int}[]
+    stages = NamedTuple[]
     bound = 0
     for p in 1:n
         positions = (request.arity[p] + 1):length(request.candidates[p])   # p's invalid values
@@ -238,18 +245,19 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
             here = get(targets, (p, position), Vector{Int}[])
             alone = findfirst(t -> count(!=(0), t) == 1, here)   # (p = v), a target at strength 1
             added = 0
+            stage = nothing
+            value = space.values[p][request.candidates[p][position]]
             if pr !== nothing
                 sub = _negative_request(request, pr, must[pr.kept, at])
                 # Every target here but (p = v) alone is p = v beside a target of the sub-request.
                 sub_required = [t[pr.kept] for t in here if count(!=(0), t) > 1]
                 sub_targets = RequiredTargets(sub, sub_required)
                 bound += max(_ordinary_bound(sub, sub_targets).rows, alone === nothing ? 0 : 1)
-                matrix = try
+                matrix, stage = try
                     # An engine that can't cover the sub-request hands it to its fallback (plan §4.2).
-                    first(_execute(_prepare_for(engine, Profile(sub)), sub, sub_targets))
+                    _run(_prepare_for(engine, Profile(sub)), sub, sub_targets)
                 catch err
                     err isa ResourceLimitError || rethrow()
-                    value = space.values[p][request.candidates[p][position]]
                     throw(ResourceLimitError("generating the negative rows with $(space.names[p]) = " *
                                              "$(repr(value)): $(err.what)", err.limit, err.keyword))
                 end
@@ -267,10 +275,11 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
                     seeds[j] = any(==(0), row) ? witness(request, row) : row
                 end
             end
-            if alone !== nothing && isempty(at) && added == 0
-                push!(rows, witness(request, here[alone]))
-            end
+            witnessed = alone !== nothing && isempty(at) && added == 0
+            witnessed && push!(rows, witness(request, here[alone]))
+            push!(stages, (parameter = space.names[p], value = repr(value), rows = length(at) + added + witnessed,
+                           stage = stage))
         end
     end
-    return (; seeds, rows, required, excluded, bound)
+    return (; seeds, rows, required, excluded, bound, stages)
 end

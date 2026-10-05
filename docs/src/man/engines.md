@@ -44,9 +44,9 @@ all_pairs(fill(1:3, 4)...; engine = Auto())
 ```
 
 `cases.record` holds the bound, its proof in words, and whether the count
-meets it, which the package proves and checks itself, never an engine; and,
-in `cases.record.ordinary`, what the engine did. [`report`](@ref) prints the
-bound on its "size:" line. Where rules
+meets it, beside the engine's configuration and what each stage did (see
+[What a result records](#What-a-result-records)); [`report`](@ref) prints
+the bound on its "size:" line. Where rules
 exclude combinations, the bound counts only the feasible ones. A count above
 the bound is not necessarily above the minimum: for 8 binary flags the bound
 is 4, and the smallest design that exists has 6 cases, by Kleitman and
@@ -105,8 +105,7 @@ How `:balanced` chooses, from the request alone:
 [`Compact`](@ref), unless the space is past the reducer's limits (below),
 when it returns the winner as it is and the record's `chose` names the
 winner alone. The negative rows of a space with `Invalid` values are chosen
-the same way, for each invalid value; the record keeps only the ordinary
-cases' choice.
+the same way, for each invalid value, and the record keeps each choice.
 
 ```@example engines
 eight = fill(1:7, 8)          # eight parameters with seven values each
@@ -249,6 +248,49 @@ four = fill(1:4, 10)
 a = all_pairs(four...; engine = GND(rng = rng))
 b = all_pairs(four...; engine = GND(rng = rng))
 (same_design = a == b, rng_unchanged = rng == before, recorded_seed = a.seed)
+```
+
+## What a result records
+
+A covering result keeps how its cases were made in `cases.record`. The
+lower bound, its proof, and whether the count meets it (`minimal`) are the
+package's own, proved at generation and checked against the cases; no
+engine sets them. `cases.record.engine` is the engine's configuration, the
+whole tree of it: each engine's name, constructor call, seed and settings,
+with an engine it wraps or chooses among nested inside. The seed line of
+[`report`](@ref) names that call, which with the same request gives the same
+cases:
+
+```@example engines
+nine = fill(1:3, 4)
+cases = all_pairs(nine...; engine = Compact(GND(seed = 17); seed = 3, effort = 2))
+cases.record.engine
+```
+
+```@example engines
+report(cases)
+```
+
+`cases.record.ordinary` is the stage that made the ordinary cases: the
+engine's call, the cases it made, and what it reports, which for `Compact`
+is its inner engine's stage, `start`, and the reducer's run, `reducer`; for
+`Auto`, each start it ran, `starts`, which one it kept, `kept`, and what it
+chose, `chose`; and for `Construction`, its array, `catalog`:
+
+```@example engines
+cases.record.ordinary
+```
+
+With `Invalid` values, `cases.record.negative` has one entry for each
+invalid value: the parameter, the value, the cases that hold it, and the
+stage that covered its negative combinations, a request one strength lower
+on the other parameters. Its `engine` says which engine ran there: the same
+one, or IPOG where the engine has nothing for that request, as
+`Construction` has nothing at strength 1:
+
+```@example engines
+flagged = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
+all_pairs(flagged; engine = Construction()).record.negative
 ```
 
 ## What every engine does with rules

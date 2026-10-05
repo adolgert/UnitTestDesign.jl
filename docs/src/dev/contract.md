@@ -143,11 +143,15 @@ targets with attribution and explanation status, and covered-target counts,
 with ordinary and negative bookkeeping kept separate. Its `record` says
 whether the engine is randomized and gives a covering design's lower bound
 with its proof and whether the rows meet it (§8.7); these are generation's
-own, and no engine sets them. What the engine chose or built (`Auto`'s
-choice for the ordinary rows, a catalog array, the row reducer's run), and
-the settings besides the seed that repeating the rows needs (`GND`'s
-`candidates`, when not the default), are in the stage that made the
-ordinary rows, `ordinary`, with that engine's call and its rows.
+own, and no engine sets them. It gives the engine's configuration, the
+whole tree of it: each engine's name, constructor call, seed and settings,
+an engine that another wraps or chooses among nested in it, so that the
+call repeats the rows (§9.5, §9.11) unless an engine in it drew from a
+caller's generator (§9.6). And it gives the stages that ran, each with its
+engine's call, its rows and what that engine reports: the ordinary rows'
+(`Auto`'s starts and its choice, a catalog array, the row reducer's run) and,
+for each `Invalid` value, its negative rows', which say which engine covered
+them.
 
 **1.20** A generated `TestCases` contains no target whose status is unknown
 (§3.6).
@@ -626,7 +630,7 @@ scheduling, the global random number generator, or the clock.
 **9.5** `GND(; seed = 0, candidates = 50, rng = nothing)` seeds a fresh
 generator from `seed` at the start of every call, so repeated calls with the
 same engine agree. The seed is recorded in the result and printed by
-`report`. `seed` is an integer of at least 0 and `candidates` a positive
+`report`, with the engine's constructor call, which repeats the rows. `seed` is an integer of at least 0 and `candidates` a positive
 integer, each within `Int`; another value is an `ArgumentError` naming the
 keyword.
 

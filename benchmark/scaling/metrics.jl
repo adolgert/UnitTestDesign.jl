@@ -4,11 +4,12 @@
 # Engine-reported extras, `name => value`, recorded with each measurement as
 # `result.engine_extras`. A covering result's `record` holds them (the
 # `Design`'s, which `TestCases` keeps): the lower bound and whether it is met;
-# and the ordinary design's stage, its own `engine` and `rows` as
-# `ordinary_engine` and `ordinary_rows`, and what the engine found, what Auto
-# chose, the catalog's array and the reducer's run, each nested NamedTuple
-# flattened with its name as a prefix, so the reducer's `steps` is
-# `reducer_steps`, as before Phase 3. A covering design's `notes`, empty
+# the engine's configuration, as `engine` and its `engine_call`; the ordinary
+# design's stage, its own `engine` and `rows` as `ordinary_engine` and
+# `ordinary_rows`, and what the engine found, what Auto chose, the catalog's
+# array and the reducer's run, each nested NamedTuple flattened with its name
+# as a prefix, so the reducer's `steps` is `reducer_steps`, as before Phase 3;
+# and the negative stages, as `negative`. A covering design's `notes`, empty
 # for every engine since Phase 3, are kept too, for an adapter that returns
 # its own `Design`, e.g. `Design(matrix, :covering, :Mine, seed, required,
 # covered, excluded, n_must_include, (steps = 1200,))`. A trial adapter may

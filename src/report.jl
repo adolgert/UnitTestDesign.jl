@@ -5,7 +5,7 @@
 # with `coverage` machinery (measure.jl) instead of reading the recorded
 # counts, and adds bonus coverage at strength + 1, counted only, and the
 # prefix curve. The guarantee line's other parts (must-include rows, an
-# excursion's notes, GND's seed) are copied from the result (`_guarantee`),
+# excursion's notes, a randomized engine's seed) are copied from the result (`_guarantee`),
 # and recorded exclusions are a fallback for targets the measurement leaves
 # unknown (`_recorded_exclusions`). `design_sizes` runs each strategy and
 # counts what its rows cover. Each call reads a set of rows once and keeps one
@@ -37,12 +37,15 @@ What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
   constraints)". The rest of the line is what the result recorded at
   generation (§1.19): the must-include rows kept first, an excursion's
   distance, base, dropped rows and values that never appear, a full
-  factorial's "every valid row", and GND's seed.
+  factorial's "every valid row", and a randomized engine's seed, as its
+  record's configuration names the engine.
 - `strategy::Symbol`, `n_cases::Int`, `engine::Symbol`, `seed`,
   `n_must_include::Int`, `record::NamedTuple`: as the result recorded them
   ([`TestCases`](@ref)); `record` holds a covering design's lower bound,
   with its proof and whether the rows meet it, which `show` prints on its
-  "size:" line, and the stage that made the ordinary rows.
+  "size:" line, the engine's configuration, from which the guarantee and
+  the seed line name the engine and the call that repeats the cases, and
+  the stages that ran.
 - `strength::Int`: the strength measured: the result's, or `min(2, number of
   parameters)` for an excursion or a full factorial, which have none
   (contract §1.12).
@@ -330,7 +333,8 @@ function _guarantee(tc::TestCases, c::Coverage)
         claim, rest = _covers_text(c, length(tc) == 1 ? "covers" : "cover"; with_strength = true)
         head = claim === nothing ? "$lead: no $noun of $space is feasible" : "$lead $claim of $space"
         head *= _excluded_note(c) * rest
-        seed = _seed_note(_engine_record(tc))
+        config = get(tc.record, :engine, nothing)
+        seed = config isa NamedTuple ? _seed_note(config) : nothing
         seed === nothing || push!(tail, seed)
         return join([head * _negative_note(c); tail], "; ")
     end
@@ -439,12 +443,16 @@ function _print_bonus(io::IO, r::Report)
     return nothing
 end
 
+# The seed line reads the engine's configuration, `record.engine`, which a
+# covering result records (`_seed_text` of a configuration). A result made
+# without a record, which no engine of the package returns, shows the name it
+# keeps.
 function _seed_text(r::Report)
-    record = EngineRecord(r.engine, r.seed; randomized = r.record.randomized)
-    _randomized(record) && return _seed_text(record, r.record)
+    config = get(r.record, :engine, nothing)
+    config isa NamedTuple && return _seed_text(config)
     r.strategy === :excursion && return "seed: none (an excursion uses no randomness)"
     r.strategy === :full_factorial && return "seed: none (a full factorial uses no randomness)"
-    return _seed_text(record, r.record)
+    return "seed: none ($(r.engine) uses no randomness)"
 end
 
 """
@@ -559,8 +567,10 @@ that each figure has a negative part), `rows`, one per strategy run, and
   negative targets (§6) at strength 2 and 3, in the same form. 0 and zero
   counts when the space has no `Invalid` values; `nothing` where `cases` or
   `pairs` and `triples` are.
-- `engine`: for a covering row, the engine that made it, as in `engines`;
-  `nothing` for the full factorial and the excursions, which use none.
+- `engine`: for a covering row, the engine that made it, as in `engines`,
+  the call the result records (`record.engine.call` of its
+  [`TestCases`](@ref)); `nothing` for the full factorial and the excursions,
+  which use none.
 
 Every figure keeps the ordinary and negative parts apart (§5.9, §5.10).
 Case counts are what the engine produced, not lower bounds (§8.3).
@@ -646,7 +656,7 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     ff = _attempt(() -> full_factorial(space; limit, limits...))
     valid = ff isa TestCases ? length(ff) : nothing
     push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, space; memos, feasibility_limit))
-    labels = _engine_label.(engines)
+    labels = [_engine_config(e).call for e in engines]   # what each result records as its engine's call
     for s in strengths, (e, label) in zip(engines, labels)
         s <= n || continue
         # `covering(space; strength = s, engine = e, limits...)`, from the plan
@@ -734,6 +744,9 @@ function _size_row(strategy, kind, level, design, valid, space::TestSpace; memos
         return _SizeRow((strategy, kind, level, :resource_limit, message, nothing, nothing, nothing, nothing,
                          nothing, nothing, nothing, engine))
     end
+    # A covering row names the engine as its result recorded it.
+    config = get(design.record, :engine, nothing)
+    engine = config isa NamedTuple ? config.call : engine
     share = valid === nothing ? nothing : (valid == 0 ? nothing : length(design) / valid)
     # The rows are read once for both strengths, and only when one is measured.
     prepared = length(space.names) < 2 ? nothing : _prepare_rows(space, memos, collect(design))
