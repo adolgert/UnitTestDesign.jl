@@ -304,9 +304,10 @@ default reduces a design.
 
 ## What a call costs, and where it stops
 
-The time of a warm call on an Apple M2 laptop with Julia 1.13, measured
-with other work running, and the peak memory of the process, which includes
-about 310 MiB for Julia and the package. "Compact" is `Auto(goal =
+The time of a warm call on an Apple M2 laptop with Julia 1.13, and the
+peak memory of the process, which includes about 310 MiB for Julia and the
+package. A call is slower when a garbage collection lands in it, and a peak
+moves with the collector: where two figures are given, both were measured. "Compact" is `Auto(goal =
 :compact)`; "one rule" is a single rule forbidding one pair. A first call
 also compiles: about a tenth of a second for a small space, and 3 seconds
 for a space of 250 parameters, for its row type.
@@ -316,11 +317,11 @@ for a space of 250 parameters, for its row type.
 | 10 × 3 values | 2 | IPOG; `Auto()`; compact | 17; 15; 14 (9) | under 1 ms; under 1 ms; 20 ms | 310 MiB |
 | 50 × 4 values | 2 | IPOG; `Auto()`; compact | 46; 40; 38 (16) | 9 ms; 9 ms; 0.14 s | 324 MiB |
 | 250 binary | 2 | IPOG; IPOG, one rule | 17; 19 (4) | 0.11 s; 0.95 s | 460 MiB; 1.9 GiB |
-| 250 × 4 values | 2 | IPOG; `Auto()` | 63; 52 (16) | 0.79 s; 6 ms | 460 MiB |
+| 250 × 4 values | 2 | IPOG; `Auto()` | 63; 52 (16) | 0.79 s; 6 to 20 ms | 460 MiB |
 | 8 × 64 values | 2 | IPOG; `Auto()` | 7168; 4096, minimal | 1.6 s; 1 ms | 310 MiB |
 | 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 256; 263; 178 (64) | 0.33 s; 1.0 s; 14 s | 334 MiB; 850 MiB; 320 MiB |
 | 15 × 4 values | 4 | IPOG; compact | 958; 826 (256) | 1.0 s; 13 s | 350 MiB |
-| 20 binary | 6 | IPOG; IPOG, one rule | 376; 400 (64) | 3.6 s; 13 s | 635 MiB; 4.3 to 6.5 GiB |
+| 20 binary | 6 | IPOG; IPOG, one rule | 376; 400 (64) | 3.6 s; 10 to 13 s | 635 MiB; 4.3 to 7.1 GiB |
 
 (`benchmark/engine_costs.jl` repeats these.) What grows, and what stops a
 call that is too large; a design that can't be certified is not returned:
@@ -334,7 +335,7 @@ call that is too large; a design that can't be certified is not returned:
 - **Rules.** With any rule, every required combination keeps full-width
   bookkeeping: at least 24 bytes per parameter for each combination, and
   a process's peak measured several times that. Twenty binary parameters at
-  strength 6 with one rule peaked at 4.3 to 6.5 GiB, where 24 bytes per
+  strength 6 with one rule peaked at 4.3 to 7.1 GiB, where 24 bytes per
   parameter per combination comes to 1.1 GiB, and the CASA benchmark models
   at strength 3 passed 2 GiB from 55 parameters up. At
   the start of this release's work, 200 options with 24 rules took 3
