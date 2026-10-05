@@ -279,14 +279,14 @@ end
 end
 
 
-@testitem "stability: every engine's plan infers, its execution infers, and a plan builds nothing" setup=[StabilitySetup] begin
+@testitem "stability: every engine's plan infers, its execution infers behind `_run`, and a plan builds nothing" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, RequiredTargets, Profile, Fit, Design, NegativeProjection, classify_targets, fit,
-        generate, _prepare, _execute, _prepare_for, _negative_request, _catalog_entry, _DefaultPlan,
+        generate, _prepare, _execute, _run, _prepare_for, _negative_request, _catalog_entry, _DefaultPlan,
         _ConstructionPlan, _CompactPlan, _AutoPlan
     # The engine protocol's plans (plan §4.2): `_prepare` is concrete for each
     # engine, `fit` is a `Fit`, and executing a concrete plan gives concrete
-    # rows and notes; `Auto` executes its candidates' plans, of different
-    # types, behind an asserted result, and `generate` is a `Design` whatever
+    # rows and notes; `Auto` runs its candidates' plans, of different types,
+    # behind `_run`'s asserted result, and `generate` is a `Design` whatever
     # the engine.
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     request = Request(uniform(8, 7))
@@ -305,9 +305,10 @@ end
     for engine in (IPOG(), Construction(), Compact(IPOG()), Compact(Construction()))
         rows, notes = @inferred _execute(_prepare(engine, profile), request, targets)
         @test rows isa Matrix{Int} && isconcretetype(typeof(notes))
+        rows, stage = @inferred _run(_prepare(engine, profile), request, targets)
+        @test rows isa Matrix{Int} && isconcretetype(typeof(stage))
     end
-    @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _execute(_prepare(Auto(), profile), request, targets)) isa
-          Matrix{Int}
+    @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _run(_prepare(Auto(), profile), request, targets)) isa Matrix{Int}
     # A negative sub-request the catalog refuses (strength 1) takes IPOG's plan: a union of two.
     space = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
     sub = _negative_request(Request(space), NegativeProjection(space, 1), zeros(Int, 3, 0))
@@ -508,7 +509,7 @@ end
     @test (@inferred _recommendation(Auto(), request)) isa Recommendation
     @test (@inferred recommend(uniform(8, 7))) isa Recommendation
     # A start's rows are a Matrix{Int} with concrete notes; Auto's notes are one
-    # of a few NamedTuples, as the winner decides, behind an asserted barrier.
+    # of a few NamedTuples, as the winner decides, behind `_run`'s barrier.
     all_targets = RequiredTargets(request, first(classify_targets(request)))
     @test first(@inferred _execute(_prepare(Construction(), Profile(request)), request, all_targets)) isa Matrix{Int}
     @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _execute(_prepare(Auto(), Profile(request)), request,

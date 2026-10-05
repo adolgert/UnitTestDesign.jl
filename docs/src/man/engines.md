@@ -44,7 +44,9 @@ all_pairs(fill(1:3, 4)...; engine = Auto())
 ```
 
 `cases.record` holds the bound, its proof in words, and whether the count
-meets it; [`report`](@ref) prints them on its "size:" line. Where rules
+meets it, which the package proves and checks itself, never an engine; and,
+in `cases.record.ordinary`, what the engine did. [`report`](@ref) prints the
+bound on its "size:" line. Where rules
 exclude combinations, the bound counts only the feasible ones. A count above
 the bound is not necessarily above the minimum: for 8 binary flags the bound
 is 4, and the smallest design that exists has 6 cases, by Kleitman and
@@ -115,9 +117,10 @@ eight = fill(1:7, 8)          # eight parameters with seven values each
 recommend(eight...)
 ```
 
-The result records what `Auto` chose, `cases.record.chose`, and the size of
-each start it ran, `cases.record.candidates`; the summary line names it, as
-"Auto: Construction()". The choice depends only on the request, never on the
+The result records what `Auto` chose, `cases.record.ordinary.chose`, and
+each start it ran, with its size and what it built,
+`cases.record.ordinary.starts`; the summary line names it, as "Auto:
+Construction()". The choice depends only on the request, never on the
 clock, a limit, or which other packages are loaded (§9.12), but a later
 version may choose differently (§9.8). `:fast` and `:balanced` use no
 randomness; `:compact` draws from `seed`, 0 by default, which the result
@@ -166,7 +169,7 @@ array. The result's record names the array:
 
 ```@example engines
 cases = all_pairs(eight...; engine = Construction())
-cases.record.catalog
+cases.record.ordinary.catalog
 ```
 
 `Construction` uses no randomness (§9.4).
@@ -192,7 +195,8 @@ design. `seed` seeds a fresh generator for every call, so the same seed
 gives the same cases; `effort` multiplies its two budgets, of steps and of
 combinations read, never seconds (§9.11). Beyond 2²⁵ combinations to cover,
 or 65,535 cases, it returns `inner`'s design unreduced. The result's record
-says what it did, `cases.record.reducer`.
+says what it did, `cases.record.ordinary.reducer`, and what `inner` did,
+`cases.record.ordinary.start`.
 
 ## GND
 

@@ -42,7 +42,7 @@ What [`report`](@ref) found about a [`TestCases`](@ref). Fields:
   `n_must_include::Int`, `record::NamedTuple`: as the result recorded them
   ([`TestCases`](@ref)); `record` holds a covering design's lower bound,
   with its proof and whether the rows meet it, which `show` prints on its
-  "size:" line.
+  "size:" line, and the stage that made the ordinary rows.
 - `strength::Int`: the strength measured: the result's, or `min(2, number of
   parameters)` for an excursion or a full factorial, which have none
   (contract §1.12).
@@ -466,10 +466,27 @@ function _size_line(r::Report)
     line = r.record.minimal ? "size: $size, minimal: $(r.record.proof)" :
                               "size: $size; lower bound $bound: $(r.record.proof)"
     # A catalog design that is an orthogonal array says so (plan §5.4, "Balance").
-    catalog = get(r.record, :catalog, nothing)
-    catalog !== nothing && catalog.orthogonal &&
+    stage = get(r.record, :ordinary, nothing)
+    maker = stage isa NamedTuple ? _made_by(stage) : (;)
+    haskey(maker, :catalog) && maker.catalog.orthogonal &&
         (line *= "; an orthogonal array: each combination of $(r.strength) parameters' values is in exactly one case")
     return line
+end
+
+"""
+    _made_by(stage) -> NamedTuple
+
+The stage whose rows are the result's ordinary rows, from the stages a
+result recorded (`record.ordinary`): a chooser's start that it kept
+(`starts[kept]`), and a reducer's start when the reducer returned it as it
+was (`reducer.rows == reducer.start`: it saves a smaller design only), else
+the stage itself.
+"""
+function _made_by(stage::NamedTuple)
+    haskey(stage, :reducer) && stage.reducer.rows < stage.reducer.start && return stage
+    haskey(stage, :kept) && return _made_by(stage.starts[stage.kept])
+    haskey(stage, :start) && return _made_by(stage.start)
+    return stage
 end
 
 Base.show(io::IO, r::Report) = print(io, r.guarantee)

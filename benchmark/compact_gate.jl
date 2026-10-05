@@ -76,7 +76,7 @@ warm(f) = (f(); minimum(@elapsed(f()) for _ in 1:3))
 function compare(space, strength; timed = false)
     ipog = generate(IPOG(), Request(space; strength))
     compact = generate(Compact(IPOG()), Request(space; strength))
-    n = compact.record.reducer
+    n = compact.record.ordinary.reducer
     n.start == size(ipog.matrix, 2) || error("Compact's start is not IPOG's rows")
     size(compact.matrix, 2) <= size(ipog.matrix, 2) || (NEVER_MORE[] = false)
     RESULTS_HASH[] = hash(compact.matrix, RESULTS_HASH[])

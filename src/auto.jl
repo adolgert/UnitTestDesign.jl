@@ -15,7 +15,7 @@
 # package that defines another engine changes nothing (plan §5.9). Each
 # candidate is prepared through the engine protocol (`_prepare`), and `Auto`
 # reads its plan only through `_known_rows`, `_at_bound` and `_plan_line` and
-# executes it with `_execute`, so it knows no candidate's recipe. A candidate that
+# runs it with `_run`, so it knows no candidate's recipe. A candidate that
 # throws `ResourceLimitError` makes the call throw: nothing here catches it.
 # Only the winner is certified, by `generate`.
 
@@ -74,12 +74,12 @@ combinations read, never seconds (see [`Compact`](@ref), which also says
 when a design is too large to reduce).
 
 What `Auto` chose for the ordinary cases is in the result's record,
-`cases.record.chose`, with the rows of each start it ran in
-`cases.record.candidates`; the summary line names it, as in "Auto:
-Construction()". The negative rows' choices are not recorded. The choice
-depends only on the request, never on the clock or a limit, but a later
-version may choose differently (contract §9.8). To keep a design, save it
-and pass it back as `must_include` (§9.10).
+`cases.record.ordinary.chose`, with each start it ran, its rows and what it
+built, in `cases.record.ordinary.starts`, the one kept at `kept`; the
+summary line names it, as in "Auto: Construction()". The negative rows'
+choices are not recorded. The choice depends only on the request, never on
+the clock or a limit, but a later version may choose differently (contract
+§9.8). To keep a design, save it and pass it back as `must_include` (§9.10).
 """
 struct Auto <: CoveringEngine
     goal::Symbol
@@ -267,34 +267,35 @@ cover_ordinary(engine::Auto, request::Request, targets::RequiredTargets) = _cove
 """
     _execute(plan::_AutoPlan, request, targets) -> (matrix, notes)
 
-The plan's starts, each through the engine protocol (`_execute` of its
-plan), in the fixed order; the one with the fewest rows is kept, the first
-on a tie; then, for `goal = :compact`, `_compact` on it, once (plan §4.1
-step 3). A start that throws `ResourceLimitError` ends the call (plan §6.1).
-`notes` record `chose`, the pipeline that made the rows, as
-"Construction()" or "Compact(IPOG())", or the start alone when the reducer
-returned it unreduced past its caps; `candidates`, each start that ran with
-its rows, in order; then the winner's own notes (the catalog's array) and
-the reducer's run. The starts' plans are of different types, so each
-execution's result type is asserted, a function barrier.
+The plan's starts, each through the engine protocol (`_run`), in the fixed
+order; the one with the fewest rows is kept, the first on a tie; then, for
+`goal = :compact`, `_compact` on it, once (plan §4.1 step 3). A start that
+throws `ResourceLimitError` ends the call (plan §6.1). `notes` record
+`chose`, the pipeline that made the rows, as "Construction()" or
+"Compact(IPOG())", or the start alone when the reducer returned it
+unreduced past its caps; `starts`, the stage of each start that ran, in
+order, its rows and what it built; `kept`, the index of the start kept
+among them; and for `:compact` the reducer's run, `reducer`. The starts'
+plans are of different types, so each runs behind `_run`'s barrier, whose
+result type is asserted.
 """
 function _execute(plan::_AutoPlan, request::Request, targets::RequiredTargets)
     engine = plan.engine
-    candidates = @NamedTuple{engine::String, rows::Int}[]
-    best, notes, label = zeros(Int, length(request.arity), 0), (;), ""
+    starts = NamedTuple[]
+    best, kept, label = zeros(Int, length(request.arity), 0), 0, ""
     for c in plan.candidates
         c.runs || continue
-        rows, found = _execute(c.plan, request, targets)::Tuple{Matrix{Int}, NamedTuple}
-        push!(candidates, (engine = c.label, rows = size(rows, 2)))
-        if isempty(label) || size(rows, 2) < size(best, 2)
-            best, notes, label = rows, found, c.label
+        rows, stage = _run(c.plan, request, targets)
+        push!(starts, stage)
+        if kept == 0 || size(rows, 2) < size(best, 2)
+            best, kept, label = rows, length(starts), c.label
         end
     end
-    engine.goal === :compact || return best, merge((chose = label, candidates), notes)
+    engine.goal === :compact || return best, (chose = label, starts = starts, kept = kept)
     matrix, reduced = _compact(request, targets, best; seed = engine.seed, effort = engine.effort)
     # Past the index's cap or the rows a count holds, the start comes back as it was.
     chose = reduced.reducer_stop in (:index_cap, :rows_cap) ? label : "Compact($label)"
-    return matrix, merge((chose = chose, candidates), notes, (reducer = _reducer_record(reduced),))
+    return matrix, (chose = chose, starts = starts, kept = kept, reducer = _reducer_record(reduced))
 end
 
 

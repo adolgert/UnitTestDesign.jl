@@ -168,8 +168,9 @@ Added 2026-10-04 by the solver plan's Phase 3
   (above 100,000 combinations it may build the catalog's array alone, which
   was never larger on the package's benchmarks, though that is measured,
   not guaranteed); `:compact` then removes rows with the reducer. The
-  result's `record.chose` says what it ran. Its choice may change between
-  releases (contract §9.8).
+  result's `record.ordinary.chose` says what it ran, and
+  `record.ordinary.starts` what each start gave. Its choice may change
+  between releases (contract §9.8).
 - `Construction()`, algebraic covering arrays from a catalog (orthogonal
   arrays, cover starters, products, the LFSR array and recursions), for
   spaces whose parameters all have the same number of values or that have
@@ -190,7 +191,9 @@ Added 2026-10-04 by the solver plan's Phase 3
   `5 cases (lower bound 4) · …` or `9 cases (minimal) · …`, and `report`
   prints a `size:` line with the proof. `TestCases` and `Report` gain a
   `record` field holding the bound, its proof, whether the engine is
-  randomized, and what the engine chose or built. Contract §8.4 now allows
+  randomized, and, in its `ordinary` stage, what the engine chose or built.
+  The bound, the proof and "minimal" are the package's own, never an
+  engine's. Contract §8.4 now allows
   "minimal" when a count equals a proven bound, and §8.7 defines the bound.
 - The error for an `engine` that isn't one names covering engines generally
   ("a covering engine such as IPOG(), Construction(), Compact(IPOG()) or

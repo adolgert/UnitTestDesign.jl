@@ -3,10 +3,12 @@
 
 # Engine-reported extras, `name => value`, recorded with each measurement as
 # `result.engine_extras`. A covering result's `record` holds them (the
-# `Design`'s, which `TestCases` keeps): the lower bound and whether it is met,
-# what Auto chose, the catalog's array and the reducer's run, each nested
-# NamedTuple flattened with its name as a prefix, so the reducer's `steps`
-# is `reducer_steps`, as before Phase 3. A covering design's `notes`, empty
+# `Design`'s, which `TestCases` keeps): the lower bound and whether it is met;
+# and the ordinary design's stage, its own `engine` and `rows` as
+# `ordinary_engine` and `ordinary_rows`, and what the engine found, what Auto
+# chose, the catalog's array and the reducer's run, each nested NamedTuple
+# flattened with its name as a prefix, so the reducer's `steps` is
+# `reducer_steps`, as before Phase 3. A covering design's `notes`, empty
 # for every engine since Phase 3, are kept too, for an adapter that returns
 # its own `Design`, e.g. `Design(matrix, :covering, :Mine, seed, required,
 # covered, excluded, n_must_include, (steps = 1200,))`. A trial adapter may
@@ -30,7 +32,22 @@ function engine_extras(x)
             out[string(k)] = json_value(v)
         end
         for (k, v) in pairs(x.record)
-            if v isa NamedTuple
+            if k === :ordinary && v isa NamedTuple
+                for (j, w) in pairs(v)
+                    if j in (:engine, :rows)
+                        out[string("ordinary_", j)] = json_value(w)
+                    elseif w isa NamedTuple
+                        for (i, y) in pairs(w)
+                            out[string(j, "_", i)] = json_value(y)
+                        end
+                    else
+                        out[string(j)] = json_value(w)
+                    end
+                end
+            elseif k === :engine && v isa NamedTuple
+                out["engine"] = json_value(v)
+                out["engine_call"] = v.call
+            elseif v isa NamedTuple
                 for (j, w) in pairs(v)
                     out[string(k, "_", j)] = json_value(w)
                 end

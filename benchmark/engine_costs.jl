@@ -47,7 +47,7 @@ space = TestSpace(names, [1:v for _ in 1:k], rules, 10^5)
 first = @timed covering(space; strength = t, engine)            # compiles, the space's row type too
 stats = @timed covering(space; strength = t, engine)
 println(length(stats.value), " ", round(stats.time; digits = 3), " ", round(first.time; digits = 3), " ",
-        stats.value.record.lower_bound, " ", get(stats.value.record, :chose, "-"))
+        stats.value.record.lower_bound, " ", get(stats.value.record.ordinary, :chose, "-"))
 """
 
 function main(names)

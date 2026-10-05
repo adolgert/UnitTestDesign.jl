@@ -269,10 +269,13 @@ These come from [metrics.jl](metrics.jl) and [summarize.py](summarize.py)
 | `first_call_seconds` | The first space construction plus the first operation in a fresh process, both compilation included: the plan's first-call time (§2.3, §5.1). Package loading and Julia startup are excluded, as are the macro expansions of a named space's rules, which happen when spaces.jl is included. Empty for usages that prepare cases first. |
 | `engine_extras` | JSON of what the engine reported, from the last measured call |
 
-An engine reports extras through the covering `Design` it returns: its
-`notes` NamedTuple, which `TestCases` keeps, such as
-`(reducer_steps = 1200, stopped_at_bound = true)` or what `Auto` chose and
-what each candidate gave. A trial adapter may instead call
+An engine reports extras through the covering `Design` it returns: the
+package's engines through its `record`, whose ordinary stage holds what
+`Auto` chose and what each start gave, the catalog's array and the reducer's
+run, flattened as `chose`, `starts`, `catalog_name`, `reducer_steps`, …
+(metrics.jl), beside the lower bound; an adapter's `Design` through its
+`notes` NamedTuple, which `TestCases` keeps, such as `(reducer_steps = 1200,
+stopped_at_bound = true)`. A trial adapter may instead call
 `record_extra(name, value)` during its call. The worker empties the extras
 before each timed call and records them with that call's measurement as
 `result.engine_extras`.

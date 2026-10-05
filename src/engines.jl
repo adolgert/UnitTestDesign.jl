@@ -40,8 +40,9 @@ forms.
   - `_prepare(engine, profile) -> plan`, from the profile alone;
   - `_execute(plan, request, targets) -> (matrix, notes)`: the rows, and
     `notes`, a `NamedTuple` of plain data on what it found (the catalog's
-    array, the reducer's run, what it chose), which `generate` puts into
-    the result's record. A wrapper executes its inner engine's plan;
+    array, the reducer's run, what it chose). It runs an inner plan with
+    `_run`, and puts the stage `_run` returns into its notes, so that the
+    record keeps every stage;
   - `fit(engine, p) = _prepare(engine, p).fit`, and `cover_ordinary` as
     the rows of `_execute(_prepare(engine, Profile(request)), …)`, for the
     callers that ask for rows alone (`_cover`);
@@ -58,6 +59,12 @@ rows until every required target is in some row. The targets are read
 through `supports`, `ncombinations`, `isrequired` and `nrequired`
 (`RequiredTargets`). `generate` certifies the result (`validate_design`,
 §1.21), so a wrong design is an internal error, never a wrong answer.
+
+What an engine reports stays in its own stage of the result's record, its
+`ordinary` stage, beside the `engine` and `rows` that `_run` writes there
+and an engine may not. The record's own fields, the lower bound, whether the
+design is minimal, the proof, and whether the engine is randomized, are the
+pipeline's, and no engine sets them (`_covering_record`).
 
 An engine may also define `_fallback(engine)`, the engine that covers what
 its `fit` refuses (IPOG by default); a randomized engine says so in its
@@ -203,9 +210,9 @@ draws random numbers, so that results show its seed (§9.5). A result keeps
 with `goal = :compact`, which is why this is a field of the record and not a
 fact about the name.
 
-`generate` reads the record once per call, and puts `randomized` and what the
-engine found (the notes of `_execute`: what `Auto` chose, the catalog's array,
-the reducer's run) into the result's record, beside the lower bound.
+`generate` reads the record once per call, and puts `randomized` into the
+result's record, beside the lower bound and the engine's stage (`_run`: what
+`Auto` chose, the catalog's array, the reducer's run).
 """
 struct EngineRecord
     name::Symbol
@@ -504,12 +511,31 @@ _prepare(engine::CoveringEngine, p::Profile) = _DefaultPlan(engine, fit(engine, 
 
 The rows `plan` builds for `request` (`cover_ordinary`'s promise,
 `CoveringEngine`), with `notes`, plain data on what the engine found, which
-`generate` puts into the result's record. `request`'s profile is the one the
-plan was prepared from. For `_DefaultPlan`, `cover_ordinary`'s rows and no
-notes.
+the stage of `_run` keeps. `request`'s profile is the one the plan was
+prepared from. For `_DefaultPlan`, `cover_ordinary`'s rows and no notes.
 """
 _execute(plan::_DefaultPlan, request::Request, targets::RequiredTargets) =
     (cover_ordinary(plan.engine, request, targets), (;))
+
+"""
+    _run(plan, request, targets) -> (matrix, stage::NamedTuple)
+
+`_execute(plan, …)`, with its notes as a stage of the result's record: the
+plan's `engine`, as its call (`_engine_label`), and the `rows` it made, then
+the engine's notes. A wrapper or a chooser runs its inner plans this way, so
+that the record keeps each stage under its own. An engine's notes may not
+set `engine` or `rows`, which are the stage's: that is an internal error.
+The return type is asserted, since `Auto` runs its candidates' plans without
+knowing their types.
+"""
+function _run(plan::_Plan, request::Request, targets::RequiredTargets)
+    matrix, notes = _execute(plan, request, targets)
+    for key in (:engine, :rows)
+        haskey(notes, key) && error("internal error: $(_engine_label(plan.engine))'s notes set its stage's `$key`")
+    end
+    return (matrix, merge((engine = _engine_label(plan.engine), rows = size(matrix, 2)), notes))::
+           Tuple{Matrix{Int}, NamedTuple}
+end
 
 """
     _known_rows(plan) -> Union{Nothing, Int}
@@ -643,17 +669,17 @@ generate(engine::CoveringEngine, request::Request) = _generate(_check_fit(engine
 `design_sizes` also calls with the plan whose fit it read. The ordinary
 design is built first, over ordinary values only, from the classified
 ordinary targets (`classify_targets`, read through `RequiredTargets`) and
-the ordinary must-include rows (`_execute`). When the space has
+the ordinary must-include rows (`_run`). When the space has
 [`Invalid`](@ref) values, negative generation (`cover_negative`, invalid.jl)
 then covers the negative targets of §6 with the same engine, or its fallback
 where its fit refuses a sub-request (`_prepare_for`). The rows are the
 must-include rows in the order given, each completed under its own row
 policy (§7.9), then the generated ordinary rows, then the generated negative
 rows (§5.12). The two kinds' bookkeeping is kept apart (§1.19). The result
-records the engine by `engine_record`, with the lower bound on its rows
-(`_ordinary_bound`, and the negative rows' from `cover_negative`) and what
-the engine found (the notes of `_execute`) in `record`. Only the ordinary
-design's notes are kept; a negative sub-request's are not.
+records the engine by `engine_record`, and in `record` (`_covering_record`)
+the lower bound on its rows (`_ordinary_bound`, and the negative rows' from
+`cover_negative`) and the ordinary design's stage. Only the ordinary
+design's stage is kept; a negative sub-request's is not.
 """
 function _generate(plan::_Plan, request::Request)
     engine = plan.engine
@@ -663,20 +689,19 @@ function _generate(plan::_Plan, request::Request)
     names = request.space.names
     if !_has_invalid(request.space)
         targets = RequiredTargets(request, required)
-        matrix, notes = _execute(plan, request, targets)
+        matrix, stage = _run(plan, request, targets)
         covered = validate_design(request, matrix, required)
         bound = _bound_record(size(matrix, 2), _ordinary_bound(request, targets), 0, names, request.arity,
                               supports(targets))
         return Design(matrix, :covering, name, seed, length(required), covered, excluded,
-                      n_must_include(request), (;), 0, 0, Excluded[],
-                      merge((randomized = record.randomized,), bound, notes))
+                      n_must_include(request), (;), 0, 0, Excluded[], _covering_record(record, bound, stage))
     end
     must = request.must_include
     negative_columns = [j for j in axes(must, 2) if _holds_invalid(request, view(must, :, j))]
     ordinary_columns = [j for j in axes(must, 2) if !(j in negative_columns)]
     ordinary_request = _with_must_include(request, must[:, ordinary_columns])
     targets = RequiredTargets(ordinary_request, required)
-    ordinary, notes = _execute(plan, ordinary_request, targets)
+    ordinary, stage = _run(plan, ordinary_request, targets)
     negative = cover_negative(engine, request, negative_columns)
     # Must-include rows in the order given, each completed by its kind's step.
     rows = Vector{Vector{Int}}(undef, size(must, 2))
@@ -694,5 +719,21 @@ function _generate(plan::_Plan, request::Request)
                           request.arity, supports(targets))
     return Design(matrix, :covering, name, seed, length(required), covered, excluded,
                   n_must_include(request), (;), length(negative.required), length(negative.required),
-                  negative.excluded, merge((randomized = record.randomized,), bound, notes))
+                  negative.excluded, _covering_record(record, bound, stage))
 end
+
+"""
+    _covering_record(record, bound, ordinary) -> NamedTuple
+
+A covering result's record (`TestCases`'s `record`; contract §1.19, §8.7).
+The pipeline's fields come first, and only `generate` sets them:
+`randomized`, from the engine's record (`EngineRecord`), and `lower_bound`,
+`minimal` and `proof`, from the bound the pipeline proved and checked
+against the certified rows (`_bound_record`). Then `ordinary`, the ordinary
+design's stage (`_run`). What an engine reports is only ever inside its
+stage, so it can't claim the bound, minimality, a proof or randomness for
+the result.
+"""
+_covering_record(record::EngineRecord, bound::NamedTuple, ordinary::NamedTuple) =
+    (randomized = record.randomized, lower_bound = bound.lower_bound, minimal = bound.minimal, proof = bound.proof,
+     ordinary = ordinary)

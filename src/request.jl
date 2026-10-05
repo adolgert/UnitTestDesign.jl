@@ -588,10 +588,10 @@ and `negative_covered::Int` (negative targets, §6) and
 position; and `record`, what the result records of how it was made, as
 [`TestCases`](@ref)'s `record` documents it: whether the engine is randomized,
 a covering design's lower bound with its proof and whether the rows meet it
-(`_bound_record`), and what the engine found (`_execute`). The
+(`_bound_record`), and the engine's stage (`_covering_record`). The
 nine-argument constructor leaves the negative bookkeeping empty, and both
-short forms record no bound (`_NO_BOUND`), as for an excursion or a full
-factorial.
+short forms record no bound and no stage (`_NO_BOUND`), as for an excursion
+or a full factorial.
 """
 struct Design
     matrix::Matrix{Int}
@@ -609,8 +609,8 @@ struct Design
     record::NamedTuple
 end
 
-"The record of a design that has no lower bound: an excursion or a full factorial, which use no randomness."
-const _NO_BOUND = (randomized = false, lower_bound = nothing, minimal = false, proof = "")
+"The record of a design that has no lower bound and no engine: an excursion or a full factorial, which use no randomness."
+const _NO_BOUND = (randomized = false, lower_bound = nothing, minimal = false, proof = "", ordinary = nothing)
 
 Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes) =
     Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,

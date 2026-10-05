@@ -246,5 +246,9 @@ function _execute(plan::_DefaultPlan{GND}, request::Request, targets::RequiredTa
     return rows, engine.candidates == 50 ? (;) : (gnd = (candidates = engine.candidates,),)
 end
 
-_repeat_call(::Val{:GND}, seed, notes::NamedTuple) =
-    haskey(notes, :gnd) ? "GND(seed = $seed, candidates = $(notes.gnd.candidates))" : "GND(seed = $seed)"
+# `record` is the result's, whose ordinary stage holds GND's notes.
+function _repeat_call(::Val{:GND}, seed, record::NamedTuple)
+    stage = get(record, :ordinary, nothing)
+    stage isa NamedTuple && haskey(stage, :gnd) || return "GND(seed = $seed)"
+    return "GND(seed = $seed, candidates = $(stage.gnd.candidates))"
+end

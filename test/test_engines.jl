@@ -92,16 +92,16 @@ end
     # GND's rows depend on `candidates` too, so a GND that draws other than the
     # default 50 records them, and the seed line names the call that repeats
     # its cases; the default's record and line are as before.
-    @test _seed_text(EngineRecord(:GND, 3; randomized = true), (gnd = (candidates = 20,),)) ==
+    @test _seed_text(EngineRecord(:GND, 3; randomized = true), (ordinary = (gnd = (candidates = 20,),),)) ==
           "seed: 3 (GND(seed = 3, candidates = 20) repeats these cases)"
     twenty = covering(fill(1:4, 6)...; engine = GND(seed = 3, candidates = 20))
-    @test twenty.record.gnd == (candidates = 20,)
+    @test twenty.record.ordinary.gnd == (candidates = 20,)
     @test "seed: 3 (GND(seed = 3, candidates = 20) repeats these cases)" in
           split(sprint(show, MIME"text/plain"(), report(twenty)), '\n')
     @test covering(fill(1:4, 6)...; engine = GND(seed = 3, candidates = 20)) == twenty
     @test covering(fill(1:4, 6)...; engine = GND(seed = 3)) != twenty   # why the line names candidates
     fifty = covering(fill(1:4, 6)...; engine = GND(seed = 3))
-    @test !haskey(fifty.record, :gnd) && "seed: 3 (GND(seed = 3) repeats these cases)" in
+    @test !haskey(fifty.record.ordinary, :gnd) && "seed: 3 (GND(seed = 3) repeats these cases)" in
           split(sprint(show, MIME"text/plain"(), report(fifty)), '\n')
     # A result keeps whether its engine is randomized in its record, beside engine and seed.
     @test all_pairs(1:2, 1:3; engine = GND(seed = 3)).record.randomized
@@ -354,6 +354,65 @@ end
     @test t.engine === :Refusing
     @test occursin("produced with Refusing", sprint(show, MIME"text/plain"(), t))
     @test design_sizes((a = [1, 2], b = [:x, :y]); engine = GND(seed = 2), distances = 1:1).engine === :GND
+end
+
+
+@testitem "engines: an engine's notes stay in its stage; the bound, minimal and proof are the pipeline's (§8.7)" setup=[EngineSetup] begin
+    using UnitTestDesign: _Plan
+    # A probe engine whose notes claim what only the pipeline may say: IPOG's
+    # rows, reported as minimal, with a lower bound of their own count, a
+    # proof and randomness. Generation proves and checks the bound itself
+    # (`_covering_record`), so the result says what the pipeline found, and
+    # the claims stay in the engine's own stage.
+    struct Boasting <: CoveringEngine end
+    struct BoastingPlan <: _Plan
+        engine::Boasting
+        fit::Fit
+    end
+    UnitTestDesign.engine_record(::Boasting) = EngineRecord(:Boasting, nothing)
+    Base.show(io::IO, ::Boasting) = print(io, "Boasting()")
+    UnitTestDesign._prepare(e::Boasting, ::Profile) = BoastingPlan(e, Fit(:native, "IPOG's rows"))
+    UnitTestDesign.fit(e::Boasting, p::Profile) = UnitTestDesign._prepare(e, p).fit
+    function UnitTestDesign._execute(plan::BoastingPlan, request::Request, targets::RequiredTargets)
+        rows = cover_ordinary(IPOG(), request, targets)
+        return rows, (minimal = true, lower_bound = size(rows, 2), proof = "no design has fewer", randomized = true)
+    end
+    # Eight flags: IPOG's design is above the bound of 4, and the catalog's
+    # Kleitman-Spencer array has fewer cases, so the claim is false.
+    flags = TestSpace(NamedTuple{Tuple(Symbol(:f, i) for i in 1:8)}(Tuple([false, true] for _ in 1:8)))
+    cases = all_pairs(flags; engine = Boasting())
+    @test collect(cases) == collect(all_pairs(flags))
+    @test length(all_pairs(flags; engine = Construction())) < length(cases)
+    @test !cases.record.minimal && cases.record.lower_bound == 4 && !cases.record.randomized
+    @test cases.record.proof == all_pairs(flags).record.proof == "the 2 × 2 = 4 combinations of f1 and f2 need a case each"
+    @test startswith(repr(cases), "$(length(cases)) cases (lower bound 4) · strength 2 · Boasting · ")
+    text = sprint(show, MIME"text/plain"(), report(cases))
+    @test occursin("\nsize: $(length(cases)) cases; lower bound 4: the 2 × 2 = 4 combinations", text)
+    @test !occursin("minimal", text) && endswith(text, "seed: none (Boasting uses no randomness)")
+    # What the engine said is kept, in its namespace: its stage of the record.
+    stage = cases.record.ordinary
+    @test stage.engine == "Boasting()" && stage.rows == length(cases)
+    @test stage.minimal && stage.lower_bound == length(cases) && stage.proof == "no design has fewer"
+    # With Invalid values too.
+    invalid = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
+    cases = covering(invalid; strength = 3, engine = Boasting())
+    @test collect(cases) == collect(covering(invalid; strength = 3))
+    @test cases.record.minimal == (length(cases) == cases.record.lower_bound)
+    @test cases.record.lower_bound == covering(invalid; strength = 3).record.lower_bound
+    # A stage's `engine` and `rows` are the pipeline's too: an engine that sets
+    # them is an internal error, never a record that misstates its rows.
+    struct Miscounting <: CoveringEngine end
+    struct MiscountingPlan <: _Plan
+        engine::Miscounting
+        fit::Fit
+    end
+    UnitTestDesign.engine_record(::Miscounting) = EngineRecord(:Miscounting, nothing)
+    Base.show(io::IO, ::Miscounting) = print(io, "Miscounting()")
+    UnitTestDesign._prepare(e::Miscounting, ::Profile) = MiscountingPlan(e, Fit(:native, "IPOG's rows"))
+    UnitTestDesign.fit(e::Miscounting, p::Profile) = UnitTestDesign._prepare(e, p).fit
+    UnitTestDesign._execute(::MiscountingPlan, request::Request, targets::RequiredTargets) =
+        (cover_ordinary(IPOG(), request, targets), (rows = 1,))
+    @test_throws "internal error: Miscounting()'s notes set its stage's `rows`" all_pairs(flags; engine = Miscounting())
 end
 
 

@@ -141,11 +141,13 @@ rows.
 groups, engine name and seed, the number of must-include rows, the excluded
 targets with attribution and explanation status, and covered-target counts,
 with ordinary and negative bookkeeping kept separate. Its `record` says
-whether the engine is randomized, gives a covering design's lower bound with
-its proof (§8.7), what the engine chose or built (`Auto`'s choice for the
-ordinary rows, a catalog array, the row reducer's run), and the settings
-besides the seed that repeating the rows needs (`GND`'s `candidates`, when
-not the default).
+whether the engine is randomized and gives a covering design's lower bound
+with its proof and whether the rows meet it (§8.7); these are generation's
+own, and no engine sets them. What the engine chose or built (`Auto`'s
+choice for the ordinary rows, a catalog array, the row reducer's run), and
+the settings besides the seed that repeating the rows needs (`GND`'s
+`candidates`, when not the default), are in the stage that made the
+ordinary rows, `ordinary`, with that engine's call and its rows.
 
 **1.20** A generated `TestCases` contains no target whose status is unknown
 (§3.6).

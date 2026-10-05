@@ -54,8 +54,8 @@ laptop, which strength 3 on larger spaces (30 parameters of 4 values) and
 strengths 4 to 6 reach. A request with more than 2^25 combinations to
 cover, counted before the rules, or whose start has more than 65,535 rows,
 gets `inner`'s rows unreduced. The result's record says what the reducer
-did, `cases.record.reducer`: the rows before and after, the steps, and why
-it stopped.
+did, `cases.record.ordinary.reducer`: the rows before and after, the steps,
+and why it stopped; and what `inner` did, `cases.record.ordinary.start`.
 
 The negative rows of a space with [`Invalid`](@ref) values are reduced too,
 for each invalid value as for any request (plan §4.1). Where the inner
@@ -496,16 +496,16 @@ The inner engine's rows for `request`, reduced by `_compact` (plan §5.3).
 cover_ordinary(engine::Compact, request::Request, targets::RequiredTargets) = _cover(engine, request, targets)
 
 """
-    _execute(plan::_CompactPlan, request, targets) -> (matrix, notes)
+    _execute(plan::_CompactPlan, request, targets) -> (matrix, (start = …, reducer = …))
 
-The inner plan's rows, reduced by `_compact` with the engine's seed and
-effort. The notes are the inner engine's, then the reducer's run, `reducer`
-(`_reducer_record`).
+The inner plan's rows (`_run`), reduced by `_compact` with the engine's seed
+and effort. The notes are the inner engine's stage, `start`, and the
+reducer's run, `reducer` (`_reducer_record`).
 """
 function _execute(plan::_CompactPlan, request::Request, targets::RequiredTargets)
-    start, inner = _execute(plan.inner, request, targets)
+    start, stage = _run(plan.inner, request, targets)
     matrix, notes = _compact(request, targets, start; seed = plan.engine.seed, effort = plan.engine.effort)
-    return matrix, merge(inner, (reducer = _reducer_record(notes),))
+    return matrix, (start = stage, reducer = _reducer_record(notes))
 end
 
 """

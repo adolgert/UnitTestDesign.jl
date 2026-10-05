@@ -14,6 +14,12 @@ using TestItemRunner
     using UnitTestDesign: CoveringEngine, Request, Profile, generate, fit, classify_targets,
                           classify_negative_targets, _auto_plan, _AUTO_SMALL, _engine_registry
 
+    # What a result's record says Auto ran (`record.ordinary`): each start, as
+    # (engine, rows), and the catalog's note of the stage that made the
+    # ordinary rows, as `report` finds it (`_made_by`).
+    starts_of(cases) = [(s.engine, s.rows) for s in cases.record.ordinary.starts]
+    catalog_of(cases) = UnitTestDesign._made_by(cases.record.ordinary).catalog
+
     "Positions of every value of `space`'s parameter `i`: ordinary first, then invalid (`Request`)."
     value_at(space, request, i, k) = space.values[i][request.candidates[i][k]]
     named(space, request, row) = NamedTuple{Tuple(space.names)}(Tuple(value_at(space, request, i, row[i]) for i in eachindex(row)))
@@ -147,13 +153,13 @@ end
     space = TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:8)}(Tuple(1:7 for _ in 1:8)))
     ipog, fast, balanced, compact = (all_pairs(space; engine) for engine in
                                      (IPOG(), Auto(goal = :fast), Auto(), Auto(goal = :compact)))
-    @test fast == ipog && fast.record.chose == "IPOG()"
+    @test fast == ipog && fast.record.ordinary.chose == "IPOG()"
     @test length(balanced) == 49 < length(ipog)
-    @test balanced.record.chose == "Construction()" && balanced.record.catalog.orthogonal
-    @test balanced.record.candidates == [(engine = "Construction()", rows = 49)]   # IPOG not run: at the bound
+    @test balanced.record.ordinary.chose == "Construction()" && catalog_of(balanced).orthogonal
+    @test starts_of(balanced) == [("Construction()", 49)]   # IPOG not run: at the bound
     @test balanced.record.minimal && balanced.record.lower_bound == 49
-    @test length(compact) == 49 && compact.record.chose == "Compact(Construction())"
-    @test compact.record.reducer.stop === :bound && compact.seed == 0
+    @test length(compact) == 49 && compact.record.ordinary.chose == "Compact(Construction())"
+    @test compact.record.ordinary.reducer.stop === :bound && compact.seed == 0
     @test (balanced.engine, balanced.seed, fast.seed) == (:Auto, nothing, nothing)
     @test startswith(repr(balanced), "49 cases (minimal) · strength 2 · Auto: Construction() · 8 parameters")
     @test occursin("· Auto: Compact(Construction()) seed 0 ·", repr(compact))
@@ -178,19 +184,20 @@ end
     p = plan(uniform(15, 6))
     @test p.smallest && all(c -> c.runs, p.candidates)
     cases = all_pairs(uniform(15, 6); engine = Auto())
-    @test cases.record.candidates == [(engine = "IPOG()", rows = 75), (engine = "Construction()", rows = 76)]
-    @test cases.record.chose == "IPOG()" && cases == all_pairs(uniform(15, 6))
+    @test starts_of(cases) == [("IPOG()", 75), ("Construction()", 76)] && cases.record.ordinary.kept == 1
+    @test cases.record.ordinary.chose == "IPOG()" && cases == all_pairs(uniform(15, 6))
     # A tie goes to IPOG, so Auto gives IPOG's cases unless the catalog's are fewer: the
     # front page's example, where the seeded zero-sum array also takes 5 cases.
     front = TestSpace((mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
                       constraints = [@require(mode == :exact || solver == :none),
                                      forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance")])
     tie = all_pairs(front; engine = Auto())
-    @test tie.record.candidates == [(engine = "IPOG()", rows = 5), (engine = "Construction()", rows = 5)]
-    @test tie.record.chose == "IPOG()" && tie == all_pairs(front)
+    @test starts_of(tie) == [("IPOG()", 5), ("Construction()", 5)] && tie.record.ordinary.kept == 1
+    @test tie.record.ordinary.chose == "IPOG()" && tie == all_pairs(front)
     # Smaller catalog: kept.
     seven = all_pairs(uniform(10, 7); engine = Auto())
-    @test seven.record.chose == "Construction()" && length(seven) < length(all_pairs(uniform(10, 7)))
+    @test seven.record.ordinary.chose == "Construction()" && length(seven) < length(all_pairs(uniform(10, 7)))
+    @test seven.record.ordinary.kept == 2 && haskey(seven.record.ordinary.starts[2], :catalog)
     # Above the threshold, an exact shape: the catalog alone, IPOG not run.
     big = uniform(40, 4)
     @test Profile(Request(big; strength = 3)).targets > _AUTO_SMALL
@@ -250,7 +257,7 @@ end
     before = all_pairs(space; engine = Auto())
     @test all_pairs(space; engine = Auto()) == before
     # The rows don't depend on feasibility_limit (contract §3.8), in the catalog's seeded path too.
-    @test before.record.chose in ("Construction()", "IPOG()")
+    @test before.record.ordinary.chose in ("Construction()", "IPOG()")
     for limit in (1_000, 100_000, 10^8)
         @test all_pairs(space; engine = Auto(), feasibility_limit = limit) == before
         @test all_pairs(space; engine = Auto(goal = :compact), feasibility_limit = limit) ==
@@ -380,14 +387,14 @@ end
                               [(a = Invalid(0), b = 1, c = 1, d = 1)]))
         for engine in (Construction(), Auto())
             cases = covering(space; strength = t, must_include = must, engine)
-            @test !cases.record.catalog.orthogonal && !cases.record.catalog.seeded
+            @test !catalog_of(cases).orthogonal && !catalog_of(cases).seeded
             @test !allunique(pairs_of(cases, :b, :c))   # a negative row repeats a pair of the array
             @test !occursin("orthogonal array", sprint(show, MIME"text/plain"(), report(cases)))
         end
     end
     # Without one, the array is the design, and both say so.
     cases = all_pairs(TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:3)); engine = Construction())
-    @test cases.record.catalog.orthogonal && allunique(pairs_of(cases, :b, :c))
+    @test cases.record.ordinary.catalog.orthogonal && allunique(pairs_of(cases, :b, :c))
     @test occursin("an orthogonal array: each combination of 2 parameters' values is in exactly one case",
                    sprint(show, MIME"text/plain"(), report(cases)))
 end
@@ -412,8 +419,8 @@ end
             said = recommend(space; strength = t, goal)
             cases = covering(space; strength = t, engine = Auto(; goal))
             ran = [c.engine for c in said.candidates if c.runs]
-            @test [c.engine for c in cases.record.candidates] == ran
-            length(ran) == 1 && @test cases.record.chose == said.engine
+            @test first.(starts_of(cases)) == ran
+            length(ran) == 1 && @test cases.record.ordinary.chose == said.engine
             @test said.sizes.fast === nothing
             said.sizes.balanced === nothing ||
                 @test length(covering(space; strength = t, engine = Auto())) <= said.sizes.balanced
@@ -447,11 +454,10 @@ end
     for (space, t, must) in ((invalid, 2, [(a = Invalid(0), b = 1, c = 1, d = 1)]), (wide, 3, [(p1 = Invalid(0),)]))
         said = recommend(space; strength = t, must_include = must)
         cases = covering(space; strength = t, must_include = must, engine = Auto())
-        @test [c.engine for c in cases.record.candidates] == [c.engine for c in said.candidates if c.runs] ==
-              ["Construction()"]
-        @test said.engine == cases.record.chose == "Construction()" && said.n_must_include == 1
+        @test first.(starts_of(cases)) == [c.engine for c in said.candidates if c.runs] == ["Construction()"]
+        @test said.engine == cases.record.ordinary.chose == "Construction()" && said.n_must_include == 1
         @test fit(Construction(), Profile(Request(space; strength = t, must_include = must))).kind === :exact
-        @test !cases.record.catalog.seeded && cases[1][first(keys(must[1]))] == Invalid(0)
+        @test !catalog_of(cases).seeded && cases[1][first(keys(must[1]))] == Invalid(0)
     end
     # Past the reducer's caps, `:compact` returns the start as it is, and says so.
     seventeen = TestSpace([Symbol(:x, i) for i in 1:17], [1:3 for _ in 1:17], Constraint[], 10^5)
@@ -464,7 +470,7 @@ end
     square = TestSpace([:a, :b], [1:256, 1:256], Constraint[], 10^5)   # the catalog's 65,536 rows, above 65,535
     said = recommend(square; goal = :compact)
     cases = all_pairs(square; engine = Auto(goal = :compact))
-    @test said.engine == cases.record.chose == "Construction()" && cases.record.reducer.stop === :rows_cap
+    @test said.engine == cases.record.ordinary.chose == "Construction()" && cases.record.ordinary.reducer.stop === :rows_cap
     @test any(startswith("goal = :compact leaves the start it keeps unreduced: the catalog's array has 65536 rows"),
               said.notes)
     @test recommend(fill(1:3, 4)...; goal = :compact).engine == "Compact(Construction())"
@@ -524,7 +530,7 @@ end
     # The unfused Bush array and the zero-sum array meet the bound and are offered.
     for (k, v, t) in ((6, 5, 4), (5, 3, 4), (6, 2, 5))
         cases = covering(uniform(k, v); strength = t, engine = Construction())
-        @test length(cases) == v^t && cases.record.minimal && cases.record.catalog.orthogonal
+        @test length(cases) == v^t && cases.record.minimal && cases.record.ordinary.catalog.orthogonal
     end
     # Auto then takes IPOG where the catalog refuses.
     @test covering(uniform(6, 2); strength = 4, engine = Auto()) == covering(uniform(6, 2); strength = 4)

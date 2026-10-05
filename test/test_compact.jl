@@ -93,11 +93,15 @@ end
                    sprint(show, MIME"text/plain"(), report(cases)))
     @test length(cases) <= length(all_pairs(space))
     @test design_sizes(space; engine) isa DesignSizes
-    # The record says what the reducer did; the harness records it (benchmark/scaling/metrics.jl).
-    @test cases.record.reducer.start == length(all_pairs(space)) && cases.record.reducer.rows == length(cases)
-    @test cases.record.reducer.stop in (:bound, :budget, :work)
+    # The record says what the inner engine and the reducer did; the harness
+    # records it (benchmark/scaling/metrics.jl).
+    stage = cases.record.ordinary
+    @test stage.engine == "Compact(IPOG(); seed = 0, effort = 1)" && stage.rows == length(cases)
+    @test stage.start == (engine = "IPOG()", rows = length(all_pairs(space)))
+    @test stage.reducer.start == length(all_pairs(space)) && stage.reducer.rows == length(cases)
+    @test stage.reducer.stop in (:bound, :budget, :work)
     @test cases.record.randomized && isempty(cases.notes)
-    @test !haskey(all_pairs(space).record, :reducer) && isempty(all_pairs(space).notes)
+    @test !haskey(all_pairs(space).record.ordinary, :reducer) && isempty(all_pairs(space).notes)
     # Its fit is the inner engine's, reduced; past the index's cap, unreduced.
     profile = Profile(Request(space))
     f = fit(engine, profile)
@@ -289,14 +293,15 @@ end
     four = [(a = 1, b = 1, c = 1, d = 1, e = 1) for _ in 1:4]
     for engine in (Compact(IPOG()), Auto(goal = :compact))
         cases = all_pairs(space; must_include = four, engine)
-        @test length(cases) == cases.record.lower_bound == cases.record.reducer.bound == 12
-        @test cases.record.minimal && cases.record.reducer.stop === :bound && cases.record.reducer.steps == 0
+        reducer = cases.record.ordinary.reducer
+        @test length(cases) == cases.record.lower_bound == reducer.bound == 12
+        @test cases.record.minimal && reducer.stop === :bound && reducer.steps == 0
     end
     # Above the bound it searches, and its bound is still the record's: 17 for
     # six parameters of 4 values with three must-include rows, two of them equal.
     six = all_pairs(fill(1:4, 6)...; must_include = [Tuple(fill(1, 6)), Tuple(fill(1, 6)), Tuple(fill(2, 6))],
                     engine = Auto(goal = :compact))
-    @test six.record.reducer.bound == six.record.lower_bound == 17 && length(six) >= 17
+    @test six.record.ordinary.reducer.bound == six.record.lower_bound == 17 && length(six) >= 17
     # Every row a must-include row: nothing can go.
     named(j) = NamedTuple{Tuple(space.names)}(Tuple(start[:, j]))
     frozen = Request(space; must_include = [named(j) for j in axes(start, 2)])

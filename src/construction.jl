@@ -68,8 +68,8 @@ parameters with different numbers of values (more than `strength + 1` of
 them): naming it is then an `ArgumentError` that suggests `IPOG()` or
 [`Auto`](@ref)`()`, which cover any request. `Auto()` uses it where it fits
 and is smaller. The result's record says which array it built,
-`cases.record.catalog`, with its source and whether it is an orthogonal
-array. It uses no randomness (contract §9.4); its arrays are
+`cases.record.ordinary.catalog`, with its source and whether it is an
+orthogonal array. It uses no randomness (contract §9.4); its arrays are
 those of the package version, so a later version may build a smaller one
 (§9.8).
 """

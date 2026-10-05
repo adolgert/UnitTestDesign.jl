@@ -100,17 +100,17 @@ function run_family(family, out)
             cons = f.kind in (:exact, :seeded) ? measure(Construction(), space, kw) : nothing
             balanced = measure(Auto(), space, kw)
             compact = measure(Auto(goal = :compact), space, kw)
-            starts = join(("$(c.engine)=$(c.rows)" for c in balanced.record.candidates), ",")
+            starts = join(("$(c.engine)=$(c.rows)" for c in balanced.record.ordinary.starts), ",")
             row = Any[family, s["id"], s["strength"], length(arity), join(arity, " "), allequal(arity),
                       length(arity) == s["strength"] + 1, length(space.constraints), length(kw.stronger), p.targets,
                       ipog.record.lower_bound, ipog.rows, ipog.seconds, f.kind,
                       cons === nothing ? "" : cons.rows, cons === nothing ? "" : cons.seconds,
-                      balanced.rows, balanced.seconds, balanced.record.chose, starts,
-                      compact.rows, compact.seconds, compact.record.chose, balanced.record.minimal]
+                      balanced.rows, balanced.seconds, balanced.record.ordinary.chose, starts,
+                      compact.rows, compact.seconds, compact.record.ordinary.chose, balanced.record.minimal]
             println(io, join(row, '\t'))
             flush(io)
             @printf("%4d/%d %-40s ipog %5d  auto %5d (%s)  compact %5d\n", i, length(specs), s["id"], ipog.rows,
-                    balanced.rows, balanced.record.chose, compact.rows)
+                    balanced.rows, balanced.record.ordinary.chose, compact.rows)
             flush(stdout)
         end
     end
@@ -220,7 +220,7 @@ function catalog_gate(seeds)
             for seed in 0:(seeds - 1)
                 d = generate(make(seed), Request(space; strength = t))
                 push!(rows, size(d.matrix, 2))
-                seed == 0 && (chose = get(d.record, :chose, label))
+                seed == 0 && (chose = get(d.record.ordinary, :chose, label))
             end
             med = median(Float64.(rows))
             @printf("  %d × %d, t = %d, start %s (%d rows): %-24s seed 0 %d (%s), median of %d seeds %.1f: %s %s\n",
