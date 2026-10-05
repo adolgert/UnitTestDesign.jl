@@ -337,14 +337,17 @@ end
     @test (@inferred Union{_ConstructionPlan, _DefaultPlan{IPOG}} _prepare_for(Construction(), Profile(sub))) isa
           _DefaultPlan{IPOG}
     # A plan lists no target and builds nothing: `Auto`'s, which prepares the
-    # catalog's once, allocates the catalog's lookup and a few KB, 0.51 MB at
-    # strength 3 on 250 parameters of 7 values (Julia 1.13), where a second
-    # lookup would double it.
-    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    # catalog's once, asks for the catalog's lookup and a few KB, at strength 3
+    # on 250 parameters of 7 values, where a second lookup would double it:
+    # the lookup asks for 474,865 bytes on Julia 1.13 and 754,361 on 1.10,
+    # Auto's plan 6,054 and 5,959 bytes more, Compact(Construction())'s 711 and
+    # 872 more. Counted as the bytes asked for (`requested`), since the
+    # lookup's arrays are large enough for `@allocated` to count a larger block
+    # than they ask for.
     wide = Profile(Request(uniform(250, 7); strength = 3))
-    lookup = measured(k -> _catalog_entry(3, 7, k), 250)
-    @test measured(p -> _prepare(Auto(), p), wide) <= lookup + 64 * 1024
-    @test measured(p -> _prepare(Compact(Construction()), p), wide) <= lookup + 64 * 1024
+    lookup = requested(k -> _catalog_entry(3, 7, k), 250)
+    @test requested(p -> _prepare(Auto(), p), wide) <= lookup + 64 * 1024
+    @test requested(p -> _prepare(Compact(Construction()), p), wide) <= lookup + 64 * 1024
 end
 
 
@@ -487,20 +490,29 @@ end
     @test (@inferred fit(Construction(), Profile(request))) isa Fit
     targets = RequiredTargets(request, first(classify_targets(request)))
     @test (@inferred cover_ordinary(Construction(), request, targets)) isa Matrix{Int}
-    # A builder allocates its result and a few small buffers: the bound is the
-    # result, rounded up as the allocator rounds a large array, plus 8 KiB; a
-    # value boxed per entry would cost several times the result. One argument
-    # and no varargs (see the targets-interface item).
-    measured(f, x) = (f(x); @allocated f(x))
-    budget(A) = sizeof(A) + sizeof(A) ÷ 8 + 8192
+    # A builder asks for its result and a few small buffers, counted as the
+    # bytes it asks for (`requested`): its result and 40 to 3,360 bytes more
+    # on Julia 1.10 and 1.13 (the LFSR array, 312,360 bytes, asks for 315,680
+    # on 1.13 and 315,720 on 1.10), so the bound, the result plus 8 KiB,
+    # leaves at least 4.7 KiB; a value boxed per entry, or a second copy of a
+    # result above 8 KiB, fails. `@allocated` read the LFSR array at 331,408
+    # bytes on 1.13 under macOS, against a bound of 359,597 that allowed an
+    # eighth for the allocator's rounding, which a larger free block (see
+    # `requested`) could take.
     for (f, x) in ((F -> _bush(F, 3), F), (F -> _bush(F, 2), F), (_lfsr_array, F), (_kleitman_spencer, 200),
                    (_zero_sum, [6, 6, 6, 6]), (A -> _fuse(A, 7), _bush(F, 3)))
-        @test measured(f, x) <= budget(f(x))
+        @test requested(f, x) <= sizeof(f(x)) + 8192
     end
-    # A field is its tables: 1 MiB for 256 symbols, and little beside.
-    @test measured(GaloisField, 256) <= 2 * 256^2 * 8 + 64 * 1024
+    # A field is its tables: 1 MiB for 256 symbols, and little beside, its
+    # digits (16 KiB) and its smaller tables: it asks for 1,075,656 bytes on
+    # Julia 1.13 and 1,075,920 on 1.10. The bound, the two tables plus 32 KiB,
+    # leaves 5.3 KiB; another table of digits fails. (`@allocated` read
+    # 1,075,712 against a bound of the tables plus 64 KiB.)
+    @test requested(GaloisField, 256) <= 2 * 256^2 * 8 + 32 * 1024
     # A lookup builds nothing: 37 KB at strength 2 on 10 parameters of 5 values
     # and 0.57 MB at strength 3 on 250 of 7 on Julia 1.13; 76 KB and 0.97 MB on 1.10.
+    # These bounds leave more than twice the reading, so `@allocated` serves.
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
     @test measured(k -> _catalog_entry(2, 5, k), 10) <= 128 * 1024
     @test measured(k -> _catalog_entry(3, 7, k), 250) <= 2 * 2^20
 end
