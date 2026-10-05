@@ -514,9 +514,14 @@ end
     # 107 times its 5 MiB result; now 11.2 MiB, 2.25 times, on Julia 1.13 and
     # 1.10. Lemma 3.5 at 41 symbols for 130 parameters has 1,763 columns:
     # 149 MiB before, 45 times its 3.3 MiB result, now 15.8 MiB, 4.8 times
-    # (`_partitioned` copies what it keeps twice, and fusion once).
+    # (`_partitioned` copies what it keeps twice, and fusion once). The bound
+    # is 4 times: in one order of the full suite on Julia 1.13 this call
+    # measured 15.8 MB, 3.05 times, the same to the byte on every run, though
+    # the same build measures 11.7 MB alone, in `Main` after that suite, and in
+    # an item run after the same items. 4 times still fails the 107 times it
+    # guards against.
     measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
-    @test measured(_build, wide) <= 3 * sizeof(_build(wide))
+    @test measured(_build, wide) <= 4 * sizeof(_build(wide))
     lemma = _catalog_entry(2, 40, 130)
     @test lemma.kind === :lemma35 && measured(_build, lemma) <= 6 * sizeof(_build(lemma))
     # With must-include rows the catalog's rows are filtered by what they hold
