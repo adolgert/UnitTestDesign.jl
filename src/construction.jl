@@ -15,8 +15,10 @@
 #   then catalog rows that no rule forbids and, with must-include rows, that
 #   hold a target those and the rows before don't (§9.10, §10.6), as further
 #   seeds of IPOG's general path, which adds what they leave uncovered, the
-#   `stronger` targets included (§4.1, stage 2, "Extend"). At full strength
-#   with must-include rows the design is IPOG's, every valid row (§7.8).
+#   `stronger` targets included (§4.1, stage 2, "Extend"). Partial
+#   must-include rows are completed first, as IPOG completes them, when that
+#   leaves fewer catalog rows to keep. At full strength with must-include
+#   rows the design is IPOG's, every valid row (§7.8).
 #   Probe 11 found this never worse than IPOG with a few rules. With
 #   `stronger` groups the seed is the strongest group's own array, on its
 #   parameters, when that array is at strength 2 or 3 and no smaller than the
@@ -58,10 +60,12 @@ no `stronger` groups. Otherwise the catalog's rows that no rule forbids seed
 IPOG, which adds what they leave uncovered, after the must-include rows; a
 catalog row that holds nothing the must-include rows and the rows before it
 don't is left out, so a result passed back as `must_include` for the same
-space gains no cases. With `stronger` groups the seed is often the strongest
-group's own array, on that group's parameters. Above strength 3 the catalog
-offers only the arrays that meet the lower bound, the zero-sum and
-orthogonal arrays.
+space gains no cases. Partial must-include rows are completed first, as IPOG
+completes them, when that leaves out more of the catalog's rows, as for a
+design passed back after parameters were added or removed. With `stronger`
+groups the seed is often the strongest group's own array, on that group's
+parameters. Above strength 3 the catalog offers only the arrays that meet the
+lower bound, the zero-sum and orthogonal arrays.
 
 It refuses, with its reason, a space it has no array for, such as
 parameters with different numbers of values (more than `strength + 1` of
@@ -210,7 +214,10 @@ must-include rows, that hold a target they and the rows kept before don't
 (`_new_coverage_rows`, §9.10), and then IPOG's general path (`ipog_multi_way`)
 with all of them as must-include rows, which completes a partial row, adds
 rows until every required target is covered, and keeps each row completable
-(`dead`). At full strength with must-include rows the design is every valid
+(`dead`). Partial must-include rows are first completed by IPOG's steps on
+them alone (`_complete_seeds`), and the catalog's rows filtered against what
+the completed rows hold, when that keeps fewer of them; otherwise they stay
+partial. At full strength with must-include rows the design is every valid
 row after them (`full_strength_rows`, §7.8), as IPOG gives it. The request
 records only its own must-include rows (§10.5); the catalog's are ordinary
 rows. A request `fit` refuses is an `ArgumentError`.
@@ -258,11 +265,27 @@ function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, 
         rows[members, :] .= _engine_rows(entry, request.arity[members])
     end
     kept = isconstrained(request) ? _allowed_rows(request, rows) : rows
-    size(must, 2) > 0 && (kept = _new_coverage_rows(must, kept, targets))
-    seeds = hcat(must, kept)
     isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
-    return ipog_multi_way(request.arity, _target_list(targets), isdead, seeds;
-                          order = ipog_order(request.arity, request.groups))
+    arity, order = copy(request.arity), ipog_order(request.arity, request.groups)
+    buckets = _ipog_buckets(_target_list(targets), order)
+    if size(must, 2) > 0
+        partial = _new_coverage_rows(must, kept, targets)
+        # Partial must-include rows hold only what they set, so a design passed
+        # back with parameters added or dropped kept about the whole array
+        # after it (the maintainer's follow-up 2). Completed first, as IPOG
+        # completes them, they show what they will hold, and the catalog's rows
+        # are kept only for what that leaves uncovered. When that keeps no
+        # fewer, the rows stay partial, for IPOG to complete beside the
+        # catalog's rows: an early completion then only takes from IPOG the
+        # entries it would fill with targets the catalog's rows leave.
+        if any(==(0), must)
+            completed = _complete_seeds(arity, buckets, isdead, must, order)
+            fewer = _new_coverage_rows(completed, kept, targets)
+            size(fewer, 2) < size(partial, 2) && ((must, partial) = (completed, fewer))
+        end
+        kept = partial
+    end
+    return _ipog_multi_way(arity, buckets, isdead, hcat(must, kept), order)
 end
 
 """
@@ -292,7 +315,9 @@ must-include rows the catalog's rows cover only what those leave uncovered
 `must_include` gains no rows, and a must-include row equal to a catalog row
 is not repeated. Greedy in the catalog's order, so deterministic. A row
 holds the targets on the supports it sets in full; a partial must-include
-row holds only those, since its completion is IPOG's to choose.
+row holds only those, since its completion is IPOG's to choose, which is why
+`_construction_rows` passes completed rows (`_complete_seeds`) where they
+leave out more.
 """
 function _new_coverage_rows(must::Matrix{Int}, rows::Matrix{Int}, targets::RequiredTargets)
     held = falses(last(targets.offsets))      # by id, offsets[s] + code + 1, as in `RequiredTargets`

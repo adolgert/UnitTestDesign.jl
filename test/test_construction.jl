@@ -185,6 +185,95 @@ end
 end
 
 
+@testitem "construction: partial must-include rows are completed before the catalog's rows are filtered" setup=[CatalogSetup, ConstructionSetup] begin
+    using UnitTestDesign: dead, ipog_order, _ipog_buckets, _ipog_multi_way, _complete_seeds, _with_must_include, _prepare,
+        _execute, _allowed_rows, _new_coverage_rows, _catalog_entry
+    C = Construction()
+    partial(row, keep) = NamedTuple{Tuple(keys(row)[keep])}(Tuple(values(row)[keep]))
+    sets_of(cases, must) = all(i -> all(k -> cases[i][k] == must[i][k], keys(must[i])), eachindex(must))
+    # The maintainer's follow-up 2. A 49-row orthogonal array on 8 × 7 cut to
+    # its first six parameters: filtered against the partial rows, every
+    # catalog row held a pair on p7 or p8 that they don't, and Construction()
+    # gave 98 rows where IPOG completes the same rows in 49. Completed first,
+    # they hold every pair, and no catalog row is kept.
+    s8 = space_of(fill(7, 8))
+    oa = collect(all_pairs(s8; engine = C))
+    cut = [partial(r, 1:6) for r in oa]
+    cases = all_pairs(s8; engine = C, must_include = cut)
+    @test length(cases) == length(all_pairs(s8; must_include = cut)) == 49
+    @test cases.n_must_include == 49 && sets_of(cases, cut) && iscomplete(coverage(cases))
+    # The same 49 rows on a ninth parameter: 110 rows before, IPOG's 91 now.
+    s9 = space_of(fill(7, 9))
+    cases = all_pairs(s9; engine = C, must_include = oa)
+    @test length(cases) <= length(all_pairs(s9; must_include = oa)) == 91
+    @test sets_of(cases, oa) && iscomplete(coverage(cases))
+    # Each row with two other parameters dropped (fix-construction's judgment
+    # call 2): 98 rows before, 80 now against IPOG's 74; under a rule 98
+    # before, 77 against 71; a `stronger` group's 64 rows, 92 before, 71
+    # against 69; strength 3, 106 before, 85 against 71. The catalog's rows
+    # still cover what the completed rows leave a little less well than IPOG
+    # does, which `Auto` decides by keeping the smaller start.
+    for (space, t, extra, before) in ((s8, 2, (;), 98), (space_of(fill(7, 8); constraints = [@forbid(p1 == p2)]), 2, (;), 98),
+                                      (space_of(fill(4, 16)), 2, (; stronger = [(:p1, :p2, :p3, :p4) => 3]), 92),
+                                      (space_of(fill(3, 12)), 3, (;), 106))
+        own = collect(covering(space; strength = t, engine = C, extra...))
+        k = length(keys(own[1]))
+        dropped = [partial(r, setdiff(1:k, [mod1(j, k), mod1(j + 3, k)])) for (j, r) in enumerate(own)]
+        seeded = covering(space; strength = t, engine = C, must_include = dropped, extra...)
+        @test sets_of(seeded, dropped) && iscomplete(coverage(seeded)) && seeded.n_must_include == length(own)
+        @test length(seeded) < before
+        @test collect(seeded) == collect(covering(space; strength = t, engine = C, must_include = dropped, extra...))
+    end
+    # Three partial rows beside which every allowed row of the array holds a
+    # pair: completed first they leave out no catalog row (42 either way), so
+    # they stay partial, for IPOG to complete beside the array, and the design
+    # is the one filtered against the partial rows, 58 rows, where completing
+    # them first gave 59. IPOG alone gives 76.
+    ruled = space_of(fill(7, 8); constraints = [@forbid(p1 == p2)])
+    three = [(p1 = 1, p2 = 2, p5 = 3, p7 = 4), (p2 = 5, p4 = 1, p6 = 6, p8 = 2), (p1 = 3, p3 = 3, p5 = 7, p8 = 7)]
+    cases = all_pairs(ruled; engine = C, must_include = three)
+    @test sets_of(cases, three) && iscomplete(coverage(cases)) && length(cases) < length(all_pairs(ruled; must_include = three))
+    request = Request(ruled; must_include = three)
+    required, _ = classify_targets(request)
+    targets = RequiredTargets(request, required)
+    arity, order = copy(request.arity), ipog_order(request.arity, request.groups)
+    buckets = _ipog_buckets(required, order)
+    isdead(row) = dead(request, row)
+    kept = _allowed_rows(request, _engine_rows(_catalog_entry(2, 7, 8), arity))
+    completed = _complete_seeds(arity, buckets, isdead, request.must_include, order)
+    @test size(_new_coverage_rows(completed, kept, targets), 2) == size(_new_coverage_rows(request.must_include, kept, targets), 2) == 42
+    @test generate(C, request).matrix == _ipog_multi_way(arity, buckets, isdead, hcat(request.must_include,
+                                                         _new_coverage_rows(request.must_include, kept, targets)), order)
+    # The rows don't depend on feasibility_limit (contract §3.8).
+    allowed = [r for r in cut if r.p1 != r.p2][1:20]
+    for limit in (1_000, 100_000, 10^8)
+        @test all_pairs(ruled; engine = C, must_include = allowed, feasibility_limit = limit) ==
+              all_pairs(ruled; engine = C, must_include = allowed)
+    end
+    # The completion is IPOG's steps on the must-include rows alone: no row is
+    # added and no set value changes; here every entry is asked for.
+    request = Request(ruled; must_include = allowed[1:3])
+    required, _ = classify_targets(request)
+    buckets = _ipog_buckets(required, order)
+    completed = _complete_seeds(arity, buckets, row -> dead(request, row), request.must_include, order)
+    @test size(completed) == size(request.must_include) && !any(==(0), completed)
+    @test all(i -> request.must_include[i] == 0 || completed[i] == request.must_include[i], eachindex(completed))
+    @test !any(j -> dead(request, completed[:, j]), axes(completed, 2))
+    whole = Request(s8; must_include = oa)   # complete rows: nothing to choose
+    @test _complete_seeds(copy(whole.arity), _ipog_buckets(first(classify_targets(whole)), 1:8), Returns(false),
+                          whole.must_include, 1:8) == whole.must_include
+    # A search the completion asks for that stops at the limit ends the call:
+    # nothing catches its ResourceLimitError (§3.6, §3.8). The must-include
+    # rows are put on a request with a limit of 1 after it is built, since
+    # building it would prove them completable under that limit.
+    small = space_of(fill(3, 7); constraints = [forbid((p5 = 2, p1 = 2)), forbid((p2 = 3, p6 = 3)), forbid((p5 = 2, p1 = 1))])
+    full = Request(small; must_include = [(p1 = 1, p2 = 1), (p3 = 2,)])
+    tight = _with_must_include(Request(small; feasibility_limit = 1), full.must_include)
+    @test_throws "placing a value: the feasibility search for" _execute(_prepare(C, Profile(tight)), tight,
+                                                                        RequiredTargets(tight, first(classify_targets(full))))
+end
+
+
 @testitem "construction: a refusal is an ArgumentError, and a refused sub-request goes to IPOG" setup=[CatalogSetup, ConstructionSetup] begin
     C = Construction()
     space = space_of([3, 3, 2, 2, 2])

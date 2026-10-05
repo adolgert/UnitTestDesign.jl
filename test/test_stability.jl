@@ -571,9 +571,10 @@ end
 
 
 @testitem "stability: a wide product builds only its kept columns, and the builders under `_build` infer" setup=[StabilitySetup] begin
-    using UnitTestDesign: GaloisField, Request, RequiredTargets, classify_targets, _catalog_entry, _build, _sca_base,
-        _sca_pair, _sca_product_columns, _product_columns, _wide_product_columns, _partitioned_columns, _lemma35_entry,
-        _two_constant_rows, _paley12, _zero_sum, _engine_rows, _new_coverage_rows, _hold!
+    using UnitTestDesign: GaloisField, Request, RequiredTargets, Profile, classify_targets, ipog_order, _catalog_entry,
+        _build, _sca_base, _sca_pair, _sca_product_columns, _product_columns, _wide_product_columns,
+        _partitioned_columns, _lemma35_entry, _two_constant_rows, _paley12, _zero_sum, _engine_rows,
+        _new_coverage_rows, _hold!, _ipog_buckets, _complete_seeds, _prepare, _execute
     # `_build` and `_build_full` declare `::Matrix{Int}`, which `@inferred
     # _build(…)` then only restates (review of Phase 2, finding 5); the
     # functions under them are checked here. `_two_constant_rows` was `Any`
@@ -623,4 +624,16 @@ end
     # It allocates its bits, one per combination, and the rows it keeps.
     filtered(r) = _new_coverage_rows(r.must_include, rows, targets)
     @test measured(filtered, request) <= sizeof(rows) + cld(last(targets.offsets), 8) + 8192
+    # Partial must-include rows are completed first by IPOG's steps on them
+    # alone (the maintainer's follow-up 2): the targets by step, the completed
+    # rows and the design have concrete types.
+    partial = Request(TestSpace(names, [1:7 for _ in 1:8], Constraint[], 10^5);
+                      must_include = [(p1 = 1, p2 = 2), (p3 = 3, p8 = 4)])
+    required = first(classify_targets(partial))
+    order = ipog_order(partial.arity, partial.groups)
+    buckets = @inferred _ipog_buckets(required, order)
+    @test (@inferred _complete_seeds(copy(partial.arity), buckets, Returns(false), partial.must_include, order)) isa
+          Matrix{Int}
+    plan = _prepare(Construction(), Profile(partial))
+    @test first(@inferred _execute(plan, partial, RequiredTargets(partial, required))) isa Matrix{Int}
 end

@@ -152,9 +152,12 @@ With rules, must-include rows or `stronger` groups, the catalog's rows seed
 IPOG: those that no rule forbids are kept, after the must-include rows,
 except a row that holds nothing the must-include rows and the rows before it
 don't, so a result passed back as `must_include` for the same space gains no
-cases; then IPOG adds what they leave uncovered. With `stronger` groups the
-seed is often the strongest group's own array, on that group's parameters,
-which IPOG extends to the others. With a few rules this is much smaller than
+cases; then IPOG adds what they leave uncovered. Partial must-include rows,
+such as a design passed back after parameters were added or removed, are
+first completed as IPOG would complete them, when that shows more of the
+catalog's rows to be unneeded. With `stronger` groups the seed is often the
+strongest group's own array, on that group's parameters, which IPOG extends
+to the others. With a few rules this is much smaller than
 IPOG alone; as rules forbid more of the array it helps less, which is why
 `Auto` builds both. A space it has no array for, such as parameters with different numbers
 of values, is refused with the reason, in an `ArgumentError` that suggests

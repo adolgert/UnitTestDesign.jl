@@ -241,13 +241,15 @@ end
 
 
 """
-    insert_tuple_into_tests_filter(test_set, allc, dead)
+    insert_tuple_into_tests_filter(test_set, allc, dead; add = true)
 
 Vertical growth: place each uncovered target of `allc` in the first row, old
 or new, that agrees with it and stays completable with it; otherwise start a
 new row with the target alone. Returns the rows, old rows first and unmoved.
+With `add = false` no row is started: a target no old row takes stays
+uncovered (`_complete_seeds`).
 """
-function insert_tuple_into_tests_filter(test_set, allc, dead)
+function insert_tuple_into_tests_filter(test_set, allc, dead; add::Bool = true)
     add_tests = Vector{eltype(test_set)}[]
     putative = zeros(eltype(test_set), size(test_set, 1))
     for find_cover_idx in allc.remain:-1:1
@@ -272,7 +274,7 @@ function insert_tuple_into_tests_filter(test_set, allc, dead)
         end
         # A new row holds one required target, which is completable (§1.2),
         # so the new row starts completable.
-        placed || push!(add_tests, copy(tuple))
+        placed || !add || push!(add_tests, copy(tuple))
     end
     allc.remain = 0
     return isempty(add_tests) ? test_set : hcat(test_set, stack(add_tests))
@@ -362,8 +364,20 @@ function ipog_multi_way(arity::AbstractVector{<:Integer}, required, dead,
                         seeds::AbstractMatrix{<:Integer} = zeros(Int, length(arity), 0);
                         order = ipog_order(arity, [collect(1:length(arity)) => 1]))
     n = length(arity)
-    arity = collect(Int, arity)
     size(seeds, 1) == n || throw(ArgumentError("seeds have $(size(seeds, 1)) rows for $n parameters"))
+    return _ipog_multi_way(collect(Int, arity), _ipog_buckets(required, order), dead, Matrix{Int}(seeds), order)
+end
+
+"""
+    _ipog_buckets(required, order) -> Vector{Vector{Vector{Int}}}
+
+`ipog_multi_way`'s targets by step: `buckets[p]` holds a copy of each target
+of `required` whose parameter last in `order` is `p`, in the order given.
+The buckets are only read, so `_complete_seeds` and the run after it share
+them (`_construction_rows`).
+"""
+function _ipog_buckets(required, order::AbstractVector{<:Integer})
+    n = length(order)
     rank = invperm(order)
     buckets = [Vector{Int}[] for _ in 1:n]
     for t in required
@@ -374,7 +388,22 @@ function ipog_multi_way(arity::AbstractVector{<:Integer}, required, dead,
         last == 0 && throw(ArgumentError("a target assigns no parameter"))
         push!(buckets[last], collect(Int, t))
     end
-    test_set = Matrix{Int}(seeds)
+    return buckets
+end
+
+"`ipog_multi_way` from its buckets, on `seeds`, which it may change."
+_ipog_multi_way(arity::Vector{Int}, buckets, dead, seeds::Matrix{Int}, order) =
+    fill_remaining_missing_values_filter!(_ipog_grow(seeds, arity, buckets, dead, order, true), arity, dead)
+
+"""
+    _ipog_grow(test_set, arity, buckets, dead, order, add) -> Matrix{Int}
+
+`ipog_multi_way`'s steps, one per parameter in `order`: horizontal growth
+gives the parameter a value in each row that has none, and vertical growth
+places what that leaves uncovered, starting rows where `add` is true. Entries
+no target asks for stay unset.
+"""
+function _ipog_grow(test_set::Matrix{Int}, arity::Vector{Int}, buckets, dead, order, add::Bool)
     for p in order
         isempty(buckets[p]) && continue
         allc = MatrixCoverage(stack(buckets[p]), length(buckets[p]), arity)
@@ -383,10 +412,32 @@ function ipog_multi_way(arity::AbstractVector{<:Integer}, required, dead,
             test_set[p, col] != 0 && add_coverage!(allc, test_set[:, col])
         end
         choose_last_parameter_filter!(test_set, allc, p, dead)
-        test_set = insert_tuple_into_tests_filter(test_set, allc, dead)
+        test_set = insert_tuple_into_tests_filter(test_set, allc, dead; add)
     end
-    return fill_remaining_missing_values_filter!(test_set, arity, dead)
+    return test_set
 end
+
+"""
+    _complete_seeds(arity, buckets, dead, seeds, order) -> Matrix{Int}
+
+The must-include rows `seeds` (parameters × rows, `0` for unset) with their
+unset entries chosen as `ipog_multi_way` chooses them, before any other row
+exists: its steps on these rows alone, adding no row. At each parameter, in
+`order`, each row without a value takes the one that holds the most required
+targets not yet held, and the targets still uncovered go to the first row
+that agrees with them; a value is committed only when the row stays
+completable (`dead`), as in every step of the general path. An entry that no
+uncovered target asks for stays unset, for the rows that follow to use. A set
+value never changes (contract §7.10), and the rows stay first, in order
+(§10.5). `dead` decides alone: it answers from resolved searches or throws
+`ResourceLimitError`, which propagates (§3.8). Deterministic.
+
+`Construction` calls it so that the catalog's rows are kept only for what
+the completed rows leave uncovered (`_construction_rows`); `buckets` are
+`_ipog_buckets` of the required targets, which the run after it reads again.
+"""
+_complete_seeds(arity::Vector{Int}, buckets, dead, seeds::Matrix{Int}, order) =
+    _ipog_grow(copy(seeds), arity, buckets, dead, order, false)
 
 
 """
