@@ -404,6 +404,54 @@ end
 end
 
 
+@testitem "request: the recount counts on the layout, names the first uncovered target, and counts no excluded one (§1.21)" setup=[RequestSetup] begin
+    using UnitTestDesign: _Classified, _recount, nrequired
+    # Phase 5 (plan §5.6): `generate` certifies a design by recounting it on
+    # the request's layout against the ids of the targets classification
+    # excluded (`_recount`), with no list of required targets. It counts what
+    # the list recount counts, 31bef0f's certification of the classified
+    # list, which stays for tests and scripts, and a failure names the same
+    # target: the first uncovered required one in target order. A row that
+    # holds an excluded target counts nothing. Rows of every kind are given to
+    # `_recount` itself, which `validate_design` calls after it has checked
+    # each row.
+    request = Request(solver_space(); must_include = [(solver = :lu,)])
+    layout_targets = _Classified(request).targets
+    required, excluded = classify_targets(request)
+    good = [2 1 1 2 2; 2 1 1 1 3; 2 1 2 2 2]
+    @test validate_design(request, good, layout_targets) == validate_design(request, good, required) ==
+          nrequired(layout_targets) == 11
+    msg(m, t) = message(() -> _recount(request, m, t))
+    designs = [good[:, setdiff(axes(good, 2), j)] for j in axes(good, 2)]                 # a row dropped
+    for j in axes(good, 2), i in axes(good, 1), v in 1:request.arity[i]                   # a value changed
+        v == good[i, j] && continue
+        changed = copy(good)
+        changed[i, j] = v
+        push!(designs, changed)
+    end
+    failures = Ref(0)
+    for m in designs
+        ours, listed = msg(m, layout_targets), msg(m, required)
+        @test ours == listed
+        ours === nothing ? (@test _recount(request, m, layout_targets) == _recount(request, m, required) == 11) :
+                           (failures[] += 1)
+    end
+    @test failures[] >= 5
+    @test msg(good[:, 1:4], layout_targets) == "internal error: required target (mode = :exact, solver = :qr) is not covered"
+    # An excluded target held by a row covers no required one: added to the
+    # design it counts nothing, and alone it leaves the first required target
+    # uncovered.
+    gone = [e.target for e in excluded]
+    @test length(gone) == 5
+    for t in gone
+        row = [x == 0 ? 1 : x for x in t]
+        @test _recount(request, hcat(good, row), layout_targets) == 11
+        @test msg(reshape(row, :, 1), layout_targets) == msg(reshape(row, :, 1), required) !== nothing
+        @test msg(hcat(good[:, 1:4], row), layout_targets) == msg(hcat(good[:, 1:4], row), required) !== nothing
+    end
+end
+
+
 @testitem "request: an unconstrained request's targets stay lazy, and the recount streams (§1.8, §1.21, §9.7)" setup=[RequestSetup] begin
     using UnitTestDesign: TargetList, generate
     # Phase 3 review, round 1, item 4: with no rule every target is required,

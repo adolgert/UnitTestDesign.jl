@@ -277,9 +277,10 @@ end
 end
 
 
-@testitem "stability: classification keeps nothing per required target, and the readers of the codes infer" setup=[StabilitySetup] begin
+@testitem "stability: classification keeps nothing per required target, and the recount allocates nothing per row or support" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, RequiredTargets, TargetList, Excluded, _Classified, _classify_targets,
-                          _classify_target, _space_indices, _required_matrix, full_strength_rows, gnd_cover
+                          _classify_target, _space_indices, _recount, _required_matrix, cover_ordinary,
+                          full_strength_rows, gnd_cover
     # Phase 5 (plan §5.6): classification walks the layout with two reused
     # rows and keeps the excluded targets' ids and a count per support. So it
     # asks for what its feasibility questions ask for, one question per target
@@ -316,6 +317,21 @@ end
                                Tuple{RequiredTargets{TargetList}, Vector{Excluded}}} _classify_targets(request,
                                                                                           TargetList(request))) isa Tuple
     end
+    # The recount (`_recount`, contract §1.21) marks each row's code on each
+    # support in one buffer, a bit per combination of the largest support, so
+    # it asks for that buffer and nothing per row or per support: 96 bytes on
+    # Julia 1.13 for 12 binary parameters at strength 2 (66 supports), the
+    # same for three copies of the rows and for 24 parameters (276 supports).
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    recount(x) = _recount(x[1], x[2], x[3])
+    readings = map((12, 24)) do k
+        request = Request(binary(k); strength = 2)
+        targets = _Classified(request).targets
+        rows = cover_ordinary(IPOG(), request, targets)
+        @test (@inferred _recount(request, rows, targets)) == length(TargetList(request)) - 1   # (p1 = 1, p2 = 1) excluded
+        (measured(recount, (request, rows, targets)), measured(recount, (request, hcat(rows, rows, rows), targets)))
+    end
+    @test readings[1][1] == readings[1][2] == readings[2][1] == readings[2][2] <= 256
     # Readers that decode the required targets from their codes infer:
     # `full_strength_rows`, GND's coverage matrix and GND's design.
     full = Request(TestSpace((a = 1:2, b = 1:3, c = 1:2); constraints = [forbid((a = 1, b = 1))]); strength = 3)

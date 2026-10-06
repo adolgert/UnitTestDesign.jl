@@ -380,11 +380,12 @@ may keep.
 
 It is the request's layout of targets: target `offsets[s] + code + 1` is
 code `code` on support `s`, and that number is its id. Classification walks
-it support by support and code by code (`_classify_targets`), and the
-targets (`RequiredTargets`) and the coverage index read it. An
-unconstrained request requires every target, so its targets are this list
-itself, never materialized, and `validate_design` recounts it one support
-at a time (plan Phase 3 review, round 1, item 4).
+it support by support and code by code (`_classify_targets`), the targets
+(`RequiredTargets`), the coverage index and the certifier's recount
+(`validate_design`) read it, and no target is ever listed from it in
+production. An unconstrained request requires every target, so its targets
+are this list itself, never materialized (plan Phase 3 review, round 1,
+item 4).
 """
 struct TargetList <: AbstractVector{Vector{Int}}
     arity::Vector{Int}
@@ -584,8 +585,9 @@ engines) build them once. The build is not locked: the package runs nothing
 concurrently inside a call, and a `RequiredTargets` lives in one call.
 Engines read the four functions above; GND's coverage matrix and
 `full_strength_rows`, which need the required targets as rows, decode them
-from their codes in target order (`_required_matrix`, `_required_list`), and
-so does the certifier (`_recount`).
+from their codes in target order (`_required_matrix`, `_required_list`).
+The certifier reads the layout and `excluded`, never the bits, which
+engines and the coverage index hold by reference (`_recount`).
 """
 mutable struct RequiredTargets{L <: Union{Nothing, TargetList}}
     const list::L                      # the layout itself when every target is required; `nothing` otherwise
@@ -819,9 +821,11 @@ ordinary targets covered. A failure is an `ErrorException` beginning
 "internal error", naming the row or target. Values are never looked up; only
 `to_cases` converts rows to values.
 
-`targets` is classification's `RequiredTargets` (generation's), a
-`TargetList`, every target required, or a list of required targets as
-`classify_targets` returns it.
+`targets` is generation's: classification's `RequiredTargets`, recounted on
+the request's layout against the ids of the excluded targets. Tests and
+scripts may pass a `TargetList`, every target required, or a list of
+required targets as `classify_targets` returns it; a list is recounted
+target by target, the same certification by other arithmetic.
 """
 function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, targets;
                          strategy::Symbol = :covering, negative = Vector{Int}[])
@@ -873,31 +877,66 @@ end
 _uncovered(request::Request, t) = error(
     "internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")
 
-# Classification's targets: their required targets, listed from their codes in
-# target order (`_required_list`), recounted as a list; every target of a
-# TargetList, recounted one support at a time.
-_recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::RequiredTargets) =
-    _recount(request, matrix, targets isa RequiredTargets{TargetList} ? targets.layout : _required_list(targets))
+"""
+    _recount(request, matrix, targets::RequiredTargets) -> Int
 
-# Every target of an unconstrained request is required. For each support, a
-# row's projection onto it, whose entries were checked against the arity
-# above, has the code (`_code`) whose target `TargetList` decodes: its
-# position within the support's block. The support is covered exactly when
-# every code appears. The same certification as the list, with no list.
-function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList)
-    for (k, support) in enumerate(required.supports)
-        seen = falses(required.offsets[k + 1] - required.offsets[k])
+The certifier's recount (contract §1.21): the number of required targets
+that the rows, the columns of `matrix`, hold, or an internal error naming
+the first required target, in target order, that none holds. For each
+support of the layout, in order, it marks the code (`_code`) of each row's
+combination on the support, then walks the support's codes: a code no row
+holds must be the id of a target classification excluded.
+
+It trusts two things, both classification's. The layout, `targets.layout`,
+is the request's `TargetList`: its supports are every set of parameters that
+carries targets (contract §1.8, `_supports`), and code `code` on support `s`
+is the target `_decode!` makes of it, so a row holds that target exactly
+when its code on `s` is `code`, the rows' entries having been checked within
+the ordinary arity. `targets.excluded` is the ids of the targets
+classification excluded, each with its `Excluded` record (§1.4); it walked
+this layout and put each target in exactly one class, so the required
+targets are the layout's combinations less those ids, as an unconstrained
+request's are all of them. The recount reads nothing else: not the required
+bits, which engines and the coverage index hold by reference, and no
+engine's index or buffers. Engines share the layout and never change it
+(the engine protocol; test_engines.jl checks each leaves it, and the counts
+and bits, as they were). Its buffers are a bit per combination of the
+largest support and, on failure, the target it names.
+"""
+function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::RequiredTargets)
+    layout, excluded = targets.layout, targets.excluded
+    layout.arity == request.arity || error("internal error: the targets are not the request's")
+    seen = falses(maximum(s -> ncombinations(layout, s), eachindex(layout.supports); init = 0))
+    next = 1   # the first excluded id not yet reached
+    covered = 0
+    for (s, support) in enumerate(layout.supports)
+        n = ncombinations(layout, s)
+        fill!(view(seen, 1:n), false)
         for j in axes(matrix, 2)
-            seen[_code(view(matrix, :, j), support, required.arity) + 1] = true
+            seen[_code(view(matrix, :, j), support, layout.arity) + 1] = true
         end
-        missed = findfirst(!, seen)
-        missed === nothing || _uncovered(request, required[required.offsets[k] + missed])
+        for code in 0:(n - 1)
+            if next <= length(excluded) && excluded[next] == layout.offsets[s] + code + 1
+                next += 1   # excluded: no row need hold it
+            elseif seen[code + 1]
+                covered += 1
+            else
+                _uncovered(request, _decode!(zeros(Int, length(layout.arity)), code, support, layout.arity))
+            end
+        end
     end
-    return length(required)
+    next == length(excluded) + 1 || error("internal error: the excluded ids are not the layout's, in target order")
+    return covered
 end
 
-# The rows' projections onto each target's parameters, built once per
-# parameter set, so the check is linear in targets plus rows.
+# Every target of a TargetList is required.
+_recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList) =
+    _recount(request, matrix, RequiredTargets(request, required))
+
+# A list of full-width targets, from tests and scripts (`classify_targets`)
+# and the negative targets: the rows' projections onto each target's
+# parameters, built once per parameter set, so the check is linear in
+# targets plus rows. Names the first uncovered target in the list's order.
 function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required)
     covered = 0
     projections = Dict{Vector{Int}, Set{Vector{Int}}}()

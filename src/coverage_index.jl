@@ -2,11 +2,13 @@
 # support that carries targets, each combination's mixed-radix code, and per
 # combination a required bit and a count of the design's rows that hold it.
 # It is introduced with the row reducer (`Compact`, compact.jl), its only
-# consumer in Phase 1. GND, the certifier's recount and `coverage` (Phase 5)
-# may adopt it later, one at a time, in place of the arithmetic they keep
-# today (`TargetList` and `_recount` in request.jl, GND's `MatrixCoverage`);
-# nothing else reads it yet. IPOG's lookup core (Phase 4, ipog_core.jl) keeps
-# a map of one step's supports of its own, laid out for its lookups.
+# consumer. GND and `coverage` may adopt it later, in place of the arithmetic
+# they keep (GND's `MatrixCoverage`, measure.jl's marks). The certifier's
+# recount (`_recount`, request.jl) counts on the same layout, the request's
+# `TargetList`, but with marks of its own and the excluded targets' ids, never
+# an index an engine builds or the bits it holds (contract §1.21, Phase 5).
+# IPOG's lookup core (Phase 4, ipog_core.jl) keeps a map of one step's
+# supports of its own, laid out for its lookups.
 #
 # Everything here is index space: a row is a complete vector of engine
 # positions, `1:arity[i]` for parameter `i` (request.jl). The codes are the
