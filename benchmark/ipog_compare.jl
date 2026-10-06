@@ -103,9 +103,10 @@
 # columns: `--ref COL` (default the first column read) against each `--cand
 # COL` (repeatable; default every other column). A column is a label, so one
 # run's files make one column; `LABEL@COMMIT` where the label was measured on
-# two package sources; `…#FILE` where it still holds a point twice
-# (`column_ids`). It prints Phase 4's gates
-# (plan §5.5) for each candidate: the share of points with rows no more than
+# two package sources; `…#FILE` where it still completes a point twice
+# (`column_ids`); a completed line stands over a skipped or stopped one, so
+# `fresh --over` fills in what `run` skipped. It prints Phase 4's gates (plan
+# §5.5) for each candidate: the share of points with rows no more than
 # the reference's (gate: 90%), the largest excess in percent and in rows,
 # every point more than 3% above (gate: none); time ratios with the noise
 # allowance below, every point slower beyond it (gate: none); and the named
@@ -120,7 +121,7 @@
 # `--tolerance` (default 0.25) of the reference's and by more than `--floor`
 # seconds (default 0.001); a point where both are under the floor is not
 # judged. Why these: IPOG() against itself as two columns of one run, which
-# alternate at every point, on 1,826 points of every family under load 3.5–7
+# alternate at every point, on 1,826 points of every family under load 2.6–7
 # (an Apple M2 with another agent's Julia jobs): above a millisecond, 99% of
 # the ratios lay within 0.81–1.19 and 6 of 873 beyond 25%; below it the
 # second column was a median 9% faster at under 0.1 ms, from the order alone.
@@ -352,7 +353,7 @@ function measure(engine, space, kw; calls, budget, classified = nothing)
     first = @timed call()
     design = first.value
     warm, bytes, gc, n, same, spent = first.time, first.bytes, first.gctime, 0, true, 0.0
-    if first.time < budget
+    if first.time < budget && calls > 0
         warm, bytes = Inf, typemax(Int)
         while n < calls && spent < budget
             w = @timed call()
