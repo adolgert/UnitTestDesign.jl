@@ -1,0 +1,433 @@
+using Test
+using TestItemRunner
+
+# IPOG's core that scores by lookup (plan §5.5, Phase 4): the internal engine
+# `_IPOGLookup` (src/ipog_core.jl), tested against the two paths it replaces,
+# classic `ipog` and the general `ipog_multi_way`, which `IPOG()` runs, until
+# the switch (decision D2). The oracle loops of test_random_problems.jl run it
+# through the registry, and test_stability.jl guards its loops. Its rows are
+# another member of the IPOG family than today's (plan §2.5), so they are
+# compared with today's within bounds, never for equality; every design is
+# certified (`generate`, contract §1.21) and checked by the independent oracle
+# (test/checker.jl).
+
+@testsnippet LookupSetup begin
+    using UnitTestDesign: Request, Design, generate, to_cases, classify_targets, RequiredTargets, Profile,
+        _Classified, _IPOGLookup, _IPOGPlan, _prepare, _execute, _lookup_steps, _lookup_cover, _lookup_complete,
+        ipog_order, validate_design, dead, _target_list, _with_must_include, isconstrained, full_strength_rows,
+        _TIEBREAKS, _VERTICALS, _engine_config, _engine_label, engine_record, fit, _fallback
+    const LOOKUP = _IPOGLookup()
+
+    "A space over parameters p1, p2, … with values 1:arity[i], so value positions are values."
+    positional(arity; constraints = Constraint[]) =
+        TestSpace((Symbol(:p, i) => collect(1:a) for (i, a) in enumerate(arity))...; constraints)
+
+    "The rows of `engine` for `request`, as a matrix of value positions, certified by `generate`."
+    rows_of(engine, request) = generate(engine, request).matrix
+
+    "A rule over p1 and p2 that excludes nothing: the request is constrained, and `dead` is always false."
+    noop() = forbid((a, b) -> false, :p1, :p2)
+
+    "The lookup core's run on `request`'s targets with the predicate `isdead`, from the steps up."
+    function lookup_rows(request, isdead; tiebreak = :lowest, vertical = :support, seeds = request.must_include)
+        targets = _Classified(request).targets
+        steps = _lookup_steps(targets, request.arity, ipog_order(request.arity, request.groups))
+        return _lookup_cover(steps, targets, isdead, seeds; tiebreak, vertical)
+    end
+end
+
+
+@testitem "lookup core: an engine beside IPOG, with its plan, configuration and fallback (§4.2)" setup=[LookupSetup] begin
+    @test LOOKUP.tiebreak === (:lowest,) && LOOKUP.vertical === (:support,)
+    @test [only(_IPOGLookup(; tiebreak).tiebreak) for tiebreak in _TIEBREAKS] == collect(_TIEBREAKS)
+    @test [only(_IPOGLookup(; vertical).vertical) for vertical in _VERTICALS] == collect(_VERTICALS)
+    for bad in (:random, "lowest", (), (:lowest, :lowest), [:lowest], (:lowest, 1))
+        @test_throws ArgumentError _IPOGLookup(tiebreak = bad)
+    end
+    @test_throws ArgumentError _IPOGLookup(vertical = :row)
+    # The call in the configuration makes the same engine in any module that loads the package.
+    for tiebreak in (_TIEBREAKS..., (:lowest, :rotate)), vertical in (_VERTICALS..., _VERTICALS)
+        engine = _IPOGLookup(; tiebreak, vertical)
+        config = _engine_config(engine)
+        text(x) = x isa Symbol ? repr(x) : "(" * join(repr.(x), ", ") * ")"
+        @test config.call == "UnitTestDesign._IPOGLookup(tiebreak = $(text(tiebreak)), vertical = $(text(vertical)))"
+        @test Core.eval(@__MODULE__, Meta.parse(config.call)) === engine
+        @test config.name === :IPOGLookup && config.seed === nothing && !config.randomized
+        @test config.settings == (; tiebreak, vertical)
+    end
+    @test _fallback(LOOKUP) === LOOKUP
+    # The plan is read from the profile: the order IPOG uses, whether there are rules, and the path.
+    request = Request(positional([2, 3, 4, 2]; constraints = [forbid((p1 = 1, p2 = 1))]); stronger = [(:p1, :p2, :p4) => 3])
+    plan = _prepare(_IPOGLookup(tiebreak = :rotate), Profile(request))
+    @test plan isa _IPOGPlan{_IPOGLookup} && plan.fit.kind === :native
+    @test plan.order == ipog_order(request.arity, request.groups) && plan.rules && plan.path === :lookup
+    @test plan.members == [(:rotate, :support)]
+    several = _prepare(_IPOGLookup(tiebreak = (:lowest, :rotate), vertical = (:support, :value)), Profile(request))
+    @test several.members == [(:lowest, :support), (:lowest, :value), (:rotate, :support), (:rotate, :value)]
+    full = _prepare(LOOKUP, Profile(Request(positional([2, 3]))))
+    @test full.path === :full_strength && !full.rules
+    # A design records the engine, its rows, and no notes.
+    cases = all_pairs(positional([2, 3, 4, 2]); engine = LOOKUP)
+    @test cases.engine === :IPOGLookup && iscomplete(coverage(cases))
+    @test cases.record.ordinary ==
+          (engine = "UnitTestDesign._IPOGLookup(tiebreak = :lowest, vertical = :support)", rows = length(cases))
+end
+
+
+@testitem "lookup core: several rules keep the member with the fewest rows, the first of equals (§4.1)" setup=[LookupSetup] begin
+    # Probe 08's 8 × 8 and 8 × 32 at strength 2, where the rules differ.
+    for arity in (fill(8, 8), fill(32, 8), [5, 4, 4, 3, 3, 2, 2])
+        request = Request(positional(arity))
+        rows = Dict((t, v) => rows_of(_IPOGLookup(tiebreak = t, vertical = v), request)
+                    for t in (:lowest, :rotate) for v in _VERTICALS)
+        order = [(:lowest, :support), (:lowest, :value), (:rotate, :support), (:rotate, :value)]
+        fewest = minimum(size(rows[m], 2) for m in order)
+        first_fewest = order[findfirst(m -> size(rows[m], 2) == fewest, order)]
+        engine = _IPOGLookup(tiebreak = (:lowest, :rotate), vertical = (:support, :value))
+        design = generate(engine, request)
+        @test design.matrix == rows[first_fewest]
+        kept = design.record.ordinary.kept
+        @test (kept.tiebreak, kept.vertical) == first_fewest
+    end
+    # One member: no notes.
+    @test !haskey(generate(LOOKUP, Request(positional(fill(8, 8)))).record.ordinary, :kept)
+end
+
+
+@testitem "lookup core: fixtures, each checked by the oracle" setup=[LookupSetup, Checker] begin
+    # The fixtures IPOG's tests use (test_parameter_order.jl): rules with
+    # implied targets, greedy dead ends, an empty space, disconnected
+    # components, a whole-case rule, overlapping groups, partial must-include
+    # rows. Every design is complete by the oracle.
+    function check(f; strength = get(f.request, :strength, 2), kwargs...)
+        request = Request(test_space(f); strength, kwargs...)
+        design = generate(LOOKUP, request)
+        cases = to_cases(request, design.matrix)
+        result = check_design(cases, f.space; strength, stronger = get(kwargs, :stronger, []))
+        return design, cases, result
+    end
+    for f in (astra_chain, fable_solver, opus_gpu, dead_end_pairwise_1, dead_end_pairwise_2, dead_end_threeway_1,
+              dead_end_threeway_2, disconnected_witness, whole_case_connects)
+        local design, cases, result = check(f)
+        @test complete(result)
+        @test design.required == design.covered == result.ordinary.counts.feasible
+    end
+    design, cases, result = check(astra_chain)
+    @test Set(cases) == Set([(A = 1, B = 1, C = 1), (A = 2, B = 2, C = 2)])
+    design, cases, result = check(disconnected_unsat)
+    @test isempty(cases) && complete(result)
+    design, cases, result = check(whole_case_connects)
+    @test unique(cases) == [(a = 3, b = 3, c = :y, d = :y, e = 2)]
+    f = overlapping_groups
+    design, cases, result = check(f; stronger = f.request.stronger)
+    @test complete(result) && design.required == 35
+    twice, _, _ = check(f; stronger = f.request.stronger_twice)
+    @test twice.matrix == design.matrix
+    # bench12 at strengths 2 and 3: today's IPOG has 22 and 93 rows.
+    for (strength, rows) in ((2, 22), (3, 93))
+        local design, cases, result = check(bench12; strength)
+        @test complete(result) && abs(length(cases) - rows) <= 3
+    end
+    # Partial must-include rows: first, set values kept, the only completion found.
+    seeds = [(solver = :lu,), (mode = :fast, solver = :none, tol = 1e-3), (solver = :lu,), (mode = :exact,)]
+    design, cases, result = check(fable_solver; must_include = seeds)
+    @test complete(result) && design.n_must_include == 4
+    @test cases[1] == cases[3] == (mode = :exact, solver = :lu, tol = 1e-6)
+    @test cases[2] == seeds[2] && cases[4].mode == :exact
+end
+
+
+@testitem "lookup core: full strength is every valid row, and an empty space no row (§7.8, §1.24)" setup=[LookupSetup, Checker] begin
+    for f in (fable_solver, astra_chain)
+        request = Request(test_space(f); strength = length(f.input.names))
+        @test rows_of(LOOKUP, request) == rows_of(IPOG(), request)
+    end
+    request = Request(test_space(fable_solver); strength = 3, must_include = [(solver = :lu,)])
+    @test rows_of(LOOKUP, request) == rows_of(IPOG(), request)
+    @test rows_of(LOOKUP, Request(positional([2, 3]))) == [1 1 1 2 2 2; 1 2 3 1 2 3]
+    @test size(rows_of(LOOKUP, Request(test_space(disconnected_unsat)))) == (3, 0)
+    # Single-valued parameters.
+    @test all(==(1), rows_of(LOOKUP, Request(positional([1, 3, 2])))[1, :])
+end
+
+
+@testitem "lookup core: against today's IPOG on random problems, both certified (§5.5)" setup=[UTSetup, LookupSetup, Checker] begin
+    using Random
+    # The two paths it replaces are the reference until the switch: on the
+    # same random constrained problems, at strengths 2 and 3, both designs
+    # are certified and complete by the oracle, and the lookup core's rows
+    # stay within bounds. Over 1,000 problems of this stream at each strength
+    # (Julia 1.13, seed_mod() = 0; p4-core's notes), the default rules gave
+    # at most 33% and 4 rows more than today's at one problem at strength 2,
+    # 32% and 22 rows at strength 3, and totals 0.13% and 0.22% below
+    # today's. The bounds: 40% and 2 rows at one problem, 2% in total.
+    rng = Xoshiro(0x2026_1005_0004 ⊻ seed_mod())
+    for strength in (2, 3)
+        old_total, new_total = 0, 0
+        for _ in 1:max(40, round(Int, 200 * test_run_multiplier()))
+            problem = random_problem(rng; strength)
+            request = Request(test_space(problem.space); strength)
+            old, new = rows_of(IPOG(), request), rows_of(LOOKUP, request)
+            @test complete(check_design(to_cases(request, new), problem.space; strength))
+            @test size(new, 2) <= ceil(Int, 1.4 * size(old, 2)) + 2
+            old_total += size(old, 2)
+            new_total += size(new, 2)
+        end
+        @test abs(new_total - old_total) <= 0.02 * old_total
+    end
+end
+
+
+@testitem "lookup core: with `dead` always false, a constrained request gives the unconstrained rows (§5.5)" setup=[UTSetup, LookupSetup] begin
+    using Random
+    # The gate of Phase 4: the core depends on the rules only through `dead`'s
+    # answers. A scoped rule that excludes nothing makes the request
+    # constrained, with every target required and `dead` always false: the
+    # rows are the unconstrained request's, with must-include rows, partial
+    # ones, `stronger` groups and each tie-break rule. Today's IPOG takes its
+    # general path for the first and gives 2,131 rows on 8 × 32 where it
+    # gives 1,991 without the rule (STUDY.md).
+    for tiebreak in _TIEBREAKS, vertical in _VERTICALS
+        engine = _IPOGLookup(; tiebreak, vertical)
+        @test rows_of(engine, Request(positional(fill(32, 8)))) ==
+              rows_of(engine, Request(positional(fill(32, 8); constraints = [noop()])))
+    end
+    rng = Xoshiro(0x2026_1005_0005 ⊻ seed_mod())
+    for _ in 1:40
+        k = rand(rng, 3:7)
+        arity = rand(rng, 2:5, k)
+        strength = rand(rng, 1:min(3, k - 1))
+        extra = []
+        rand(rng, Bool) && push!(extra, :stronger => [Tuple(Symbol(:p, i) for i in 1:min(k, strength + 2)) => strength + 1])
+        rand(rng, Bool) && push!(extra, :must_include => [(p1 = 1,), Tuple(rand(rng, 1:a) for a in arity)])
+        free = Request(positional(arity); strength, extra...)
+        ruled = Request(positional(arity; constraints = [noop()]); strength, extra...)
+        @test isconstrained(ruled) && !isconstrained(free)
+        tiebreak, vertical = rand(rng, _TIEBREAKS), rand(rng, _VERTICALS)
+        @test rows_of(_IPOGLookup(; tiebreak, vertical), ruled) == rows_of(_IPOGLookup(; tiebreak, vertical), free)
+        # Directly: the same targets, a predicate that is asked and always says false.
+        asked = Ref(0)
+        @test lookup_rows(ruled, row -> (asked[] += 1; false); tiebreak, vertical) ==
+              lookup_rows(ruled, Returns(false); tiebreak, vertical) == lookup_rows(free, Returns(false); tiebreak, vertical)
+        @test asked[] > 0
+    end
+end
+
+
+@testitem "lookup core: rules, must-include rows, stronger groups and Invalid values, alone and together" setup=[LookupSetup, Checker] begin
+    # The `adapted` changes (plan §7.2) on one small space, each alone and in
+    # every combination: a rule (with an implied target), a complete and a
+    # partial must-include row, an overlapping `stronger` group, and an
+    # Invalid value (negative rows). Every design is complete by the oracle,
+    # its must-include rows first and unchanged where set.
+    names = [:a, :b, :c, :d, :e]
+    domains = [[1, 2, 3], [1, 2], [1, 2, 3], [1, 2], [1, 2, 3, 4]]
+    rule = ((:a, :b), (a, b) -> a == 1 && b == 2)
+    chain = [((:c, :d), (c, d) -> c == 3 && d == 1), ((:d, :e), (d, e) -> d == 2 && e == 4)]
+    complete_row = (a = 2, b = 1, c = 2, d = 2, e = 3)
+    partial_row = (c = 3, e = 2)
+    as_check(x::Invalid) = CheckInvalid(x.value)
+    as_check(x) = x
+    checked = Ref(0)
+    for with_rule in (false, true), with_complete in (false, true), with_partial in (false, true),
+        with_group in (false, true), with_invalid in (false, true)
+        doms = [collect(Any, d) for d in domains]
+        with_invalid && push!(doms[2], CheckInvalid(0))
+        cs = CheckSpace(names, doms, with_rule ? [rule; chain] : [])
+        must = NamedTuple[]
+        with_complete && push!(must, complete_row)
+        with_partial && push!(must, partial_row)
+        stronger = with_group ? [(:a, :c, :e) => 3, (:c, :d, :e) => 3] : []
+        space = test_space(cs)
+        cases = covering(space; strength = 2, stronger, must_include = must, engine = LOOKUP)
+        result = check_design([map(as_check, row) for row in cases], cs; strength = 2, stronger)
+        @test complete(result.ordinary) && complete(result.negative)
+        @test all(i -> all(k -> cases[i][k] == must[i][k], keys(must[i])), eachindex(must))
+        @test cases.n_must_include == length(must)
+        checked[] += 1
+    end
+    @test checked[] == 32
+end
+
+
+@testitem "lookup core: rows stay completable on the study's hard ladders (§1.3, STUDY.md)" setup=[LookupSetup] begin
+    # benchmark/scaling's `equality` (neighbours agree), `chain` (no two
+    # neighbours both 1), `global_budget` (a whole-case rule on the sum) and
+    # all-different families: every placement asks `dead`, so no row is ever
+    # left without a valid completion, and `generate` certifies the result.
+    ladder(n, v, rules) = positional(fill(v, n); constraints = rules)
+    names(n) = [Symbol(:p, i) for i in 1:n]
+    for n in (8, 16, 32)
+        equality = ladder(n, 2, [forbid((a, b) -> a != b, names(n)[i], names(n)[i + 1]) for i in 1:(n - 1)])
+        cases = all_pairs(equality; engine = LOOKUP)
+        @test length(cases) == 2 && iscomplete(coverage(cases))
+        chain = ladder(n, 2, [forbid((a, b) -> a == 1 && b == 1, names(n)[i], names(n)[i + 1]) for i in 1:(n - 1)])
+        @test iscomplete(coverage(all_pairs(chain; engine = LOOKUP)))
+        @test iscomplete(coverage(all_triples(chain; engine = LOOKUP)))
+    end
+    for n in (6, 10, 14)
+        budget = ladder(n, 3, [forbid(c -> sum(values(c)) > n + n ÷ 2)])
+        @test iscomplete(coverage(all_pairs(budget; engine = LOOKUP)))
+    end
+    for q in (4, 5)
+        different = ladder(q, q, [forbid((a, b) -> a == b, names(q)[i], names(q)[j]) for i in 1:q for j in (i + 1):q])
+        cases = all_pairs(different; engine = LOOKUP)
+        @test iscomplete(coverage(cases)) && all(c -> allunique(values(c)), cases)
+    end
+end
+
+
+@testitem "lookup core: the same rows at every feasibility_limit that succeeds; an exhausted search propagates (§3.8)" setup=[LookupSetup, Checker] begin
+    using Random
+    f = limit_exhaustion
+    space = test_space(f)
+    @test_throws ResourceLimitError generate(LOOKUP, Request(space; feasibility_limit = f.request.small_limit))
+    design = generate(LOOKUP, Request(space; feasibility_limit = f.request.default_limit))
+    @test design.matrix == fill(4, 8, 1)
+    @test generate(LOOKUP, Request(space; feasibility_limit = 10 * f.request.default_limit)).matrix == design.matrix
+    # Random constrained problems: every limit at which the call succeeds gives the same rows.
+    rng = Xoshiro(0x2026_1005_0008)
+    for _ in 1:30
+        problem = random_problem(rng; strength = 2)
+        drawn = test_space(problem.space)
+        reference = rows_of(LOOKUP, Request(drawn; feasibility_limit = 10^8))
+        for limit in (3, 30, 300, 10^5)
+            rows = try
+                rows_of(LOOKUP, Request(drawn; feasibility_limit = limit))
+            catch err
+                err isa ResourceLimitError || rethrow()
+                nothing
+            end
+            rows === nothing || @test rows == reference
+        end
+    end
+    # An error from `dead` mid-run ends the run: nothing catches it.
+    request = Request(positional([3, 3, 3, 3]; constraints = [forbid((p1 = 1, p2 = 1))]))
+    calls = Ref(0)
+    stop(row) = (calls[] += 1) > 5 ? throw(ResourceLimitError("a test's search", 1, :feasibility_limit)) : dead(request, row)
+    @test_throws ResourceLimitError lookup_rows(request, stop)
+    @test calls[] == 6
+end
+
+
+@testitem "lookup core: each tie-break rule and vertical order is deterministic and certified" setup=[LookupSetup, Checker] begin
+    using Random
+    rng = Xoshiro(0x2026_1005_0009)
+    for _ in 1:20, strength in (2, 3)
+        problem = random_problem(rng; strength)
+        request = Request(test_space(problem.space); strength)
+        for tiebreak in _TIEBREAKS, vertical in _VERTICALS
+            engine = _IPOGLookup(; tiebreak, vertical)
+            rows = rows_of(engine, request)
+            @test complete(check_design(to_cases(request, rows), problem.space; strength))
+            @test rows == rows_of(engine, Request(test_space(problem.space); strength))
+        end
+    end
+    # The rules differ: probe 08's 8 × 8 at strength 2.
+    sizes = [size(rows_of(_IPOGLookup(; tiebreak, vertical), Request(positional(fill(8, 8)))), 2)
+             for tiebreak in _TIEBREAKS, vertical in _VERTICALS]
+    @test length(unique(sizes)) > 1
+end
+
+
+@testitem "lookup core: completing must-include rows adds no row and changes no set value" setup=[LookupSetup] begin
+    # The first of the two operations Construction's seeded path calls
+    # (`_lookup_complete`, the old `_complete_seeds`).
+    space = positional(fill(7, 8); constraints = [@forbid(p1 == p2)])
+    must = [(p1 = 1, p2 = 2), (p3 = 3, p8 = 4), (p1 = 3, p3 = 3, p5 = 7)]
+    request = Request(space; must_include = must)
+    targets = _Classified(request).targets
+    steps = _lookup_steps(targets, request.arity, ipog_order(request.arity, request.groups))
+    isdead(row) = dead(request, row)
+    completed = _lookup_complete(steps, targets, isdead, request.must_include)
+    @test size(completed) == size(request.must_include)
+    @test all(i -> request.must_include[i] == 0 || completed[i] == request.must_include[i], eachindex(completed))
+    @test !any(j -> dead(request, completed[:, j]), axes(completed, 2))
+    @test count(==(0), completed) < count(==(0), request.must_include)
+    # Complete rows: nothing to choose.
+    whole = Request(positional(fill(3, 4)); must_include = [(1, 2, 3, 1), (2, 2, 2, 2)])
+    wt = _Classified(whole).targets
+    @test _lookup_complete(_lookup_steps(wt, whole.arity, [1, 2, 3, 4]), wt, Returns(false), whole.must_include) ==
+          whole.must_include
+    # Then the run on the completed rows covers everything, the completed rows first.
+    rows = _lookup_cover(steps, targets, isdead, completed)
+    @test rows[:, 1:3] == completed
+    @test validate_design(_with_must_include(request, completed), rows, _target_list(targets)) == length(_target_list(targets))
+end
+
+
+@testitem "lookup core: Construction's seeded path on the core's two operations, certified" setup=[LookupSetup] begin
+    using UnitTestDesign: Construction, _ConstructionPlan, _engine_rows, _allowed_rows, _new_coverage_rows
+    # src/construction.jl's `_construction_rows` at 0ce33a4, with IPOG's
+    # general path replaced by the lookup core: the steps once
+    # (`_lookup_steps`, for `_ipog_buckets`), the completion of partial
+    # must-include rows (`_lookup_complete`, for `_complete_seeds`), and the
+    # run that tops up (`_lookup_cover`, for `_ipog_multi_way`), both reading
+    # the targets from the same steps. This is what the switch moves
+    # Construction to; until then it shows that the seeded designs are
+    # certified on the new operations.
+    function lookup_construction(request)
+        plan = _prepare(Construction(), Profile(request))
+        targets = _Classified(request).targets
+        f, entry, members = plan.fit, plan.entry, plan.members
+        must = request.must_include
+        size(must, 2) > 0 && request.strength == length(request.arity) &&
+            return full_strength_rows(request, _target_list(targets)), targets
+        if members === nothing
+            rows = _engine_rows(entry, request.arity)
+            f.kind === :exact && return rows, targets
+        else
+            rows = zeros(Int, length(request.arity), entry.rows)
+            rows[members, :] .= _engine_rows(entry, request.arity[members])
+        end
+        kept = isconstrained(request) ? _allowed_rows(request, rows) : rows
+        isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
+        steps = _lookup_steps(targets, request.arity, ipog_order(request.arity, request.groups))
+        if size(must, 2) > 0
+            partial = _new_coverage_rows(must, kept, targets)
+            if any(==(0), must)
+                completed = _lookup_complete(steps, targets, isdead, must)
+                fewer = _new_coverage_rows(completed, kept, targets)
+                size(fewer, 2) < size(partial, 2) && ((must, partial) = (completed, fewer))
+            end
+            kept = partial
+        end
+        return _lookup_cover(steps, targets, isdead, hcat(must, kept)), targets
+    end
+    space_of(arity; constraints = Constraint[]) = positional(arity; constraints)
+    partial(row, keep) = NamedTuple{Tuple(keys(row)[keep])}(Tuple(values(row)[keep]))
+    s8 = space_of(fill(7, 8))
+    oa = collect(all_pairs(s8; engine = Construction()))
+    cut = [partial(r, 1:6) for r in oa]
+    # The maintainer's cases (test_construction.jl), rules, a stronger group,
+    # strength 3, and the dropped-parameters case.
+    cases = [(s8, 2, (; must_include = cut)), (space_of(fill(7, 9)), 2, (; must_include = oa)),
+             (space_of(fill(7, 8); constraints = [@forbid(p1 == p2)]), 2, (;)),
+             (space_of(fill(4, 16)), 2, (; stronger = [(:p1, :p2, :p3, :p4) => 3])),
+             (space_of(fill(3, 12)), 3, (; must_include = [(p1 = 1, p2 = 2), (p5 = 3,)])),
+             (space_of(fill(7, 8); constraints = [@forbid(p1 == p2)]), 2,
+              (; must_include = [(p1 = 1, p2 = 2, p5 = 3, p7 = 4), (p2 = 5, p4 = 1, p6 = 6, p8 = 2)])),
+             (s8, 2, (; must_include = [partial(r, setdiff(1:8, [mod1(j, 8), mod1(j + 3, 8)])) for (j, r) in enumerate(oa)]))]
+    for (space, strength, extra) in cases
+        request = Request(space; strength, extra...)
+        rows, targets = lookup_construction(request)
+        @test validate_design(request, rows, _target_list(targets)) == length(_target_list(targets))
+        # Not far from today's Construction() on the same request.
+        @test size(rows, 2) <= size(generate(Construction(), request).matrix, 2) + 8
+    end
+    # The cut 8 × 7 array: the completed rows hold every pair, so no catalog row is kept.
+    @test size(first(lookup_construction(Request(s8; must_include = cut))), 2) == 49
+end
+
+
+@testitem "lookup core: the same rows in another process and on another Julia version (§9.1, §9.4)" setup=[LookupSetup] begin
+    # ipog_core_rows.txt holds the rows of the fixed requests of
+    # ipog_core_requests.jl, written by a separate process on Julia 1.13 (that
+    # file says how). The rows here must be the same, line for line, on every
+    # Julia version the package supports: the core uses no randomness, no
+    # hashing order and no clock. Rows are compared as text, since a matrix's
+    # `hash` differs between Julia 1.10 and 1.13.
+    include(joinpath(@__DIR__, "ipog_core_requests.jl"))
+    expected = readlines(joinpath(@__DIR__, "ipog_core_rows.txt"))
+    @test lookup_rows_text() == expected
+end
