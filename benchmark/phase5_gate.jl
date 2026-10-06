@@ -81,7 +81,8 @@
 #     this point (certification included): `gen_s`, `gen_bytes`, the rows,
 #     their hash, the required and excluded counts, the bound, and
 #     `hwm_g_mib`;
-#  6. the design dropped, the bytes retained after generation (`…_g_…`);
+#  6. the design dropped, the bytes retained after generation (`…_g_…`),
+#     and a third `PARTIAL` line;
 #  7. the request and classification dropped, then the harness's own calls
 #     (ipog_compare.jl's `measure`): a first and then warm calls of a whole
 #     `generate(engine, Request(space; kw...))`, each with its own request,
@@ -414,7 +415,8 @@ mib(x) = @sprintf("%.1f", x / 2^20)
 
 """
 Mode `index` on one built point (the header's steps 1–7), into `r`. With
-`emit`, prints the `PARTIAL` line after classification.
+`emit`, prints a `PARTIAL` line after classification (twice: before and
+after the summarysize walks) and after generation.
 """
 function measure_index!(r, engine, space, kw, opts; emit = identity, quiet = false)
     retained = opts.retained
@@ -452,6 +454,7 @@ function measure_index!(r, engine, space, kw, opts; emit = identity, quiet = fal
                 r["memo_g"] = memo_entries(request)
                 retained!(r, "g", request, classified)
             end
+            emit(r)                       # a stop in the warm calls keeps the rows and bytes
         end
     end
     request = classified = nothing
@@ -688,6 +691,15 @@ end
 
 # ---------------------------------------------------------------- summary
 
+"The files after each `name` in `args`, up to the next option: `--base A.tsv B.tsv --base C.tsv`."
+function files_after(args, name)
+    files, on = String[], false
+    for a in args
+        startswith(a, "--") ? (on = a == name) : on && push!(files, a)
+    end
+    return files
+end
+
 "The lines of `paths`, one per (point, label, mode): a completed line over a failed, stopped or skipped one (ipog_compare.jl's `rank`), the later among equals."
 function by_key(paths)
     by = Dict{Tuple{String, String, String}, Dict{String, String}}()
@@ -802,10 +814,10 @@ agree(ss, live) = isnan(ss) || isnan(live) ? "-" : abs(live - ss) <= max(0.10ss,
                   @sprintf("differ (live/ss %.2f)", live / ss)
 
 function print_summary(args)
-    base_files, branch_files = IC.options(args, "--base"), IC.options(args, "--branch")
+    base_files, branch_files = files_after(args, "--base"), files_after(args, "--branch")
     isempty(base_files) && error("summary needs --base FILE")
     base, branch = by_key(base_files), by_key(branch_files)
-    rb, rr = by_key(IC.options(args, "--recheck-base")), by_key(IC.options(args, "--recheck-branch"))
+    rb, rr = by_key(files_after(args, "--recheck-base")), by_key(files_after(args, "--recheck-branch"))
     tol = parse(Float64, IC.option(args, "--tolerance", "0.10"))
     floor = parse(Float64, IC.option(args, "--floor", "0.001"))
     ladder_seconds = parse(Float64, IC.option(args, "--ladder-seconds", "30"))
@@ -825,8 +837,9 @@ function print_summary(args)
     if !isempty(stops)
         println("\n== stopped by the watchdog or crashed")
         for (n, k, r) in sort!(stops)
-            @printf("  %-7s %-16s %-8s %-8s %-28s peak %s MiB after %s s; retained after classification %s MiB\n", n,
-                    k[1], k[2], k[3], r["status"], r["peak_rss_mib"], r["wall_s"], mibs(num(r, "ret_c_b")))
+            @printf("  %-7s %-16s %-8s %-8s %-28s peak %s MiB after %s s; retained after classification %s / %s MiB (summarysize / gc_live)\n",
+                    n, k[1], k[2], k[3], r["status"], r["peak_rss_mib"], r["wall_s"], mibs(num(r, "ret_c_b")),
+                    mibs(num(r, "live_c_b")))
         end
     end
     if isempty(branch)
@@ -880,7 +893,7 @@ end
 
 "The ids of the ladder points outside gate 4's rule, for a recheck."
 function outside_points(args)
-    base, branch = by_key(IC.options(args, "--base")), by_key(IC.options(args, "--branch"))
+    base, branch = by_key(files_after(args, "--base")), by_key(files_after(args, "--branch"))
     tol = parse(Float64, IC.option(args, "--tolerance", "0.10"))
     floor = parse(Float64, IC.option(args, "--floor", "0.001"))
     v = judge_gates(base, branch; tol, floor)

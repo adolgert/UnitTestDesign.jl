@@ -189,6 +189,7 @@ end
         @test !g4["noop_whole-n64"].gated && g4["noop_whole-n64"].verdict == :fail
         @test v.gate4_verdict == :fail
         @test v.rows_verdict == :fail && [x.key for x in v.rows] == [("whole-n8", "IPOG()", "covering")]
+        @test files_after(["summary", "--base", "a", "b", "--branch", "c", "--base", "d"], "--base") == ["a", "b", "d"]
         # Without the recheck, the point outside once fails.
         v1 = judge_gates(by_key([files[1]]), by_key([files[2]]))
         @test only(x for x in v1.gate4 if x.key[1] == "equality-n16").verdict == :fail
