@@ -4,10 +4,10 @@
 # gates on them. Run from a checkout's root, with the package of whatever
 # checkout `--project` names, so that two checkouts can be compared:
 #
-#     julia --project=. --startup-file=no benchmark/ipog_compare.jl run   [POINTS] [ENGINES] [LIMITS] --out OUT.tsv
+#     julia --project=. --startup-file=no benchmark/ipog_compare.jl run [POINTS] [ENGINES] [LIMITS] --out OUT.tsv
 #     julia --project=. --startup-file=no benchmark/ipog_compare.jl fresh [POINTS] [ENGINES] [WATCHDOG] --out OUT.tsv
 #     julia --project=. --startup-file=no benchmark/ipog_compare.jl summary FILE.tsv... [--ref COL] [--cand COL]...
-#     julia --project=. --startup-file=no benchmark/ipog_compare.jl list  [POINTS] [LIMITS]
+#     julia --project=. --startup-file=no benchmark/ipog_compare.jl list [POINTS] [LIMITS]
 #
 # POINTS: `--family NAME` (repeatable) names a family of
 # benchmark/scaling/families.py (`mainstream`, `mainstream-r1`, `smallest`,
@@ -20,11 +20,11 @@
 # 15 × 4 at strength 4; 12 × 3 at strength 4; and D3's points of probe 24, 20
 # parameters of 2, 3 and 4 values at strengths 4 to 6). `--points FILE.json`
 # reads specs in the harness's format (run.py --specs). `--filter TEXT`
-# (repeatable) keeps the points whose id (or spec id) holds one of them. A point is
-# built as the harness's worker builds a spec of family "none" with usage
-# "reuse" (worker.jl's `model`, model_specs.jl, spaces.jl): the same space,
-# rules, `stronger` groups, must-include rows and limits, so both tools agree
-# on what a point is. Its id is the spec's, without the solver
+# (repeatable) keeps the points whose id (or spec id) holds one of them. A
+# point is built as the harness's worker builds a spec of family "none" with
+# usage "reuse" (worker.jl's `model`, model_specs.jl, spaces.jl): the same
+# space, rules, `stronger` groups, must-include rows and limits, so both
+# tools agree on what a point is. Its id is the spec's, without the solver
 # ("uniform-pp-v3-k4-t2").
 #
 # ENGINES: `--engine EXPR` or `--engine LABEL=EXPR` (repeatable; default
@@ -58,8 +58,9 @@
 # (default 1; that figure is a floor, and CASA's models at strength 3 peak at
 # about twice it). `--max-seconds S` also leaves out the points whose
 # `estimated_seconds` passes S (default: no such limit). These get a
-# `skipped:` line; `fresh --over` runs exactly them. A first call that takes `--ladder-seconds` (default 120) or more also
-# skips the larger points of its ladder for that engine, as run.py does.
+# `skipped:` line; `fresh --over` runs exactly them. A first call that takes
+# `--ladder-seconds` (default 120) or more also skips the larger points of
+# its ladder for that engine, as run.py does.
 # `--resume` keeps the lines OUT already holds and runs only the rest.
 # `--classify-once` classifies each point's targets once and hands them to
 # every engine (the package's internal `_Classified` and `_generate`, as
@@ -75,8 +76,8 @@
 # process group's RSS every half second and stops the group. Its defaults are
 # `--calls 3 --budget 30`. It too leaves out the points a family marks
 # expensive, unless `--expensive`; `--over` keeps only the points `run`'s
-# limits leave out. `--work DIR` keeps each job's stdout and stderr (default: a directory
-# beside OUT).
+# limits leave out. `--work DIR` keeps each job's stdout and stderr (default:
+# a directory beside OUT).
 #
 # Each line of OUT.tsv: the point (family, id, ladder, strength, parameters,
 # the value counts in decreasing order as `v^count`, rules, `stronger` groups,
@@ -113,10 +114,16 @@
 # Noise: a time differs only when the two warm minima differ by more than
 # `--tolerance` (default 0.25) of the reference's and by more than `--floor`
 # seconds (default 0.001); a point where both are under the floor is not
-# judged. Why these: IPOG against itself, in one process, alternating, on a
-# machine with another agent's Julia jobs, differed by up to … (see the notes
-# p4-bench.md, "Noise"); warm minima under a millisecond move by tens of
-# percent between runs (plan §12.4).
+# judged. Why these: IPOG() against itself as two columns of one run, which
+# alternate at every point, on 1,826 points of every family under load 3.5–7
+# (an Apple M2 with another agent's Julia jobs): above a millisecond, 99% of
+# the ratios lay within 0.81–1.19 and 6 of 873 beyond 25%; below it the
+# second column was a median 9% faster at under 0.1 ms, from the order alone.
+# Between two runs the machine moved: a rerun of three families beside
+# heavier jobs was a median 19–34% slower at every size (up to 2×). So
+# compare candidates as columns of one run; across runs, use a quiet machine
+# or a larger `--tolerance`. `summary` says when two columns come from
+# different files.
 
 using UnitTestDesign, JSON, Printf
 using UnitTestDesign: Request, generate
@@ -811,6 +818,13 @@ function summary(args)
                 join(unique(r["julia"] for r in xs), "/"), minimum(loads), maximum(loads))
     end
     println("reference: ", ref)
+    files(c) = Set(r["file"] for r in values(by[c]))
+    for c in cands
+        isdisjoint(files(ref), files(c)) || continue
+        load(c) = (xs = [num(r["load"]) for r in values(by[c])]; sum(xs) / length(xs))
+        @printf("note: %s and %s come from different runs (mean load %.1f and %.1f); their times are comparable only on a quiet machine or with a larger --tolerance\n",
+                ref, c, load(ref), load(c))
+    end
     results = Dict(c => compare(ref, c, by, opts) for c in cands)
     # Every candidate side by side, on the points where all completed.
     if length(cands) > 1
