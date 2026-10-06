@@ -80,7 +80,7 @@
 # `timeout`, `rss_limit`, `crash`); the rows, their hash (`rows_hash`: the
 # same on Julia 1.10 and 1.13), the required targets and the lower bound;
 # `first_s`, `warm_s`, `calls` (warm calls), `bytes`, `gc_s` and `spent_s`
-# (the point's whole time for the engine); `peak_rss_mib` and `wall_s` (fresh
+# (the point's whole time for the engine, or the time a failed call took); `peak_rss_mib` and `wall_s` (fresh
 # only); the package's source (the last commit that changed its src/, `+`
 # when src/ differs from it), the Julia version and the 1-minute load average when the point started. Rows,
 # hashes, bounds, bytes and peak RSS are exact; times are provisional on a
@@ -366,12 +366,12 @@ function point_fields(s, space = nothing, kw = nothing)
 end
 
 "One line of OUT.tsv."
-function line(point, label, expr, status; r = nothing, rss = "", wall = "", load = load1())
+function line(point, label, expr, status; r = nothing, rss = "", wall = "", load = load1(), spent = "")
     d = r === nothing ? nothing : r.design
     fields = Any[point; label; expr; status;
                  d === nothing ? ["", "", "", ""] :
                      [size(d.matrix, 2), rows_hash(d.matrix), d.required, something(d.record.lower_bound, "")];
-                 r === nothing ? ["", "", "", "", "", ""] :
+                 r === nothing ? ["", "", "", "", "", spent] :
                      [@sprintf("%.6f", r.first), @sprintf("%.6f", r.warm), r.calls, r.bytes, @sprintf("%.6f", r.gc),
                       @sprintf("%.3f", r.spent)];
                  rss; wall; COMMIT; string(VERSION); load]
@@ -390,6 +390,7 @@ function run_point(s, parts, engines, opts, skip)
             push!(out, line(point, label, expr, "skipped:ladder after $(skip[label][ladder])"; load))
             continue
         end
+        started = time()
         status, r = try
             r = measure(engine, space, kw; opts.calls, opts.budget)
             (r.same ? "ok" : "nondeterministic"), r
@@ -398,8 +399,10 @@ function run_point(s, parts, engines, opts, skip)
             @warn "$(point_id(s)) $label" exception = e
             (e isa U.ResourceLimitError ? "resource_limit" : "error:$(nameof(typeof(e)))"), nothing
         end
-        r !== nothing && r.first >= opts.ladder_seconds && !isempty(ladder) && (skip[label][ladder] = point_id(s))
-        push!(out, line(point, label, expr, status; r, load))
+        # A call that failed records the seconds it took to fail as `spent_s`.
+        took = r === nothing ? time() - started : r.first
+        took >= opts.ladder_seconds && !isempty(ladder) && (skip[label][ladder] = point_id(s))
+        push!(out, line(point, label, expr, status; r, load, spent = r === nothing ? @sprintf("%.3f", took) : ""))
     end
     return out
 end
