@@ -657,21 +657,31 @@ function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(
     valid = ff isa TestCases ? length(ff) : nothing
     push!(rows, _size_row("full_factorial", :full_factorial, 0, ff, valid, space; memos, feasibility_limit))
     labels = [_engine_config(e).call for e in engines]   # what each result records as its engine's call
-    for s in strengths, (e, label) in zip(engines, labels)
+    for s in strengths
         s <= n || continue
-        # `covering(space; strength = s, engine = e, limits...)`, from the plan
-        # whose fit is asked first, so that a refusal is a row's status rather
-        # than an error, and the plan is prepared once.
-        request = Request(space; strength = s, limits...)
-        plan = _prepare(e, Profile(request))
-        if plan.fit.kind === :unsupported
-            push!(rows, _SizeRow(("covering($s)", :covering, s, :unsupported, plan.fit.reason, nothing, nothing,
-                                  nothing, nothing, none..., label)))
-            continue
+        # The targets at strength `s` are classified once, by the first engine
+        # that runs, and read by every engine after it (`_Classified`):
+        # classification is a function of the request, the same for each.
+        classified = nothing
+        for (e, label) in zip(engines, labels)
+            # `covering(space; strength = s, engine = e, limits...)`, from the
+            # plan whose fit is asked first, so that a refusal is a row's status
+            # rather than an error, and the plan is prepared once. Each design
+            # is a request of its own (§3.5).
+            request = Request(space; strength = s, limits...)
+            plan = _prepare(e, Profile(request))
+            if plan.fit.kind === :unsupported
+                push!(rows, _SizeRow(("covering($s)", :covering, s, :unsupported, plan.fit.reason, nothing, nothing,
+                                      nothing, nothing, none..., label)))
+                continue
+            end
+            classified === nothing && (classified = _attempt(() -> _Classified(request)))
+            design = let c = classified
+                c isa ResourceLimitError ? c : _attempt(() -> TestCases(request, _generate(plan, request, c)))
+            end
+            push!(rows, _size_row("covering($s)", :covering, s, design, valid, space; memos, feasibility_limit,
+                                  engine = label))
         end
-        design = _attempt(() -> TestCases(request, _generate(plan, request)))
-        push!(rows, _size_row("covering($s)", :covering, s, design, valid, space; memos, feasibility_limit,
-                              engine = label))
     end
     for d in distances
         base = from === nothing ? _default_base(space) : nothing

@@ -542,6 +542,55 @@ end
 end
 
 
+@testitem "engines: design_sizes classifies each strength once for all its engines (§4.2, §3.5)" setup=[EngineSetup] begin
+    using UnitTestDesign: _Plan
+    # The maintainer's follow-up 3. A probe engine that keeps the targets each
+    # run reads, and IPOG's rows. With several engines, every engine at a
+    # strength reads the same targets, classified once, and keeps its own
+    # search state; the rows, counts and statuses are what each engine gives
+    # alone.
+    struct Keeping <: CoveringEngine
+        seen::Vector{Any}
+    end
+    Keeping() = Keeping(Any[])
+    UnitTestDesign.engine_record(::Keeping) = EngineRecord(:Keeping, nothing)
+    Base.show(io::IO, ::Keeping) = print(io, "Keeping()")
+    UnitTestDesign.fit(::Keeping, ::Profile) = Fit(:native, "IPOG's rows")
+    function UnitTestDesign.cover_ordinary(e::Keeping, request::Request, targets::RequiredTargets)
+        push!(e.seen, targets)
+        return cover_ordinary(IPOG(), request, targets)
+    end
+    space = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:2, d = 1:3); constraints = [forbid((a = 1, b = 1))])
+    first_engine, second_engine = Keeping(), Keeping()
+    engines = [first_engine, Compact(IPOG()), second_engine, Construction(), Auto(goal = :compact)]
+    both = design_sizes(space; engine = engines, strengths = 2:3, distances = 1:1)
+    # Each strength's ordinary targets, then its negative sub-requests'. The
+    # ordinary targets are one object for every engine at a strength; a
+    # sub-request's are made for each run from the negative targets classified
+    # once, on the sub-request's own layout, and read the same.
+    @test length(first_engine.seen) == length(second_engine.seen) == 4   # two strengths, one Invalid value
+    ordinary = [length(t.layout.arity) == 4 for t in first_engine.seen]
+    @test count(ordinary) == 2
+    @test all(first_engine.seen[ordinary] .=== second_engine.seen[ordinary])
+    @test all(zip(first_engine.seen[.!ordinary], second_engine.seen[.!ordinary])) do (x, y)
+        x !== y && _target_list(x) == _target_list(y) && x.counts == y.counts && x.layout.supports == y.layout.supports
+    end
+    # Rows, counts and messages as each engine gives them alone; the probes give IPOG's.
+    fields(r) = (r.strategy, r.status, r.message, r.cases, r.pairs, r.triples, r.negative_cases)
+    for (e, label) in ((IPOG(), "Keeping()"), (Compact(IPOG()), nothing), (Construction(), nothing),
+                       (Auto(goal = :compact), nothing))
+        alone = design_sizes(space; engine = e, strengths = 2:3, distances = 1:1)
+        label = something(label, alone.rows[2].engine)
+        mine = [r for r in both.rows if r.engine == label || r.kind !== :covering]
+        twice = label == "Keeping()"   # the two probes' rows at each strength, each IPOG's
+        @test fields.(mine) == fields.(twice ? alone.rows[[1, 2, 2, 3, 3, 4]] : alone.rows)
+    end
+    for s in 2:3
+        @test collect(covering(space; strength = s, engine = Keeping())) == collect(covering(space; strength = s))
+    end
+end
+
+
 @testitem "engines: a result records its engine's configuration and every stage, and its seed line names a call that repeats its cases (§9.5)" setup=[EngineSetup] begin
     using UnitTestDesign: _engine_config, _engine_phrase
     # Every registry engine and nested ones, on spaces of one value count
