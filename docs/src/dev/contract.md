@@ -149,7 +149,8 @@ an engine that another wraps or chooses among nested in it, so that the
 call repeats the rows (§9.5, §9.11) unless an engine in it drew from a
 caller's generator (§9.6). And it gives the stages that ran, each with its
 engine's call, its rows and what that engine reports: the ordinary rows'
-(`Auto`'s starts and its choice, a catalog array, the row reducer's run) and,
+(`Auto`'s starts and its choice, a catalog array, the row reducer's run, the
+member of the IPOG family that made IPOG's rows) and,
 for each `Invalid` value, its negative rows', which say which engine covered
 them.
 
@@ -627,8 +628,10 @@ same request.
 **9.3** No result may depend on hash iteration order, object addresses, thread
 scheduling, the global random number generator, or the clock.
 
-**9.4** IPOG uses no randomness. Neither do `Construction` and `Auto` with
-`goal = :fast` or `:balanced`, which record no seed.
+**9.4** IPOG uses no randomness: it runs a fixed list of deterministic
+members of the IPOG family and keeps the design with the fewest rows, the
+first of equals. Neither do `Construction` and `Auto` with `goal = :fast` or
+`:balanced`, which record no seed.
 
 **9.5** `GND(; seed = 0, candidates = 50, rng = nothing)` seeds a fresh
 generator from `seed` at the start of every call, so repeated calls with the

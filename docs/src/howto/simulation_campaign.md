@@ -36,7 +36,7 @@ design_sizes(space)
 
 Each row is one design: how many runs it takes, its share of the 432 valid
 runs, and how many of the feasible pairs and triples it holds. Pairs take
-13 runs; triples take 43. The counts are the rows the engine produced for
+13 runs; triples take 41. The counts are the rows the engine produced for
 this space, not lower bounds, and another engine may give a different
 count.
 

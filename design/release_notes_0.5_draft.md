@@ -206,6 +206,26 @@ Added 2026-10-04 by the solver plan's Phase 3
   Auto()"), and an engine that refuses a request suggests `IPOG()` or
   `Auto()`.
 
+### IPOG's core (solver plan, Phase 4)
+
+Added 2026-10-06 by the solver plan's Phase 4
+(`design/20261003_solver_plan.md`, §5.5).
+
+- `IPOG()` has one engine for every request, in place of 0.4's classic
+  algorithm and the general one 0.5 added for rules, must-include rows and
+  `stronger` groups. It finds the best value for each case by lookup
+  (Kleine and Simos's FIPOG) instead of scanning every combination, which
+  is 10 to several hundred times faster on larger spaces, and holds one
+  step's combinations at a time.
+- Its cases change. It runs four members of the IPOG family, two tie-break
+  rules by two orders of vertical growth, and keeps the design with the
+  fewest cases; over the package's benchmark grid that has as many cases as
+  before or fewer at 96.7% of the points and 2% fewer in total, and at a few
+  points one or two more. A rule that excludes nothing no longer changes the
+  design. The result's `record.ordinary.member` names the member kept.
+- `Construction()`'s seeded path and `Auto` start from the same engine, so
+  their designs change with it.
+
 ### Fixed
 
 - Constraint handling: implicit constraints crashed IPOG and hung GND.

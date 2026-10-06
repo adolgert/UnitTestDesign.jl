@@ -39,7 +39,7 @@ space = TestSpace(
         forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance"),
     ])
 
-committed = [(mode = :exact, solver = :qr, tol = 1.0e-6), (mode = :exact, solver = :lu, tol = 1.0e-6), (mode = :exact, solver = :none, tol = 1.0e-6), (mode = :fast, solver = :none, tol = 0.001), (mode = :fast, solver = :none, tol = 1.0e-6)]
+committed = [(mode = :fast, solver = :none, tol = 0.001), (mode = :exact, solver = :none, tol = 1.0e-6), (mode = :exact, solver = :lu, tol = 1.0e-6), (mode = :exact, solver = :qr, tol = 1.0e-6), (mode = :fast, solver = :none, tol = 1.0e-6)]
 
 @testset "the committed design is current" begin
     @test iscomplete(coverage(committed, space))          # nothing missing

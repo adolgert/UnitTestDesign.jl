@@ -27,7 +27,11 @@ The keep-the-smallest threshold of `Auto(goal = :balanced)` (plan §4.1,
 (`Profile.targets`), and both starts are run and the smaller kept; above it,
 one start is chosen from the request alone (`_auto_plan`). A count, never a
 time, so the choice depends only on the request (contract §9.1, §9.3). Chosen
-from the regret table of design/…/p3-auto.md (benchmark/auto_regret.jl).
+from the regret table of design/…/p3-auto.md (benchmark/auto_regret.jl), and
+kept when IPOG's lookup core replaced its old paths (Phase 4): on the table's
+681 points the catalog's array is then larger than IPOG's design at two exact
+shapes, the larger 14 parameters of 6 values at strength 2 (3,276 targets),
+30 times below the threshold.
 """
 const _AUTO_SMALL = 100_000
 const _AUTO_SMALL_TEXT = "100000"

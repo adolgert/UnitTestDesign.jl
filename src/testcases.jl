@@ -143,8 +143,12 @@ engine reports:
   whether the array only `seeded` the design under rules. The row reducer
   ([`Compact`](@ref)) reports `start`, the stage of its inner engine, and
   `reducer`, with the rows it started from and ended with, its bound, its
-  steps and budgets, and why it stopped. [`IPOG`](@ref) and [`GND`](@ref)
-  report nothing more. For `Auto()` on eight parameters of seven values:
+  steps and budgets, and why it stopped. [`IPOG`](@ref) reports `member`,
+  the member of the IPOG family whose design it kept, `(tiebreak,
+  vertical)`, or `(tiebreak = :none, vertical = :none)` at full strength,
+  where the design is every valid row and no member runs (the manual's IPOG
+  page says what the members are). [`GND`](@ref) reports nothing more. For
+  `Auto()` on eight parameters of seven values:
 
   ```
   (engine = "Auto()", rows = 49, chose = "Construction()",

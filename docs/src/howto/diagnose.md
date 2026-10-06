@@ -20,7 +20,7 @@ using UnitTestDesign
 solve(n, method, tol, sparse) =
     method == :newton && sparse ? error("Jacobian pattern not set") : true
 
-space = TestSpace((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
+space = TestSpace((n = [10, 100, 1000, 10000], method = [:newton, :bicg, :gmres],
                    tol = [1e-3, 1e-6], sparse = [false, true]))
 cases = all_pairs(space)
 
@@ -55,15 +55,15 @@ d = diagnose(cases, passed)
 
 A suspect is a combination of values that appears in at least one failing
 case and in no passing case. The list is ranked by how many failures hold
-the suspect. The true cause ranks first, in both failures. The other two
+the suspect. The true cause ranks first, in all three failures. The other
 pairs appear only in failing cases, so nothing yet says whether they work:
-the failure masks them.
+the failures mask them.
 
 Each numbered line is a group. Suspects with the same failure pattern,
 those that occur in exactly the same failing cases, share a group, and the
 group's line lists the others as "same failures as" the first: these
-outcomes cannot tell them apart, though new cases may. The second example
-below has such a group.
+outcomes cannot tell them apart, though new cases may. The last line here
+is such a group, and so is the second example below.
 
 ## 3. Run the follow-ups
 
@@ -73,7 +73,7 @@ f = followups(d)
 
 For each suspect, `followups` looks for a valid case that holds it and no
 other suspect, so its outcome speaks to that suspect alone. It starts
-from a failing case and changes few of its values, here one each, a
+from a failing case and changes few of its values, here one or two, a
 heuristic with no minimum-distance guarantee. Run the cases it found, and
 diagnose again with every row and outcome so far:
 
@@ -82,7 +82,7 @@ next = [x.case for x in f if x.status == :found]
 diagnose([collect(cases); next], [passed; runs.(next)]; space)
 ```
 
-One suspect remains, in all three failures. That is strong evidence, and it
+One suspect remains, in all four failures. That is strong evidence, and it
 is still a hypothesis: the next step is to read the code that handles a
 sparse Newton step.
 

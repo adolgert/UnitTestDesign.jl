@@ -58,8 +58,11 @@ Spencer's theorem on pairwise arrays of two values (Kleitman and Spencer
 IPOG, the in-parameter-order generator, covers the first few parameters,
 then adds one parameter at a time. Each step first gives the new parameter
 a value in the existing cases, choosing values that cover the most new
-combinations, and then adds cases for the combinations still missing. The
-[IPOG](ipog.md) page describes the algorithm.
+combinations, which it finds by lookup rather than by a scan, and then adds
+cases for the combinations still missing. It builds four designs this way,
+with two rules for breaking ties and two orders for adding cases, and keeps
+the one with the fewest cases; the result's `record.ordinary.member` says
+which. The [IPOG](ipog.md) page describes the algorithm.
 
 IPOG uses no randomness (§9.4). For the same inputs, the same package
 version, and the same Julia version, it returns the same cases in the same
@@ -317,24 +320,24 @@ records. "Compact" is `Auto(goal = :compact)` at its default effort and seed.
 
 | Space | Strength | IPOG | GND, seed 0 | `Auto()` | Compact | Lower bound |
 |:--|--:|--:|--:|--:|--:|--:|
-| 8 binary flags | 2 | 9 | 8 | 6 | 6 | 4 |
-| 3 parameters × 6 values | 2 | 40 | 40 | 36 | 36 | 36 |
-| 8 × 7 values | 2 | 79 | 73 | 49 | 49 | 49 |
-| 10 × 8 values | 2 | 113 | 100 | 78 | 78 | 64 |
-| 20 × 10 values | 2 | 217 | 200 | 155 | 155 | 100 |
-| 12 × 3 values | 3 | 74 | 68 | 53 | 53 | 27 |
-| 6 × 6 values | 3 | 363 | 340 | 276 | 271 | 216 |
+| 8 binary flags | 2 | 8 | 8 | 6 | 6 | 4 |
+| 3 parameters × 6 values | 2 | 36 | 40 | 36 | 36 | 36 |
+| 8 × 7 values | 2 | 78 | 73 | 49 | 49 | 49 |
+| 10 × 8 values | 2 | 112 | 100 | 78 | 78 | 64 |
+| 20 × 10 values | 2 | 213 | 200 | 155 | 155 | 100 |
+| 12 × 3 values | 3 | 73 | 68 | 53 | 53 | 27 |
+| 6 × 6 values | 3 | 356 | 340 | 276 | 271 | 216 |
 | `smooth`: 4 × 3 values, two rules | 2 | 13 | 12 | 12 | 11 | 9 |
-| `bench12`: 12 parameters, four rules | 2 | 22 | 25 | 22 | 18 | 16 |
-| `bench12` | 3 | 93 | 96 | 93 | 71 | 64 |
-| 15 × 4 values (fixture 1) | 4 | 958 | 936 | 958 | 826 | 256 |
+| `bench12`: 12 parameters, four rules | 2 | 21 | 25 | 21 | 18 | 16 |
+| `bench12` | 3 | 92 | 96 | 92 | 76 | 64 |
+| 15 × 4 values (fixture 1) | 4 | 948 | 936 | 948 | 825 | 256 |
 
 Where every parameter has the same number of values, the catalog is far
 below IPOG: over a sample of 132 such shapes at strength 2, IPOG returns a
-median of 30% more cases, and over 70 at strength 3, 38% more. On spaces of
+median of 26% more cases, and over 70 at strength 3, 35% more. On spaces of
 parameters with different numbers of values, `Auto()` is IPOG, and the
 reducer is what removes cases: on 100 random such spaces at strength 2 it
-saved 9% of IPOG's cases on average. No design for `smooth` has fewer
+saved 4.5% of IPOG's cases on average. No design for `smooth` has fewer
 than 11 cases, which an exhaustive search over its 57 valid cases shows (the
 package's tests repeat it), and none for 8 binary flags has fewer than 6, by
 Kleitman and Spencer's theorem. Those results have the fewest cases
@@ -344,8 +347,8 @@ count minimal only when it meets its bound, doesn't say so (§8.4).
 ## What a smaller design gives up
 
 A pairwise design covers some triples by accident, and a smaller one covers
-fewer: `bench12`'s 22 IPOG cases cover 61.7% of its feasible triples, and
-the reduced 18 cover 55.9%. When tests are cheap, the larger design is
+fewer: `bench12`'s 21 IPOG cases cover 60.7% of its feasible triples, and
+the reduced 18 cover 56.1%. When tests are cheap, the larger design is
 arguably the better one: it finds more of the failures that need three
 values together. [`report`](@ref)'s "bonus" line counts these triples for
 any result, and [`all_triples`](@ref) covers them all. This is why no
@@ -363,14 +366,14 @@ for a space of 250 parameters, for its row type.
 
 | Space | Strength | Engine | Cases (lower bound) | Warm call | Peak memory |
 |:--|--:|:--|:--|:--|:--|
-| 10 × 3 values | 2 | IPOG; `Auto()`; compact | 17; 15; 14 (9) | under 1 ms; under 1 ms; 20 ms | 310 MiB |
-| 50 × 4 values | 2 | IPOG; `Auto()`; compact | 46; 40; 38 (16) | 9 ms; 9 ms; 0.14 s | 324 MiB |
-| 250 binary | 2 | IPOG; IPOG, one rule | 17; 19 (4) | 0.11 s; 0.95 s | 460 MiB; 1.9 GiB |
-| 250 × 4 values | 2 | IPOG; `Auto()` | 63; 52 (16) | 0.79 s; 6 to 20 ms | 460 MiB |
-| 8 × 64 values | 2 | IPOG; `Auto()` | 7168; 4096, minimal | 1.6 s; 1 ms | 310 MiB |
-| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 256; 263; 178 (64) | 0.33 s; 1.0 s; 14 s | 334 MiB; 850 MiB; 320 MiB |
-| 15 × 4 values | 4 | IPOG; compact | 958; 826 (256) | 1.0 s; 13 s | 350 MiB |
-| 20 binary | 6 | IPOG; IPOG, one rule | 376; 400 (64) | 3.6 s; 10 to 13 s | 635 MiB; 4.3 to 7.1 GiB |
+| 10 × 3 values | 2 | IPOG; `Auto()`; compact | 15; 15; 15 (9) | under 1 ms; under 1 ms; 20 ms | 314 MiB |
+| 50 × 4 values | 2 | IPOG; `Auto()`; compact | 46; 40; 38 (16) | 2 ms; 2 ms; 0.14 s | 325 MiB |
+| 250 binary | 2 | IPOG; IPOG, one rule | 17; 18 (4) | 15 ms; 0.82 s | 472 MiB; 1.7 GiB |
+| 250 × 4 values | 2 | IPOG; `Auto()` | 62; 52 (16) | 61 ms; 6 to 26 ms | 460 MiB |
+| 8 × 64 values | 2 | IPOG; `Auto()` | 5483; 4096, minimal | 59 ms; 1 ms | 311 MiB |
+| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 255; 264; 178 (64) | 30 ms; 0.64 s; 14 s | 320 MiB; 813 MiB; 318 MiB |
+| 15 × 4 values | 4 | IPOG; compact | 948; 825 (256) | 51 ms; 13 s | 316 MiB |
+| 20 binary | 6 | IPOG; IPOG, one rule | 379; 397 (64) | 0.50 s; 10 to 13 s | 329 MiB; 4.3 to 7.1 GiB |
 
 (`benchmark/engine_costs.jl` repeats these.) What grows, and what stops a
 call that is too large; a design that can't be certified is not returned:

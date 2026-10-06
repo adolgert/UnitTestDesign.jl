@@ -42,7 +42,7 @@ nothing # hide
 Pairs matter because many bugs need two things at once: an `if` on one option
 inside a branch on another. The saving grows with the number of parameters.
 Four parameters of three values each have 81 combinations, and every pair of
-their values fits in 10 cases:
+their values fits in 9 cases:
 
 ```@example tutorial
 all_pairs([1, 2, 3], ["low", "mid", "high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim])
@@ -417,7 +417,7 @@ combinations that appear only in failing cases. Here a bug fails every case
 with `method = :newton` on a sparse matrix:
 
 ```@example tutorial
-suite = all_pairs((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
+suite = all_pairs((n = [10, 100, 1000, 10000], method = [:newton, :bicg, :gmres],
                    tol = [1e-3, 1e-6], sparse = [false, true]))
 passed = [!(c.method == :newton && c.sparse) for c in suite]
 diagnose(suite, passed)

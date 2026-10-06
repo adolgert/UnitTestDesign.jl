@@ -88,7 +88,7 @@ nothing # hide
 ```
 
 The saving grows with the number of parameters. Four parameters of three
-values each have 81 combinations, and every pair of their values fits in 10
+values each have 81 combinations, and every pair of their values fits in 9
 cases:
 
 ```@example home

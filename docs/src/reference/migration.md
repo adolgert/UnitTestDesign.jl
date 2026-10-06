@@ -8,8 +8,13 @@ This page lists every removed and deprecated spelling, with its replacement
 and a before-and-after example. The "after" code runs when the manual is
 built.
 
-The cases don't change for code that names no engine: the default is
-still [`IPOG`](@ref). 0.5 adds engines a call can name, [`Auto`](@ref),
+The default engine is still [`IPOG`](@ref), but its cases change: 0.5's
+IPOG finds each case's values by lookup and keeps the smallest of four
+designs ([IPOG](../man/ipog.md)), which on most spaces has as many cases as
+0.4's or fewer, and on a few has one or two more. To keep 0.4's cases, save
+them and pass them back as `must_include`, which keeps every saved case
+([Commit a design as data](../howto/commit_design.md)). 0.5 adds engines a
+call can name, [`Auto`](@ref),
 [`Construction`](@ref) and [`Compact`](@ref), which give fewer cases on
 many spaces. What a result shows and keeps does change: its summary line and
 [`report`](@ref) show a lower bound beside the count, [`TestCases`](@ref)

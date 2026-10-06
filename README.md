@@ -86,7 +86,7 @@ end
 
 The saving grows with the number of parameters: four parameters of three
 values each have 81 combinations, and `all_pairs` covers every pair of their
-values in 10 cases.
+values in 9 cases.
 
 ## What it promises
 
