@@ -61,6 +61,12 @@
 # `skipped:` line; `fresh --over` runs exactly them. A first call that takes `--ladder-seconds` (default 120) or more also
 # skips the larger points of its ladder for that engine, as run.py does.
 # `--resume` keeps the lines OUT already holds and runs only the rest.
+# `--classify-once` classifies each point's targets once and hands them to
+# every engine (the package's internal `_Classified` and `_generate`, as
+# `design_sizes` does), so the engines' times leave classification out and
+# `classify_s` holds it: on constrained models the feasibility search can be
+# nearly the whole call (ct-comp's MCAC_22: 35.6 of 36.1 s), and a sweep of
+# several candidates then pays for it once.
 #
 # `fresh` runs each point and engine in its own Julia process, with the
 # same calls, under `/usr/bin/time -l` (macOS) for the process's peak RSS,
@@ -80,11 +86,12 @@
 # `timeout`, `rss_limit`, `crash`); the rows, their hash (`rows_hash`: the
 # same on Julia 1.10 and 1.13), the required targets and the lower bound;
 # `first_s`, `warm_s`, `calls` (warm calls), `bytes`, `gc_s` and `spent_s`
-# (the point's whole time for the engine, or the time a failed call took); `peak_rss_mib` and `wall_s` (fresh
-# only); the package's source (the last commit that changed its src/, `+`
-# when src/ differs from it), the Julia version and the 1-minute load average when the point started. Rows,
-# hashes, bounds, bytes and peak RSS are exact; times are provisional on a
-# busy machine.
+# (the point's whole time for the engine, or the time a failed call took);
+# `peak_rss_mib` and `wall_s` (fresh only); the package's source (the last
+# commit that changed its src/, `+` when src/ differs from it), the Julia
+# version and the 1-minute load average when the point started; and
+# `classify_s` (with `--classify-once`). Rows, hashes, bounds, bytes and peak
+# RSS are exact; times are provisional on a busy machine.
 #
 # `summary` joins the lines of one or more files on the point and compares
 # columns: `--ref COL` (default the first column read) against each `--cand
@@ -318,18 +325,25 @@ end
 
 """
 One engine on one point: a first call, then warm calls (the header says how
-many), each `generate(engine, Request(space; kw...))`.
+many), each `generate(engine, Request(space; kw...))`, or, given the point's
+`classified` targets (`--classify-once`), the same generation from them
+(`_generate`, as `design_sizes` hands one classification to every engine).
 """
-function measure(engine, space, kw; calls, budget)
+function measure(engine, space, kw; calls, budget, classified = nothing)
+    function call()
+        request = Request(space; kw...)
+        return classified === nothing ? generate(engine, request) :
+                                        U._generate(U._check_fit(engine, request), request, classified)
+    end
     start = time()
     GC.gc(false)
-    first = @timed generate(engine, Request(space; kw...))
+    first = @timed call()
     design = first.value
     warm, bytes, gc, n, same, spent = first.time, first.bytes, first.gctime, 0, true, 0.0
     if first.time < budget
         warm, bytes = Inf, typemax(Int)
         while n < calls && spent < budget
-            w = @timed generate(engine, Request(space; kw...))
+            w = @timed call()
             n += 1
             spent += w.time
             same &= w.value.matrix == design.matrix
@@ -342,7 +356,8 @@ end
 
 const COLUMNS = ["family", "point", "ladder", "t", "k", "arity", "rules", "stronger", "must", "invalid", "adapt",
                  "targets", "cost", "label", "expr", "status", "rows", "hash", "required", "bound", "first_s",
-                 "warm_s", "calls", "bytes", "gc_s", "spent_s", "peak_rss_mib", "wall_s", "commit", "julia", "load"]
+                 "warm_s", "calls", "bytes", "gc_s", "spent_s", "peak_rss_mib", "wall_s", "commit", "julia", "load",
+                 "classify_s"]
 
 # The package's source: the last commit that changed src/ in its checkout, `+`
 # when src/ differs from it, `?` outside git.
@@ -366,7 +381,8 @@ function point_fields(s, space = nothing, kw = nothing)
 end
 
 "One line of OUT.tsv."
-function line(point, label, expr, status; r = nothing, rss = "", wall = "", load = load1(), spent = "")
+function line(point, label, expr, status; r = nothing, rss = "", wall = "", load = load1(), spent = "",
+              classify = "")
     d = r === nothing ? nothing : r.design
     fields = Any[point; label; expr; status;
                  d === nothing ? ["", "", "", ""] :
@@ -374,7 +390,7 @@ function line(point, label, expr, status; r = nothing, rss = "", wall = "", load
                  r === nothing ? ["", "", "", "", "", spent] :
                      [@sprintf("%.6f", r.first), @sprintf("%.6f", r.warm), r.calls, r.bytes, @sprintf("%.6f", r.gc),
                       @sprintf("%.3f", r.spent)];
-                 rss; wall; COMMIT; string(VERSION); load]
+                 rss; wall; COMMIT; string(VERSION); load; classify]
     return join(fields, '\t')
 end
 
@@ -384,7 +400,25 @@ function run_point(s, parts, engines, opts, skip)
     space, kw = build(s, parts...)
     point = point_fields(s, space, kw)
     out = String[]
+    # --classify-once: the point's targets, classified once for every engine; a
+    # classification that fails is every engine's failure.
+    classified, classify, failed = nothing, "", nothing
+    if opts.classify_once
+        started = time()
+        try
+            classified = U._Classified(Request(space; kw...))
+        catch e
+            e isa InterruptException && rethrow()
+            @warn "$(point_id(s)) classification" exception = e
+            failed = e isa U.ResourceLimitError ? "resource_limit" : "error:$(nameof(typeof(e)))"
+        end
+        classify = @sprintf("%.3f", time() - started)
+    end
     for (label, expr, engine) in engines
+        if failed !== nothing
+            push!(out, line(point, label, expr, failed; load, spent = classify, classify))
+            continue
+        end
         ladder = get(s, "ladder", "")
         if !isempty(ladder) && haskey(skip[label], ladder)
             push!(out, line(point, label, expr, "skipped:ladder after $(skip[label][ladder])"; load))
@@ -392,7 +426,7 @@ function run_point(s, parts, engines, opts, skip)
         end
         started = time()
         status, r = try
-            r = measure(engine, space, kw; opts.calls, opts.budget)
+            r = measure(engine, space, kw; opts.calls, opts.budget, classified)
             (r.same ? "ok" : "nondeterministic"), r
         catch e
             e isa InterruptException && rethrow()
@@ -402,7 +436,8 @@ function run_point(s, parts, engines, opts, skip)
         # A call that failed records the seconds it took to fail as `spent_s`.
         took = r === nothing ? time() - started : r.first
         took >= opts.ladder_seconds && !isempty(ladder) && (skip[label][ladder] = point_id(s))
-        push!(out, line(point, label, expr, status; r, load, spent = r === nothing ? @sprintf("%.3f", took) : ""))
+        push!(out, line(point, label, expr, status; r, load, spent = r === nothing ? @sprintf("%.3f", took) : "",
+                        classify))
     end
     return out
 end
@@ -415,7 +450,8 @@ function run_sweep(args)
     out === nothing && error("run needs --out OUT.tsv")
     lim = limits(args)
     opts = (calls = parse(Int, option(args, "--calls", "3")), budget = parse(Float64, option(args, "--budget", "2")),
-            ladder_seconds = parse(Float64, option(args, "--ladder-seconds", "120")))
+            ladder_seconds = parse(Float64, option(args, "--ladder-seconds", "120")),
+            classify_once = flag(args, "--classify-once"))
     columns = engine_columns(args)
     specs = select_specs(args)
     done = flag(args, "--resume") ? done_pairs(out) : Set{Tuple{String, String}}()
