@@ -664,7 +664,8 @@ num(x) = parse(Float64, x)
 int(x) = parse(Int, x)
 geomean(xs) = isempty(xs) ? NaN : exp(sum(log, xs) / length(xs))
 median(x) = (s = sort(x); isempty(s) ? NaN : isodd(length(s)) ? s[(end + 1) ÷ 2] : (s[end ÷ 2] + s[end ÷ 2 + 1]) / 2)
-pct(a, b) = 100 * (a - b) / b
+"How much `a` exceeds `b`, in percent; an empty design (a space with no valid row) against another is 0%."
+pct(a, b) = b == 0 ? (a == 0 ? 0.0 : Inf) : 100 * (a - b) / b
 
 "A shape key for uniform points without rules or changes, so the named gates find them in any family: `20x3-t6`."
 function shape(r)
@@ -680,7 +681,9 @@ The columns of the lines, in the order first read. A column is a label, so
 that one run's files (one per family) make one column; `LABEL@COMMIT` where
 the label was measured on more than one package source, as when today's
 `IPOG()` meets the new branch's; and `…#FILE` where the label (and commit)
-still holds a point twice, as two runs of the same source do.
+still completes a point twice, as two runs of the same source do. A line
+that didn't complete doesn't count: a `fresh --over` run fills in the points
+`run` skipped (`rank`).
 """
 function column_ids(rows)
     commits = Dict{String, Set{String}}()
@@ -693,6 +696,7 @@ function column_ids(rows)
     seen = Dict{String, Set{String}}()
     twice = Set{String}()
     for r in rows
+        r["status"] == "ok" || continue
         points = get!(seen, r["column"], Set{String}())
         r["point"] in points && push!(twice, r["column"])
         push!(points, r["point"])
@@ -709,6 +713,14 @@ function pick(columns, name)
     length(hits) == 1 || error("no single column matches $name; columns: $(join(columns, ", "))")
     return hits[1]
 end
+
+"""
+Which of two lines for one point and column stands: a completed call (3)
+over a call that failed (2), over a fresh process that was stopped (1), over
+a point that was skipped (0); the later line among equals.
+"""
+rank(r) = r["status"] == "ok" ? 3 : startswith(r["status"], "skipped") ? 0 :
+          any(startswith(r["status"], x) for x in ("rss_limit", "timeout", "crash")) ? 1 : 2
 
 "The time comparison of two warm minima: :fast (both under the floor), :slower, :faster or :same."
 function judge(ref, cand, tol, floor)
@@ -811,8 +823,10 @@ function summary(args)
             floor = parse(Float64, option(args, "--floor", "0.001")), show = parse(Int, option(args, "--show", "25")))
     by = Dict(c => Dict{String, Dict{String, String}}() for c in columns)
     for r in rows
-        haskey(by[r["column"]], r["point"]) && @warn "$(r["column"]) has $(r["point"]) twice; the later line wins"
-        by[r["column"]][r["point"]] = r
+        old = get(by[r["column"]], r["point"], nothing)
+        old !== nothing && rank(old) == rank(r) == 3 &&
+            @warn "$(r["column"]) completes $(r["point"]) twice; the later line wins"
+        (old === nothing || rank(r) >= rank(old)) && (by[r["column"]][r["point"]] = r)
     end
     println("ipog_compare summary: ", length(paths), " files, ", length(rows), " lines")
     for c in columns
