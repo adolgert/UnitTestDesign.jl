@@ -44,7 +44,8 @@
 #   used value that keeps the row completable, as the old general path did.
 # - Two rules, a tie-break and a vertical order, choose a member of the IPOG
 #   family (plan §2.5). `IPOG()` runs several (`_IPOG_MEMBERS`) on the same
-#   steps and keeps the fewest rows (`_execute`).
+#   steps and keeps the fewest rows, stopping at a member whose rows no
+#   design can go below (`_execute`).
 #
 # The completability invariant (contract §1.3): a value is committed only when
 # the row stays completable, `dead(row)` false. Must-include rows are
@@ -271,7 +272,9 @@ the notes' `member` is `(tiebreak = :none, vertical = :none)`; otherwise
 `_lookup_cover`, which with no required target and no must-include row gives
 no rows (§1.24), for each member of the plan on the same steps, keeping the
 fewest rows, the first of equals (`_fewest_rows`), and the notes' `member` is
-the one kept. The notes have one type for every plan, so that `_run`'s stage
+the one kept. A member whose rows meet `_rows_floor` ends the loop: no later
+member can have fewer, so the rows and the member are those of running every
+member. The notes have one type for every plan, so that `_run`'s stage
 infers concretely.
 """
 function _execute(plan::_IPOGPlan, request::Request, targets::RequiredTargets)
@@ -279,7 +282,7 @@ function _execute(plan::_IPOGPlan, request::Request, targets::RequiredTargets)
         return (full_strength_rows(request, _target_list(targets)), (member = _NO_MEMBER,))
     steps = _lookup_steps(targets, request.arity, plan.order)
     isdead = plan.rules ? (row -> dead(request, row)) : Returns(false)
-    rows, kept = _fewest_rows(plan.members) do tiebreak, vertical
+    rows, kept = _fewest_rows(plan.members, _rows_floor(request, targets)) do tiebreak, vertical
         _lookup_cover(steps, targets, isdead, request.must_include; tiebreak, vertical)
     end
     tiebreak, vertical = plan.members[kept]
@@ -287,21 +290,43 @@ function _execute(plan::_IPOGPlan, request::Request, targets::RequiredTargets)
 end
 
 """
-    _fewest_rows(f, members) -> (rows, k)
+    _fewest_rows(f, members, floor = 0) -> (rows, k)
 
 `f(tiebreak, vertical)` for each member of `members` in order, and of its
 results the one with the fewest rows, the first of equals, with the index of
 the member that made it: plan §4.1's "keep the smallest", decided from the
-rows alone, so deterministic.
+rows alone, so deterministic. `floor` is a number of rows that no result has
+fewer of; once the result kept has that many, the members after it are not
+run, since none of them could replace it.
 """
-function _fewest_rows(f, members::Vector{Tuple{Symbol, Symbol}})
+function _fewest_rows(f, members::Vector{Tuple{Symbol, Symbol}}, floor::Int = 0)
     isempty(members) && error("internal error: an IPOG plan with no member")
     best, kept = f(members[1]...)::Matrix{Int}, 1
     for k in 2:length(members)
+        size(best, 2) <= floor && break
         rows = f(members[k]...)::Matrix{Int}
         size(rows, 2) < size(best, 2) && ((best, kept) = (rows, k))
     end
     return best, kept
+end
+
+"""
+    _rows_floor(request, targets) -> Int
+
+A number of rows that no covering design for `request` has fewer of, from
+counts alone: its must-include rows, which are rows of every design (contract
+§10.5), or the most required combinations on one support, since a row holds
+one combination of each support, whichever is more. Without must-include
+rows it is the lower bound the result records (`_ordinary_bound`); with them
+that bound can be larger, as it also reads which combinations the
+must-include rows hold, which this leaves to the pipeline.
+"""
+function _rows_floor(request::Request, targets::RequiredTargets)
+    floor = size(request.must_include, 2)
+    for s in eachindex(supports(targets))
+        floor = max(floor, nrequired(targets, s))
+    end
+    return floor
 end
 
 cover_ordinary(engine::_IPOGLookup, request::Request, targets::RequiredTargets) = _cover(engine, request, targets)
