@@ -519,10 +519,10 @@ uncovered, ties broken by the member's rule, among the values that keep the
 row completable (`dead`), and none when the best scores nothing. Then the
 targets still uncovered go to the first row that agrees with them and stays
 completable, and the others stay uncovered. An entry that no uncovered
-target asks for stays unset, for the rows that follow to use. A set value never changes (contract §7.10),
-and the rows stay in order (§10.5). `Construction` calls it before it filters
-the catalog's rows (`_construction_rows`), on the steps the run after it
-reads again.
+target asks for stays unset, for the rows that follow to use. A set value
+never changes (contract §7.10), and the rows stay in order (§10.5).
+`Construction` calls it before it filters the catalog's rows
+(`_construction_rows`), on the steps the run after it reads again.
 """
 function _lookup_complete(steps::_LookupSteps, targets::RequiredTargets, dead, seeds::AbstractMatrix{<:Integer};
                           tiebreak::Symbol = :lowest, vertical::Symbol = :support)
