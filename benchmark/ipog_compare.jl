@@ -548,21 +548,26 @@ function stop_group(p, pgid)
 end
 
 """
-One point and engine in a fresh Julia process under `/usr/bin/time -l`,
-stopped at `rss_mib` of the group's resident memory or `seconds` of wall
-time: the line, with its peak RSS (the OS's high-water mark, or the sampled
-one where the process was stopped) and wall time.
+`script child ARGS…` in a fresh Julia process of this one's project, one
+thread, under `/usr/bin/time -l` (macOS), detached so that it leads its own
+process group.
 """
-function fresh_job(s, label, expr, opts, work)
-    name = replace("$(point_id(s))--$label", r"[^A-Za-z0-9_.\-]" => "_")
-    specpath, outpath, errpath = (joinpath(work, name * x) for x in (".json", ".out", ".err"))
-    write(specpath, JSON.json(s))
+function child_command(script, args)
     julia = Base.julia_cmd()
-    script = @__FILE__
-    cmd = `/usr/bin/time -l $julia --project=$(Base.active_project()) --startup-file=no --threads=1 $script child`
-    cmd = `$cmd $specpath $label $expr --calls $(opts.calls) --budget $(opts.budget)`
-    cmd = Cmd(addenv(cmd, "JULIA_NUM_THREADS" => "1", "OPENBLAS_NUM_THREADS" => "1"); detach = true)
-    load = load1()
+    cmd = `/usr/bin/time -l $julia --project=$(Base.active_project()) --startup-file=no --threads=1 $script child $args`
+    return Cmd(addenv(cmd, "JULIA_NUM_THREADS" => "1", "OPENBLAS_NUM_THREADS" => "1"); detach = true)
+end
+
+"""
+Run `cmd` (from `child_command`) with its stdout and stderr in `outpath` and
+`errpath`, sampling its process group's resident memory every half second
+and stopping the group past `rss_mib` MiB or `seconds` of wall time, as
+benchmark/scaling/run.py's watchdog does. Returns the process, `stopped`
+(`nothing`, "rss_limit" or "timeout"), `rss` (the OS's high-water mark in
+bytes, or the sampled peak where the process was stopped), the wall time,
+the lines of stdout, and `where`, the last `STAGE` line the child printed.
+"""
+function watch(cmd, outpath, errpath; rss_mib, seconds)
     started = time()
     peak, stopped = 0, nothing
     p = open(outpath, "w") do o
@@ -575,9 +580,9 @@ function fresh_job(s, label, expr, opts, work)
         sleep(0.5)
         rss = try group_rss(pgid) catch; 0 end
         peak = max(peak, rss)
-        if rss > opts.rss_mib * 2^20
+        if rss > rss_mib * 2^20
             stopped = "rss_limit"
-        elseif time() - started > opts.seconds
+        elseif time() - started > seconds
             stopped = "timeout"
         end
         stopped === nothing || (stop_group(p, pgid); break)
@@ -588,9 +593,25 @@ function fresh_job(s, label, expr, opts, work)
     m = match(r"(\d+)\s+maximum resident set size", err)
     rss = m === nothing ? peak : parse(Int, m[1])
     output = readlines(outpath)
-    result = findlast(l -> startswith(l, "RESULT\t"), output)
     stage = findlast(l -> startswith(l, "STAGE "), output)
     where = stage === nothing ? "startup" : output[stage][7:end]
+    return (; p, stopped, rss, wall, output, where)
+end
+
+"""
+One point and engine in a fresh Julia process under `/usr/bin/time -l`,
+stopped at `rss_mib` of the group's resident memory or `seconds` of wall
+time (`watch`): the line, with its peak RSS (the OS's high-water mark, or
+the sampled one where the process was stopped) and wall time.
+"""
+function fresh_job(s, label, expr, opts, work)
+    name = replace("$(point_id(s))--$label", r"[^A-Za-z0-9_.\-]" => "_")
+    specpath, outpath, errpath = (joinpath(work, name * x) for x in (".json", ".out", ".err"))
+    write(specpath, JSON.json(s))
+    cmd = child_command(@__FILE__, `$specpath $label $expr --calls $(opts.calls) --budget $(opts.budget)`)
+    load = load1()
+    (; p, stopped, rss, wall, output, where) = watch(cmd, outpath, errpath; opts.rss_mib, opts.seconds)
+    result = findlast(l -> startswith(l, "RESULT\t"), output)
     if result !== nothing && stopped === nothing
         fields = split(output[result], '\t')[2:end]
         fields[findfirst(==("peak_rss_mib"), COLUMNS)] = @sprintf("%.0f", rss / 2^20)
@@ -952,15 +973,19 @@ end
 
 const USAGE = "usage: ipog_compare.jl run|fresh|list [--family F]... [--points FILE]... [--filter S]... " *
               "[--engine [LABEL=]EXPR]... --out OUT.tsv | summary FILE... [--ref COL] [--cand COL]..."
-if isempty(ARGS)
-    error(USAGE)
-elseif ARGS[1] == "child"
-    child(ARGS)
-else
-    println("ipog_compare ", ARGS[1], " at ", COMMIT, " (", pkgdir(U), "), Julia ", VERSION, ", load ",
-            round.(Sys.loadavg(); digits = 1))
-    ARGS[1] == "run" ? run_sweep(ARGS) :
-    ARGS[1] == "fresh" ? fresh_sweep(ARGS) :
-    ARGS[1] == "summary" ? summary(ARGS) :
-    ARGS[1] == "list" ? list_points(ARGS) : error(USAGE)
+# Run as a script; benchmark/phase5_gate.jl includes this file for its
+# functions, and then nothing here runs.
+if abspath(PROGRAM_FILE) == @__FILE__
+    if isempty(ARGS)
+        error(USAGE)
+    elseif ARGS[1] == "child"
+        child(ARGS)
+    else
+        println("ipog_compare ", ARGS[1], " at ", COMMIT, " (", pkgdir(U), "), Julia ", VERSION, ", load ",
+                round.(Sys.loadavg(); digits = 1))
+        ARGS[1] == "run" ? run_sweep(ARGS) :
+        ARGS[1] == "fresh" ? fresh_sweep(ARGS) :
+        ARGS[1] == "summary" ? summary(ARGS) :
+        ARGS[1] == "list" ? list_points(ARGS) : error(USAGE)
+    end
 end
