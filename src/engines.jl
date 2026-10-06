@@ -703,7 +703,10 @@ _engine_registry(seed::Integer = 0) =
                                  "Compact(IPOG())" => Compact(IPOG(); seed),
                                  "Construction()" => Construction(),
                                  "Auto()" => Auto(),
-                                 "Auto(goal = :compact)" => Auto(; goal = :compact, seed)]
+                                 "Auto(goal = :compact)" => Auto(; goal = :compact, seed),
+                                 # IPOG's core that scores by lookup (plan §5.5, Phase 4), internal
+                                 # until it replaces IPOG's two paths.
+                                 "_IPOGLookup()" => _IPOGLookup()]
 
 """
     _check_fit(engine, request) -> plan
