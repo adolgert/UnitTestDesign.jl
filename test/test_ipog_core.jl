@@ -29,6 +29,9 @@ using TestItemRunner
     "A rule over p1 and p2 that excludes nothing: the request is constrained, and `dead` is always false."
     noop() = forbid((a, b) -> false, :p1, :p2)
 
+    "`IPOG()`, then each member it runs, alone (`_ipog_members`, in order)."
+    ipog_and_members() = Any[IPOG(); [_IPOGLookup(; tiebreak, vertical) for (tiebreak, vertical) in _ipog_members()]]
+
     "The lookup core's run on `request`'s targets with the predicate `isdead`, from the steps up."
     function lookup_rows(request, isdead; tiebreak = :lowest, vertical = :support, seeds = request.must_include)
         targets = _Classified(request).targets
@@ -258,8 +261,10 @@ end
     # The `adapted` changes (plan §7.2) on one small space, each alone and in
     # every combination: a rule (with an implied target), a complete and a
     # partial must-include row, an overlapping `stronger` group, and an
-    # Invalid value (negative rows). Every design is complete by the oracle,
-    # its must-include rows first and unchanged where set.
+    # Invalid value (negative rows). For `IPOG()` and for each member it runs,
+    # alone, every design is complete by the oracle, its must-include rows
+    # first and unchanged where set; and `IPOG()`'s ordinary rows are those of
+    # its first member with the fewest.
     names = [:a, :b, :c, :d, :e]
     domains = [[1, 2, 3], [1, 2], [1, 2, 3], [1, 2], [1, 2, 3, 4]]
     rule = ((:a, :b), (a, b) -> a == 1 && b == 2)
@@ -279,11 +284,20 @@ end
         with_partial && push!(must, partial_row)
         stronger = with_group ? [(:a, :c, :e) => 3, (:c, :d, :e) => 3] : []
         space = test_space(cs)
-        cases = covering(space; strength = 2, stronger, must_include = must, engine = LOOKUP)
-        result = check_design([map(as_check, row) for row in cases], cs; strength = 2, stronger)
-        @test complete(result.ordinary) && complete(result.negative)
-        @test all(i -> all(k -> cases[i][k] == must[i][k], keys(must[i])), eachindex(must))
-        @test cases.n_must_include == length(must)
+        each = [covering(space; strength = 2, stronger, must_include = must, engine) for engine in ipog_and_members()]
+        for cases in each
+            result = check_design([map(as_check, row) for row in cases], cs; strength = 2, stronger)
+            @test complete(result.ordinary) && complete(result.negative)
+            @test all(i -> all(k -> cases[i][k] == must[i][k], keys(must[i])), eachindex(must))
+            @test cases.n_must_include == length(must)
+        end
+        # The ordinary rows come first (no must-include row holds the Invalid
+        # value); each negative sub-request keeps its own fewest.
+        ipog, members = each[1], each[2:end]
+        ordinary = [c.record.ordinary.rows for c in members]
+        k = argmin(ordinary)   # the first of the fewest
+        @test ipog.record.ordinary.member == members[k].record.ordinary.member
+        @test collect(ipog)[1:ordinary[k]] == collect(members[k])[1:ordinary[k]]
         checked[] += 1
     end
     @test checked[] == 32
@@ -294,13 +308,13 @@ end
     push!(doms[1], CheckInvalid(0))
     cs = CheckSpace(names, doms, [rule; chain])
     for stronger in ([(:a, :b, :c) => 2], [(:a, :b, :c) => 3, (:b, :d) => 2]),
-        must in (NamedTuple[], [(a = CheckInvalid(0),), (b = 2,)])
+        must in (NamedTuple[], [(a = CheckInvalid(0),), (b = 2,)]), engine in ipog_and_members()
         space = test_space(cs)
-        cases = covering(space; strength = 1, stronger, engine = LOOKUP,
+        cases = covering(space; strength = 1, stronger, engine,
                          must_include = [map(x -> x isa CheckInvalid ? Invalid(x.value) : x, m) for m in must])
         result = check_design([map(as_check, row) for row in cases], cs; strength = 1, stronger)
         @test complete(result.ordinary) && complete(result.negative)
-        @test all(n -> n.stage.engine == _engine_label(LOOKUP), cases.record.negative)
+        @test all(n -> n.stage.engine == _engine_label(engine), cases.record.negative)
     end
 end
 
@@ -309,51 +323,63 @@ end
     # benchmark/scaling's `equality` (neighbours agree), `chain` (no two
     # neighbours both 1), `global_budget` (a whole-case rule on the sum) and
     # all-different families: every placement asks `dead`, so no row is ever
-    # left without a valid completion, and `generate` certifies the result.
+    # left without a valid completion, and `generate` certifies the result;
+    # for `IPOG()` and for each member it runs, alone. The budget of 14
+    # parameters, where a whole-case rule makes each member's searches take
+    # seconds, only through `IPOG()`, which runs all four on it and keeps one.
     ladder(n, v, rules) = positional(fill(v, n); constraints = rules)
     names(n) = [Symbol(:p, i) for i in 1:n]
-    for n in (8, 16, 32)
-        equality = ladder(n, 2, [forbid((a, b) -> a != b, names(n)[i], names(n)[i + 1]) for i in 1:(n - 1)])
-        cases = all_pairs(equality; engine = LOOKUP)
-        @test length(cases) == 2 && iscomplete(coverage(cases))
-        chain = ladder(n, 2, [forbid((a, b) -> a == 1 && b == 1, names(n)[i], names(n)[i + 1]) for i in 1:(n - 1)])
-        @test iscomplete(coverage(all_pairs(chain; engine = LOOKUP)))
-        @test iscomplete(coverage(all_triples(chain; engine = LOOKUP)))
-    end
-    for n in (6, 10, 14)
-        budget = ladder(n, 3, [forbid(c -> sum(values(c)) > n + n ÷ 2)])
-        @test iscomplete(coverage(all_pairs(budget; engine = LOOKUP)))
-    end
-    for q in (4, 5)
-        different = ladder(q, q, [forbid((a, b) -> a == b, names(q)[i], names(q)[j]) for i in 1:q for j in (i + 1):q])
-        cases = all_pairs(different; engine = LOOKUP)
-        @test iscomplete(coverage(cases)) && all(c -> allunique(values(c)), cases)
+    for engine in ipog_and_members()
+        for n in (8, 16, 32)
+            equality = ladder(n, 2, [forbid((a, b) -> a != b, names(n)[i], names(n)[i + 1]) for i in 1:(n - 1)])
+            cases = all_pairs(equality; engine)
+            @test length(cases) == 2 && iscomplete(coverage(cases))
+            chain = ladder(n, 2, [forbid((a, b) -> a == 1 && b == 1, names(n)[i], names(n)[i + 1]) for i in 1:(n - 1)])
+            @test iscomplete(coverage(all_pairs(chain; engine)))
+            @test iscomplete(coverage(all_triples(chain; engine)))
+        end
+        for n in (engine isa IPOG ? (6, 10, 14) : (6, 10))
+            budget = ladder(n, 3, [forbid(c -> sum(values(c)) > n + n ÷ 2)])
+            @test iscomplete(coverage(all_pairs(budget; engine)))
+        end
+        for q in (4, 5)
+            different = ladder(q, q, [forbid((a, b) -> a == b, names(q)[i], names(q)[j]) for i in 1:q for j in (i + 1):q])
+            cases = all_pairs(different; engine)
+            @test iscomplete(coverage(cases)) && all(c -> allunique(values(c)), cases)
+        end
     end
 end
 
 
 @testitem "lookup core: the same rows at every feasibility_limit that succeeds; an exhausted search propagates (§3.8)" setup=[LookupSetup, Checker] begin
     using Random
+    # For `IPOG()` and for each member it runs, alone.
     f = limit_exhaustion
     space = test_space(f)
-    @test_throws ResourceLimitError generate(LOOKUP, Request(space; feasibility_limit = f.request.small_limit))
-    design = generate(LOOKUP, Request(space; feasibility_limit = f.request.default_limit))
-    @test design.matrix == fill(4, 8, 1)
-    @test generate(LOOKUP, Request(space; feasibility_limit = 10 * f.request.default_limit)).matrix == design.matrix
-    # Random constrained problems: every limit at which the call succeeds gives the same rows.
+    for engine in ipog_and_members()
+        @test_throws ResourceLimitError generate(engine, Request(space; feasibility_limit = f.request.small_limit))
+        design = generate(engine, Request(space; feasibility_limit = f.request.default_limit))
+        @test design.matrix == fill(4, 8, 1)
+        @test generate(engine, Request(space; feasibility_limit = 10 * f.request.default_limit)).matrix == design.matrix
+    end
+    # Random constrained problems: every limit at which the call succeeds
+    # gives the same rows, and `IPOG()` the same member.
+    rows_member(engine, request) = (d = generate(engine, request); (d.matrix, d.record.ordinary.member))
     rng = Xoshiro(0x2026_1005_0008)
     for _ in 1:30
         problem = random_problem(rng; strength = 2)
         drawn = test_space(problem.space)
-        reference = rows_of(LOOKUP, Request(drawn; feasibility_limit = 10^8))
-        for limit in (3, 30, 300, 10^5)
-            rows = try
-                rows_of(LOOKUP, Request(drawn; feasibility_limit = limit))
-            catch err
-                err isa ResourceLimitError || rethrow()
-                nothing
+        for engine in ipog_and_members()
+            reference = rows_member(engine, Request(drawn; feasibility_limit = 10^8))
+            for limit in (3, 30, 300, 10^5)
+                got = try
+                    rows_member(engine, Request(drawn; feasibility_limit = limit))
+                catch err
+                    err isa ResourceLimitError || rethrow()
+                    nothing
+                end
+                got === nothing || @test got == reference
             end
-            rows === nothing || @test rows == reference
         end
     end
     # An error from `dead` mid-run ends the run: nothing catches it.
