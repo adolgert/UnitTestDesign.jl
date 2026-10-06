@@ -280,7 +280,8 @@ end
 @testitem "stability: classification keeps nothing per required target, and the recount allocates nothing per row or support" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, RequiredTargets, TargetList, Excluded, _Classified, _classify_targets,
                           _classify_target, _space_indices, _recount, _required_matrix, cover_ordinary,
-                          full_strength_rows, gnd_cover
+                          full_strength_rows, gnd_cover, _classify_negative, _NegativeTargets, feasibility_for,
+                          _decode!, _negative_targets!, generate
     # Phase 5 (plan §5.6): classification walks the layout with two reused
     # rows and keeps the excluded targets' ids and a count per support. So it
     # asks for what its feasibility questions ask for, one question per target
@@ -332,6 +333,56 @@ end
         (measured(recount, (request, rows, targets)), measured(recount, (request, hcat(rows, rows, rows), targets)))
     end
     @test readings[1][1] == readings[1][2] == readings[2][1] == readings[2][2] <= 256
+    # The negative recount the same: its buffer and the rest of one support,
+    # nothing per row or per block.
+    negative_request = Request(TestSpace([Symbol(:p, i) for i in 1:8], [Any[1, 2, 3, Invalid(0)] for _ in 1:8],
+                                         [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5); strength = 2)
+    negative = _negative_targets!(_Classified(negative_request), negative_request)
+    design = generate(IPOG(), negative_request).matrix
+    holds = [any(i -> design[i, j] > negative_request.arity[i], axes(design, 1)) for j in axes(design, 2)]
+    negative_rows = design[:, holds]
+    @test (@inferred _recount(negative_request, negative_rows, negative)) == negative.required > 0
+    @test measured(recount, (negative_request, negative_rows, negative)) ==
+          measured(recount, (negative_request, hcat(negative_rows, negative_rows, negative_rows), negative)) <= 512
+    # The negative targets are walked as `coverage` walks them
+    # (`_walk_support!`), which makes a few vectors per block of targets (a
+    # support and one invalid value), and classified in one reused row
+    # (`_NegativeIds`), keeping their exclusions' ids and counting the rest:
+    # beyond its questions the walk asks for the same bytes whatever the
+    # number of targets per block, 47,280 bytes for 168 blocks on Julia 1.13
+    # with 3 values per parameter (1,512 targets) and with 5 (4,200 targets).
+    negative_space(v) = TestSpace([Symbol(:p, i) for i in 1:8], [Any[1:v; Invalid(0)] for _ in 1:8],
+                                  [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5)
+    negative_walk(x) = _classify_negative(x[1], x[2])
+    function negative_questions(x)
+        request, ts = x
+        for t in ts
+            f, active = feasibility_for(request.context, t)
+            _classify_target(request, f, active, t, t, "classifying the negative target")
+        end
+        return nothing
+    end
+    "Every negative target as space value indices, in target order (§9.7)."
+    function negative_targets(request)
+        out = Vector{Int}[]
+        for support in TargetList(request).supports, p in support, v in request.space.invalid[p]
+            rest = filter(!=(p), support)
+            for code in 0:(prod(request.arity[rest]) - 1)
+                t = _decode!(zeros(Int, length(request.arity)), code, rest, request.arity)
+                t[rest] = [request.candidates[q][t[q]] for q in rest]
+                t[p] = v
+                push!(out, t)
+            end
+        end
+        return out
+    end
+    beyond = map((3, 5)) do v
+        request = Request(negative_space(v); strength = 3)
+        layout = TargetList(request)
+        requested(negative_walk, (request, layout)) - requested(negative_questions, (request, negative_targets(request)))
+    end
+    @test beyond[2] <= beyond[1] + 1024
+    @test (@inferred _classify_negative(twenty, TargetList(twenty))) isa _NegativeTargets
     # Readers that decode the required targets from their codes infer:
     # `full_strength_rows`, GND's coverage matrix and GND's design.
     full = Request(TestSpace((a = 1:2, b = 1:3, c = 1:2); constraints = [forbid((a = 1, b = 1))]); strength = 3)

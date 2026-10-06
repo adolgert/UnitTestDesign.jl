@@ -277,7 +277,7 @@ end
 
 @testitem "engines: classification keeps the excluded ids, and its targets are the list's bit for bit (§4.2, §1.4)" setup=[EngineSetup] begin
     using UnitTestDesign: CoverageIndex, Excluded, _Classified, _classify_target, _negative_targets!, _required_bits,
-                          _ordinary_bound, _prepare, _run, _space_indices, classify_negative_targets,
+                          _ordinary_bound, _prepare, _run, _space_indices, _slot, classify_negative_targets,
                           isconstrained, n_must_include
     # Phase 5 (plan §5.6, "Target storage"): classification walks the
     # request's layout and keeps a count per support, the excluded targets'
@@ -308,7 +308,9 @@ end
         return required, excluded
     end
     fields(e::Excluded) = (e.target, e.status, e.rules, e.minimal, e.limit)
-    stats(r) = (s = r.feasibility.stats; (s.queries, s.memo_hits, s.total_nodes, s.evaluations, length(r.feasibility.memo)))
+    effort(f) = (s = f.stats; (s.queries, s.memo_hits, s.total_nodes, s.evaluations, length(f.memo)))
+    stats(r) = effort(r.feasibility)
+    negative_stats(r) = sort!([k => effort(first(v)) for (k, v) in r.context.searches if k != (0, 0)])
     rng = Xoshiro(0x2026_1006)
     must_rng = Xoshiro(0x2026_1008)   # apart, so the spaces are the follow-ups' 100
     with_must = Ref(0)
@@ -360,22 +362,49 @@ end
         bits = _required_bits(t)
         @test bits == _required_bits(listed_t)
         @test t.bits === bits && CoverageIndex(request, t).required === bits
-        # A negative sub-request's targets, counted from its excluded targets,
-        # answer as the list of its required ones does.
+        # The negative targets: counted, each exclusion kept with its number
+        # in target order and its id on its sub-request's layout, after the
+        # same questions as the list path (`classify_negative_targets`,
+        # 31bef0f's), whose lists they must reproduce.
         any(!isempty, space.invalid) || continue
-        negative_required, negative_excluded = _negative_targets!(classified, request)
+        negative = _negative_targets!(classified, request)
         @test _negative_targets!(classified, request) === classified.negative   # classified once
-        @test negative_required == first(classify_negative_targets(request))
+        @test negative.layout === t.layout
+        negative_required, negative_excluded = classify_negative_targets(mirror)
+        @test negative_stats(request) == negative_stats(mirror)
+        @test negative.required == length(negative_required)
+        @test fields.(negative.excluded) == fields.(negative_excluded)
+        # Their numbers, in the order of §9.7 written out once more.
+        walked = Vector{Int}[]
+        for support in TargetList(request).supports, q in support, v in (request.arity[q] + 1):length(request.candidates[q])
+            rest = filter(!=(q), support)
+            for code in 0:(prod(request.arity[rest]; init = 1) - 1)
+                target = _decode!(zeros(Int, n), code, rest, request.arity)
+                target[q] = v
+                push!(walked, target)
+            end
+        end
+        gone = Set(e.target for e in negative_excluded)
+        @test negative.ids == findall(in(gone), walked)
+        @test walked[setdiff(eachindex(walked), negative.ids)] == negative_required
+        # Each invalid value's sub-request: its targets are the ones at that
+        # value without p, required or excluded as here, in the same order.
         for q in 1:n, position in (request.arity[q] + 1):length(request.candidates[q])
-            strength > 1 || any(g -> q in g.first, request.groups[2:end]) || continue
+            slot = _slot(negative, request, q, position)
+            here = [r for r in negative_required if r[q] == position]
+            @test (negative.alone[slot] === :required) == any(r -> count(!=(0), r) == 1, here)
+            if !(strength > 1 || any(g -> q in g.first, request.groups[2:end]))
+                @test negative.count[slot] == 0 && isempty(negative.sub_excluded[slot])
+                continue
+            end
             pr = NegativeProjection(space, q)
             sub = _negative_request(request, pr, zeros(Int, n - 1, 0))
-            sub_required = [r[pr.kept] for r in negative_required if r[q] == position && count(!=(0), r) > 1]
-            gone = [e.target[pr.kept] for e in negative_excluded if e.target[q] == position && count(!=(0), e.target) > 1]
-            st = RequiredTargets(TargetList(sub), sub_required, gone)
+            sub_required = [r[pr.kept] for r in here if count(!=(0), r) > 1]
+            st = RequiredTargets(TargetList(sub), negative.sub_excluded[slot])
             sl = RequiredTargets(sub, sub_required)
+            @test negative.count[slot] == length(TargetList(sub))
             @test all(s -> nrequired(st, s) == nrequired(sl, s), eachindex(supports(st)))
-            @test _required_bits(st) == _required_bits(sl)
+            @test _required_bits(st) == _required_bits(sl) && st.excluded == sl.excluded
         end
     end
     @test with_must[] > 10
@@ -393,14 +422,6 @@ end
     @test_throws ErrorException RequiredTargets(list, [2, 1])     # out of target order
     @test_throws ErrorException RequiredTargets(list, [1, 1])     # twice
     @test_throws ErrorException RequiredTargets(list, [27])       # not on the layout
-    # From the excluded targets as rows (negative generation's split), the count is checked.
-    required, excluded = classify_targets(ruled, list)
-    gone = [e.target for e in excluded]
-    @test length(gone) == 1 && RequiredTargets(list, required, gone).counts == [5, 12, 8]
-    @test_throws ErrorException RequiredTargets(list, required, Vector{Int}[])            # the rest is not excluded
-    @test_throws ErrorException RequiredTargets(list, required[2:end], gone)              # nor required
-    @test_throws ErrorException RequiredTargets(list, required[2:end], [[required[1]]; gone])   # out of target order
-    @test_throws ErrorException RequiredTargets(list, required, [[1, 0, 0]])              # no such support
 end
 
 

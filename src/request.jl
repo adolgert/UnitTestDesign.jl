@@ -562,9 +562,8 @@ of them builds it again. No target is listed. What classification keeps is
 every other combination of the layout is a required target.
 
 - From classification, `RequiredTargets(layout, excluded)`, with the ids of
-  the targets it excluded (`_classify_targets`), or from the excluded
-  targets as rows, `RequiredTargets(layout, required, excluded)`, as
-  negative generation splits them (`cover_negative`): a support's count is its combinations less its
+  the targets it excluded (`_classify_targets`; a negative sub-request's,
+  `cover_negative`): a support's count is its combinations less its
   excluded ones, and the bits are built the first time `isrequired` or the
   coverage index asks (`_required_bits`), every combination but the
   excluded ones, so the lower bound without must-include rows never pays
@@ -615,29 +614,6 @@ function RequiredTargets(layout::TargetList, excluded::Vector{Int})
         counts[s] -= 1
     end
     return RequiredTargets(nothing, layout, counts, excluded, nothing)
-end
-
-# From the required and excluded targets as rows, `excluded` in target order,
-# as negative generation splits them by invalid value (`cover_negative`):
-# the excluded targets' ids, with their count checked against the required.
-function RequiredTargets(layout::TargetList, required::Vector{Vector{Int}}, excluded)
-    ids = Int[]
-    s = 1
-    support = Int[]   # one target's support, reused
-    for t in excluded
-        _support!(support, t, layout.arity, "excluded")
-        # The excluded targets come in target order, so each support is at or after the last one's.
-        while s <= length(layout.supports) && layout.supports[s] != support
-            s += 1
-        end
-        s <= length(layout.supports) ||
-            error("internal error: excluded target $t is on no support of the request, or out of target order")
-        push!(ids, layout.offsets[s] + _code(t, layout.supports[s], layout.arity) + 1)
-    end
-    targets = RequiredTargets(layout, ids)
-    nrequired(targets) == length(required) || error("internal error: $(length(required)) required and " *
-        "$(length(ids)) excluded targets are not the request's $(length(layout)) targets")
-    return targets
 end
 
 function RequiredTargets(request::Request, required::Vector{Vector{Int}})
@@ -754,6 +730,45 @@ function _required_matrix(t::RequiredTargets)
 end
 
 """
+    _NegativeTargets
+
+A request's negative targets, classified (contract §6.1–§6.5, §6.7) with no
+required one listed. They are numbered 1, 2, … in target order (§9.7), the
+order of the walk that `coverage` makes (`_walk_support!`): for each support
+of `layout`, the request's `TargetList`, each parameter `p` of it with
+`Invalid` values and each of those values, every assignment of ordinary
+values to the rest of the support, the first parameter fastest.
+
+- `layout`: the request's `TargetList`, whose supports the walk goes over.
+- `required`: how many negative targets are required.
+- `excluded`: the `Excluded` record of each excluded one, in target order,
+  its `target` holding the invalid position (§1.4, §6.7); and `ids`, their
+  numbers, ascending, which the certifier reads (`_recount`).
+- For each invalid value, in parameter order and then domain order (`slot`):
+  `count`, its targets other than `(p = v)` alone, which are its negative
+  sub-request's targets in the same order (`_negative_request`);
+  `sub_excluded`, the ids of its excluded ones on that sub-request's layout
+  (`RequiredTargets`); and `alone`, whether the target `(p = v)` alone, a
+  target only at strength 1, is `:required`, `:excluded` or `:none`.
+
+`classify_negative_targets` lists the same targets for tests and scripts.
+"""
+struct _NegativeTargets
+    layout::TargetList
+    required::Int
+    excluded::Vector{Excluded}
+    ids::Vector{Int}
+    first::Vector{Int}                 # parameter p's first invalid value's slot; its values follow
+    count::Vector{Int}
+    sub_excluded::Vector{Vector{Int}}
+    alone::Vector{Symbol}
+end
+
+"The slot, in `_NegativeTargets`, of the invalid value at engine position `position` of parameter `p`."
+_slot(negative::_NegativeTargets, request::Request, p::Int, position::Int) =
+    negative.first[p] + position - request.arity[p] - 1
+
+"""
     Design
 
 What `generate(engine, request)` returns: `matrix` (parameters × cases,
@@ -822,10 +837,12 @@ ordinary targets covered. A failure is an `ErrorException` beginning
 `to_cases` converts rows to values.
 
 `targets` is generation's: classification's `RequiredTargets`, recounted on
-the request's layout against the ids of the excluded targets. Tests and
-scripts may pass a `TargetList`, every target required, or a list of
-required targets as `classify_targets` returns it; a list is recounted
-target by target, the same certification by other arithmetic.
+the request's layout against the ids of the excluded targets; and so is
+`negative`, the `_NegativeTargets`, recounted in the negative targets' order
+on the same layout. Tests and scripts may pass a `TargetList`, every target
+required, and lists of required targets as `classify_targets` and
+`classify_negative_targets` return them; a list is recounted target by
+target, the same certification by other arithmetic.
 """
 function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, targets;
                          strategy::Symbol = :covering, negative = Vector{Int}[])
@@ -870,9 +887,13 @@ function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, ta
     # negative targets (§5.9).
     ordinary = any(negative_rows) ? matrix[:, .!negative_rows] : matrix
     covered = _recount(request, ordinary, targets)
-    isempty(negative) || _recount(request, matrix[:, negative_rows], negative)
+    _nrequired(negative) == 0 || _recount(request, matrix[:, negative_rows], negative)
     return covered
 end
+
+"The number of negative targets `validate_design` must find covered: a list's length, or the classified count."
+_nrequired(negative) = length(negative)
+_nrequired(negative::_NegativeTargets) = negative.required
 
 _uncovered(request::Request, t) = error(
     "internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")
@@ -929,12 +950,73 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::
     return covered
 end
 
+"""
+    _recount(request, matrix, negative::_NegativeTargets) -> Int
+
+The certifier's recount of the negative targets (contract §1.21, §6, §5.9):
+the number of required negative targets that the negative rows, the columns
+of `matrix`, hold, or an internal error naming the first, in target order,
+that none holds. The negative targets are numbered 1, 2, … in the order of
+§9.7 (`_NegativeTargets`): for each support of the layout, each parameter
+`p` of it and each of `p`'s invalid values `v`, in engine positions after
+its ordinary ones, the block of every assignment of ordinary values to the
+rest of the support, by code on the rest. For each block it marks the code
+of each row that holds `v` at `p`, then walks the block's codes: a code no
+row holds must be the number of a target classification excluded.
+
+It trusts what the ordinary recount trusts, the layout, whose supports the
+negative targets lie on as well, and `negative.ids`, the numbers of the
+negative targets classification excluded, each with its `Excluded` record
+(§1.4, §6.7), every other negative target being required; and checks the
+count of required ones against classification's. Each negative row holds
+exactly one invalid value and ordinary values elsewhere, checked before, so
+its code on a block's rest is on the block. Its buffers are a bit per
+combination of the largest support and the rest of one support.
+"""
+function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, negative::_NegativeTargets)
+    layout, ids, arity = negative.layout, negative.ids, request.arity
+    layout.arity == arity || error("internal error: the negative targets are not the request's")
+    seen = falses(maximum(s -> ncombinations(layout, s), eachindex(layout.supports); init = 0))
+    rest = Int[]   # the support but p
+    number = 0     # the targets met so far
+    next = 1       # the first excluded number not yet reached
+    covered = 0
+    for support in layout.supports, p in support, v in (arity[p] + 1):length(request.candidates[p])
+        empty!(rest)
+        n = 1
+        for q in support
+            q == p && continue
+            push!(rest, q)
+            n *= arity[q]
+        end
+        fill!(view(seen, 1:n), false)
+        for j in axes(matrix, 2)
+            matrix[p, j] == v && (seen[_code(view(matrix, :, j), rest, arity) + 1] = true)
+        end
+        for code in 0:(n - 1)
+            number += 1
+            if next <= length(ids) && ids[next] == number
+                next += 1   # excluded: no row need hold it
+            elseif seen[code + 1]
+                covered += 1
+            else
+                target = _decode!(zeros(Int, length(arity)), code, rest, arity)
+                target[p] = v
+                _uncovered(request, target)
+            end
+        end
+    end
+    next == length(ids) + 1 && covered == negative.required ||
+        error("internal error: the negative targets' excluded numbers and count are not the request's")
+    return covered
+end
+
 # Every target of a TargetList is required.
 _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList) =
     _recount(request, matrix, RequiredTargets(request, required))
 
-# A list of full-width targets, from tests and scripts (`classify_targets`)
-# and the negative targets: the rows' projections onto each target's
+# A list of full-width targets, from tests and scripts (`classify_targets`,
+# `classify_negative_targets`): the rows' projections onto each target's
 # parameters, built once per parameter set, so the check is linear in
 # targets plus rows. Names the first uncovered target in the list's order.
 function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required)

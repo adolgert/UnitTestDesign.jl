@@ -768,19 +768,21 @@ ordinary targets as engines and the certifier read them, a `RequiredTargets`
 on the request's `TargetList`, which classification walks
 (`_classify_targets`) and which is built once; `excluded`, the ordinary
 `Excluded` records; and, for a space with `Invalid` values, `negative`, the
-negative targets' `(required, excluded)` (`classify_negative_targets`),
-classified the first time negative generation asks (`_negative_targets!`),
-after the ordinary design, as before, so that a request whose ordinary
-design stops at a resource limit stops there. Classification is a function
-of the request's space, strength, groups and limits, never of its
-must-include rows (the ordinary request of a space with `Invalid` values has
-the same targets) or of the engine, so every generation of such a request
-reads the same, and `design_sizes` hands one to each engine at a strength.
+negative targets (`_NegativeTargets`, `_classify_negative` on the same
+layout), classified the first time negative generation asks
+(`_negative_targets!`), after the ordinary design, as before, so that a
+request whose ordinary design stops at a resource limit stops there.
+Classification is a function of the request's space, strength, groups and
+limits, never of its must-include rows (the ordinary request of a space with
+`Invalid` values has the same targets) or of the engine, so every generation
+of such a request reads the same, and `design_sizes` hands one to each
+engine at a strength.
 
-No ordinary target is listed: `targets` holds the layout, a count per
-support and the ids of the excluded targets, and the required targets are
-the rest of the layout (`RequiredTargets`); an unconstrained request's
-`targets` is its `TargetList` whole.
+No target is listed: `targets` holds the layout, a count per support and
+the ids of the excluded targets, and the required targets are the rest of
+the layout (`RequiredTargets`); an unconstrained request's `targets` is its
+`TargetList` whole. The negative targets keep their count, their exclusions
+and those exclusions' ids in the same way.
 
 What engines may share is immutable: the targets' layout, counts and ids,
 and the parts made on first use, each written once (the required bits, the
@@ -792,7 +794,7 @@ its engines one after another, so the parts made on first use need no lock.
 mutable struct _Classified{L <: Union{Nothing, TargetList}}
     const targets::RequiredTargets{L}
     const excluded::Vector{Excluded}
-    negative::Union{Nothing, Tuple{Vector{Vector{Int}}, Vector{Excluded}}}
+    negative::Union{Nothing, _NegativeTargets}
 end
 
 function _Classified(request::Request)
@@ -804,7 +806,7 @@ end
 function _negative_targets!(classified::_Classified, request::Request)
     negative = classified.negative
     negative === nothing || return negative
-    negative = classify_negative_targets(request)
+    negative = _classify_negative(request, classified.targets.layout)
     classified.negative = negative
     return negative
 end
@@ -857,7 +859,8 @@ function _generate(plan::_Plan, request::Request, classified::_Classified)
     ordinary_columns = [j for j in axes(must, 2) if !(j in negative_columns)]
     ordinary_request = _with_must_include(request, must[:, ordinary_columns])   # the same targets
     ordinary, stage = _run(plan, ordinary_request, targets)
-    negative = cover_negative(engine, request, negative_columns, _negative_targets!(classified, request))
+    negative_targets = _negative_targets!(classified, request)
+    negative = cover_negative(engine, request, negative_columns, negative_targets)
     # Must-include rows in the order given, each completed by its kind's step.
     rows = Vector{Vector{Int}}(undef, size(must, 2))
     for (k, j) in enumerate(ordinary_columns)
@@ -869,12 +872,12 @@ function _generate(plan::_Plan, request::Request, classified::_Classified)
     append!(rows, (ordinary[:, k] for k in (length(ordinary_columns) + 1):size(ordinary, 2)))
     append!(rows, negative.rows)
     matrix = isempty(rows) ? zeros(Int, length(request.arity), 0) : reduce(hcat, rows)
-    covered = validate_design(request, matrix, targets; negative = negative.required)
+    covered = validate_design(request, matrix, targets; negative = negative_targets)
     bound = _bound_record(size(matrix, 2), _ordinary_bound(ordinary_request, targets), negative.bound, names,
                           request.arity, supports(targets))
     return Design(matrix, :covering, name, seed, nrequired(targets), covered, excluded,
-                  n_must_include(request), (;), length(negative.required), length(negative.required),
-                  negative.excluded, _covering_record(config, bound, stage, negative.stages))
+                  n_must_include(request), (;), negative_targets.required, negative_targets.required,
+                  negative_targets.excluded, _covering_record(config, bound, stage, negative.stages))
 end
 
 """
