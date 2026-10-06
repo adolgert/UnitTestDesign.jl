@@ -803,7 +803,7 @@ function compare(ref, cand, by, opts)
             @printf("    %-8s not measured by the candidate\n", key)
             continue
         end
-        @printf("    %-8s %.3f s (first call %.3f s): %s against %s = %.1f s", key, w(c), num(c["first_s"]),
+        @printf("    %-8s %.3f s (first call %.3f s): %s against %s = %.4g s", key, w(c), num(c["first_s"]),
                 w(c) <= limit ? "PASS" : "FAIL", source, limit)
         r === nothing || @printf("; reference %.3f s, ×%.2f", w(r), w(c) / w(r))
         key == "8x64-t2" && r !== nothing && @printf(", 5× faster than it: %s", w(c) <= w(r) / 5 ? "PASS" : "FAIL")
