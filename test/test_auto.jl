@@ -186,7 +186,7 @@ end
     @test p.smallest && all(c -> c.runs, p.candidates)
     cases = all_pairs(uniform(14, 6); engine = Auto())
     @test starts_of(cases) == [("IPOG()", 75), ("Construction()", 76)] && cases.record.ordinary.kept == 1
-    @test cases.record.ordinary.chose == "IPOG()" && cases == all_pairs(uniform(14, 6))
+    @test cases.record.ordinary.chose == "IPOG()" && cases == all_pairs(uniform(14, 6); engine = IPOG())
     wider = all_pairs(uniform(16, 6); engine = Auto())
     @test starts_of(wider) == [("IPOG()", 77), ("Construction()", 76)] && wider.record.ordinary.kept == 2
     @test wider.record.ordinary.chose == "Construction()" && wider == all_pairs(uniform(16, 6); engine = Construction())
@@ -197,10 +197,10 @@ end
                                      forbid((mode = :exact, tol = 1e-3); reason = "exact mode needs a tight tolerance")])
     tie = all_pairs(front; engine = Auto())
     @test starts_of(tie) == [("IPOG()", 5), ("Construction()", 5)] && tie.record.ordinary.kept == 1
-    @test tie.record.ordinary.chose == "IPOG()" && tie == all_pairs(front)
+    @test tie.record.ordinary.chose == "IPOG()" && tie == all_pairs(front; engine = IPOG())
     # Smaller catalog: kept.
     seven = all_pairs(uniform(10, 7); engine = Auto())
-    @test seven.record.ordinary.chose == "Construction()" && length(seven) < length(all_pairs(uniform(10, 7)))
+    @test seven.record.ordinary.chose == "Construction()" && length(seven) < length(all_pairs(uniform(10, 7); engine = IPOG()))
     @test seven.record.ordinary.kept == 2 && haskey(seven.record.ordinary.starts[2], :catalog)
     # Above the threshold, an exact shape: the catalog alone, IPOG not run.
     big = uniform(40, 4)
@@ -215,7 +215,7 @@ end
     # Not covered by the catalog (mixed counts): IPOG alone, and the same rows as IPOG.
     mixed = TestSpace((a = 1:2, b = 1:3, c = 1:4, d = 1:2))
     @test [(c.label, c.runs) for c in plan(mixed).candidates] == [("IPOG()", true), ("Construction()", false)]
-    @test all_pairs(mixed; engine = Auto()) == all_pairs(mixed)
+    @test all_pairs(mixed; engine = Auto()) == all_pairs(mixed; engine = IPOG())
     # The plan is a pure function of the request: the same profile, the same plan.
     a, b = plan(uniform(15, 6)), plan(uniform(15, 6))
     @test [(c.label, c.runs, c.reason) for c in a.candidates] == [(c.label, c.runs, c.reason) for c in b.candidates]
@@ -234,7 +234,7 @@ end
         rules = rand(rng) < 0.3 ? [forbid(NamedTuple{(:p1, :p2)}((1, 1)))] : Constraint[]
         space = TestSpace(NamedTuple{names}(Tuple(domains)); constraints = rules)
         t = rand(rng, 1:min(3, k))
-        ipog = covering(space; strength = t)
+        ipog = covering(space; strength = t, engine = IPOG())
         fast = covering(space; strength = t, engine = Auto(goal = :fast))
         balanced = covering(space; strength = t, engine = Auto())
         compact = covering(space; strength = t, engine = Auto(goal = :compact))
@@ -290,7 +290,7 @@ end
 @testitem "Auto: negative rows are chosen the same way for each invalid value (§4.1)" setup=[AutoSetup] begin
     space = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = [1, 2, 3, Invalid(:x)]))
     for t in (2, 3)
-        ipog = covering(space; strength = t)
+        ipog = covering(space; strength = t, engine = IPOG())
         auto = covering(space; strength = t, engine = Auto())
         compact = covering(space; strength = t, engine = Auto(goal = :compact))
         @test count(hasinvalid, auto) <= count(hasinvalid, ipog)
@@ -512,9 +512,9 @@ end
     refused = [r for r in mixed.rows if r.engine == "Construction()" && r.level == 2]
     @test only(refused).status === :unsupported && only(refused).cases === nothing
     @test startswith(only(refused).message, "mixed value counts on 4 parameters")
-    # One engine: the table as before.
+    # One engine: the table as before. The default is covering's, Auto().
     one = design_sizes(space)
-    @test one.engines == ["IPOG()"] && one.engine === :IPOG
+    @test one.engines == ["Auto()"] && one.engine === :Auto
     @test startswith(sprint(show, MIME"text/plain"(), one), "strategy        cases   share  pairs  triples")
     @test_throws ArgumentError design_sizes(space; engine = CoveringEngine[])
     @test_throws "`engine` is a covering engine" design_sizes(space; engine = [IPOG(), :gnd])

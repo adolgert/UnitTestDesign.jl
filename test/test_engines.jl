@@ -462,10 +462,10 @@ end
     # Kleitman-Spencer array has fewer cases, so the claim is false.
     flags = TestSpace(NamedTuple{Tuple(Symbol(:f, i) for i in 1:8)}(Tuple([false, true] for _ in 1:8)))
     cases = all_pairs(flags; engine = Boasting())
-    @test collect(cases) == collect(all_pairs(flags))
+    @test collect(cases) == collect(all_pairs(flags; engine = IPOG()))
     @test length(all_pairs(flags; engine = Construction())) < length(cases)
     @test !cases.record.minimal && cases.record.lower_bound == 4 && !cases.record.randomized
-    @test cases.record.proof == all_pairs(flags).record.proof == "the 2 × 2 = 4 combinations of f1 and f2 need a case each"
+    @test cases.record.proof == all_pairs(flags; engine = IPOG()).record.proof == "the 2 × 2 = 4 combinations of f1 and f2 need a case each"
     @test startswith(repr(cases), "$(length(cases)) cases (lower bound 4) · strength 2 · Boasting · ")
     text = sprint(show, MIME"text/plain"(), report(cases))
     @test occursin("\nsize: $(length(cases)) cases; lower bound 4: the 2 × 2 = 4 combinations", text)
@@ -477,9 +477,9 @@ end
     # The same for each negative sub-request's stage.
     invalid = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
     cases = covering(invalid; strength = 3, engine = Boasting())
-    @test collect(cases) == collect(covering(invalid; strength = 3))
+    @test collect(cases) == collect(covering(invalid; strength = 3, engine = IPOG()))
     @test cases.record.minimal == (length(cases) == cases.record.lower_bound)
-    @test cases.record.lower_bound == covering(invalid; strength = 3).record.lower_bound
+    @test cases.record.lower_bound == covering(invalid; strength = 3, engine = IPOG()).record.lower_bound
     @test only(cases.record.negative).stage.minimal && only(cases.record.negative).stage.engine == "Boasting()"
     # A stage's `engine` and `rows` are the pipeline's too: an engine that sets
     # them is an internal error, never a record that misstates its rows.
@@ -522,7 +522,7 @@ end
     space = TestSpace((a = 1:3, b = 1:3, c = 1:2, d = 1:2))
     # `generate` prepares the plan once and executes it: its check of the fit is the plan's.
     e = Counting()
-    @test collect(covering(space; strength = 2, engine = e)) == collect(covering(space; strength = 2))
+    @test collect(covering(space; strength = 2, engine = e)) == collect(covering(space; strength = 2, engine = IPOG()))
     @test e.prepared == [2]
     # A negative sub-request prepares once too; one the engine refuses (strength
     # 1) takes the fallback's plan, IPOG's, and its stage says so.
@@ -533,7 +533,7 @@ end
     e = Counting()
     cases = covering(invalid; strength = 2, engine = e)
     @test e.prepared == [2, 1] && only(cases.record.negative).stage.engine == "IPOG()"
-    @test collect(cases) == collect(covering(invalid; strength = 2))
+    @test collect(cases) == collect(covering(invalid; strength = 2, engine = IPOG()))
     # A refusal is an ArgumentError after one plan; design_sizes reads the
     # plan's fit for each strength and generates from that same plan.
     e = Counting()
@@ -591,7 +591,7 @@ end
         @test fields.(mine) == fields.(twice ? alone.rows[[1, 2, 2, 3, 3, 4]] : alone.rows)
     end
     for s in 2:3
-        @test collect(covering(space; strength = s, engine = Keeping())) == collect(covering(space; strength = s))
+        @test collect(covering(space; strength = s, engine = Keeping())) == collect(covering(space; strength = s, engine = IPOG()))
     end
 end
 

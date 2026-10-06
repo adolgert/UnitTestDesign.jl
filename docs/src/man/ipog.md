@@ -159,7 +159,7 @@ parameters has combinations to cover. The result's record says which
 member made the cases, in `record.ordinary.member`:
 
 ```jldoctest; setup = :(using UnitTestDesign)
-julia> all_pairs((a = 1:3, b = 1:3, c = 1:2, d = 1:2)).record.ordinary
+julia> all_pairs((a = 1:3, b = 1:3, c = 1:2, d = 1:2); engine = IPOG()).record.ordinary
 (engine = "IPOG()", rows = 9, member = (tiebreak = :rotate, vertical = :support))
 ```
 

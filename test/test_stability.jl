@@ -499,8 +499,8 @@ end
 
 
 @testitem "stability: Auto's choice, the lower bound and recommend infer, and the bound reads supports in place" setup=[StabilitySetup] begin
-    using UnitTestDesign: Profile, Request, RequiredTargets, classify_targets, supports, _auto_plan, _AutoPlan,
-        _ordinary_bound, _SupportBound, _bound_record, _request_bound, _recommendation, _prepare, _execute
+    using UnitTestDesign: Profile, Request, RequiredTargets, Design, classify_targets, supports, generate, _auto_plan,
+        _AutoPlan, _ordinary_bound, _SupportBound, _bound_record, _request_bound, _recommendation, _prepare, _execute
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     # Auto's choice (plan §4.1) is a function of the profile, with one concrete type,
     # whichever rule it takes: the catalog alone, both starts, or IPOG alone.
@@ -528,6 +528,30 @@ end
     @test first(@inferred _execute(_prepare(Construction(), Profile(request)), request, all_targets)) isa Matrix{Int}
     @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _execute(_prepare(Auto(), Profile(request)), request,
                                                                   all_targets)) isa Matrix{Int}
+    # The default engine's paths (`covering`'s `engine = Auto()`): IPOG alone on
+    # mixed counts; both starts on the front page's space (IPOG's design and the
+    # zero-sum array seeded under its rules) and on 15 × 6 (IPOG's and an exact
+    # array); the catalog alone at the bound, with an Invalid value's negative
+    # rows. Each start's plan executes with concrete notes, Auto's plan runs
+    # them behind `_run`'s asserted barrier, and `generate` is a `Design`.
+    front = TestSpace((mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+                      constraints = [@require(mode == :exact || solver == :none), forbid((mode = :exact, tol = 1e-3))])
+    flagged = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
+    for (space, runs) in ((TestSpace((a = 1:2, b = 1:3, c = 1:4, d = 1:2)), [true, false]), (front, [true, true]),
+                          (uniform(15, 6), [true, true]), (flagged, [false, true]))
+        r = Request(space)
+        p = Profile(r)
+        t = RequiredTargets(r, first(classify_targets(r)))
+        plan = @inferred _prepare(Auto(), p)
+        @test [c.runs for c in plan.candidates] == runs
+        for engine in (IPOG(), Construction())
+            q = _prepare(engine, p)
+            q.fit.kind === :unsupported && continue
+            @test isconcretetype(typeof(last(@inferred _execute(q, r, t))))
+        end
+        @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _execute(plan, r, t)) isa Matrix{Int}
+        @test (@inferred generate(Auto(), r)) isa Design
+    end
     # The bound reads every support in place, 45 or 7,140 of them: without
     # must-include rows it allocates nothing, and with them its two buffers,
     # whatever the supports (192 bytes for 3 rows on Julia 1.13, 320 on 1.10).
@@ -542,7 +566,7 @@ end
     # (strength 2) or 4,060 (strength 3): for 200 rows 1,776 bytes on Julia
     # 1.13 and 1,872 on 1.10. A sort per support took scratch space past
     # about 40 codes, 980 KB for 200 rows at strength 3.
-    previous = collect(all_pairs(uniform(30, 3)))
+    previous = collect(all_pairs(uniform(30, 3); engine = IPOG()))
     topping(t, m) = Request(uniform(30, 3); strength = t, must_include = [previous[mod1(i, length(previous))] for i in 1:m])
     for m in (60, 200)
         @test bound_bytes(topping(2, m)) == bound_bytes(topping(3, m)) <= 8 * m + 512

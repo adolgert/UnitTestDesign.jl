@@ -235,7 +235,7 @@ for messages and for `Base.depwarn`'s call site. `strength`, `stronger` and
 `stronger` groups, no must-include rows.
 """
 function _covering(fname::Symbol, input::Tuple; strength = nothing, stronger = nothing,
-                   must_include = nothing, engine = IPOG(), constraints = nothing,
+                   must_include = nothing, engine = Auto(), constraints = nothing,
                    feasibility_limit = 1_000_000, explanation_limit = 1_000_000, n_way = nothing,
                    seeds = nothing, wayness = nothing)
     # `nothing` marks an omitted keyword, so an explicit `strength = 2` beside
@@ -263,7 +263,7 @@ Use when you want every combination of values of every `strength` parameters
 (pairs at strength 2, triples at 3) to appear in at least one case, with as few
 cases as the engine finds.
 
-    covering(space; strength = 2, stronger = [], must_include = [], engine = IPOG(),
+    covering(space; strength = 2, stronger = [], must_include = [], engine = Auto(),
              feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     covering(domains::NamedTuple; constraints = [], kwargs...)
     covering(name => domain, ...; constraints = [], kwargs...)
@@ -326,12 +326,13 @@ result counts the two kinds of targets separately (§5.10).
   with one `Invalid` value is a negative row, judged and completed under the
   negative policy, with ordinary values elsewhere; a partial row without one
   is completed as an ordinary row; a row with two is an error (§5.7, §7.9).
-- `engine = IPOG()`: the covering engine. [`IPOG`](@ref), the default, is
-  fast and covers any request; [`Auto`](@ref)`()` keeps the smaller of
-  IPOG's design and the catalog's array ([`Construction`](@ref)) where the
-  catalog applies, and `Auto(goal = :compact)` then removes rows with the
-  row reducer ([`Compact`](@ref)); [`GND`](@ref) is a seeded greedy search.
-  [`recommend`](@ref) says what `Auto` would run. Every engine is
+- `engine = Auto()`: the covering engine. [`Auto`](@ref)`()`, the default,
+  keeps the smaller of IPOG's design and the catalog's array
+  ([`Construction`](@ref)) where the catalog applies, and gives IPOG's
+  design elsewhere; [`recommend`](@ref) says what it would run.
+  [`IPOG`](@ref)`()` alone is fast and covers any request;
+  `Auto(goal = :compact)` then removes rows with the row reducer
+  ([`Compact`](@ref)); [`GND`](@ref) is a seeded greedy search. Every engine is
   deterministic for the same inputs (§9.1). None guarantees a particular
   number of cases, and none is always smaller than another (§8.1); the
   result records a lower bound beside its count, and says "minimal" when the
@@ -383,7 +384,7 @@ See also [`all_values`](@ref), [`all_pairs`](@ref), [`all_triples`](@ref),
 [`excursions`](@ref), [`full_factorial`](@ref).
 """
 function covering(input...; strength = nothing, stronger = nothing, must_include = nothing,
-                  engine = IPOG(), constraints = nothing, feasibility_limit = 1_000_000,
+                  engine = Auto(), constraints = nothing, feasibility_limit = 1_000_000,
                   explanation_limit = 1_000_000, n_way = nothing, seeds = nothing, wayness = nothing)
     return _covering(:covering, input; strength, stronger, must_include, engine, constraints,
                      feasibility_limit, explanation_limit, n_way, seeds, wayness)
@@ -413,7 +414,7 @@ of `covering` except `strength`.
 all_values([1, 2, 3], ["a", "b"], [true, false])   # 3 tuples
 ```
 """
-function all_values(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
+function all_values(input...; stronger = nothing, must_include = nothing, engine = Auto(),
                     constraints = nothing, feasibility_limit = 1_000_000,
                     explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                     seeds = nothing, wayness = nothing)
@@ -442,7 +443,7 @@ all_pairs((mode = [:fast, :exact], solver = [:none, :lu, :qr]);
 all_pairs(space; must_include = existing_cases)
 ```
 """
-function all_pairs(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
+function all_pairs(input...; stronger = nothing, must_include = nothing, engine = Auto(),
                    constraints = nothing, feasibility_limit = 1_000_000,
                    explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                    seeds = nothing, wayness = nothing)
@@ -469,7 +470,7 @@ of `covering` except `strength`.
 all_triples([1, 2], [3, 4], [5, 6], [7, 8])
 ```
 """
-function all_triples(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
+function all_triples(input...; stronger = nothing, must_include = nothing, engine = Auto(),
                      constraints = nothing, feasibility_limit = 1_000_000,
                      explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                      seeds = nothing, wayness = nothing)

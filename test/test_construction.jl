@@ -74,7 +74,7 @@ end
     end
     # Never more rows than the elementary bound allows at t + 1 parameters: the minimum (§2.2).
     cases = covering(space_of([6, 6, 6, 6]); strength = 3, engine = C)
-    @test length(cases) == 216 && length(covering(space_of([6, 6, 6, 6]); strength = 3)) >= 216
+    @test length(cases) == 216 && length(covering(space_of([6, 6, 6, 6]); strength = 3, engine = IPOG())) >= 216
     # The record's wording names it as an engine without randomness (§9.4).
     cases = all_pairs(space_of(fill(3, 4)); engine = C)
     @test occursin("Construction", sprint(show, MIME"text/plain"(), cases))
@@ -91,7 +91,7 @@ end
                   [@forbid(p1 == p2)],
                   [forbid((a, b) -> a == b, Symbol(:p, i), Symbol(:p, i + 1)) for i in 1:7])
         space = space_of(uniform; constraints = rules)
-        seeded, plain = all_pairs(space; engine = C), all_pairs(space)
+        seeded, plain = all_pairs(space; engine = C), all_pairs(space; engine = IPOG())
         @test iscomplete(coverage(seeded)) && length(seeded) < length(plain)
         @test seeded.engine === :Construction
     end
@@ -101,7 +101,7 @@ end
                               (fill(5, 6), 2, [forbid((a, b, c) -> a + b + c == 15, :p1, :p2, :p3)]),
                               (fill(4, 9), 2, [@forbid(p1 == p2), @forbid(p3 == p4 + 1)]))
         space = space_of(arity; constraints = rules)
-        seeded, plain = covering(space; strength = t, engine = C), covering(space; strength = t)
+        seeded, plain = covering(space; strength = t, engine = C), covering(space; strength = t, engine = IPOG())
         @test iscomplete(coverage(seeded)) && length(seeded) <= length(plain)
     end
     # Must-include rows come first and unchanged, partial ones completed in
@@ -123,7 +123,7 @@ end
     for (arity, group, rows) in ((fill(4, 16), (:p1, :p2, :p3, :p4), 64), (fill(3, 50), (:p1, :p2, :p3, :p4), 27),
                                  (fill(3, 12), Tuple(Symbol(:p, i) for i in 1:12), 53))
         seeded = all_pairs(space_of(arity); engine = C, stronger = [group => 3])
-        plain = all_pairs(space_of(arity); stronger = [group => 3])
+        plain = all_pairs(space_of(arity); stronger = [group => 3], engine = IPOG())
         @test iscomplete(coverage(seeded)) && length(seeded) <= length(plain)
         @test length(seeded) == rows && rows - _catalog_rows(3, arity[1], length(group)) <= 1   # its array, extended
         @test occursin("`stronger` group", fit(C, Profile(Request(space_of(arity); stronger = [group => 3]))).reason)
@@ -138,7 +138,7 @@ end
     # With a rule, a partial row of the group's array that no valid row extends is dropped.
     ruled = space_of(fill(4, 16); constraints = [@forbid(p1 == p2)])
     seeded = all_pairs(ruled; engine = C, stronger = [(:p1, :p2, :p3, :p4) => 3])
-    @test iscomplete(coverage(seeded)) && length(seeded) <= length(all_pairs(ruled; stronger = [(:p1, :p2, :p3, :p4) => 3]))
+    @test iscomplete(coverage(seeded)) && length(seeded) <= length(all_pairs(ruled; stronger = [(:p1, :p2, :p3, :p4) => 3], engine = IPOG()))
     # A rule with t + 1 parameters of mixed counts.
     space = space_of([4, 3, 2]; constraints = [forbid((p1 = 1, p2 = 1))])
     @test iscomplete(coverage(all_pairs(space; engine = C)))
@@ -179,7 +179,7 @@ end
                              (space_of([3, 4]), 2, [(p1 = 1, p2 = 1), (p1 = 1, p2 = 1)]),
                              (space_of([3, 3, 2]; constraints = [forbid((p1 = 1, p2 = 1))]), 3, [(p1 = 3,)]))
         full = covering(space; strength = t, engine = C, must_include = must)
-        @test collect(full) == collect(covering(space; strength = t, must_include = must))
+        @test collect(full) == collect(covering(space; strength = t, must_include = must, engine = IPOG()))
         @test full.n_must_include == length(must)
     end
 end
@@ -200,12 +200,12 @@ end
     oa = collect(all_pairs(s8; engine = C))
     cut = [partial(r, 1:6) for r in oa]
     cases = all_pairs(s8; engine = C, must_include = cut)
-    @test length(cases) == length(all_pairs(s8; must_include = cut)) == 49
+    @test length(cases) == length(all_pairs(s8; must_include = cut, engine = IPOG())) == 49
     @test cases.n_must_include == 49 && sets_of(cases, cut) && iscomplete(coverage(cases))
     # The same 49 rows on a ninth parameter: 110 rows before, IPOG's 91 now.
     s9 = space_of(fill(7, 9))
     cases = all_pairs(s9; engine = C, must_include = oa)
-    @test length(cases) <= length(all_pairs(s9; must_include = oa)) == 91
+    @test length(cases) <= length(all_pairs(s9; must_include = oa, engine = IPOG())) == 91
     @test sets_of(cases, oa) && iscomplete(coverage(cases))
     # Each row with two other parameters dropped (fix-construction's judgment
     # call 2): 98 rows before the completion, 75 now against IPOG's 70; under
@@ -235,7 +235,7 @@ end
     ruled = space_of(fill(7, 8); constraints = [@forbid(p1 == p2)])
     three = [(p1 = 1, p2 = 2, p5 = 3, p7 = 4), (p2 = 5, p4 = 1, p6 = 6, p8 = 2), (p1 = 3, p3 = 3, p5 = 7, p8 = 7)]
     cases = all_pairs(ruled; engine = C, must_include = three)
-    @test sets_of(cases, three) && iscomplete(coverage(cases)) && length(cases) < length(all_pairs(ruled; must_include = three))
+    @test sets_of(cases, three) && iscomplete(coverage(cases)) && length(cases) < length(all_pairs(ruled; must_include = three, engine = IPOG()))
     request = Request(ruled; must_include = three)
     required, _ = classify_targets(request)
     targets = RequiredTargets(request, required)

@@ -47,7 +47,7 @@ using TestItemRunner
 
     "Up to two random valid must-include rows of `request`, some partial: IPOG's rows with entries cleared."
     function random_must_include(rng, space, strength)
-        rows = collect(covering(space; strength))
+        rows = collect(covering(space; strength, engine = IPOG()))
         isempty(rows) && return []
         picked = [rows[rand(rng, eachindex(rows))] for _ in 1:rand(rng, 0:2)]
         return [rand(rng) < 0.5 ? row : NamedTuple{keys(row)[1:end - 1]}(Tuple(row)[1:end - 1])
@@ -92,17 +92,17 @@ end
     @test occursin("Compact(IPOG()) seed 0", sprint(show, MIME"text/plain"(), cases))
     @test occursin("seed: 0 (Compact(IPOG(); seed = 0, effort = 1) repeats these cases)",
                    sprint(show, MIME"text/plain"(), report(cases)))
-    @test length(cases) <= length(all_pairs(space))
+    @test length(cases) <= length(all_pairs(space; engine = IPOG()))
     @test design_sizes(space; engine) isa DesignSizes
     # The record says what the inner engine and the reducer did; the harness
     # records it (benchmark/scaling/metrics.jl).
     stage = cases.record.ordinary
     @test stage.engine == "Compact(IPOG(); seed = 0, effort = 1)" && stage.rows == length(cases)
-    @test stage.start == all_pairs(space).record.ordinary   # IPOG's own stage
-    @test stage.reducer.start == length(all_pairs(space)) && stage.reducer.rows == length(cases)
+    @test stage.start == all_pairs(space; engine = IPOG()).record.ordinary   # IPOG's own stage
+    @test stage.reducer.start == length(all_pairs(space; engine = IPOG())) && stage.reducer.rows == length(cases)
     @test stage.reducer.stop in (:bound, :budget, :work)
     @test cases.record.randomized && isempty(cases.notes)
-    @test !haskey(all_pairs(space).record.ordinary, :reducer) && isempty(all_pairs(space).notes)
+    @test !haskey(all_pairs(space; engine = IPOG()).record.ordinary, :reducer) && isempty(all_pairs(space; engine = IPOG()).notes)
     # Its fit is the inner engine's, reduced; past the index's cap, unreduced.
     profile = Profile(Request(space))
     f = fit(engine, profile)
@@ -195,7 +195,7 @@ end
         a = covering(bench12; strength, engine = Compact(IPOG()))
         b = covering(bench12; strength, engine = Compact(IPOG()))
         @test collect(a) == collect(b)
-        ipog = covering(bench12; strength)
+        ipog = covering(bench12; strength, engine = IPOG())
         @test length(a) < length(ipog)
         # Another seed is allowed to give other rows; it is certified either way.
         c = covering(bench12; strength, engine = Compact(IPOG(); seed = 1))

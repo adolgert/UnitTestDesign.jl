@@ -99,9 +99,9 @@ end
         "  first 3 of 5 cover 72% (8 of 11)";
         "  first 4 of 5 cover 90% (10 of 11)";
         "  first 5 of 5 cover 100% (11 of 11)";
-        "seed: none (IPOG uses no randomness)"], "\n")
+        "seed: none (Auto uses no randomness)"], "\n")
     @test sprint(show, r) == r.guarantee
-    @test (r.strategy, r.engine, r.seed, r.n_must_include, r.strength) == (:covering, :IPOG, nothing, 0, 2)
+    @test (r.strategy, r.engine, r.seed, r.n_must_include, r.strength) == (:covering, :Auto, nothing, 0, 2)
     @test same_exclusions(r.excluded, cases.excluded) && isempty(r.recorded)
     @test r.excluded == r.coverage.ordinary.excluded
     @test [x.covered for x in r.prefix] == [3, 6, 8, 10, 11]
@@ -324,7 +324,7 @@ end
                       negative = (covered = 0, feasible = 0, unknown = 0), applicable = true, reason = "")
     @test x.prefix[end] == (cases = 5, covered = 11, feasible = 11, unknown = 0)
     @test x.prefix_negative[end] == (cases = 5, covered = 0, feasible = 0, unknown = 0)
-    @test (x.strategy, x.engine, x.seed, x.n_must_include) == (:covering, :IPOG, nothing, 0)
+    @test (x.strategy, x.engine, x.seed, x.n_must_include) == (:covering, :Auto, nothing, 0)
     @test plain(reports[3]).coverage.stronger == [(names = [:mode, :solver, :tol], strength = 3)]
     # With Invalid values the negative prefix curve and bonus are plain data too.
     xi = plain(reports[6])
@@ -353,8 +353,8 @@ end
     @test d.total == 12 && d.valid == 5 && !d.has_invalid && d.rows[2] == (strategy = "covering(1)",
         kind = :covering, level = 1, status = :ok, message = "", cases = 3, share = 0.6,
         pairs = (covered = 8, feasible = 11, unknown = 0), triples = (covered = 3, feasible = 5, unknown = 0),
-        negative_cases = 0, negative_pairs = none, negative_triples = none, engine = "IPOG()")
-    @test d.engines == ["IPOG()"]
+        negative_cases = 0, negative_pairs = none, negative_triples = none, engine = "Auto()")
+    @test d.engines == ["Auto()"]
     # Above `limit` the valid count is unknown; above typemax(Int) the total is a string of digits.
     wide = plain(design_sizes(fill(1:10, 5)...; strengths = Int[], distances = Int[], limit = 10))
     @test wide.total === 100_000 && wide.valid === nothing && plain_tree(wide)
@@ -373,8 +373,8 @@ end
     t = design_sizes(fable_domains()...)
     @test [r.strategy for r in t.rows] ==
           ["full_factorial", "covering(1)", "covering(2)", "covering(3)", "excursions(1)", "excursions(2)"]
-    @test [r.cases for r in t.rows] == [81, 3, 9, 30, 9, 33]
-    @test (t.total, t.valid, t.engine) == (81, 81, :IPOG)
+    @test [r.cases for r in t.rows] == [81, 3, 9, 27, 9, 33]
+    @test (t.total, t.valid, t.engine) == (81, 81, :Auto)
     @test all(r -> r.status == :ok, t.rows)
     @test [r.pairs.covered for r in t.rows] == [54, 18, 54, 54, 30, 54]
     @test [r.triples.covered for r in t.rows] == [108, 12, 36, 108, 28, 76]
@@ -384,12 +384,12 @@ end
         "full_factorial     81  100.0%  54/54  108/108  valid 81 of 81",
         "covering(1)         3    3.7%  18/54   12/108",
         "covering(2)         9   11.1%  54/54   36/108",
-        "covering(3)        30   37.0%  54/54  108/108",
+        "covering(3)        27   33.3%  54/54  108/108",
         "excursions(1)       9   11.1%  30/54   28/108",
         "excursions(2)      33   40.7%  54/54   76/108",
-        "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
+        "case counts are the rows each strategy produced with Auto, not lower bounds"], "\n")
     # The same through a NamedTuple and a TestSpace; the counts come from running the strategies.
-    @test [r.cases for r in design_sizes(TestSpace(fable_domains()...)).rows] == [81, 3, 9, 30, 9, 33]
+    @test [r.cases for r in design_sizes(TestSpace(fable_domains()...)).rows] == [81, 3, 9, 27, 9, 33]
     @test design_sizes(fable_domains()...).rows[3].cases == length(all_pairs(fable_domains()...))
 
     s = design_sizes(solver_space())
@@ -406,7 +406,7 @@ end
         "covering(3)         5  100.0%  11/11      5/5",
         "excursions(1)       2   40.0%   5/11      2/5",
         "excursions(2)       3   60.0%   7/11      3/5",
-        "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
+        "case counts are the rows each strategy produced with Auto, not lower bounds"], "\n")
     # The checker agrees on each design's pairs.
     for (row, cases) in zip(s.rows[2:4], (all_values(solver_space()), all_pairs(solver_space()),
                                           all_triples(solver_space())))
@@ -481,7 +481,7 @@ end
         "  first 1 of 3 cover 100% of ordinary pairs (1 of 1); negative 0 of 2",
         "  first 2 of 3 cover 100% of ordinary pairs (1 of 1); negative 1 of 2",
         "  first 3 of 3 cover 100% of ordinary pairs (1 of 1); negative 2 of 2",
-        "seed: none (IPOG uses no randomness)"]
+        "seed: none (Auto uses no randomness)"]
     @test [p.covered for p in r.prefix] == [1, 1, 1]
     @test [p.covered for p in r.prefix_negative] == [0, 1, 2]
     @test all(p -> p.feasible == 2 && p.unknown == 0, r.prefix_negative)
@@ -499,7 +499,7 @@ end
         "  first 4 of 6 cover 100% of ordinary pairs (9 of 9); negative 0 of 4",
         "  first 5 of 6 cover 100% of ordinary pairs (9 of 9); negative 2 of 4",
         "  first 6 of 6 cover 100% of ordinary pairs (9 of 9); negative 4 of 4",
-        "seed: none (IPOG uses no randomness)"]
+        "seed: none (Auto uses no randomness)"]
     @test r.bonus.negative == (covered = 2, feasible = 3, unknown = 0)
 
     # Every figure against the oracle, prefix by prefix, on spaces with one and
@@ -543,7 +543,7 @@ end
         "bonus: 0 of 0 feasible triples covered; negative: 6 of at least 6, 90 unresolved",
         "prefix curve:",
         "  first 1 of 1: no ordinary pair is feasible; negative 4 of at least 4",
-        "seed: none (IPOG uses no randomness)"]
+        "seed: none (Auto uses no randomness)"]
     @test occursin("\n  first 1 of 1: no ordinary pair is feasible; negative 4 of 4\n", shown(report(cases)))
 end
 
@@ -567,7 +567,7 @@ end
         "excursions(2)   4 + 2   85.7%  9/9 + 3/4  4/4 + 2/3",
         "cells with + read ordinary + negative: rows without and with an Invalid value, and the targets " *
             "each kind covers",
-        "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
+        "case counts are the rows each strategy produced with Auto, not lower bounds"], "\n")
     # Each figure is the oracle's measure of the design the strategy produces.
     designs = [full_factorial(space), all_values(space), all_pairs(space), all_triples(space),
                excursions(space; distance = 1), excursions(space; distance = 2)]
@@ -756,7 +756,7 @@ end
     # allocates about 0.22 GB, and a count that listed every target again
     # would allocate about 0.5 GB.
     space = TestSpace(NamedTuple{Tuple(Symbol("x$i") for i in 1:30)}(Tuple(1:5 for _ in 1:30)))
-    cases = all_pairs(space)
+    cases = all_pairs(space; engine = IPOG())
     memos = rule_memos(space.tables)
     prepared = _prepare_rows(space, memos, collect(cases))
     bonus() = _bonus(prepared, space, 2; memos, feasibility_limit = 1_000_000)

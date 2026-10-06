@@ -151,7 +151,7 @@ prefix curve:
   first 3 of 5 cover 72% (8 of 11)
   first 4 of 5 cover 90% (10 of 11)
   first 5 of 5 cover 100% (11 of 11)
-seed: none (IPOG uses no randomness)
+seed: none (Auto uses no randomness)
 ```
 
 A covering result is measured at its strength and `stronger` groups. An
@@ -543,7 +543,7 @@ strategy, with its case count, its share of the valid cases, and its coverage.
 The table [`design_sizes`](@ref) returns. Fields: `parameters` (the names),
 `total` (the full product), `valid` (the valid rows, ordinary and negative,
 or `nothing` when the product is above `limit` and they were not counted),
-`engine` (the name the results record of the first engine, such as `:IPOG`),
+`engine` (the name the results record of the first engine, such as `:Auto`),
 `limit`, `has_invalid` (whether the space has [`Invalid`](@ref) values, so
 that each figure has a negative part), `rows`, one per strategy run, and
 `engines`, every engine compared, as its constructor call (`"IPOG()"`,
@@ -590,7 +590,7 @@ end
 Use when choosing a strategy before committing to one: it shows how many cases
 each strategy produces for your space, and what each covers.
 
-    design_sizes(space; strengths = 1:3, distances = 1:2, engine = IPOG(), limit = 10^6,
+    design_sizes(space; strengths = 1:3, distances = 1:2, engine = Auto(), limit = 10^6,
                  from = nothing, feasibility_limit = 1_000_000,
                  explanation_limit = 1_000_000) -> DesignSizes
     design_sizes(space; engine = [IPOG(), Auto(goal = :compact)], kwargs...)
@@ -612,10 +612,10 @@ strategy        cases   share  pairs  triples
 full_factorial     81  100.0%  54/54  108/108  valid 81 of 81
 covering(1)         3    3.7%  18/54   12/108
 covering(2)         9   11.1%  54/54   36/108
-covering(3)        30   37.0%  54/54  108/108
+covering(3)        27   33.3%  54/54  108/108
 excursions(1)       9   11.1%  30/54   28/108
 excursions(2)      33   40.7%  54/54   76/108
-case counts are the rows each strategy produced with IPOG, not lower bounds
+case counts are the rows each strategy produced with Auto, not lower bounds
 ```
 
 `share` is the fraction of the valid rows, known when the full product is at
@@ -637,7 +637,7 @@ With [`Invalid`](@ref) values each count is two figures, ordinary + negative
 feasible ones and then the negative targets (§6). A line under the table
 says so. The share is of all valid rows, ordinary and negative.
 """
-function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = IPOG(), limit = 10^6,
+function design_sizes(input...; strengths = 1:3, distances = 1:2, engine = Auto(), limit = 10^6,
                       from = nothing, constraints = nothing, feasibility_limit = 1_000_000,
                       explanation_limit = 1_000_000)
     strengths = _check_levels(:strengths, strengths, 1, "§11.1")
