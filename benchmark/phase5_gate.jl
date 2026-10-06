@@ -55,8 +55,8 @@
 #   is in UTD-wt/phase0/benchmark/scaling/results/2798ecf-baseline-20261004/.
 #
 # ENGINES: `--engine EXPR` or `--engine LABEL=EXPR`, as in ipog_compare.jl
-# (default `IPOG()` and `Auto()`). MODES: `--mode index` or `--mode
-# covering` (repeatable; default every mode the point has).
+# (default `IPOG()` and `Auto()`). MODES: `--mode index`, `--mode peak` or
+# `--mode covering` (repeatable; default every mode the point has).
 #
 # `fresh` runs each point, engine and mode in its own Julia process
 # (ipog_compare.jl's `child_command` and `watch`: `/usr/bin/time -l`, the
@@ -124,12 +124,12 @@
 # - `memo_c`, `memo_g`: the entry count of every dictionary in
 #   `request.feasibility`, found by walking its fields (`memo_entries`), and
 #   of every package function named like `memo_size` that takes the search
-#   or the request: `memo=83601 witness_cache[]=5 rule_memo[].verdicts=0
-#   memo_size()=0` at 31bef0f.
+#   or the request: `memo=83601 witness_cache[]=224 memo_size()=0` at
+#   `gcc200` on 31bef0f, with `rule_memo[].verdicts=…` where a rule is lazy
+#   (a whole-case rule).
 #
-# `--no-retained` leaves out steps 1, 4 and 6 (summarysize walks the heap
-# with a dictionary of every object, which raises the peak by about 30 bytes
-# an object).
+# `--no-retained` leaves out steps 1, 4 and 6 (summarysize keeps a
+# dictionary of every object it visits, which raises the process's peak).
 #
 # A ladder is skipped from the first size whose line, for the same label and
 # mode, in OUT or in this run, did not complete or whose warm call took
@@ -152,9 +152,10 @@
 # used. Bytes, rows and hashes are exact; times are provisional on a busy
 # machine, and peak RSS depends on memory pressure on macOS (plan §12.4).
 #
-# `summary` reads the base's lines (`--base`, the reference, repeatable) and
-# the branch's (`--branch`), and prints a table of every point, then each gate
-# of decision rule §1 items 2–4 with its verdict:
+# `summary` reads the base's lines (`--base`, the reference) and the
+# branch's (`--branch`), each option taking the files after it, and prints a
+# table of every point, the jobs the watchdog stopped, then each gate of
+# decision rule §1 items 2–4 with its verdict:
 #
 # - gate 2: at `gcc200` the branch's retained bytes (`ret`, the larger of
 #   after classification and after generation, summarysize) under 20 MiB,
@@ -176,7 +177,8 @@
 #
 # Without `--branch` it prints the base's table and the thresholds only.
 # `outside` prints the ids of the ladder points outside the time rule, one per
-# line, for a recheck (`fresh --point ID`).
+# line, for a recheck (`fresh --point ID`). Both take `--tolerance`,
+# `--floor` and `--ladder-seconds`.
 
 using UnitTestDesign, JSON, Printf, Random
 using UnitTestDesign: Request, generate
@@ -896,8 +898,9 @@ function outside_points(args)
     base, branch = by_key(files_after(args, "--base")), by_key(files_after(args, "--branch"))
     tol = parse(Float64, IC.option(args, "--tolerance", "0.10"))
     floor = parse(Float64, IC.option(args, "--floor", "0.001"))
-    v = judge_gates(base, branch; tol, floor)
-    foreach(println, unique(x.key[1] for x in v.gate4 if x.first != :within))
+    ladder_seconds = parse(Float64, IC.option(args, "--ladder-seconds", "30"))
+    v = judge_gates(base, branch; tol, floor, ladder_seconds)
+    foreach(println, unique(x.key[1] for x in v.gate4 if x.first != :within))     # gated or reported
 end
 
 # ---------------------------------------------------------------- main
