@@ -70,7 +70,7 @@ end
 ```
 
 A designed suite covers all of the pairs, and a random suite of the same size
-covers an expected 64 to 95 percent of them. Two facts explain the pattern.
+covers an expected 64 to 93 percent of them. Two facts explain the pattern.
 
 - A pairwise design must hold all ``v^2`` combinations of any two
   parameters, so it has at least ``v^2`` cases. A random suite of that size
@@ -81,13 +81,13 @@ covers an expected 64 to 95 percent of them. Two facts explain the pattern.
 - The number of cases a design needs grows only with the logarithm of the
   number of parameters. As parameters are added, a random suite of the
   design's size therefore covers a larger share, which is why it reaches 93
-  to 95 percent at forty parameters.
+  percent at forty parameters.
 
 The last few combinations are the expensive ones to hit by chance. In a
-simulation made while this release was designed, random suites needed four
-to six times as many cases as the design to cover every pair (for ten
-four-valued parameters, a median of 106 random cases against the design's
-28).
+simulation made while this release was designed, random suites needed three
+and a half to five times as many cases as the design to cover every pair
+(for ten four-valued parameters, a median of 106 random cases against the
+design's 30).
 
 With rules, a sensible random suite draws from the valid cases, and the
 chance of covering a combination depends on how many valid cases contain it.

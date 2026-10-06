@@ -214,15 +214,35 @@ Added 2026-10-06 by the solver plan's Phase 4
 - `IPOG()` has one engine for every request, in place of 0.4's classic
   algorithm and the general one 0.5 added for rules, must-include rows and
   `stronger` groups. It finds the best value for each case by lookup
-  (Kleine and Simos's FIPOG) instead of scanning every combination, which
-  is 10 to several hundred times faster on larger spaces, and holds one
-  step's combinations at a time.
+  (Kleine and Simos's FIPOG) instead of scanning every combination, and
+  holds one step's combinations at a time.
+- Its speed depends on the rules. Without rules, or with a few, it is about
+  10 to 200 times faster where the engine it replaced took more than a
+  second (8 parameters of 64 values at strength 2: 1.6 s to 0.05 s; strength
+  6 on 20 three-valued parameters: about 6 minutes to 5 s). On heavily
+  constrained models it can be slower and take more memory, because it
+  builds four designs and each asks the feasibility search. The engine took
+  up to about four times as long as before on the benchmark's ct-comp
+  models at strength 2 and about five times on a space with three rules
+  that read the whole case, and on one ct-comp model at strength 3 the
+  process's peak memory doubled (about 620 MiB to 1,250 MiB). These figures
+  were measured with other jobs running and are provisional; the solver
+  plan's quiet re-measurement and Phase 5 (the feasibility memo by
+  component) revisit them.
 - Its cases change. It runs four members of the IPOG family, two tie-break
   rules by two orders of vertical growth, and keeps the design with the
-  fewest cases; over the package's benchmark grid that has as many cases as
-  before or fewer at 96.7% of the points and 2% fewer in total, and at a few
-  points one or two more. A rule that excludes nothing no longer changes the
-  design. The result's `record.ordinary.member` names the member kept.
+  fewest cases. Over the package's benchmark grid, against the engine it
+  replaced, that has as many cases or fewer at 96.7% of 1,826 points and 2%
+  fewer in total; at about 3% of the points it has more, usually by one to
+  four cases, by up to about 9%, and by 160 (5.6%) for ten 4-valued
+  parameters at strength 5 (3,030 where the engine it replaced gave
+  2,870). A rule that excludes nothing no longer changes the design. The
+  result's `record.ordinary.member` names the member kept.
+- A call succeeds only when `feasibility_limit` is enough for each design
+  `IPOG()` builds, so a call can need a larger limit than before: of 150
+  random constrained problems, tried at limits that are powers of two, one
+  needed 16 where the engine it replaced needed 4. A larger limit still
+  never changes the cases of a call that succeeded (contract §3.8).
 - `Construction()`'s seeded path and `Auto` start from the same engine, so
   their designs change with it.
 

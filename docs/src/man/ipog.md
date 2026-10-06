@@ -153,8 +153,10 @@ sometimes much more, with no member best everywhere. The package's engine
 has two tie-break rules, the lowest value and a value that rotates with the
 case, and two orders of vertical growth, support by support and value by
 value. `IPOG()` runs all four combinations on the same steps and keeps the
-design with the fewest cases, the first of equals. The result's record says
-which member made the cases, in `record.ordinary.member`:
+design with the fewest cases, the first of equals. It stops early when a
+design has as many cases as one set of parameters has combinations to
+cover, since no design can have fewer. The result's record says which
+member made the cases, in `record.ordinary.member`:
 
 ```jldoctest; setup = :(using UnitTestDesign)
 julia> all_pairs((a = 1:3, b = 1:3, c = 1:2, d = 1:2)).record.ordinary
@@ -163,8 +165,8 @@ julia> all_pairs((a = 1:3, b = 1:3, c = 1:2, d = 1:2)).record.ordinary
 
 Over the package's benchmark spaces, the four together have no more cases
 than the engines this one replaced on 96.7% of them, and 2% fewer cases in
-total; any one member alone has more than they did on about a fifth of
-them.
+total, but more on about 3%, by up to about 9%; any one member alone has
+more than they did on a fifth to nearly a third of them.
 
 ## Extending IPOG
 
@@ -220,10 +222,15 @@ visible to the next, and a rule that spans two groups is respected.
 
 IPOG uses no randomness. Its rules break every tie by a fixed order, it
 reads the combinations in order, and it keeps the first of the members with
-the fewest cases, so the same request gives the same cases in any process
-and on any supported Julia version. A larger `feasibility_limit` never
-changes the cases of a call that succeeded, since the engine decides only
-from the searches' answers. The cases may change between package versions
-(§9.8), as they did when this engine replaced the two before it, the
-classic algorithm and a general one for rules, must-include cases and
-stronger groups.
+the fewest cases, so the same request gives the same cases in every run and
+every process, for the same package version and the same Julia version
+(contract §9.1). A larger `feasibility_limit` never changes the cases of a
+call that succeeded, since the engine decides only from the searches'
+answers. Each design `IPOG()` builds asks its own searches, and the call
+succeeds only when the limit is enough for every one of them, so a call can
+need a larger limit than a single design would: of 150 random problems with
+rules, tried at limits that are powers of two, one needed 16 where the
+engine before needed 4. The
+cases may change between package versions (§9.8), as they did when this
+engine replaced the two before it, the classic algorithm and a general one
+for rules, must-include cases and stronger groups.

@@ -10,9 +10,12 @@ built.
 
 The default engine is still [`IPOG`](@ref), but its cases change: 0.5's
 IPOG finds each case's values by lookup and keeps the smallest of four
-designs ([IPOG](../man/ipog.md)), which on most spaces has as many cases as
-0.4's or fewer, and on a few has one or two more. To keep 0.4's cases, save
-them and pass them back as `must_include`, which keeps every saved case
+designs ([IPOG](../man/ipog.md)). Over the package's 1,826 benchmark
+spaces it has as many cases as the IPOG it replaced or fewer on 96.7% of
+them, and 2% fewer in total, but more on about 3%: usually one to four
+more, up to about 9% more, and 160 more (5.6%) for ten parameters of four
+values at strength 5. To keep 0.4's cases, save them and pass them back as
+`must_include`, which keeps every saved case
 ([Commit a design as data](../howto/commit_design.md)). 0.5 adds engines a
 call can name, [`Auto`](@ref),
 [`Construction`](@ref) and [`Compact`](@ref), which give fewer cases on

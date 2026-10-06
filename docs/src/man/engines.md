@@ -398,7 +398,8 @@ call that is too large; a design that can't be certified is not returned:
   search that can't decide whether a combination or a partial case has a
   valid completion, with a [`ResourceLimitError`](@ref) that names it.
   Raise it to finish; a larger limit never changes the cases of a call that
-  succeeded (§3.8).
+  succeeded (§3.8). IPOG's call needs a limit enough for each of the
+  designs it builds ([IPOG](ipog.md#Determinism)).
 - **Memory** has no limit in the package: a request too large for the
   machine fails as the operating system fails it.
 - **The reducer** returns its start unreduced beyond 2²⁵ combinations to
@@ -411,7 +412,11 @@ call that is too large; a design that can't be certified is not returned:
 ## Which to choose
 
 - **Use IPOG** when tests are cheap. It is the default, it is deterministic,
-  it is fast, and it covers any request.
+  and it covers any request. It is fast without rules or with a few. With
+  many rules it slows down and takes more memory: each of the four designs
+  it builds asks the feasibility search whether a partial case can still be
+  completed, so on a heavily constrained space it can take a few times as
+  long as one design would.
 - **Use `Auto()`** when cases cost something to run: it is never larger
   than IPOG where it builds both (and above 100,000 combinations, on the
   package's benchmarks, it never was), and much smaller when every
