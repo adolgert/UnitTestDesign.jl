@@ -325,23 +325,6 @@ end
 
 
 """
-    ipog_order(arity, groups) -> Vector{Int}
-
-The order in which IPOG adds parameters: members of stronger groups first
-(highest strength first), then larger domains first, then parameter index.
-With one group this is the classic IPOG order, `sortperm(arity, rev = true)`.
-"""
-function ipog_order(arity::AbstractVector{<:Integer}, groups)
-    n = length(arity)
-    top = zeros(Int, n)
-    for (members, s) in groups, i in members
-        top[i] = max(top[i], s)
-    end
-    return sortperm(collect(1:n); by = i -> (-top[i], -arity[i], i))
-end
-
-
-"""
     ipog_multi_way(arity, required, dead, seeds; order) -> Matrix{Int}
 
 In-parameter-order generation for any set of targets, in index space.
@@ -441,30 +424,6 @@ _complete_seeds(arity::Vector{Int}, buckets, dead, seeds::Matrix{Int}, order) =
 
 
 """
-    full_strength_rows(request, required) -> Matrix{Int}
-
-Strength equal to the parameter count: every required target is a complete
-valid row, so the design is the must-include rows (partial ones completed)
-followed by every valid row they do not already hold, in lexicographic order.
-Without must-include rows this is the set `full_factorial` returns (contract
-§7.8, §11.2).
-"""
-function full_strength_rows(request::Request, required)
-    n = length(request.arity)
-    rows = Vector{Int}[]
-    for j in axes(request.must_include, 2)
-        row = request.must_include[:, j]
-        push!(rows, any(==(0), row) ? witness(request, row) : row)
-    end
-    held = Set(rows)
-    for t in sort(required)
-        t in held || push!(rows, t)
-    end
-    return isempty(rows) ? zeros(Int, n, 0) : stack(rows)
-end
-
-
-"""
     cover_ordinary(::IPOG, request::Request, targets::RequiredTargets) -> Matrix{Int}
 
 IPOG's rows for `request` (contract §1.3): the must-include rows first, then
@@ -500,8 +459,3 @@ function cover_ordinary(::IPOG, request::Request, targets::RequiredTargets)
     return ipog_multi_way(request.arity, required, isdead, seeds;
                           order = ipog_order(request.arity, request.groups))
 end
-
-engine_record(::IPOG) = EngineRecord(:IPOG, nothing)
-
-# Both paths take any request, a negative sub-request at base strength 0 included.
-fit(::IPOG, ::Profile) = Fit(:native, "IPOG covers any request")
