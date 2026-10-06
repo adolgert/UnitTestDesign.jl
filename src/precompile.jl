@@ -16,15 +16,18 @@
     _precompile_workload()
 
 The calls a first session makes: the example on the front page of the
-documentation, the tutorial's calls, each result's display, both engines at
-strengths 2 and 3, spaces of other value types and rules, the row
-reducer `Compact`, the catalog engine on an exact shape, `Auto` and
-`recommend`.
+documentation, the tutorial's calls, each result's display, the default
+engine `Auto()` (its plan, and its IPOG and catalog starts, which the front
+page's example runs both of) and GND at strengths 2 and 3, `IPOG()` named,
+spaces of other value types and rules, the row reducer `Compact`, the
+catalog engine on an exact shape, `Auto(goal = :compact)` and `recommend`.
 """
 function _precompile_workload()
     io = IOContext(IOBuffer(), :limit => true, :displaysize => (24, 80))
     text = MIME"text/plain"()
-    # The front page's example (docs/src/index.md, README.md).
+    # The front page's example (docs/src/index.md, README.md), with the default
+    # engine, Auto(): its plan prepares IPOG's and the catalog's starts and,
+    # on these three parameters, runs both and keeps IPOG's design.
     space = TestSpace(
         (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
         constraints = [
@@ -67,10 +70,11 @@ function _precompile_workload()
     # one, tried here too, made no first call faster and cost precompile time.
     uniform = TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:3, e = 1:3))
     show(io, text, all_pairs(uniform; engine = Construction()))
-    # Auto and recommend (plan §6.1): on the uniform space Auto runs both starts
-    # and reduces the smaller; on the front page's, IPOG alone.
+    # Auto(goal = :compact) and recommend (plan §6.1): on the uniform space Auto
+    # runs both starts and reduces the smaller. IPOG() named, as a caller who
+    # wants IPOG's design writes it, outside Auto's plan.
     show(io, text, all_pairs(uniform; engine = Auto(goal = :compact)))
-    show(io, text, all_pairs(space; engine = Auto()))
+    show(io, text, all_pairs(space; engine = IPOG()))
     show(io, text, recommend(uniform))
     show(io, text, recommend(space))
     return nothing
