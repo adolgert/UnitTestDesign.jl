@@ -276,7 +276,11 @@ effort = 2)` records `(name = :Compact, call = "Compact(GND(seed = 17); seed
 function _engine_config(engine::CoveringEngine)
     r = engine_record(engine)
     keys = Tuple(first(p) for p in r.parameters)
-    settings = NamedTuple{keys}(Tuple(_config_value(last(p)) for p in r.parameters))
+    # Collected as `Any` from the start: a generator of settings of different
+    # types (Auto's goal, effort and candidates) widens its vector as it goes,
+    # and that widening is compiled in each fresh session, outside the package
+    # image, about 14 ms of the default engine's first call.
+    settings = NamedTuple{keys}(Tuple(Any[_config_value(last(p)) for p in r.parameters]))
     return (name = r.name, call = _engine_label(engine), seed = r.seed, randomized = r.randomized,
             settings = settings)
 end

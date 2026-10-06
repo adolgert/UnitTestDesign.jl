@@ -56,7 +56,8 @@ the product of the `t` largest sizes, which no array of strength `t` can
 beat. A last size of 1 gives the full product of the others.
 """
 function _zero_sum(sizes::AbstractVector{Int})
-    issorted(sizes; rev = true) || throw(ArgumentError("_zero_sum needs sizes that do not increase"))
+    # The ordering as a constant: `rev = true` picks it at run time, a call no session's image holds.
+    issorted(sizes, Base.Order.Reverse) || throw(ArgumentError("_zero_sum needs sizes that do not increase"))
     t = length(sizes) - 1
     N = prod(view(sizes, 1:t); init = 1)
     A = zeros(Int, N, t + 1)
