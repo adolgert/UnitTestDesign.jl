@@ -63,11 +63,12 @@ request's must-include rows come first, in order, unchanged where they are
 set and completed in place where they are not (contract §10.5, §7.10); then
 rows until every required target is in some row. The targets are read
 through `supports`, `ncombinations`, `isrequired` and `nrequired`
-(`RequiredTargets`), which list no target; they are shared with every engine
-that covers the same request (`Auto`'s starts, `design_sizes`' engines) and
-with the certifier, which recounts the rows against them, so an engine never
-changes them and keeps its search state, a coverage index's counts for one,
-in what it builds for its run. `generate` certifies the result
+(`RequiredTargets`), which list no target, and no support of the base
+group (`_Supports`); they are shared with every engine that covers the same
+request (`Auto`'s starts, `design_sizes`' engines) and with the certifier,
+which recounts the rows against them, so an engine never changes them and
+keeps its search state, a coverage index's counts for one, in what it
+builds for its run. `generate` certifies the result
 (`validate_design`, §1.21), so a wrong design is an internal error, never a
 wrong answer.
 

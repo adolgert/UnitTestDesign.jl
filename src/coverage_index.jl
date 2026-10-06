@@ -61,7 +61,7 @@ targets share no search state.
 """
 mutable struct CoverageIndex
     arity::Vector{Int}
-    supports::Vector{Vector{Int}}
+    supports::_Supports          # the targets' supports, computed (`_Supports`); the index reads its own members
     offsets::Vector{Int}         # offsets[s] combinations come before support s; the last entry is the total
     member_first::Vector{Int}    # support s's members are members[member_first[s]:member_first[s + 1] - 1]
     members::Vector{Int}
@@ -88,7 +88,7 @@ function CoverageIndex(request::Request, targets::RequiredTargets)
     member_first = ones(Int, length(sets) + 1)
     members, strides = Int[], Int[]
     held = [Tuple{Int, Int}[] for _ in arity]   # (support, stride) for each parameter
-    for (s, support) in enumerate(sets)
+    for (s, support) in _each_support(sets)
         stride = 1
         for p in support
             push!(members, p)

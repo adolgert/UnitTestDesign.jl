@@ -265,7 +265,7 @@ end
         @test (@inferred isrequired(t, 1, 0)) isa Bool
         @test (@inferred nrequired(t, 1)) isa Int
         @test (@inferred ncombinations(t, 2)) isa Int
-        @test (@inferred supports(t)) isa Vector{Vector{Int}}
+        @test (@inferred supports(t)) isa UnitTestDesign._Supports
     end
     @test RequiredTargets(free, first(classify_targets(free))) isa RequiredTargets{TargetList}
     # Classification's targets (`_Classified`, the maintainer's follow-up 3)
@@ -321,6 +321,51 @@ end
     @test (@inferred fit(IPOG(), profile)) isa Fit
     @test (@inferred fit(GND(), profile)) isa Fit
     @test (@inferred Union{GND, IPOG} _engine_for(GND(), constrained)) isa GND
+end
+
+
+@testitem "stability: a support is read in place, and IPOG's map of a step without unranking (plan §5.6)" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, TargetList, Profile, _Classified, _support!, _support_rank, _each_support,
+                          _lookup_steps, _LookupRun, _begin_step!, _prepare
+    # Phase 5 (plan §5.6): the base group's supports are computed, not listed
+    # (`_Supports`). Reading one into a buffer that has room for it, by its
+    # position (unranked) or after the one before it (a walk), and ranking one
+    # back infer and allocate nothing, for a base support and a listed one;
+    # so does IPOG's map of a step, which reads the step's base supports with
+    # an odometer and its listed ones by position, here with overlapping
+    # `stronger` groups at two strengths.
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    names = [Symbol(:p, i) for i in 1:12]
+    request = Request(TestSpace(names, [1:3 for _ in 1:12], Constraint[], 10^5); strength = 2,
+                      stronger = [(:p1, :p2, :p3, :p4) => 3, (:p2, :p3, :p4, :p5) => 3, (:p2, :p4, :p6, :p8, :p10) => 4])
+    sups = TargetList(request).supports
+    @test sups.nbase == 66 && length(sups) == 66 + 4 + 3 + 5   # (p2, p3, p4) once
+    buffer = zeros(Int, 4)
+    @test (@inferred _support!(buffer, sups, 40)) == [5, 7]
+    @test measured(x -> _support!(x[1], x[2], 40), (buffer, sups)) == 0
+    @test (@inferred _support!(buffer, sups, length(sups))) == [4, 6, 8, 10]   # listed
+    @test measured(x -> _support!(x[1], x[2], length(x[2])), (buffer, sups)) == 0
+    @test (@inferred _support_rank(sups, [5, 7])) == 40
+    @test measured(x -> _support_rank(x[1], x[2]), (sups, [5, 7])) == 0
+    "Every support's parameters through a walk, weighted by its position."
+    function walk_sum(x)
+        total = 0
+        for (s, support) in _each_support(x[1], x[2])
+            total += s * sum(support)
+        end
+        return total
+    end
+    @test walk_sum((sups, buffer)) == sum(s * sum(sups[s]) for s in eachindex(sups))
+    @test measured(walk_sum, (sups, buffer)) == 0
+    # IPOG's map, every step in order, then each again with its buffers sized.
+    targets = _Classified(request).targets
+    steps = _lookup_steps(targets, request.arity, _prepare(IPOG(), Profile(request)).order)
+    run = _LookupRun(steps, Returns(false), request.must_include, :lowest, :support)
+    for p in steps.order
+        steps.first[p] == steps.first[p + 1] && continue
+        _begin_step!(run, steps, targets, p)
+        @test measured(x -> _begin_step!(x[1], x[2], x[3], x[4]), (run, steps, targets, p)) == 0
+    end
 end
 
 
@@ -797,8 +842,9 @@ end
     rows = _engine_rows(_catalog_entry(2, 7, 8), request.arity)
     @test (@inferred _new_coverage_rows(request.must_include, rows, targets)) isa Matrix{Int}
     held = falses(last(targets.layout.offsets))
-    @test (@inferred _hold!(held, view(rows, :, 1), targets)) === true
-    @test measured(x -> _hold!(x[1], view(x[2], :, 2), x[3]), (held, rows, targets)) == 0
+    support = Int[]   # each support in turn, reused (`_each_support`)
+    @test (@inferred _hold!(held, support, view(rows, :, 1), targets)) === true
+    @test measured(x -> _hold!(x[1], x[4], view(x[2], :, 2), x[3]), (held, rows, targets, support)) == 0
     # It allocates its bits, one per combination, and the rows it keeps.
     filtered(r) = _new_coverage_rows(r.must_include, rows, targets)
     @test measured(filtered, request) <= sizeof(rows) + cld(last(targets.layout.offsets), 8) + 8192

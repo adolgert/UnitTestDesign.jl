@@ -244,6 +244,141 @@ end
     @test _supports(groups) == supports
     # A base group at strength 0, as a negative sub-request's, has no share.
     @test _group_supports([[1, 2, 3] => 0, [1, 2] => 1, [2, 3] => 2]) == ([[1], [2], [2, 3]], [Int[], [1, 2], [3]])
+    # The base group's supports are computed, not listed: only the other groups' are.
+    @test supports.nbase == 6 && supports.listed == [1, 2, 3, 1, 2, 4, 1, 3, 4, 2, 3, 4]
+    # A group at the base strength adds no support (`_groups` drops one, §11.7): its subsets are base subsets.
+    @test _group_supports([[1, 2, 3, 4] => 2, [2, 3, 4] => 2]) == (supports[1:6], [1:6, [4, 5, 6]])
+    # Groups whose base group is not every parameter in order are an internal error.
+    @test_throws ErrorException _group_supports([[2, 1] => 1])
+end
+
+
+@testitem "request: the base group's supports are unranked and ranked in `combinations` order (plan §5.6)" setup=[RequestSetup] begin
+    using Combinatorics: combinations
+    using Random: Xoshiro
+    using UnitTestDesign: _supports, _support!, _support_rank, _each_support, _nbase
+    # Support `s` of the base group, every parameter at strength `t`, is the
+    # subset of rank `s - 1` among the `t`-subsets of 1:n in lexicographic
+    # order, as `combinations` lists them: unranked (`_support!`), ranked
+    # back (`_support_rank`), stepped through in order (`_each_support`), and
+    # read whole (`getindex`, `collect`), on every (n, t) up to n = 12 and
+    # at strength 0, which has none.
+    buffer = Int[]
+    for n in 1:12, t in 0:n
+        supports = _supports([collect(1:n) => t])
+        listed = t == 0 ? Vector{Int}[] : collect(combinations(1:n, t))
+        @test length(supports) == _nbase(supports) == length(listed)
+        @test collect(supports) == listed
+        @test all(s -> _support!(buffer, supports, s) == listed[s], eachindex(listed))
+        @test all(s -> _support_rank(supports, listed[s]) == s, eachindex(listed))
+        @test [copy(support) for (_, support) in _each_support(supports)] == listed
+        @test [s for (s, _) in _each_support(supports)] == eachindex(listed)
+    end
+    # Wide cases, against the definition of the rank with BigInt binomials:
+    # the subsets before c are, for each place, those that agree before it
+    # and hold a smaller value there.
+    function brute_rank(c, n)
+        t = length(c)
+        r = big(0)
+        for i in 1:t, v in ((i == 1 ? 0 : c[i - 1]) + 1):(c[i] - 1)
+            r += binomial(big(n - v), t - i)
+        end
+        return r
+    end
+    rng = Xoshiro(0x2026_1006_5099)
+    for (n, t) in ((100, 3), (1_000, 2), (1_000, 4), (4_096, 2), (4_096, 3), (250, 6), (60, 30), (64, 63), (30, 1))
+        supports = _supports([collect(1:n) => t])
+        @test length(supports) == binomial(big(n), t)
+        for s in vcat([1, 2, length(supports) - 1, length(supports)], rand(rng, 1:length(supports), 100))
+            c = supports[s]
+            @test length(c) == t && issorted(c; lt = <=) && 1 <= first(c) && last(c) <= n
+            @test brute_rank(c, n) == s - 1
+            @test _support_rank(supports, c) == s
+            # The step to the next subset, in place, is the next position's.
+            if s < length(supports)
+                walk = _each_support(supports, copy(c))
+                @test last(iterate(walk, s)[1]) == supports[s + 1]
+            end
+        end
+    end
+    # Past Int, the number of base supports is an OverflowError, as the offsets' was.
+    @test_throws OverflowError _supports([collect(1:200) => 100])
+end
+
+
+@testitem "request: the layout's supports and offsets are the listed layout's, in order (plan §5.6, §9.7)" setup=[RequestSetup] begin
+    using Combinatorics: combinations
+    using Random: Xoshiro, randperm
+    using UnitTestDesign: TargetList, NegativeProjection, _negative_request, _group_supports, _supports,
+                          _support!, _each_support
+    # The supports as 31bef0f listed them, written out: each group's subsets
+    # in `combinations` order, the base group first, each subset once, where
+    # it first appears, with each group's share of positions; and the offsets
+    # from them. The layout must give every support in the same order, every
+    # offset and every share, on random requests with overlapping `stronger`
+    # groups (several at one strength, one inside another, one listed twice),
+    # their negative sub-requests (base strength 0, and 1), and full strength.
+    function listed_supports(groups)
+        supports, position, shares = Vector{Int}[], Dict{Vector{Int}, Int}(), Vector{Int}[]
+        for (members, s) in groups
+            share = Int[]
+            s > 0 && for subset in combinations(members, s)
+                push!(share, get!(() -> (push!(supports, subset); length(supports)), position, subset))
+            end
+            push!(shares, share)
+        end
+        return supports, shares
+    end
+    function listed_offsets(arity, supports)
+        offsets = [0]
+        for support in supports
+            push!(offsets, last(offsets) + prod(arity[support]; init = 1))
+        end
+        return offsets
+    end
+    "The layout of `request` against the listed one; returns the number of supports listed after the base group's."
+    function check(request)
+        layout = TargetList(request)
+        supports, shares = listed_supports(request.groups)
+        @test collect(layout.supports) == supports
+        @test [copy(support) for (_, support) in _each_support(layout.supports)] == supports
+        buffer = Int[]
+        @test all(s -> _support!(buffer, layout.supports, s) == supports[s], eachindex(supports))
+        @test layout.offsets == listed_offsets(request.arity, supports)
+        @test last(_group_supports(request.groups)) == shares
+        return length(layout.supports) - layout.supports.nbase
+    end
+    rng = Xoshiro(0x2026_1006_1157)
+    tally = Dict(:listed => 0, :shared => 0, :zero => 0, :one => 0, :sub => 0, :full => 0)
+    for _ in 1:150
+        n = rand(rng, 3:9)
+        space = TestSpace([Symbol(:p, i) for i in 1:n], [Any[1:rand(rng, 1:3)...; rand(rng) < 0.3 ? [Invalid(0)] : []]
+                                                         for _ in 1:n], Constraint[], 10^5)
+        strength = rand(rng, 1:n)
+        stronger = Pair{Vector{Int}, Int}[]
+        if strength < n
+            # Groups at one strength overlap often; one may hold another, or repeat.
+            s = rand(rng, (strength + 1):n)
+            for _ in 1:rand(rng, 0:5)
+                k = rand(rng, s:n)
+                push!(stronger, sort!(randperm(rng, n)[1:k]) => rand(rng) < 0.7 ? s : rand(rng, (strength + 1):k))
+            end
+            rand(rng) < 0.3 && !isempty(stronger) && push!(stronger, first(stronger))
+        end
+        request = Request(space; strength, stronger)
+        listed = check(request)
+        tally[:listed] += listed > 0
+        tally[:shared] += sum(binomial(length(g), s) for (g, s) in request.groups[2:end]; init = 0) > listed
+        tally[:full] += strength == n
+        for q in 1:n
+            isempty(space.invalid[q]) && continue
+            strength > 1 || any(g -> q in g.first, request.groups[2:end]) || continue
+            sub = _negative_request(request, NegativeProjection(space, q), zeros(Int, n - 1, 0))
+            tally[sub.strength == 0 ? :zero : sub.strength == 1 ? :one : :sub] += 1
+            check(sub)
+        end
+    end
+    @test all(>(0), values(tally))
 end
 
 

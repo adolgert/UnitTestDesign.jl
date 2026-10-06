@@ -381,7 +381,7 @@ function _lookup_steps(targets::RequiredTargets, arity::Vector{Int}, order::Vect
     sups = supports(targets)
     last = Vector{Int}(undef, length(sups))
     first = zeros(Int, n + 1)
-    for (s, support) in enumerate(sups)
+    for (s, support) in _each_support(sups)
         isempty(support) && error("internal error: support $s is empty")
         l = support[1]
         for q in support
@@ -453,6 +453,10 @@ mutable struct _LookupRun{D}
     const tried::Vector{Bool}
     const putative::Vector{Int}      # one row, for `dead`
     const combo::Vector{Int}         # a combination's values on a support's other parameters
+    const support::Vector{Int}       # one listed support's parameters (`_support!`), for `_begin_step!` and `_mark_required!`
+    const before::Vector{Int}        # the parameters before the step's in the order, ascending (`_before!`)
+    nbefore::Int                     # how many of `order`'s parameters `before` holds
+    const places::Vector{Int}        # an odometer over the (t - 1)-subsets of `before`, for `_begin_step!`
     const digits::Vector{Int}        # an odometer over one support, for `_mark_required!`
     const fstride::Vector{Int}
     const lists::Vector{Vector{Int}} # vertical growth's candidate rows, by p's value, `lists[1]` without one
@@ -480,7 +484,8 @@ function _LookupRun(steps::_LookupSteps, dead::D, seeds::AbstractMatrix{<:Intege
                          0, 0, 0, 0,
                          Int[], Int[], Int[], Int[], Int[], Int[], Bool[], Int[],
                          zeros(Int, vmax), zeros(Int, vmax), zeros(Int, vmax), zeros(Bool, vmax),
-                         zeros(Int, n), Int[], Int[], Int[], [Int[] for _ in 1:(vmax + 1)], Int[],
+                         zeros(Int, n), Int[], Int[], sizehint!(Int[], n), 0, Int[], Int[], Int[],
+                         [Int[] for _ in 1:(vmax + 1)], Int[],
                          zeros(Int, nrows), zeros(Int, isempty(arity) ? 0 : sum(arity)), hoff)
 end
 
@@ -552,6 +557,15 @@ end
 Make the map of step `p`: its supports, their strides and blocks, each
 combination marked when it is required (`_mark_required!`), then unmarked
 where a row that already holds `p`, a must-include row, covers it.
+
+The supports' parameters are read without unranking (plan §5.6). The step's
+base supports (`_Supports`) come first, since their positions are below the
+listed ones': `p` beside each `(t - 1)`-subset of the `k` parameters before
+it in the order, `C(k, t - 1)` of them (`_base_with`), in the order of their
+positions, which is the lexicographic order of those subsets drawn from the
+parameters before `p` in ascending order (`_before!`). So an odometer over
+the subsets (`places`) gives each one's other parameters, in support order.
+A listed support is copied (`_support!`).
 """
 function _begin_step!(run::_LookupRun, steps::_LookupSteps, targets::RequiredTargets, p::Int)
     arity = run.arity
@@ -567,17 +581,36 @@ function _begin_step!(run::_LookupRun, steps::_LookupSteps, targets::RequiredTar
     empty!(run.params)
     empty!(run.strides)
     sups = supports(targets)
+    nb = _base_with(sups, run.rank[p] - 1)
+    nbase = _nbase(sups)
+    nb <= m && (nb == 0 || steps.supports[lo + nb - 1] <= nbase) && (nb == m || steps.supports[lo + nb] > nbase) ||
+        error("internal error: step $p's supports are not its $nb base supports and then listed ones")
+    before, places = run.before, run.places
+    if nb > 0
+        _before!(run, p)
+        resize!(places, _base_strength(sups) - 1)
+        for i in eachindex(places)
+            places[i] = i
+        end
+    end
     total = 0
     for j in 1:m
         s = steps.supports[lo + j - 1]
-        support = sups[s]
         run.sidx[j] = s
         start = length(run.params)
         run.pfirst[j] = start + 1
-        for q in support
-            q == p && continue
-            push!(run.params, q)
-            push!(run.strides, 0)
+        if j <= nb
+            for i in eachindex(places)
+                push!(run.params, before[places[i]])
+                push!(run.strides, 0)
+            end
+            _next_places!(places, length(before))
+        else
+            for q in _support!(run.support, sups, s)
+                q == p && continue
+                push!(run.params, q)
+                push!(run.strides, 0)
+            end
         end
         # p is the least significant digit, then the other parameters from
         # the last to the first: lexicographic, as FIPOG's `pack`.
@@ -609,6 +642,26 @@ function _begin_step!(run::_LookupRun, steps::_LookupSteps, targets::RequiredTar
 end
 
 """
+The parameters before `p` in the run's order, ascending, in `run.before`:
+the ones added since the last step are inserted, so a run's steps keep it in
+O(n) each, and a step before the last one asked rebuilds it.
+"""
+function _before!(run::_LookupRun, p::Int)
+    k = run.rank[p] - 1
+    before = run.before
+    if run.nbefore > k
+        empty!(before)
+        run.nbefore = 0
+    end
+    for i in (run.nbefore + 1):k
+        q = run.order[i]
+        insert!(before, searchsortedfirst(before, q), q)
+    end
+    run.nbefore = k
+    return before
+end
+
+"""
     _mark_required!(run, targets, j)
 
 Mark the required combinations of the step's support `j` in the map. When
@@ -635,7 +688,7 @@ function _mark_required!(run::_LookupRun, targets::RequiredTargets, j::Int)
     end
     fill!(view(uncovered, lo:hi), false)
     required == 0 && return
-    support = supports(targets)[s]
+    support = _support!(run.support, supports(targets), s)
     t = length(support)
     digits, fstride = run.digits, run.fstride
     resize!(digits, t)

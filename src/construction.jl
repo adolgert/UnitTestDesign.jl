@@ -325,20 +325,24 @@ leave out more.
 """
 function _new_coverage_rows(must::Matrix{Int}, rows::Matrix{Int}, targets::RequiredTargets)
     held = falses(last(targets.layout.offsets))   # by id, offsets[s] + code + 1, as in `RequiredTargets`
+    support = Int[]   # one support's parameters, reused (`_each_support`)
     for j in axes(must, 2)
-        _hold!(held, view(must, :, j), targets)
+        _hold!(held, support, view(must, :, j), targets)
     end
     keep = Int[]
     for j in axes(rows, 2)
-        _hold!(held, view(rows, :, j), targets) && push!(keep, j)
+        _hold!(held, support, view(rows, :, j), targets) && push!(keep, j)
     end
     return rows[:, keep]
 end
 
-"Mark in `held` the required targets that `row` holds (`_new_coverage_rows`); whether one was not marked before."
-function _hold!(held::BitVector, row::AbstractVector{Int}, targets::RequiredTargets)
+"""
+Mark in `held` the required targets that `row` holds (`_new_coverage_rows`); whether one was not marked before.
+`buffer` holds each support in turn.
+"""
+function _hold!(held::BitVector, buffer::Vector{Int}, row::AbstractVector{Int}, targets::RequiredTargets)
     new = false
-    for (s, support) in enumerate(supports(targets))
+    for (s, support) in _each_support(supports(targets), buffer)
         any(p -> row[p] == 0, support) && continue
         code = _code(row, support, targets.layout.arity)
         isrequired(targets, s, code) || continue

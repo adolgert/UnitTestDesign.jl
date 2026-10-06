@@ -72,27 +72,45 @@ ordinary ones.
 function _ordinary_bound(request::Request, targets::RequiredTargets)
     must = request.must_include
     m = size(must, 2)
-    # Without must-include rows nothing is held, and no buffer is made. With
-    # them, buffers for every support: the distinct codes held, at most one
-    # per must-include row, and a bit per combination of the largest support.
+    # Without must-include rows nothing is held, no support is read, and no
+    # buffer is made. With them, buffers for every support: the distinct codes
+    # held, at most one per must-include row, a bit per combination of the
+    # largest support, and the support's parameters (`_each_support`).
     m == 0 && return _bound_over_supports(must, targets, nothing)
-    return _bound_over_supports(must, targets, (sizehint!(Int[], m), falses(0)))
+    return _bound_over_supports(must, targets, (sizehint!(Int[], m), falses(0), Int[]))
 end
 
 "`_ordinary_bound`'s pass over the supports, with `_held_by`'s buffers, or `nothing` without must-include rows."
-function _bound_over_supports(must::Matrix{Int}, targets::RequiredTargets,
-                              buffers::Union{Nothing, Tuple{Vector{Int}, BitVector}})
+function _bound_over_supports(must::Matrix{Int}, targets::RequiredTargets, ::Nothing)
     m = size(must, 2)
     best = _SupportBound(m, 0, 0, 0, 0, 0, m)
     for s in eachindex(supports(targets))
-        need = nrequired(targets, s)
-        need > 0 || continue
-        held, unset = buffers === nothing ? (0, 0) : _held_by(buffers..., must, targets, s, supports(targets)[s])
-        rows = m + max(0, need - held - unset)
-        rows > best.rows || continue
-        best = _SupportBound(rows, s, need, ncombinations(targets, s), held, unset, m)
+        best = _better_bound(best, targets, s, 0, 0)
     end
     return best
+end
+
+function _bound_over_supports(must::Matrix{Int}, targets::RequiredTargets,
+                              buffers::Tuple{Vector{Int}, BitVector, Vector{Int}})
+    m = size(must, 2)
+    codes, seen, buffer = buffers
+    best = _SupportBound(m, 0, 0, 0, 0, 0, m)
+    for (s, support) in _each_support(supports(targets), buffer)
+        nrequired(targets, s) > 0 || continue
+        held, unset = _held_by(codes, seen, must, targets, s, support)
+        best = _better_bound(best, targets, s, held, unset)
+    end
+    return best
+end
+
+"The bound so far, `best`, or support `s`'s if it is larger, `held` and `unset` as `_held_by` counts them."
+@inline function _better_bound(best::_SupportBound, targets::RequiredTargets, s::Int, held::Int, unset::Int)
+    need = nrequired(targets, s)
+    need > 0 || return best
+    m = best.m
+    rows = m + max(0, need - held - unset)
+    rows > best.rows || return best
+    return _SupportBound(rows, s, need, ncombinations(targets, s), held, unset, m)
 end
 
 """
@@ -144,7 +162,7 @@ caller's vocabulary, as `report` prints it. Fewer rows than the bound is an
 internal error: the bound is proven, so a design below it is a bug.
 """
 function _bound_record(design_rows::Int, ordinary::_SupportBound, negative::Int, names::Vector{Symbol},
-                       arity::Vector{Int}, supports_list::Vector{Vector{Int}})
+                       arity::Vector{Int}, supports_list::AbstractVector{Vector{Int}})
     bound = ordinary.rows + negative
     design_rows >= bound || error("internal error: the design has $design_rows rows, below its proven lower " *
                                   "bound of $bound")
@@ -167,7 +185,8 @@ when they alone set the bound, or "the 3 must-include rows hold at most 7 of
 the 9 combinations of a and b, and the other 2 need a case each". Empty when
 nothing sets it.
 """
-function _bound_proof(b::_SupportBound, names::Vector{Symbol}, arity::Vector{Int}, supports_list::Vector{Vector{Int}})
+function _bound_proof(b::_SupportBound, names::Vector{Symbol}, arity::Vector{Int},
+                      supports_list::AbstractVector{Vector{Int}})
     musts = _plural(b.m, "must-include row")
     b.support == 0 && return b.m == 0 ? "" : "the $musts"
     members = supports_list[b.support]

@@ -216,7 +216,7 @@ request's `TargetList`, with no rows (`_walk_support!`), keeping what
 function _classify_negative(request::Request, layout::TargetList)
     layout.arity == request.arity || error("internal error: a TargetList of another request")
     record = _NegativeIds(request)
-    for support in layout.supports
+    for (_, support) in _each_support(layout.supports)
         _walk_support!(record, request.context, support, :negative, nothing)
     end
     return _NegativeTargets(layout, record.required, record.excluded, record.ids, record.first, record.count,
@@ -265,7 +265,7 @@ same order.
 """
 function classify_negative_targets(request::Request)
     record = _NegativeList(request, Vector{Int}[], Excluded[])
-    for support in _supports(request.groups)
+    for (_, support) in _each_support(_supports(request.groups))
         _walk_support!(record, request.context, support, :negative, nothing)
     end
     return record.required, record.excluded

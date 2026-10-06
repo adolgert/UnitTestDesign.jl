@@ -353,32 +353,257 @@ end
 isconstrained(request::Request) = !isempty(request.feasibility.tables)
 
 """
-    _group_supports(groups) -> (supports, shares)
+    _Supports <: AbstractVector{Vector{Int}}
+
+The parameter sets that carry targets (contract §1.8), in target order
+(§9.7): for each group `(G, s)`, each `s`-subset of `G` in `combinations`
+order, the base group first, a subset that two groups share listed once,
+where it first appears (`_group_supports`). Each is sorted, since every
+group's members are. Plan §5.6: the base group's are computed, not listed.
+The base group is every parameter, `1:n`, at the base strength `t`, so its
+supports are the first `nbase = C(n, t)` of the list, every `t`-subset of
+`1:n` in lexicographic order, and support `s` is the subset of rank `s - 1`
+in the combinatorial number system: `_support!` unranks it and `_support_rank`
+ranks a subset back, with a table of binomial coefficients, `(t + 1)(n - t
++ 2)` entries, in place of `C(n, t)` vectors. A base group at strength 0 (a
+negative sub-request's, invalid.jl) has none. The other groups' subsets come
+after, in `listed`, one after another, each once; a subset of the base
+strength would be a base subset, so it is never listed.
+
+`supports[s]` is a fresh vector, which the caller may keep, for tests and
+cold paths. Loops read a support into a buffer of their own, which nothing
+allocates once it has grown to the size of a support: `_support!` for one
+support, and `_each_support` to step through all of them in order, a base
+support from the one before in place.
+"""
+struct _Supports <: AbstractVector{Vector{Int}}
+    n::Int                       # the base group's parameters, 1:n
+    t::Int                       # the base strength; 0 gives no base supports
+    nbase::Int                   # C(n, t), or 0 when t == 0: supports 1:nbase are the base group's
+    binomial::Vector{Int}        # C(j + d, j) at d + 2 + (n - t + 2) j, for 0 ≤ j ≤ t and -1 ≤ d ≤ n - t
+    listed::Vector{Int}          # the other groups' supports' parameters, one support after another
+    listed_first::Vector{Int}    # support nbase + k is listed[listed_first[k]:(listed_first[k + 1] - 1)]
+end
+
+Base.size(supports::_Supports) = (supports.nbase + length(supports.listed_first) - 1,)
+Base.IndexStyle(::Type{_Supports}) = IndexLinear()
+
+function Base.getindex(supports::_Supports, s::Int)
+    @boundscheck checkbounds(supports, s)
+    return _support!(Int[], supports, s)
+end
+
+"""
+    _binomials(n, t) -> Vector{Int}
+
+`_Supports`' table: `C(j + d, j)` at `d + 2 + (n - t + 2) j` for `0 ≤ j ≤ t`
+and `-1 ≤ d ≤ n - t` (0 at `d = -1`), by Pascal's rule. These are all the
+coefficients ranking and unranking a `t`-subset of `1:n` read, and the
+largest is the last, `C(n, t)`, the number of base supports: an `Int`
+overflow there is an `OverflowError`, as the offsets' would be.
+"""
+function _binomials(n::Int, t::Int)
+    w = n - t + 2
+    table = zeros(Int, w * (t + 1))
+    for j in 0:t, d in 0:(n - t)
+        table[d + 2 + w * j] = j == 0 ? 1 : Base.checked_add(table[d + 1 + w * j], table[d + 2 + w * (j - 1)])
+    end
+    return table
+end
+
+"`C(m, j)` from `supports`' table, for `0 ≤ j ≤ t` and `-1 ≤ m - j ≤ n - t`."
+@inline _choose(supports::_Supports, m::Int, j::Int) =
+    @inbounds supports.binomial[m - j + 2 + (supports.n - supports.t + 2) * j]
+
+"The number of base supports, `C(n, t)`: supports `1:_nbase(supports)` are the base group's."
+_nbase(supports::_Supports) = supports.nbase
+
+"The base strength `t`, the size of every base support."
+_base_strength(supports::_Supports) = supports.t
+
+"""
+How many base supports hold one given parameter and `t - 1` of `k` others,
+`C(k, t - 1)`: the base supports of an IPOG step whose parameter comes after
+`k` others (`_begin_step!`). 0 without base supports.
+"""
+_base_with(supports::_Supports, k::Int) =
+    supports.nbase == 0 || k < supports.t - 1 ? 0 : _choose(supports, k, supports.t - 1)
+
+"""
+    _support!(buffer, supports, s) -> buffer
+
+Write support `s`'s parameters, ascending, into `buffer`, resized to them,
+and return it. A base support is unranked from `s` (lexicographic order:
+for each place, the first value whose subsets reach past rank `s - 1`, by
+binary search on the table; the last place directly), in O(t log n); a
+listed one is copied. Allocates nothing once `buffer` has grown to the
+support's size.
+"""
+function _support!(buffer::Vector{Int}, supports::_Supports, s::Int)
+    @boundscheck checkbounds(supports, s)
+    s > supports.nbase && return _listed!(buffer, supports, s - supports.nbase)
+    n, t = supports.n, supports.t
+    resize!(buffer, t)
+    r = s - 1   # the rank: the base supports before this one
+    a = 0       # the value at the place before
+    for i in 1:(t - 1)
+        j = t - i + 1   # the places left, this one included
+        # The subsets whose value here is c, past a, number C(n - c, j - 1), so
+        # those with a value here of at most c number C(n - a, j) - C(n - c, j):
+        # the value is the first c at which that passes r.
+        above = _choose(supports, n - a, j) - r
+        lo, hi = a + 1, n - j + 1
+        while lo < hi
+            mid = (lo + hi) >>> 1
+            _choose(supports, n - mid, j) < above ? (hi = mid) : (lo = mid + 1)
+        end
+        r -= _choose(supports, n - a, j) - _choose(supports, n - lo + 1, j)
+        @inbounds buffer[i] = a = lo
+    end
+    t > 0 && @inbounds(buffer[t] = a + r + 1)   # one place left: the value is r past a
+    return buffer
+end
+
+"Copy listed support `k`, `supports[nbase + k]`, into `buffer`."
+function _listed!(buffer::Vector{Int}, supports::_Supports, k::Int)
+    lo, hi = supports.listed_first[k], supports.listed_first[k + 1] - 1
+    resize!(buffer, hi - lo + 1)
+    copyto!(buffer, 1, supports.listed, lo, hi - lo + 1)
+    return buffer
+end
+
+"""
+    _support_rank(supports, members) -> Int
+
+The position `s` of the base support whose parameters are `members`, a
+sorted `t`-subset of `1:n`: its rank in lexicographic order plus one, in
+O(t), the sum over its places of the subsets that agree before the place
+and have a smaller value there.
+"""
+function _support_rank(supports::_Supports, members::AbstractVector{<:Integer})
+    n, t = supports.n, supports.t
+    length(members) == t || error("internal error: $members is not a support of the base group at strength $t")
+    r = 0
+    a = 0
+    for i in 1:t
+        c = Int(members[i])
+        a < c <= n - t + i || error("internal error: $members is not a sorted subset of 1:$n")
+        j = t - i + 1
+        r += _choose(supports, n - a, j) - _choose(supports, n - c + 1, j)
+        a = c
+    end
+    return r + 1
+end
+
+"""
+    _each_support(supports, buffer = Int[])
+
+Every support in order, as `(s, support)`, `support` being `buffer` holding
+support `s`'s parameters: a base support is the next `t`-subset after the
+one before, stepped in place (amortized O(1)), and a listed one is copied.
+So the loop's body must not change `support`, and must copy it to keep it.
+"""
+struct _SupportWalk
+    supports::_Supports
+    buffer::Vector{Int}
+end
+
+_each_support(supports::_Supports, buffer::Vector{Int} = Int[]) = _SupportWalk(supports, buffer)
+
+Base.IteratorSize(::Type{_SupportWalk}) = Base.HasLength()
+Base.length(walk::_SupportWalk) = length(walk.supports)
+Base.eltype(::Type{_SupportWalk}) = Tuple{Int, Vector{Int}}
+
+@inline function Base.iterate(walk::_SupportWalk, s::Int = 0)
+    s == length(walk.supports) && return nothing
+    s += 1
+    return (s, _next_support!(walk.buffer, walk.supports, s)), s
+end
+
+"""
+Support `s` in `buffer`, which holds support `s - 1` (or anything, for the
+first support of a kind). The common step, a base support whose last place
+can grow, is inlined into the walk; the rest is `_carry_support!`.
+"""
+@inline function _next_support!(buffer::Vector{Int}, supports::_Supports, s::Int)
+    if 1 < s <= supports.nbase
+        t = supports.t
+        @inbounds if buffer[t] < supports.n
+            buffer[t] += 1
+            return buffer
+        end
+    end
+    return _carry_support!(buffer, supports, s)
+end
+
+@noinline function _carry_support!(buffer::Vector{Int}, supports::_Supports, s::Int)
+    t = supports.t
+    if s == 1 && supports.nbase > 0
+        resize!(buffer, t)
+        for i in 1:t
+            @inbounds buffer[i] = i
+        end
+    elseif s <= supports.nbase
+        # The next subset in lexicographic order: the last place that can grow
+        # grows, and the places after it follow it.
+        n = supports.n
+        i = t
+        @inbounds while buffer[i] == n - t + i
+            i -= 1
+        end
+        @inbounds buffer[i] += 1
+        for k in (i + 1):t
+            @inbounds buffer[k] = buffer[k - 1] + 1
+        end
+    else
+        _listed!(buffer, supports, s - supports.nbase)
+    end
+    return buffer
+end
+
+"""
+    _group_supports(groups) -> (supports::_Supports, shares)
     _supports(groups) -> supports
 
-The parameter sets that carry targets (contract §1.8): for each group
-`(G, s)`, each `s`-subset of `G` in `combinations` order, the base group
-first. A subset that two groups share is listed once, where it first
-appears, so that a target arising from two groups is one target. Each
-subset is sorted, since every group's members are. A group at strength 0 (a
-negative sub-request's base group, invalid.jl) has no subsets. `shares[g]`
-lists the positions in `supports` of group `g`'s subsets, so that a
-measurement gives each group its share of the counts (§1.15) without
-listing the subsets again.
+The parameter sets that carry targets (contract §1.8), as `_Supports`: for
+each group `(G, s)`, each `s`-subset of `G` in `combinations` order, the base
+group first, which is every parameter and whose subsets are computed, not
+listed. A subset that two groups share is one support, where it first
+appears, so that a target arising from two groups is one target. The other
+groups' subsets are listed: one of a group at the base strength is a base
+subset, found by its rank; one of a group at a strength that an earlier
+group shares, and inside that group's members, was listed there; any other
+is listed now. So no subset is looked up in a dictionary. `shares[g]` lists
+the positions in `supports` of group `g`'s subsets, so that a measurement
+gives each group its share of the counts (§1.15) without listing the
+subsets again; the base group's is the range `1:nbase`.
 """
 function _group_supports(groups)
-    supports = Vector{Int}[]
-    position = Dict{Vector{Int}, Int}()
-    shares = Vector{Int}[]
-    for (members, s) in groups
+    base, t = first(groups)
+    n = length(base)
+    base == 1:n || error("internal error: the base group is not every parameter, in order")
+    binomial = t > 0 ? _binomials(n, t) : Int[]
+    supports = _Supports(n, t, t > 0 ? last(binomial) : 0, binomial, Int[], [1])
+    shares = Union{UnitRange{Int}, Vector{Int}}[1:supports.nbase]
+    inside = falses(n, length(groups))   # whether parameter p is a member of group g
+    for (g, (members, _)) in enumerate(groups), p in members
+        inside[p, g] = true
+    end
+    subset = Int[]   # one subset, reused
+    places = Int[]   # its members' places in the group
+    for g in 2:length(groups)
+        members, s = groups[g]
         share = Int[]
-        if s > 0   # a base group at strength 0 has no targets (see `Request`)
-            for subset in combinations(members, s)
-                k = get!(position, subset) do
-                    push!(supports, subset)
-                    length(supports)
+        if s > 0
+            resize!(places, s)
+            places .= 1:s
+            resize!(subset, s)
+            while true
+                for i in 1:s
+                    subset[i] = members[places[i]]
                 end
-                push!(share, k)
+                push!(share, _support_position(supports, groups, shares, inside, g, subset))
+                _next_places!(places, length(members)) || break
             end
         end
         push!(shares, share)
@@ -387,6 +612,59 @@ function _group_supports(groups)
 end
 
 _supports(groups) = first(_group_supports(groups))
+
+"""
+The position of `subset`, a sorted subset of group `g`'s members, among
+`supports`: a base subset's rank, the position an earlier group of its
+strength listed it at, or a new listed support's.
+"""
+function _support_position(supports::_Supports, groups, shares, inside::BitMatrix, g::Int, subset::Vector{Int})
+    s = length(subset)
+    s == supports.t && return _support_rank(supports, subset)
+    for h in 2:(g - 1)
+        members, strength = groups[h]
+        strength == s && all(p -> inside[p, h], subset) || continue
+        # The first group that holds the subset listed it, at its place among
+        # that group's subsets in `combinations` order.
+        return shares[h][_subset_rank(members, subset) + 1]
+    end
+    append!(supports.listed, subset)
+    push!(supports.listed_first, length(supports.listed) + 1)
+    return length(supports)
+end
+
+"""
+The rank of `subset` among the `length(subset)`-subsets of `members` (both
+sorted) in `combinations` order, with `Base.binomial`: only for subsets two
+groups share, so not on a hot path.
+"""
+function _subset_rank(members::Vector{Int}, subset::Vector{Int})
+    m, s = length(members), length(subset)
+    r = 0
+    a = 0
+    for i in 1:s
+        c = searchsortedfirst(members, subset[i])
+        j = s - i + 1
+        r += binomial(m - a, j) - binomial(m - c + 1, j)
+        a = c
+    end
+    return r
+end
+
+"The next `length(places)`-subset of `1:m` in lexicographic order, in place; `false` after the last."
+function _next_places!(places::Vector{Int}, m::Int)
+    k = length(places)
+    i = k
+    while i >= 1 && places[i] == m - k + i
+        i -= 1
+    end
+    i == 0 && return false
+    places[i] += 1
+    for j in (i + 1):k
+        places[j] = places[j - 1] + 1
+    end
+    return true
+end
 
 """
     TargetList(request) <: AbstractVector{Vector{Int}}
@@ -408,17 +686,24 @@ it support by support and code by code (`_classify_targets`), the targets
 production. An unconstrained request requires every target, so its targets
 are this list itself, never materialized (plan Phase 3 review, round 1,
 item 4).
+
+The supports are `_Supports`: the base group's are computed from their
+position, not listed (plan §5.6), so the layout keeps 8 bytes a support, its
+offset, beside a table that doesn't grow with the supports and the other
+groups' supports. The offsets stay stored: `ncombinations` and `isrequired`
+read them once per call, in the engines' and the certifier's inner loops,
+where computing one would cost O(t).
 """
 struct TargetList <: AbstractVector{Vector{Int}}
     arity::Vector{Int}
-    supports::Vector{Vector{Int}}
+    supports::_Supports
     offsets::Vector{Int}
 end
 
 function TargetList(request::Request)
     supports = _supports(request.groups)
     offsets = zeros(Int, length(supports) + 1)
-    for (k, support) in enumerate(supports)
+    for (k, support) in _each_support(supports)
         block = 1
         for p in support
             block = Base.checked_mul(block, request.arity[p])
@@ -518,7 +803,7 @@ function _classify_targets(request::Request, layout::TargetList)
     ids = Int[]
     target = zeros(Int, length(layout.arity))   # one target in engine positions, reused
     idx = zeros(Int, length(layout.arity))      # the same target as space value indices
-    for (s, support) in enumerate(layout.supports)
+    for (s, support) in _each_support(layout.supports)
         for code in 0:(ncombinations(layout, s) - 1)
             _decode!(target, code, support, layout.arity)
             for p in support
@@ -643,15 +928,18 @@ end
 
 function RequiredTargets(request::Request, required::Vector{Vector{Int}})
     every = TargetList(request)
-    position = Dict(support => k for (k, support) in enumerate(every.supports))
-    counts = zeros(Int, length(every.supports))
+    sups = every.supports
+    # A base support is found by its rank (`_Supports`); the listed ones, the
+    # other groups', by a dictionary of their own.
+    listed = Dict(sups[k] => k for k in (sups.nbase + 1):length(sups))
+    counts = zeros(Int, length(sups))
     bits = falses(length(every))
     support = Int[]   # one target's support, reused
     for t in required
-        _support!(support, t, every.arity, "required")
-        k = get(position, support, 0)
+        _target_support!(support, t, every.arity, "required")
+        k = sups.t > 0 && length(support) == sups.t ? _support_rank(sups, support) : get(listed, support, 0)
         k == 0 && error("internal error: required target $t is on no support of the request")
-        b = every.offsets[k] + _code(t, every.supports[k], every.arity) + 1
+        b = every.offsets[k] + _code(t, support, every.arity) + 1
         bits[b] && error("internal error: required target $t is listed twice")
         bits[b] = true
         counts[k] += 1
@@ -660,7 +948,7 @@ function RequiredTargets(request::Request, required::Vector{Vector{Int}})
 end
 
 "Write into `support` the parameters target `t` sets, checking it is a full-width row of engine positions."
-function _support!(support::Vector{Int}, t::AbstractVector{<:Integer}, arity::Vector{Int}, what::String)
+function _target_support!(support::Vector{Int}, t::AbstractVector{<:Integer}, arity::Vector{Int}, what::String)
     length(t) == length(arity) || error("internal error: $what target $t is not a full-width row")
     empty!(support)
     for i in eachindex(t)
@@ -674,7 +962,12 @@ end
 "The number of combinations on support `s` of `list`."
 ncombinations(list::TargetList, s::Integer) = list.offsets[s + 1] - list.offsets[s]
 
-"The parameter sets that carry targets, in target order; `s` in the other functions indexes them. Not to be changed."
+"""
+The parameter sets that carry targets, in target order; `s` in the other
+functions indexes them. Not to be changed. They are `_Supports`, computed
+rather than listed: `supports(t)[s]` is a fresh vector, and an inner loop
+reads them into a buffer of its own (`_each_support`, `_support!`).
+"""
 supports(t::RequiredTargets) = t.layout.supports
 
 "The number of combinations on support `s`: its codes are `0:ncombinations(t, s) - 1`."
@@ -734,7 +1027,7 @@ function _required_list(t::RequiredTargets)
     layout = t.layout
     list = Vector{Vector{Int}}(undef, nrequired(t))
     j = 0
-    for (s, support) in enumerate(layout.supports), code in 0:(ncombinations(layout, s) - 1)
+    for (s, support) in _each_support(layout.supports), code in 0:(ncombinations(layout, s) - 1)
         isrequired(t, s, code) || continue
         list[j += 1] = _decode!(zeros(Int, length(layout.arity)), code, support, layout.arity)
     end
@@ -746,7 +1039,7 @@ function _required_matrix(t::RequiredTargets)
     layout = t.layout
     matrix = zeros(Int, length(layout.arity), nrequired(t))
     j = 0
-    for (s, support) in enumerate(layout.supports), code in 0:(ncombinations(layout, s) - 1)
+    for (s, support) in _each_support(layout.supports), code in 0:(ncombinations(layout, s) - 1)
         isrequired(t, s, code) || continue
         _decode!(view(matrix, :, j += 1), code, support, layout.arity)
     end
@@ -935,19 +1228,21 @@ holds must be the id of a target classification excluded.
 
 It trusts two things, both classification's. The layout, `targets.layout`,
 is the request's `TargetList`: its supports are every set of parameters that
-carries targets (contract §1.8, `_supports`), and code `code` on support `s`
-is the target `_decode!` makes of it, so a row holds that target exactly
-when its code on `s` is `code`, the rows' entries having been checked within
-the ordinary arity. `targets.excluded` is the ids of the targets
-classification excluded, each with its `Excluded` record (§1.4); it walked
-this layout and put each target in exactly one class, so the required
-targets are the layout's combinations less those ids, as an unconstrained
-request's are all of them. The recount reads nothing else: not the required
-bits, which engines and the coverage index hold by reference, and no
-engine's index or buffers. Engines share the layout and never change it
-(the engine protocol; test_engines.jl checks each leaves it, and the counts
-and bits, as they were). Its buffers are a bit per combination of the
-largest support and, on failure, the target it names.
+carries targets (contract §1.8, `_supports`; the base group's computed in
+order, the others' listed, `_Supports`, which classification walked the same
+way), and code `code` on support `s` is the target `_decode!` makes of it,
+so a row holds that target exactly when its code on `s` is `code`, the rows'
+entries having been checked within the ordinary arity. `targets.excluded` is
+the ids of the targets classification excluded, each with its `Excluded`
+record (§1.4); it walked this layout and put each target in exactly one
+class, so the required targets are the layout's combinations less those ids,
+as an unconstrained request's are all of them. The recount reads nothing
+else: not the required bits, which engines and the coverage index hold by
+reference, and no engine's index or buffers. Engines share the layout and
+never change it (the engine protocol; test_engines.jl checks each leaves it,
+and the counts and bits, as they were). Its buffers are a bit per
+combination of the largest support, one support's parameters
+(`_each_support`) and, on failure, the target it names.
 """
 function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::RequiredTargets)
     layout, excluded = targets.layout, targets.excluded
@@ -955,7 +1250,7 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::
     seen = falses(maximum(s -> ncombinations(layout, s), eachindex(layout.supports); init = 0))
     next = 1   # the first excluded id not yet reached
     covered = 0
-    for (s, support) in enumerate(layout.supports)
+    for (s, support) in _each_support(layout.supports)
         n = ncombinations(layout, s)
         fill!(view(seen, 1:n), false)
         for j in axes(matrix, 2)
@@ -1006,7 +1301,7 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, negative:
     number = 0     # the targets met so far
     next = 1       # the first excluded number not yet reached
     covered = 0
-    for support in layout.supports, p in support, v in (arity[p] + 1):length(request.candidates[p])
+    for (_, support) in _each_support(layout.supports), p in support, v in (arity[p] + 1):length(request.candidates[p])
         empty!(rest)
         n = 1
         for q in support

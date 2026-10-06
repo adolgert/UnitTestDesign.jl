@@ -96,6 +96,58 @@ end
 end
 
 
+@testitem "lookup core: a step's map reads its base supports with an odometer, as their positions give them (plan §5.6)" setup=[LookupSetup] begin
+    using Random: Xoshiro, randperm
+    using UnitTestDesign: _LookupRun, _begin_step!, supports
+    # `_begin_step!` reads a step's base supports without unranking them:
+    # the step's parameter beside each (t - 1)-subset of the parameters before
+    # it in the order, in lexicographic order, before the listed supports. So
+    # the map must hold, for each of the step's supports, the support's other
+    # parameters in support order, as its position gives them
+    # (`supports(targets)[s]`), on random requests with `stronger` groups,
+    # which IPOG's order puts first, at strengths 1 to 4, a negative
+    # sub-request's 0 among them, also when the steps are made out of order.
+    rng = Xoshiro(0x2026_1006_57e9)
+    tally = Dict(:steps => 0, :listed => 0, :shuffled => 0, :zero => 0)
+    for _ in 1:80
+        n = rand(rng, 2:9)
+        strength = rand(rng, 1:min(4, n))
+        stronger = Pair{Vector{Int}, Int}[]
+        for _ in 1:(strength < n ? rand(rng, 0:3) : 0)
+            k = rand(rng, (strength + 1):n)
+            push!(stronger, sort!(randperm(rng, n)[1:k]) => rand(rng, (strength + 1):k))
+        end
+        space = positional(rand(rng, 1:4, n))
+        requests = [Request(space; strength, stronger)]
+        if strength == 1 && !isempty(stronger)
+            # A negative sub-request's shape: base strength 0, so every support is listed.
+            r = requests[1]
+            push!(requests, UnitTestDesign._request(space, 0, [collect(1:n) => 0; r.groups[2:end]], zeros(Int, n, 0),
+                                                    r.feasibility, 10^6, 10^6))
+        end
+        for request in requests
+            targets = _Classified(request).targets
+            steps = _lookup_steps(targets, request.arity, ipog_order(request.arity, request.groups))
+            run = _LookupRun(steps, Returns(false), request.must_include, :lowest, :support)
+            shuffled = rand(rng) < 0.5
+            for p in (shuffled ? steps.order[randperm(rng, n)] : steps.order)
+                lo, hi = steps.first[p], steps.first[p + 1] - 1
+                lo > hi && continue
+                _begin_step!(run, steps, targets, p)
+                @test run.sidx[1:run.m] == steps.supports[lo:hi]
+                @test all(j -> run.params[run.pfirst[j]:(run.pfirst[j + 1] - 1)] ==
+                               filter(!=(p), supports(targets)[run.sidx[j]]), 1:run.m)
+                tally[:steps] += 1
+                tally[:listed] += any(>(supports(targets).nbase), run.sidx[1:run.m])
+                tally[:shuffled] += shuffled
+                tally[:zero] += request.strength == 0
+            end
+        end
+    end
+    @test all(>(0), values(tally))
+end
+
+
 @testitem "lookup core: several rules keep the member with the fewest rows, the first of equals, as IPOG() does (§4.1)" setup=[LookupSetup] begin
     # Probe 08's 8 × 8 and 8 × 32 at strength 2, where the rules differ.
     for arity in (fill(8, 8), fill(32, 8), [5, 4, 4, 3, 3, 2, 2])

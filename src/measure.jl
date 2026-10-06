@@ -502,18 +502,20 @@ the distinct valid rows of that kind, support by support, classifying into
 `record`: each support's `(covered, missing, excluded, unknown)`, in the
 order of `supports`. `firsts`, a vector of zeros aligned with `rows`,
 receives the number of targets of `kind` each row is the first to cover
-(see `_projections`), so `sum(firsts)` is the part's `covered`.
+(see `_projections`), so `sum(firsts)` is the part's `covered`. Each support
+is a fresh vector (`_Supports`' `getindex`), since `_Lists` names a
+support's targets by the vector itself.
 """
 function _support_counts(record::_Record, context::FeasibilityContext,
-                         supports::Vector{Vector{Int}}, rows::Vector{Vector{Int}}, kind::Symbol;
+                         supports::_Supports, rows::Vector{Vector{Int}}, kind::Symbol;
                          firsts = nothing)
     space = context.space
     at = kind === :negative ? Int[only(_invalid_parameters(space, r)) for r in rows] : nothing
     radix = [length(v) for v in space.values]
     table = Int[r[p] for r in rows, p in eachindex(space.names)]   # cases × parameters
     codes = zeros(Int, length(rows))
-    return NTuple{4, Int}[_measure_support!(record, context, support, kind, table, codes, radix, firsts, at)
-                          for support in supports]
+    return NTuple{4, Int}[_measure_support!(record, context, supports[s], kind, table, codes, radix, firsts, at)
+                          for s in eachindex(supports)]
 end
 
 """
@@ -522,10 +524,10 @@ end
 
 Measure the targets of `kind` against `rows` (see `_support_counts`),
 listing them, and sum each group's supports, `shares` from
-`_group_supports`, for its breakdown (§1.15).
+`_group_supports` (the base group's a range), for its breakdown (§1.15).
 """
-function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vector{Int}},
-                       shares::Vector{Vector{Int}}, rows::Vector{Vector{Int}}, kind::Symbol;
+function _measure_part(context::FeasibilityContext, groups, supports::_Supports,
+                       shares::AbstractVector, rows::Vector{Vector{Int}}, kind::Symbol;
                        explanation_limit::Int, duplicates::Int, rejected::Vector{_Rejected}, firsts)
     space = context.space
     lists = _Lists(explanation_limit)
@@ -546,7 +548,7 @@ function _measure_part(context::FeasibilityContext, groups, supports::Vector{Vec
 end
 
 "The counts of the targets of `kind` against `rows`, `(covered, feasible, unknown)`, with nothing listed."
-function _count_part(context::FeasibilityContext, supports::Vector{Vector{Int}}, rows::Vector{Vector{Int}},
+function _count_part(context::FeasibilityContext, supports::_Supports, rows::Vector{Vector{Int}},
                      kind::Symbol)
     c = m = u = 0
     for (sc, sm, _, su) in _support_counts(_Counts(), context, supports, rows, kind)
