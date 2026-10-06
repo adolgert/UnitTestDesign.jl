@@ -1,7 +1,5 @@
-# These functions represent combinations that are covered and uncovered.
-# It is a data structure to facilitate greedy approaches to combination coverage.
-using Combinatorics: combinations
-import Base: eltype
+# GND's coverage matrix (greedy_tuples.jl): the combinations that are covered
+# and uncovered, as columns of a matrix, and the scores GND reads from it.
 
 ###############################################################
 # MatrixCoverage
@@ -28,57 +26,6 @@ mutable struct MatrixCoverage{T <: Integer}
     allc::Array{T, 2}
     remain::Int64
     arity::Array{T, 1}
-end
-
-
-"""
-The element type of the MatrixCoverage class is determined
-by the element type of the arity because an element large
-enough to hold the arity is what defines the minimum possible
-element type.
-"""
-eltype(mc::MatrixCoverage) = eltype(mc.arity)
-
-
-"""
-    one_parameter_combinations(arity, n_way)
-
-Generates all combinations that are nonzero for the last parameter.
-This is for in-parameter-order generation, where we need
-only those tuples that end with this column being nonzero.
-
-The construction method is to leave out the given parameter
-and construct all `n_way` - 1 tuples. Then copy and paste that
-once for each possible value of the given parameter.
-"""
-function one_parameter_combinations_matrix(arity, n_way)
-    comb = one_parameter_combinations(arity, n_way)
-    MatrixCoverage(comb, size(comb, 2), arity)
-end
-
-
-"""
-    one_parameter_combinations!(mc::MatrixCoverage, param_idx, n_way)
-
-Make the uncovered tuples of `mc` those of
-`one_parameter_combinations(mc.arity[1:param_idx], n_way)`, written over the
-first `param_idx` rows of its matrix, which is replaced only when it has too
-few columns. Classic `ipog` keeps one matrix, with a row for every
-parameter, and calls this once per added parameter, in order, so a row is
-zero in every column until its parameter is added (plan §5.2).
-"""
-function one_parameter_combinations!(mc::MatrixCoverage, param_idx, n_way)
-    arity = view(mc.arity, 1:param_idx)
-    cols = one_parameter_combinations_count(arity, n_way)
-    if size(mc.allc, 2) < cols
-        # Doubling keeps the replacements few while the steps grow.
-        mc.allc = zeros(eltype(mc), size(mc.allc, 1), max(cols, 2 * size(mc.allc, 2)))
-    end
-    comb = view(mc.allc, 1:param_idx, 1:cols)
-    fill!(comb, 0)
-    one_parameter_combinations!(comb, arity, n_way)
-    mc.remain = cols
-    mc
 end
 
 
@@ -171,114 +118,6 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
 end
 
 """
-The logic of tuple comparison is oddly complicated.
-We're going to write this out the first round in order to know
-what our tools are.
-
-If you take a case and a tuple to cover, then there are
-five states for any pair of values:
-               case tuple
-    ignores    0    0
-    skips      a    0
-    misses     0    b
-    matches    a == b
-    mismatch   a != b
-
-It's always one of those five. In this language,
-
-covers = all(matches | irrelevant)
-"""
-
-ignores(a, b) = a == 0 && b == 0
-skips(a, b) = a != 0 && b == 0
-misses(a, b) = a == 0 && b != 0  # no caller; kept as one of the five states, which a test checks are mutually exclusive
-matches(a, b) = a != 0 && b != 0 && a == b
-mismatch(a, b) = a != 0 && b != 0 && a != b
-
-"""
-Example matches.
-      crossed      incomplete cover
-case  [0 1 0 2]    [1 0 0 3]  [1 1 0 2]
-tuple [1 0 3 0]    [1 1 0 3]  [1 0 0 2]
-"""
-function case_compatible_with_tuple(case, tuple)
-    !any(mismatch(a, b) for (a, b) in zip(case, tuple))
-end
-
-
-"""
-Example matches.
-      incomplete cover
-case  [1 0 0 3]  [1 1 0 2]
-tuple [1 1 0 3]  [1 0 0 2]
-"""
-function case_partial_cover(case, tuple)
-    (sum(matches(a, b) for (a, b) in zip(case, tuple)) > 0 &&
-     !any(mismatch(a, b) for (a, b) in zip(case, tuple)))
-end
-
-
-"""
-Example matches.
-case  [1 1 0 2]
-tuple [1 0 0 2]
-"""
-function case_covers_tuple(case, tuple)
-    all(matches(a, b) || skips(a, b) || ignores(a, b) for (a, b) in zip(case, tuple))
-end
-
-
-"""
-    matches_from_missing(mc::MatrixCoverage, entry, missing_param)
-
-Given an entry in the test set that has missing values, which are
-zeros, count for each value of `missing_param` the uncovered tuples that
-hold that value and that the entry partially covers
-(`case_partial_cover`: some value in common and none in conflict).
-"""
-function matches_from_missing(mc::MatrixCoverage, entry, missing_param)
-    hist = zeros(eltype(mc), mc.arity[missing_param])
-    matches_from_missing!(hist, mc, entry, missing_param)
-end
-
-
-"""
-    matches_from_missing!(hist, mc::MatrixCoverage, entry, missing_param)
-
-`matches_from_missing` written into `hist`, which it zeroes first. It reads
-the first `length(entry)` rows of each tuple, in place, as the zip of
-`case_partial_cover` did, so a call allocates nothing (plan §5.2). Classic
-`ipog` keeps one matrix with a row for every parameter, zero for those not
-yet added, and its entries hold the parameters added so far.
-"""
-function matches_from_missing!(hist, mc::MatrixCoverage, entry, missing_param)
-    fill!(hist, 0)
-    allc = mc.allc
-    n = length(entry)
-    # The loops index nothing else, so they skip the checks.
-    checkbounds(entry, 1:n)
-    checkbounds(allc, 1:n, 1:mc.remain)
-    checkbounds(allc, missing_param, 1:mc.remain)
-    for tuple_idx in 1:mc.remain
-        value = @inbounds allc[missing_param, tuple_idx]
-        value == 0 && continue  # No matches unless the particular column is nonzero.
-        # case_partial_cover(entry, tuple): some value in common, none in conflict.
-        anymatch = false
-        clash = false
-        @inbounds for i in 1:n
-            a = entry[i]
-            b = allc[i, tuple_idx]
-            if a != 0 && b != 0
-                a == b ? (anymatch = true) : (clash = true; break)
-            end
-        end
-        (anymatch && !clash) && (hist[value] += 1)
-    end
-    hist
-end
-
-
-"""
     add_coverage!(allc, entry)
 
 The coverage matrix, `allc`, has `row_cnt` entries that are considered
@@ -289,7 +128,8 @@ the number of initial uncovered rows.
 """
 function add_coverage!(mc::MatrixCoverage, entry)
     allc = mc.allc
-    # Like matches_from_missing!, this tests the first `length(entry)` rows.
+    # This tests the first `length(entry)` rows, so the matrix may have rows
+    # past the entry's, unread.
     n = length(entry)
     checkbounds(entry, 1:n)
     checkbounds(allc, 1:n, 1:mc.remain)
@@ -300,7 +140,7 @@ function add_coverage!(mc::MatrixCoverage, entry)
     # one down; 2798ecf), which leaves the columns in the same order without
     # a list of the covered ones (plan §5.2).
     for col_idx in mc.remain:-1:1
-        # case_covers_tuple(entry, tuple): every value of the tuple is in the entry.
+        # Every value of the tuple is in the entry.
         covered = true
         @inbounds for i in 1:n
             b = allc[i, col_idx]

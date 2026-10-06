@@ -27,7 +27,7 @@ or changes one updates the contract in the same pull request. The
 
 | Directory | Contents |
 |:--|:--|
-| `src/` | The package. `space.jl`, `constraints.jl` and `feasibility.jl` hold the model and the search; `parameter_order.jl` (IPOG) and `greedy_tuples.jl` (GND) are the engines; `measure.jl` and `report.jl` measure coverage. `precompile.jl` is the precompile workload, which runs while the package precompiles so that a first session's calls are already compiled; a new engine or entry point belongs in it too. |
+| `src/` | The package. `space.jl`, `constraints.jl` and `feasibility.jl` hold the model and the search; `ipog_core.jl` (IPOG) and `greedy_tuples.jl` (GND) are the engines; `measure.jl` and `report.jl` measure coverage. `precompile.jl` is the precompile workload, which runs while the package precompiles so that a first session's calls are already compiled; a new engine or entry point belongs in it too. |
 | `test/` | `@testitem`s run by TestItemRunner, the independent checker, and the fixtures. |
 | `benchmark/` | The performance baseline, `run.jl`, with its own environment; `first_call.jl`, which times the front page's example in fresh processes; and `reference_sweep.jl`, which lists for reviews the definitions in `src/` that nothing public reaches. |
 | `docs/` | This manual, built with Documenter. |

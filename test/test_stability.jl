@@ -188,55 +188,6 @@ end
 end
 
 
-@testitem "stability: classic IPOG reads its targets in place" setup=[StabilitySetup] begin
-    using UnitTestDesign: MatrixCoverage, ipog, one_parameter_combinations!, matches_from_missing!,
-        add_coverage!, choose_last_parameter!, insert_tuple_into_tests
-    # One step of classic IPOG (plan §5.2): the 8th of ten three-valued
-    # parameters joins a design on the first seven, at strength 2. The
-    # targets' matrix has a row for all ten, as `ipog` keeps it.
-    arity, p = fill(3, 10), 8
-    prior = ipog(arity[1:(p - 1)], 2)
-    taller = vcat(prior, zeros(Int, 1, size(prior, 2)))
-    step = @inferred one_parameter_combinations!(MatrixCoverage(zeros(Int, 10, 0), 0, arity), p, 2)
-    @test step.remain == 7 * 3 * 3
-    fresh() = (copy(taller), MatrixCoverage(copy(step.allc), step.remain, arity))
-    "Bytes allocated by `g(make()...)`, on fresh arguments, after a first call compiled it."
-    function allocated_fresh(g, make)
-        g(make()...)
-        args = make()
-        return @allocated g(args...)
-    end
-
-    @test (@inferred ipog(arity, 2)) isa Matrix{Int}
-    hist = zeros(Int, 3)
-    @test (@inferred matches_from_missing!(hist, step, view(taller, :, 1), p)) === hist
-    row = [prior[:, 1]; 1]  # a complete case, which covers seven targets
-    covering() = (fresh()[2], row)
-    @test (@inferred add_coverage!(covering()...)) == step.remain - 7
-    # Scoring a case and covering with a row read every target in place and
-    # allocate nothing; at 2798ecf each target read copied a column, and
-    # add_coverage! also listed the covered ones.
-    @test allocated(matches_from_missing!, hist, step, view(taller, :, 1), p) == 0
-    @test allocated_fresh(add_coverage!, covering) == 0
-    # Horizontal growth allocates one histogram for the step.
-    @test allocated_fresh(choose_last_parameter!, fresh) <= allocated(k -> zeros(Int, k), 3)
-    # Vertical growth allocates the cases it adds and the matrix it returns.
-    grown() = ((t, mc) = fresh(); choose_last_parameter!(t, mc); (t, mc))
-    added = size(insert_tuple_into_tests(grown()...), 2) - size(taller, 2)
-    @test added > 0
-    @test allocated_fresh(insert_tuple_into_tests, grown) <=
-          2 * allocated((n, k) -> [zeros(Int, n) for _ in 1:k], p, added) +
-          2 * allocated(zeros, Int, p, size(taller, 2) + added)
-    # A later step with fewer targets writes over the same matrix.
-    matrix = step.allc
-    @test one_parameter_combinations!(step, p - 1, 2).allc === matrix
-    # A whole run allocates about 5 MiB on 128 binary parameters, mostly
-    # small vectors that enumerate each step's tuples; at 2798ecf it
-    # allocated 255 MiB, a new matrix of targets per step and a copy per read.
-    @test allocated(ipog, fill(2, 128), 2) <= 16 * 2^20
-end
-
-
 @testitem "stability: the targets interface answers in place, and a profile lists no target" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, RequiredTargets, Profile, TargetList, classify_targets, supports,
                           ncombinations, isrequired, nrequired, engine_record, fit, _engine_for, Fit, EngineRecord,

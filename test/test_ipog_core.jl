@@ -6,7 +6,7 @@ using TestItemRunner
 # `ipog_multi_way` (decision D2). `IPOG()` runs the members `_IPOG_MEMBERS` and
 # keeps the smallest design; the internal engine `_IPOGLookup` runs any member,
 # so that each is tested here. The oracle loops of test_random_problems.jl run
-# `IPOG()` through the registry, test_parameter_order.jl has IPOG's fixtures,
+# `IPOG()` through the registry, test_ipog.jl has IPOG's fixtures,
 # and test_stability.jl guards the core's loops. Every design is certified
 # (`generate`, contract §1.21) and checked by the independent oracle
 # (test/checker.jl).
@@ -114,7 +114,7 @@ end
 
 
 @testitem "lookup core: fixtures, each checked by the oracle" setup=[LookupSetup, Checker] begin
-    # The fixtures IPOG's tests use (test_parameter_order.jl): rules with
+    # The fixtures IPOG's tests use (test_ipog.jl): rules with
     # implied targets, greedy dead ends, an empty space, disconnected
     # components, a whole-case rule, overlapping groups, partial must-include
     # rows. Every design is complete by the oracle.

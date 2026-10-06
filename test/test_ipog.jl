@@ -3,14 +3,14 @@ using Random
 
 using TestItemRunner
 
-# IPOG: the classic unconstrained `ipog`, the constrained mixed-strength core
-# `ipog_multi_way`, and `generate(IPOG(), request)` (plan Phase 3 steps 2, 6
-# and 7). Engine results on fixtures are checked by the independent oracle
-# (test/checker.jl) through `setup=[Checker]`.
+# IPOG through `generate(IPOG(), request)` (plan Phase 3 steps 2, 6 and 7;
+# its lookup core since Phase 4, src/ipog_core.jl, whose own tests are in
+# test_ipog_core.jl), and `ipog_order`. Engine results on fixtures are checked
+# by the independent oracle (test/checker.jl) through `setup=[Checker]`.
 
 @testsnippet IPOGSetup begin
-    using UnitTestDesign: Request, Design, generate, to_cases, classify_targets, targets,
-        ipog_multi_way, ipog_order, validate_design
+    using UnitTestDesign: Request, Design, generate, to_cases, classify_targets, targets, ipog_order,
+        validate_design
 
     "A request over parameters p1, p2, ... with values 1:arity[i], so positions are values."
     positional_request(arity; kwargs...) =
@@ -29,26 +29,15 @@ using TestItemRunner
 end
 
 
-@testitem "ipog base" begin
-    ip232 = UnitTestDesign.ipog([2, 3, 2], 2)
-    @test size(ip232) == (3, 6)
-    @inferred UnitTestDesign.ipog([2, 3, 2], 2)
-    ip2324 = UnitTestDesign.ipog([2, 3, 2, 4, 7, 2], 2)
-    @test size(ip2324) == (6, 28)
-end
-
-
-@testitem "ipog_multi_way covers every pair without rules" setup=[IndexCoverage, IPOGSetup] begin
-    arity = [2, 3, 2]
-    required, _ = classify_targets(positional_request(arity))
-    im232 = ipog_multi_way(arity, required, Returns(false))
-    @test size(im232) == (3, 6)
-    @test test_coverage(im232, arity, 2) == (start = 16, finish = 0)
-    @inferred ipog_multi_way(arity, required, Returns(false))
-    # On this problem, the same size as the classic algorithm. That does not
-    # hold in general: the two cores can differ by a few rows either way.
-    @test size(ipog_multi_way([2, 3, 2, 4, 7, 2], targets(positional_request([2, 3, 2, 4, 7, 2])),
-                              Returns(false))) == (6, 28)
+@testitem "IPOG covers every pair without rules, at the bound where it can" setup=[IndexCoverage, IPOGSetup] begin
+    # 2 × 3 × 2 and 2 × 3 × 2 × 4 × 7 × 2 at strength 2: every pair, in as
+    # many cases as the two largest domains' product, the fewest possible.
+    for (arity, rows) in (([2, 3, 2], 6), ([2, 3, 2, 4, 7, 2], 28))
+        design = generate(IPOG(), positional_request(arity))
+        @test size(design.matrix) == (length(arity), rows)
+        @test test_coverage(design.matrix, arity, 2).finish == 0
+        @test design.record.lower_bound == rows && design.record.minimal
+    end
 end
 
 
@@ -84,7 +73,7 @@ end
 end
 
 
-@testitem "long random of ipog_multi_way" setup=[IndexCoverage, UTSetup, IPOGSetup] begin
+@testitem "IPOG covers random spaces without rules at strengths 2 and 3" setup=[IndexCoverage, UTSetup, IPOGSetup] begin
     using Random
 
     rng = Xoshiro(90714134 ⊻ seed_mod())
@@ -97,8 +86,7 @@ end
         local arity
         arity = rand(rng, 2:max_arity, n)
         k = rand(rng, 2:minimum([3, n]))
-        required, _ = classify_targets(positional_request(arity; strength = k))
-        r1 = ipog_multi_way(arity, required, Returns(false))
+        r1 = generate(IPOG(), positional_request(arity; strength = k)).matrix
         cover1 = test_coverage(r1, arity, k)
         @test cover1.finish == 0
     end
@@ -125,16 +113,18 @@ end
         r2 = design.matrix
         out_arity = vec(maximum(r2, dims = 2))
         @test out_arity == arity
-        all_combos = UnitTestDesign.all_combinations(arity, k)
-        combo_cnt = size(all_combos, 2)
+        # The forbidden pair (p2 = 3, p3 = 2) is in one combination of each
+        # set of k parameters that holds p2 and p3, for each choice of the
+        # others' values.
+        combo_cnt = combination_count(arity, k)
+        excluded = sum(s -> 2 in s && 3 in s ? prod(arity[setdiff(s, [2, 3])]; init = 1) : 0, combinations(1:n, k))
         compare = zeros(Int, n)
         compare .= -1
         compare[2:3] .= [3, 2]
-        exclude = vec(sum(all_combos .== compare, dims = 1) .== 2)
         cover2 = test_coverage(r2, arity, k)
         @test cover2.start == combo_cnt
-        @test cover2.finish == sum(exclude)
-        @test length(design.excluded) == sum(exclude)
+        @test cover2.finish == excluded
+        @test length(design.excluded) == excluded
         @test !any(sum(r2 .== compare, dims = 1) .== 2)
     end
 end

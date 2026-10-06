@@ -4,7 +4,7 @@
 # second index-space boundary (the first is rule_table.jl). An engine sees
 # only integers: parameter `i` has values `1:arity[i]` (engine positions),
 # a partial row is a Vector{Int} with 0 for unset, a design is a matrix
-# with one column per case (the layout coverage_matrix.jl already uses).
+# with one column per case (the layout GND's coverage_matrix.jl uses).
 # Engine positions map to space value indices through `candidates`, so
 # domains with non-contiguous ordinary values need no engine change. The
 # positions after `arity[i]` are the parameter's `Invalid` values, which only

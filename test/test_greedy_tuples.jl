@@ -202,7 +202,7 @@ end
 end
 
 
-@testitem "GND design size is competitive" begin
+@testitem "GND design size is competitive" setup=[IndexCoverage] begin
     using UnitTestDesign: Request, generate
     # Before the scoring fix in most_matches_existing, GND chose most values
     # at random and needed 36-38 cases here, compared with 28 for IPOG.
@@ -211,7 +211,7 @@ end
     for seed in 1:3
         design = generate(GND(; seed), Request(space))
         @test size(design.matrix, 2) <= 32
-        @test design.covered == UnitTestDesign.total_combinations(arity, 2)
+        @test design.covered == combination_count(arity, 2)
     end
 end
 
@@ -226,7 +226,7 @@ end
         request = Request(space; strength = k)
         design = generate(GND(; seed), request)
         @test complete(check_design(to_cases(request, design.matrix), checker; strength = k))
-        @test design.required == UnitTestDesign.total_combinations(length.(domains), k)
+        @test design.required == combination_count(length.(domains), k)
     end
     # The 0.4 n_way_coverage_multi test: 3-way within (1, 3, 4, 5), pairwise elsewhere.
     arity = [2, 3, 4, 2, 2, 3]
@@ -239,7 +239,7 @@ end
     @test complete(check_design(to_cases(request, design.matrix), checker; strength = 2, stronger))
     rows = [design.matrix[:, j] for j in axes(design.matrix, 2)]
     @test coverage_by_tuple([r[[1, 3, 4, 5]] for r in rows], 3) ==
-          UnitTestDesign.total_combinations(arity[[1, 3, 4, 5]], 3)
+          combination_count(arity[[1, 3, 4, 5]], 3)
 end
 
 

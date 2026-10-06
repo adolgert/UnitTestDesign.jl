@@ -15,6 +15,8 @@
 # lazy-rule memos are shared, never changed (§3.5). A suspect proven
 # inseparable keeps each kind's proof (`FollowupProof`) beside their union.
 
+using Combinatorics: combinations
+
 
 ## diagnose
 

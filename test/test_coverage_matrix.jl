@@ -2,56 +2,7 @@ using TestItemRunner
 
 using Random
 
-
-@testitem "ensure these little functions are mutually exclusive" begin
-    micro_set = [
-        [0, 0],
-        [1, 0],
-        [0, 1],
-        [1, 1],
-        [1, 2]
-    ]
-    function micro_test(micro_func)
-        [micro_func(a, b) for (a, b) in micro_set]
-    end
-    @test micro_test(UnitTestDesign.ignores) == [1, 0, 0, 0, 0]
-    @test micro_test(UnitTestDesign.skips) == [0, 1, 0, 0, 0]
-    @test micro_test(UnitTestDesign.misses) == [0, 0, 1, 0, 0]
-    @test micro_test(UnitTestDesign.matches) == [0, 0, 0, 1, 0]
-    @test micro_test(UnitTestDesign.mismatch) == [0, 0, 0, 0, 1]
-end
-
-
-@testitem "core comparisons" begin
-    # They will all use the same test suite but will give different answers.
-    compare_suite = [
-        # [case, tuple]
-        [[1, 0, 0, 0], [2, 0, 0, 0]],  # mismatch
-        [[3, 0, 4, 0], [3, 0, 4, 0]],  # exact match
-        [[1, 1, 0, 2], [1, 0, 0, 2]],  # cover, partial case
-        [[1, 0, 0, 3], [1, 1, 0, 3]],  # incomplete / partial cover
-        [[0, 1, 0, 2], [1, 0, 3, 0]],  # crossed
-        [[1, 3, 1, 2], [0, 3, 0, 2]]   # cover, complete case
-    ]
-    function cs_test(compare_func)
-        cs_res = zeros(Bool, length(compare_suite))
-        code = 0
-        for cs_idx in 1:length(compare_suite)
-            case = compare_suite[cs_idx][1]
-            tuple = compare_suite[cs_idx][2]
-            cs_res[cs_idx] = compare_func(case, tuple)
-            code <<= 1
-            code |= cs_res[cs_idx]
-        end
-        (cs_res, code)
-    end
-    # match everything
-    @test cs_test(UnitTestDesign.case_compatible_with_tuple)[2] == 31
-    cpc_res = cs_test(UnitTestDesign.case_partial_cover)
-    @test cpc_res[2] == 29
-    cpt_res = cs_test(UnitTestDesign.case_covers_tuple)
-    @test cpt_res[2] == 25
-end
+# GND's coverage matrix (src/coverage_matrix.jl): its scores and its update.
 
 
 @testitem "coverage_by_parameter" begin
@@ -66,12 +17,6 @@ end
         @test res == cbp_case[3]
     end
 end
-
-@testitem "one parameter combinations matrix" begin
-    mc_opcm = UnitTestDesign.one_parameter_combinations_matrix([2, 2, 3], 2)
-    @test mc_opcm.remain == 4 * 3
-end
-
 
 @testitem "coverage_by_value" begin
     # (coverage matrix, remaining uncovered, arity,
@@ -149,66 +94,6 @@ end
     @test UnitTestDesign.most_matches_existing(mc, [2, 2, 0], 3) == [0, 0]
 end
 
-@testitem "insert_tuple_into_tests" begin
-    # Parameters × cases. Each uncovered tuple (allc's first `remain` columns),
-    # from the last back, goes into the first case that can hold it, filling
-    # that case's unset entries in place; a tuple no case can hold starts a
-    # new case.
-    test_set = [
-        1 1 1;
-        1 0 3;
-        1 3 2;
-        1 2 2
-    ]
-    allc = UnitTestDesign.MatrixCoverage(
-        [
-            1 2 0
-            1 0 1
-            0 0 3
-            0 0 0
-        ],
-        3,
-        [2, 3, 3]
-    )
-    out = UnitTestDesign.insert_tuple_into_tests(test_set, allc)
-    # (p2 = 1, p3 = 3) fills case 2's unset p2; (p1 = 2) fits no case and
-    # starts one; (p1 = 1, p2 = 1) is in case 1 already.
-    @test out == [1 1 1 2; 1 1 3 0; 1 3 2 0; 1 2 2 0]
-    @test test_set == out[:, 1:3] && allc.remain == 0
-end
-
-
-@testitem "choose_last_parameter! gives each case the value that covers the most" begin
-    # Three binary parameters, the first two set every way: each case takes the
-    # value of the third that covers the most uncovered pairs, the first on a
-    # tie, which gives the orthogonal array of 4 cases, and every pair is
-    # covered, so insert_tuple_into_tests has nothing to add.
-    taller = [1 1 2 2; 1 2 1 2; 0 0 0 0]
-    allc = UnitTestDesign.MatrixCoverage(zeros(Int, 3, 0), 0, [2, 2, 2])
-    UnitTestDesign.one_parameter_combinations!(allc, 3, 2)
-    @test allc.remain == 8
-    UnitTestDesign.choose_last_parameter!(taller, allc)
-    @test taller == [1 1 2 2; 1 2 1 2; 1 2 2 1] && allc.remain == 0
-    @test UnitTestDesign.insert_tuple_into_tests(taller, allc) === taller
-end
-
-
-@testitem "matches from missing" begin
-    wider = [
-        1 1 0; 1 2 0; 2 1 0;
-        2 2 0; 3 1 0; 3 2 0
-    ]
-    arity4 = [3, 2, 2]
-    allc4 = [
-        1 0 1; 2 0 1; 3 0 1; 0 1 1; 0 2 1;
-        1 0 2; 2 0 2; 3 0 2; 0 1 2; 0 2 2
-    ]'
-    mc4 = UnitTestDesign.MatrixCoverage(collect(allc4), size(allc4, 2), arity4)
-    mm4 = UnitTestDesign.matches_from_missing(mc4, wider[1, :], 3)
-    @test mm4 == [2, 2]
-end
-
-
 @testitem "add_coverage!(allc, row_cnt, entry)" begin
     # This checks that the rows of the matrix are reordered
     # when a new test covers values. It expects a particular
@@ -230,12 +115,14 @@ end
 
 @testitem "add_coverage! moves the columns the two-pass form moved" begin
     using Random
-    using UnitTestDesign: MatrixCoverage, add_coverage!, case_covers_tuple
+    using UnitTestDesign: MatrixCoverage, add_coverage!
     # The form at 2798ecf: find every covered column, then swap each with the
     # last uncovered one, from the last covered down. The one pass that
     # replaced it must leave the same columns in the same order (plan §5.2).
+    "Whether `case` holds every value of `tuple`, 0 meaning a parameter the tuple leaves out."
+    holds(case, tuple) = all(i -> tuple[i] == 0 || case[i] == tuple[i], eachindex(tuple))
     function two_pass!(mc, entry)
-        covers = [c for c in 1:mc.remain if case_covers_tuple(entry, mc.allc[:, c])]
+        covers = [c for c in 1:mc.remain if holds(entry, mc.allc[:, c])]
         for c in reverse(covers)
             if mc.remain > 1
                 save = mc.allc[:, mc.remain]
@@ -263,26 +150,6 @@ end
     results = [trial(rng) for _ in 1:2000]
     @test !any(first, results)
     @test count(last, results) > 500  # many trials cover two or more targets
-end
-
-
-@testitem "the targets' matrix may have rows for parameters not yet added" begin
-    using UnitTestDesign: MatrixCoverage, matches_from_missing, add_coverage!
-    # Classic IPOG keeps a row for every parameter, zero until the parameter
-    # is added, and scores and covers with cases on the parameters added so
-    # far (plan §5.2). Only those rows are read, as the zip at 2798ecf did.
-    arity4 = [3, 2, 2]
-    allc4 = [
-        1 0 1; 2 0 1; 3 0 1; 0 1 1; 0 2 1;
-        1 0 2; 2 0 2; 3 0 2; 0 1 2; 0 2 2
-    ]'
-    taller = [collect(allc4); zeros(Int, 2, size(allc4, 2))]
-    exact = MatrixCoverage(collect(allc4), size(allc4, 2), arity4)
-    tall = MatrixCoverage(taller, size(allc4, 2), [arity4; 4; 4])
-    @test matches_from_missing(tall, [1, 1, 0], 3) == matches_from_missing(exact, [1, 1, 0], 3) == [2, 2]
-    @test add_coverage!(tall, [1, 2, 2]) == add_coverage!(exact, [1, 2, 2]) == 8
-    @test tall.allc[1:3, :] == exact.allc
-    @test all(iszero, tall.allc[4:5, :])
 end
 
 

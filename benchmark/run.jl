@@ -333,21 +333,22 @@ function breakdown(opts, out)
     println(out, "| bench12 full factorial | ... of which `case_indices`, the value lookup | " *
                  "$(seconds(lookup_t)) | $(mib(lookup_b)) | $(share(lookup_t)) of the call |")
 
-    # Fixture 1 through IPOG: the classic unconstrained `ipog` is the 0.4
-    # core; the request adds the lazy target list, which an unconstrained
-    # request never materializes, and the final validation, which recounts
-    # it one support at a time.
+    # Fixture 1 through IPOG: the engine's rows (`cover_ordinary`, IPOG's
+    # lookup core with each of its members); the request adds the lazy target
+    # list, which an unconstrained request never materializes, and the final
+    # validation, which recounts it one support at a time.
     wide = TestSpace((Symbol(:p, i) => 1:4 for i in 1:15)...)
     whole, whole_b = quick(() -> covering(IPOG(), wide, 4))
     targets_t, targets_b = quick(() -> UnitTestDesign.classify_targets(UnitTestDesign.Request(wide; strength = 4)))
-    core_t, core_b = quick(() -> UnitTestDesign.ipog(fill(4, 15), 4))
     wide_request = UnitTestDesign.Request(wide; strength = 4)
     required, _ = UnitTestDesign.classify_targets(wide_request)
-    matrix = UnitTestDesign.ipog(fill(4, 15), 4)
+    wide_targets = UnitTestDesign.RequiredTargets(wide_request, required)
+    core_t, core_b = quick(() -> UnitTestDesign.cover_ordinary(IPOG(), wide_request, wide_targets))
+    matrix = UnitTestDesign.cover_ordinary(IPOG(), wide_request, wide_targets)
     check_t, check_b = quick(() -> UnitTestDesign.validate_design(wide_request, matrix, required))
     wshare(t) = @sprintf("%.0f%%", 100 * t / whole)
     println(out, "| fixture 1, IPOG | whole `generate` call | $(seconds(whole)) | $(mib(whole_b)) | |")
-    println(out, "| fixture 1, IPOG | classic `ipog`, the 0.4 core | $(seconds(core_t)) | $(mib(core_b)) | $(wshare(core_t)) |")
+    println(out, "| fixture 1, IPOG | `cover_ordinary`, IPOG's lookup core | $(seconds(core_t)) | $(mib(core_b)) | $(wshare(core_t)) |")
     println(out, "| fixture 1, IPOG | `classify_targets`: the lazy `TargetList` of $(count_str(length(required))) " *
                  "targets, not materialized | $(seconds(targets_t)) | $(mib(targets_b)) | $(wshare(targets_t)); " *
                  "unconstrained, so nothing is excluded |")
