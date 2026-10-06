@@ -309,9 +309,11 @@ that query, including components with no assigned parameter, draws on the
 same budget. An answer found in the run-local cache costs no nodes. There is
 no run-wide total.
 
-**3.5** Cache keys include the assignment and the active rule set. Search
-caches are local to one call. An exhausted search is never cached as
-infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
+**3.5** Cache keys include the active rule set and the assignment's values
+at the parameters of one connected component (§3.4): an answer is cached
+for each component a search solves, and a query's answer is put together
+from its components'. Search caches are local to one call. An exhausted
+search is never cached as infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
 context too: one generation request, or one call to `explain`, `classify`,
 `coverage`, `missing_interactions`, `report` or `followups`. `design_sizes`
 keeps one memo for all its measurements; each design it generates is a

@@ -728,6 +728,49 @@ end
 end
 
 
+@testitem "feasibility: one scoped rule keeps a few cache entries, however many parameters (probe 06, plan §5.6)" begin
+    using UnitTestDesign: Request, classify_targets, generate, cache_entries
+    # Probe 06: n two-valued parameters and one scoped rule that excludes
+    # nothing. Before Phase 5 the whole-assignment memo kept one full-width
+    # entry per target (32,512 entries, 67 MiB at n = 128). Now every target's
+    # question looks up the one constrained component, {p1, p2}, by its
+    # sub-assignment: (0, 0), (1, 0), (2, 0), (0, 1) and (0, 2) are searched
+    # once each, and the targets on (p1, p2) are fully assigned, so the direct
+    # check decides them and nothing is stored.
+    for n in (8, 32, 128)
+        names = [Symbol(:p, i) for i in 1:n]
+        space = TestSpace((names[i] => Any[1, 2] for i in 1:n)...; constraints = [forbid((a, b) -> false, :p1, :p2)])
+        request = Request(space; strength = 2)
+        required, excluded = classify_targets(request)
+        @test length(required) == 2n * (n - 1) && isempty(excluded)
+        f = request.feasibility
+        @test cache_entries(f) == 5
+        @test sort(collect(keys(f.witness_cache[1]))) == [[0, 0], [0, 1], [0, 2], [1, 0], [2, 0]]
+        # A pointer per component; the free parameters share one empty cache.
+        @test Base.summarysize(f.witness_cache) < 2048 + 16n
+        # IPOG asks of rows that assign p1 and p2 together, which the direct
+        # check decides, or of these five.
+        if n <= 32
+            generate(IPOG(), request)
+            @test cache_entries(f) == 5
+        end
+    end
+    # A whole-case rule makes one component of every parameter, so each
+    # target's sub-assignment is the whole assignment: one entry per target,
+    # where the whole-assignment memo also kept one per target beside it.
+    names = [Symbol(:p, i) for i in 1:8]
+    space = TestSpace((names[i] => Any[1, 2] for i in 1:8)...; constraints = [forbid(case -> false)])
+    request = Request(space; strength = 2)
+    required, excluded = classify_targets(request)
+    @test length(required) == 112 && isempty(excluded)
+    @test cache_entries(request.feasibility) == 112
+    @test all(k -> length(k) == 8, keys(request.feasibility.witness_cache[1]))
+    # The rule excludes nothing, so IPOG's rows are those without it.
+    plain = TestSpace((names[i] => Any[1, 2] for i in 1:8)...)
+    @test generate(IPOG(), Request(space)).matrix == generate(IPOG(), Request(plain)).matrix
+end
+
+
 @testitem "feasibility: rule checks are counted, not budgeted, §3.3" setup=[FeasibilitySetup] begin
     # Astra by hand; a check is one `forbids` call.
     astra = () -> Feasibility([[1, 2], [1, 2], [1, 2]],
