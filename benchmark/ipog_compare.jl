@@ -35,10 +35,13 @@
 #
 # `run` builds each point once and runs every engine on it, in this process,
 # one line per point and engine. Each engine is first compiled on small
-# spaces at the sweep's strengths, with and without a rule, so that no point
-# pays for it. Then, at a point: a first call; then, unless the first took
-# `--budget` seconds (default 2) or more, warm calls until `--calls` of them
-# (default 3) or `--budget` seconds of them. The warm time is the minimum
+# spaces at the sweep's strengths, built as the points are, plain and with
+# each change of the `adapted` family (a rule, a partial must-include row, a
+# `stronger` group, an `Invalid` value; `warm_up`), so that no point pays for
+# compiling those paths; a point whose values have types the warm-up's
+# don't still compiles for them. Then, at a point: a first call; then,
+# unless the first took `--budget` seconds (default 2) or more, warm calls
+# until `--calls` of them (default 3) or `--budget` seconds of them. The warm time is the minimum
 # over the warm calls (a collection can triple a single call, plan §12.4), or
 # the first call's when there were none; the bytes are the fewest any warm
 # call allocated (`@timed`; on Julia 1.11.5 and later under macOS a large
@@ -108,8 +111,10 @@
 # `fresh --over` fills in what `run` skipped. It prints Phase 4's gates (plan
 # §5.5) for each candidate: the share of points with rows no more than
 # the reference's (gate: 90%), the largest excess in percent and in rows,
-# every point more than 3% above (gate: none); time ratios with the noise
-# allowance below, every point slower beyond it (gate: none); and the named
+# every point more than 3% above (gate: none), a point the reference
+# completed and the candidate didn't counting against both; time ratios
+# with the noise allowance below, every point slower beyond it (gate:
+# none); and the named
 # speed gates: strength 6 on 20 three-valued parameters in under 1,157 / 5 s
 # (probe 24), on 20 two-valued parameters in no more than 8.6 s, and 8 × 64 at
 # strength 2 in 1.61 / 5 s (Phase 0's quiet figure) and at least 5× faster
@@ -324,14 +329,23 @@ function rows_hash(m::AbstractMatrix{<:Integer})
     return string(h; base = 16, pad = 16)
 end
 
-"Compile `engine` on small spaces at each strength, with and without a rule, so that no point pays for it."
+"""
+Compile `engine` on small spaces at each strength, built as the points are
+(`build`, from a uniform spec of `t + 2` binary parameters): plain, and with
+each change of the `adapted` family, a scoped rule that excludes nothing,
+three forbidden pairs, a partial must-include row, a `stronger` group (where
+the strength leaves room for one) and an `Invalid` value, whose negative
+rows take another path. So no point pays for compiling them, except for the
+value types of its own space.
+"""
 function warm_up(engine, strengths)
     for t in sort(unique(strengths))
-        k = t + 2
-        names = [Symbol(:p, i) for i in 1:k]
-        rule = Constraint[forbid((a, b) -> a == 1 && b == 2, :p1, :p2)]
-        for rules in (Constraint[], rule)
-            generate(engine, Request(TestSpace(names, [1:2 for _ in 1:k], rules, 10^5); strength = t))
+        for adapt in (nothing, "noop_scoped", "forbid3", "seed", "stronger", "invalid")
+            adapt == "stronger" && t + 1 > min(6, t + 2) && continue   # `adapt!`'s group needs t + 1 <= 6
+            s = Dict{String, Any}("n" => t + 2, "v" => 2, "family" => "none", "usage" => "reuse", "strength" => t)
+            adapt === nothing || (s["adapt"] = adapt)
+            space, kw = build(s, base_model(s)...)
+            generate(engine, Request(space; kw...))
         end
     end
 end
@@ -750,7 +764,10 @@ function compare(ref, cand, by, opts)
     end
     isempty(gained) || println("  the candidate completed $(length(gained)) points the reference did not: ",
                                join(first(gained, 10), ", "), length(gained) > 10 ? ", …" : "")
-    isempty(both) && return nothing
+    if isempty(both)
+        isempty(lost) || println("  rows gate: FAIL (the candidate completed none of the points the reference did)")
+        return nothing
+    end
     R(p) = by[ref][p]
     C(p) = by[cand][p]
     rows(r) = int(r["rows"])
@@ -761,13 +778,18 @@ function compare(ref, cand, by, opts)
     worst_pct = maximum(excess)
     worst_rows = maximum(e -> (e[2], e[1], e[3]), excess)
     above = sort!([e for e in excess if e[1] > 3]; rev = true)
-    share = (fewer + equal) / length(both)
+    # The rows gate is over every point the reference completed: one the
+    # candidate didn't complete counts against both of its clauses.
+    share = (fewer + equal) / (length(both) + length(lost))
     @printf("  rows: fewer at %d, equal at %d, more at %d; identical rows (hash) at %d\n", fewer, equal,
             length(both) - fewer - equal, same_hash)
-    @printf("  rows no more than the reference's at %.1f%% of the points: %s (gate: 90%% or more)\n", 100share,
+    @printf("  rows no more than the reference's at %.1f%% of the %d points the reference completed%s: %s (gate: 90%% or more)\n",
+            100share, length(both) + length(lost),
+            isempty(lost) ? "" : " ($(length(lost)) not completed by the candidate count as more)",
             share >= 0.9 ? "PASS" : "FAIL")
     @printf("  largest excess: %+.1f%% (%s), %+d rows (%s)\n", worst_pct[1], worst_pct[3], worst_rows[1], worst_rows[3])
-    @printf("  points more than 3%% above: %d: %s (gate: none)\n", length(above), isempty(above) ? "PASS" : "FAIL")
+    @printf("  points more than 3%% above: %d%s: %s (gate: none)\n", length(above),
+            isempty(lost) ? "" : ", and $(length(lost)) not completed", isempty(above) && isempty(lost) ? "PASS" : "FAIL")
     for (e, d, p) in above
         @printf("    %-48s %6d → %6d  %+5.1f%% (%+d rows)\n", p, rows(R(p)), rows(C(p)), e, d)
     end
@@ -810,7 +832,7 @@ function compare(ref, cand, by, opts)
         key == "8x64-t2" && r !== nothing && @printf(", 5× faster than it: %s", w(c) <= w(r) / 5 ? "PASS" : "FAIL")
         println()
     end
-    return (; both, fewer, equal, share, worst_pct, worst_rows, above, slower, ratios, verdicts)
+    return (; both, lost, fewer, equal, share, worst_pct, worst_rows, above, slower, ratios, verdicts)
 end
 
 function summary(args)
@@ -864,7 +886,9 @@ function summary(args)
                       if judge(num(by[ref][p]["warm_s"]), num(by[c][p]["warm_s"]), opts.tol, opts.floor) != :fast]
             slow = count(p -> judge(num(by[ref][p]["warm_s"]), num(by[c][p]["warm_s"]), opts.tol, opts.floor) == :slower,
                          common)
-            gates = le >= 0.9 * length(common) && gt3 == 0 ? "rows ok" : "rows FAIL"
+            # A point the reference completed and the candidate didn't fails the rows gate (`compare`).
+            lost = c == ref || results[c] === nothing ? 0 : length(results[c].lost)
+            gates = le >= 0.9 * length(common) && gt3 == 0 && lost == 0 ? "rows ok" : "rows FAIL"
             @printf("  %-36s %9d %+6.2f%% %6.1f%% %+7.1f%% %6d %9d %9.3f %8d %9s\n", first(c, 36), total,
                     pct(total, total_ref), 100le / max(1, length(common)), exc, gt3, small, geomean(ratios), slow,
                     c == ref ? "(ref)" : gates)
