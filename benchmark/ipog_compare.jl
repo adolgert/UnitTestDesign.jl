@@ -56,8 +56,9 @@
 # seconds at 2798ecf), and those with rules whose target bookkeeping, at the
 # 24 bytes per parameter per target of plan §2.6, passes `--max-memory` GiB
 # (default 1; that figure is a floor, and CASA's models at strength 3 peak at
-# about twice it). These get a `skipped:` line; `fresh --over` runs exactly
-# them. A first call that takes `--ladder-seconds` (default 120) or more also
+# about twice it). `--max-seconds S` also leaves out the points whose
+# `estimated_seconds` passes S (default: no such limit). These get a
+# `skipped:` line; `fresh --over` runs exactly them. A first call that takes `--ladder-seconds` (default 120) or more also
 # skips the larger points of its ladder for that engine, as run.py does.
 # `--resume` keeps the lines OUT already holds and runs only the rest.
 #
@@ -221,10 +222,24 @@ function has_rules(s)
     return false
 end
 
-const LIMITS = (expensive = false, max_targets = 2e6, max_cost = 4e8, max_memory = 1.0)
+const LIMITS = (expensive = false, max_targets = 2e6, max_cost = 4e8, max_memory = 1.0, max_seconds = Inf)
+
+"""
+A point's seconds for today's IPOG, estimated in advance: its targets times
+its lower bound (families.py's `cost`) times its parameters, over 10⁹. On the
+169 points without rules where today's IPOG (6b625c2's src/, Julia 1.13, an
+Apple M2 under load 4–6) took over 0.1 s, that product ran at 0.8–3.9·10⁹
+per second (median 2.3·10⁹), so this overstates by up to 4× and understates
+by up to 1.25×; families.py's cost alone spread 222×, since a wide space's
+rows are as long as it has parameters. With rules the feasibility search can
+take far longer (ct-comp's MCAC_20 at strength 2: 105 s, against an estimate
+of under a second).
+"""
+estimated_seconds(s) = s["cost"] * s["n"] / 1e9
 
 function limits(args)
     return (expensive = flag(args, "--expensive"),
+            max_seconds = parse(Float64, option(args, "--max-seconds", string(LIMITS.max_seconds))),
             max_targets = parse(Float64, option(args, "--max-targets", string(LIMITS.max_targets))),
             max_cost = parse(Float64, option(args, "--max-cost", string(LIMITS.max_cost))),
             max_memory = parse(Float64, option(args, "--max-memory", string(LIMITS.max_memory))))
@@ -240,6 +255,7 @@ function over_limits(s, lim)
     targets > lim.max_targets && return "targets"
     s["cost"] > lim.max_cost && return "cost"
     has_rules(s) && 24 * s["n"] * targets > lim.max_memory * 2^30 && return "memory"
+    estimated_seconds(s) > lim.max_seconds && return "seconds"
     return nothing
 end
 
@@ -434,11 +450,11 @@ end
 
 function list_points(args)
     lim = limits(args)
-    @printf("%-48s %4s %4s %12s %14s %6s  %s\n", "point", "t", "k", "targets", "cost", "rules", "run")
+    @printf("%-48s %4s %4s %12s %14s %10s %6s  %s\n", "point", "t", "k", "targets", "cost", "estimate", "rules", "run")
     for s in select_specs(args)
         reason = over_limits(s, lim)
-        @printf("%-48s %4d %4d %12d %14.4g %6s  %s\n", point_id(s), s["strength"], s["n"], s["targets"], s["cost"],
-                has_rules(s), reason === nothing ? "in-process" : "skipped:$reason")
+        @printf("%-48s %4d %4d %12d %14.4g %9.3gs %6s  %s\n", point_id(s), s["strength"], s["n"], s["targets"],
+                s["cost"], estimated_seconds(s), has_rules(s), reason === nothing ? "in-process" : "skipped:$reason")
     end
 end
 
