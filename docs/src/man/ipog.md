@@ -230,7 +230,7 @@ answers. Each design `IPOG()` builds asks its own searches, and the call
 succeeds only when the limit is enough for every one of them, so a call can
 need a larger limit than a single design would: of 150 random problems with
 rules, tried at limits that are powers of two, one needed 16 where the
-engine before needed 4. The
-cases may change between package versions (§9.8), as they did when this
-engine replaced the two before it, the classic algorithm and a general one
-for rules, must-include cases and stronger groups.
+engines before needed 4. The cases may change between package versions
+(§9.8), as they did when this engine replaced the two before it, the
+classic algorithm and a general one for rules, must-include cases and
+stronger groups.
