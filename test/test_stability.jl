@@ -623,8 +623,8 @@ end
 @testitem "stability: IPOG's lookup core scores and places in place" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, Profile, Design, RequiredTargets, _Classified, _IPOGLookup, _IPOGPlan, _prepare,
         _execute, _run, _lookup_steps, _LookupSteps, _lookup_cover, _lookup_complete, _LookupRun, _lookup_grow!,
-        _begin_step!, _horizontal!, _vertical!, _base, _cover_on!, _choose, _find_row, _decode_combo!, _agrees,
-        _tiekey, _fill!, generate, dead, supports, ncombinations
+        _begin_step!, _mark_required!, _horizontal!, _vertical!, _base, _cover_on!, _choose, _find_row,
+        _decode_combo!, _agrees, _tiekey, _fill!, generate, dead, supports, ncombinations, nrequired
     # The core of plan §5.5 (Phase 4): its plan and its operations infer, a
     # lookup and a placement allocate nothing, horizontal growth over a whole
     # step allocates nothing, nor does vertical growth that starts no row, and
@@ -658,8 +658,8 @@ end
     @test (@inferred _lookup_cover(rsteps, rt, row -> dead(ruled, row), ruled.must_include)) isa Matrix{Int}
     # A run at the eighth parameter's step, after the seven before it, every
     # buffer sized: one step's growth, on a fresh copy each time.
-    function at_step(k; tiebreak = :lowest)
-        run = _LookupRun(steps, Returns(false), zeros(Int, 10, 0), tiebreak, :support)
+    function at_step(k; tiebreak = :lowest, vertical = :support)
+        run = _LookupRun(steps, Returns(false), zeros(Int, 10, 0), tiebreak, vertical)
         for p in steps.order[1:(k - 1)]
             steps.first[p] == steps.first[p + 1] && continue
             _begin_step!(run, steps, targets, p)
@@ -673,13 +673,20 @@ end
         template = at_step(8; tiebreak)
         @test allocated_fresh(_horizontal!, () -> deepcopy(template)) == 0
     end
-    # Vertical growth that starts no row allocates only its candidate lists,
-    # when they outgrow what the steps before left them: a few words a row.
-    # Each placement allocates nothing (below).
+    # Vertical growth, in either order, allocates only its candidate lists,
+    # when they outgrow what the steps before left them, a few words a row;
+    # and where it starts rows (`add`), the rows' storage as it grows, a few
+    # rows' worth. Each placement allocates nothing (below).
+    for vertical in (:support, :value), add in (false, true)
+        local start = at_step(8; vertical)
+        local started() = (run = deepcopy(start); _horizontal!(run); run)
+        @test sum(started().left) > 0   # vertical growth has combinations to place
+        local after = (run = started(); _vertical!(run, add); run.nrows)
+        @test allocated_fresh(run -> _vertical!(run, add), started) <=
+              32 * (after + 16) + (add ? 32 * (start.n + 1) * after : 0)
+    end
     template = at_step(8)
     grown() = (run = deepcopy(template); _horizontal!(run); run)
-    @test sum(grown().left) > 0   # vertical growth has combinations to place
-    @test allocated_fresh(run -> _vertical!(run, false), grown) <= 32 * (template.nrows + 16)
     # One lookup, one choice, one row search, one coverage mark.
     run = grown()
     @test (@inferred _base(run, 0, 1)) isa Int
@@ -693,14 +700,40 @@ end
     # The final fill allocates nothing either.
     filled() = (run = _LookupRun(steps, Returns(false), zeros(Int, 10, 0), :lowest, :support); _lookup_grow!(run, steps, targets, true))
     @test allocated_fresh(_fill!, filled) == 0
+    # A step's map where rules partly exclude some of its supports: each
+    # combination of those is asked by its code (`_mark_required!`'s
+    # odometer), and making the map again, its buffers sized, allocates
+    # nothing, with `dead` a closure. 12 × 4 at strength 3, three rules.
+    parted = Request(TestSpace([Symbol(:p, i) for i in 1:12], [1:4 for _ in 1:12],
+                               [forbid((p1 = 1, p12 = 2)), forbid((p3 = 2, p11 = 3)), forbid((p5 = 1, p6 = 1, p10 = 1))],
+                               10^5); strength = 3)
+    pt = _Classified(parted).targets
+    psteps = _lookup_steps(pt, parted.arity, _prepare(IPOG(), Profile(parted)).order)
+    prun = _LookupRun(psteps, row -> dead(parted, row), zeros(Int, 12, 0), :lowest, :support)
+    odometer = Ref(0)   # partly excluded supports met
+    for p in psteps.order
+        psteps.first[p] == psteps.first[p + 1] && continue
+        _begin_step!(prun, psteps, pt, p)
+        @test measured(x -> _begin_step!(x[1], x[2], x[3], x[4]), (prun, psteps, pt, p)) == 0
+        partial = [j for j in 1:prun.m if 0 < nrequired(pt, prun.sidx[j]) < ncombinations(pt, prun.sidx[j])]
+        if !isempty(partial)
+            odometer[] += length(partial)
+            @test measured(x -> _mark_required!(x[1], x[2], x[3]), (prun, pt, first(partial))) == 0
+            _begin_step!(prun, psteps, pt, p)   # the map again, as the step needs it
+        end
+        _horizontal!(prun)
+        _vertical!(prun, true)
+    end
+    @test odometer[] > 0
     # A whole run asks for its rows (grown as they are added, then copied
     # once), its largest step's map (grown as the steps grow), and its
     # per-step buffers: at most 8 times the rows' bytes, 4 times the map's,
     # and 64 KiB, here on 8 × 64 at
-    # strength 2 (7,168 rows; 2.75 MB on Julia 1.13) and 20 × 3 at strength 4.
-    # At 0ce33a4 IPOG asked for 9.7 MB on 8 × 64 and the scan for every
-    # tuple of a step at each row.
-    for (k, v, t) in ((8, 64, 2), (20, 3, 4))
+    # strength 2 (7,168 rows; 2.75 MB on Julia 1.13), 20 × 3 at strength 4,
+    # and 128 binary parameters at strength 2, a wide space of many small
+    # steps (77 KB). At 0ce33a4 IPOG asked for 9.7 MB on 8 × 64 and the scan
+    # for every tuple of a step at each row.
+    for (k, v, t) in ((8, 64, 2), (20, 3, 4), (128, 2, 2))
         big = Request(uniform(k, v); strength = t)
         bt = _Classified(big).targets
         bsteps = _lookup_steps(bt, big.arity, _prepare(IPOG(), Profile(big)).order)
