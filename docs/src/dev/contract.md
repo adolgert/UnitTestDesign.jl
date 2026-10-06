@@ -313,16 +313,16 @@ no run-wide total.
 at the parameters of one connected component (§3.4): an answer is cached
 for each component a search solves, and a query's answer is put together
 from its components'. Search caches are local to one call. An exhausted
-search is never cached as infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
-context too: one generation request, or one call to `explain`, `classify`,
-`coverage`, `missing_interactions`, `report` or `followups`. `design_sizes`
-keeps one memo for all its measurements; each design it generates is a
-separate generation request with its own. The operation's searches and its
-final validation share it, and it is released with the operation. With
-several engines `design_sizes` classifies each strength's targets once, in
-the first of those requests, and the others read that classification, which
-depends only on the request. A `TestSpace` retains nothing from any
-operation.
+search is never cached as infeasible. A lazily evaluated rule's memo
+(§12.19) is part of the operation context too: one generation request, or
+one call to `explain`, `classify`, `coverage`, `missing_interactions`,
+`report` or `followups`. `design_sizes` keeps one memo for all its
+measurements; each design it generates is a separate generation request
+with its own. The operation's searches and its final validation share it,
+and it is released with the operation. With several engines `design_sizes`
+classifies each strength's targets once, in the first of those requests,
+and the others read that classification, which depends only on the
+request. A `TestSpace` retains nothing from any operation.
 
 **3.6** Generation resolves every target classification, the whole-space
 feasibility check, every must-include completion, and every placement decision.
