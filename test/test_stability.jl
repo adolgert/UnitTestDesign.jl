@@ -286,8 +286,9 @@ end
     # parameters at strength 3 with one rule, 78,964 targets required and 76
     # excluded on 9,880 supports, the targets ask for their counts and the
     # excluded ids, 8 bytes each, and about 1 KB more (80,768 bytes on Julia
-    # 1.13), where from the list alone they ask for 1.9 MB, the layout and a
-    # bit for every combination. The bound leaves 7 KiB.
+    # 1.13, 81,088 on 1.10), where from the list alone they ask for 1.9 MB
+    # (2.2 MB on 1.10), the layout and a bit for every combination. The bound
+    # leaves 6.6 KiB.
     forty = Request(TestSpace([Symbol(:p, i) for i in 1:40], [1:2 for _ in 1:40],
                               [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5); strength = 3)
     list = TargetList(forty)
