@@ -13,7 +13,7 @@ using TestItemRunner
     using UnitTestDesign: CoveringEngine, EngineRecord, Fit, Profile, Request, RequiredTargets, TargetList,
                           NegativeProjection, classify_targets, engine_record, fit, cover_ordinary,
                           supports, ncombinations, isrequired, nrequired, nparameters, _engine_for,
-                          _engine_registry, _negative_request, _decode!, _randomized, _target_list
+                          _engine_registry, _negative_request, _decode!, _randomized, _required_list
 
     """
     An engine for the tests: IPOG's rows, but it refuses a request below
@@ -220,7 +220,7 @@ end
 end
 
 
-@testitem "engines: RequiredTargets answers for the list it wraps (§4.2)" setup=[EngineSetup] begin
+@testitem "engines: RequiredTargets answers for the list it is built from (§4.2)" setup=[EngineSetup] begin
     rng = Xoshiro(0x2026_1005)
     for _ in 1:100
         space = random_space(rng)
@@ -229,7 +229,7 @@ end
         request = Request(space; strength, stronger = random_groups(rng, n, strength))
         required, _ = classify_targets(request)
         t = RequiredTargets(request, required)
-        @test _target_list(t) === required
+        @test _required_list(t) == required   # read back through the interface, in target order
         list = TargetList(request)
         @test supports(t) == list.supports
         listed = Set(required)
@@ -275,44 +275,90 @@ end
 end
 
 
-@testitem "engines: classified targets share one layout and build their bits when first asked (§4.2)" setup=[EngineSetup] begin
-    using UnitTestDesign: CoverageIndex, _Classified, _negative_targets!, _required_bits, _ordinary_bound, _prepare,
-                          _run, classify_negative_targets
-    # The maintainer's follow-up 3: the layout classification walks is the one
-    # the targets and the coverage index read; the counts come from what is
-    # excluded; the bits are built the first time something asks, never by
-    # GND or the bound without must-include rows, and then shared. IPOG's
-    # lookup core asks `isrequired` on a support where a rule excludes some of
-    # its combinations, which builds them, and on no other (p4-core's notes,
-    # §1.8: they cost nothing measurable).
+@testitem "engines: classification keeps the excluded ids, and its targets are the list's bit for bit (§4.2, §1.4)" setup=[EngineSetup] begin
+    using UnitTestDesign: CoverageIndex, Excluded, _Classified, _classify_target, _negative_targets!, _required_bits,
+                          _ordinary_bound, _prepare, _run, _space_indices, classify_negative_targets,
+                          isconstrained, n_must_include
+    # Phase 5 (plan §5.6, "Target storage"): classification walks the
+    # request's layout and keeps a count per support, the excluded targets'
+    # ids and their `Excluded` records; no required target is listed. Its
+    # targets must be the list path's, 31bef0f's classification written out
+    # below (every target of the TargetList as a fresh vector, classified in
+    # target order, then counted and marked by the list-alone constructor),
+    # bit for bit, with the same records, after the same feasibility
+    # questions in the same order: on a fresh request of its own, the list
+    # path leaves the search with the same statistics. `classify_targets`,
+    # which tests and scripts read, returns the same lists.
+    #
+    # The follow-ups' laziness stays: the bits are built the first time
+    # something asks, never by the bound without must-include rows, and then
+    # shared. IPOG's lookup core asks `isrequired` on a support where a rule
+    # excludes some of its combinations, which builds them, and on no other
+    # (p4-core's notes, §1.8). GND reads every required target through
+    # `isrequired` to build its coverage matrix, which builds them.
+    function listed(request)
+        isconstrained(request) || return TargetList(request), Excluded[]
+        f = request.feasibility
+        active = collect(eachindex(f.tables))
+        required, excluded = Vector{Int}[], Excluded[]
+        for t in TargetList(request)
+            e = _classify_target(request, f, active, t, _space_indices(request, t), "classifying target")
+            e === nothing ? push!(required, t) : push!(excluded, e)
+        end
+        return required, excluded
+    end
+    fields(e::Excluded) = (e.target, e.status, e.rules, e.minimal, e.limit)
+    stats(r) = (s = r.feasibility.stats; (s.queries, s.memo_hits, s.total_nodes, s.evaluations, length(r.feasibility.memo)))
     rng = Xoshiro(0x2026_1006)
+    must_rng = Xoshiro(0x2026_1008)   # apart, so the spaces are the follow-ups' 100
+    with_must = Ref(0)
     for _ in 1:100
         space = random_space(rng)
         n = length(space.names)
         strength = rand(rng, 1:min(3, n))
-        request = Request(space; strength, stronger = random_groups(rng, n, strength))
+        stronger = random_groups(rng, n, strength)
+        # Sometimes a must-include row, whose check asks the search before classification does.
+        must = rand(must_rng) < 0.3 ? [NamedTuple{(space.names[1],)}((first(space.values[1]),))] : []
+        function make()
+            isempty(must) && return Request(space; strength, stronger)
+            try
+                return Request(space; strength, stronger, must_include = must)
+            catch err
+                err isa ArgumentError || rethrow()
+                return Request(space; strength, stronger)
+            end
+        end
+        request = make()
+        with_must[] += n_must_include(request) > 0
         classified = _Classified(request)
         t = classified.targets
-        required, excluded = classify_targets(request)
-        @test _target_list(t) == required && [e.target for e in classified.excluded] == [e.target for e in excluded]
-        list = TargetList(request)
-        @test t.layout.supports == list.supports && t.layout.offsets == list.offsets && t.layout.arity == request.arity
-        required isa TargetList && @test _target_list(t) === t.layout   # the very list classification returned
-        listed = RequiredTargets(request, collect(required))
-        @test all(s -> nrequired(t, s) == nrequired(listed, s), eachindex(supports(t)))
+        mirror = make()
+        required, excluded = listed(mirror)
+        @test stats(request) == stats(mirror)
+        @test fields.(classified.excluded) == fields.(excluded)
+        listed_t = RequiredTargets(mirror, collect(required))
+        @test t.layout.supports == listed_t.layout.supports && t.layout.offsets == listed_t.layout.offsets &&
+              t.layout.arity == request.arity
+        @test all(s -> nrequired(t, s) == nrequired(listed_t, s), eachindex(supports(t))) &&
+              nrequired(t) == nrequired(listed_t) == length(required)
+        @test t.excluded == listed_t.excluded   # the ids of the combinations not required, ascending
+        @test (t isa RequiredTargets{TargetList}) == (required isa TargetList)
+        required isa TargetList && @test t.list === t.layout   # unconstrained: the layout itself, whole
+        test_required, test_excluded = classify_targets(make())
+        @test test_required == required && fields.(test_excluded) == fields.(excluded)
+        # The bits, built when first asked.
         @test t.bits === nothing
-        _run(_prepare(GND(), Profile(request)), request, t)
-        _ordinary_bound(request, t)
-        @test t.bits === nothing
+        n_must_include(request) == 0 && (_ordinary_bound(request, t); @test t.bits === nothing)
         fresh = _Classified(request).targets
         _run(_prepare(IPOG(), Profile(request)), request, fresh)
         @test (fresh.bits === nothing) ==
               !any(s -> 0 < nrequired(fresh, s) < ncombinations(fresh, s), eachindex(supports(fresh)))
-        @test all(isrequired(t, s, code) == isrequired(listed, s, code)
+        _run(_prepare(GND(), Profile(request)), request, t)
+        @test (t.bits === nothing) == (required isa TargetList)   # a TargetList's answer is always true
+        @test all(isrequired(t, s, code) == isrequired(listed_t, s, code)
                   for s in eachindex(supports(t)) for code in 0:(ncombinations(t, s) - 1))
-        # `isrequired` built them (a TargetList's answer is always true, and the index builds them).
-        @test (t.bits === nothing) == (required isa TargetList)
         bits = _required_bits(t)
+        @test bits == _required_bits(listed_t)
         @test t.bits === bits && CoverageIndex(request, t).required === bits
         # A negative sub-request's targets, counted from its excluded targets,
         # answer as the list of its required ones does.
@@ -332,14 +378,22 @@ end
             @test _required_bits(st) == _required_bits(sl)
         end
     end
+    @test with_must[] > 10
     # Unconstrained: the TargetList, no counts, and bits only for the index, all set.
     request = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4)); strength = 2)
     t = _Classified(request).targets
     @test t isa RequiredTargets{TargetList} && t.bits === nothing && [nrequired(t, s) for s in 1:3] == [6, 12, 8]
     @test CoverageIndex(request, t).required === t.bits && all(t.bits) && length(t.bits) == 26
-    # What is excluded must be the rest of the request's targets, in target order.
+    # The ids are the rest of the layout's targets, in target order, each once.
     ruled = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4); constraints = [forbid((a = 1, b = 1))]); strength = 2)
     list = TargetList(ruled)
+    t = _Classified(ruled).targets
+    @test t.excluded == [1] && t.counts == [5, 12, 8] && nrequired(t) == 25
+    @test RequiredTargets(list, [1]).counts == [5, 12, 8]
+    @test_throws ErrorException RequiredTargets(list, [2, 1])     # out of target order
+    @test_throws ErrorException RequiredTargets(list, [1, 1])     # twice
+    @test_throws ErrorException RequiredTargets(list, [27])       # not on the layout
+    # From the excluded targets as rows (negative generation's split), the count is checked.
     required, excluded = classify_targets(ruled, list)
     gone = [e.target for e in excluded]
     @test length(gone) == 1 && RequiredTargets(list, required, gone).counts == [5, 12, 8]
@@ -347,7 +401,46 @@ end
     @test_throws ErrorException RequiredTargets(list, required[2:end], gone)              # nor required
     @test_throws ErrorException RequiredTargets(list, required[2:end], [[required[1]]; gone])   # out of target order
     @test_throws ErrorException RequiredTargets(list, required, [[1, 0, 0]])              # no such support
-    @test_throws ErrorException RequiredTargets(list, list, gone)                          # a TargetList is whole
+end
+
+
+@testitem "engines: no engine changes the targets the certifier reads (§4.2, §1.21)" setup=[EngineSetup] begin
+    using UnitTestDesign: Design, _Classified, _IPOGLookup, _check_fit, _generate, _required_bits
+    # The certifier recounts each design on the targets the engines read
+    # (`validate_design`): their layout and the ids of the excluded targets.
+    # Engines read the bits too, through `isrequired`, and the coverage index
+    # holds them by reference. So each engine of the registry, and the lookup
+    # core named directly, must leave all of it as classification made it:
+    # generating from one classification, with the bits built first so that an
+    # engine holding them could change them, the layout, counts, ids and bits
+    # are equal after the run.
+    engines = CoveringEngine[last.(_engine_registry(3)); _IPOGLookup();
+                             _IPOGLookup(tiebreak = (:rotate,), vertical = (:value,))]
+    rng = Xoshiro(0x2026_1007)
+    runs = Ref(0)
+    for _ in 1:40
+        space = random_space(rng)
+        n = length(space.names)
+        strength = rand(rng, 1:min(3, n))
+        request = Request(space; strength, stronger = random_groups(rng, n, strength))
+        for engine in engines
+            plan = try
+                _check_fit(engine, request)
+            catch err
+                err isa ArgumentError || rethrow()
+                continue
+            end
+            classified = _Classified(request)
+            t = classified.targets
+            bits = copy(_required_bits(t))
+            before = deepcopy((t.layout.arity, t.layout.supports, t.layout.offsets, t.counts, t.excluded))
+            @test _generate(plan, request, classified) isa Design
+            @test (t.layout.arity, t.layout.supports, t.layout.offsets, t.counts, t.excluded) == before
+            @test t.bits == bits
+            runs[] += 1
+        end
+    end
+    @test runs[] > 200
 end
 
 
@@ -578,7 +671,7 @@ end
     @test count(ordinary) == 2
     @test all(first_engine.seen[ordinary] .=== second_engine.seen[ordinary])
     @test all(zip(first_engine.seen[.!ordinary], second_engine.seen[.!ordinary])) do (x, y)
-        x !== y && _target_list(x) == _target_list(y) && x.counts == y.counts && x.layout.supports == y.layout.supports
+        x !== y && _required_list(x) == _required_list(y) && x.counts == y.counts && x.layout.supports == y.layout.supports
     end
     # Rows, counts and messages as each engine gives them alone; the probes give IPOG's.
     fields(r) = (r.strategy, r.status, r.message, r.cases, r.pairs, r.triples, r.negative_cases)

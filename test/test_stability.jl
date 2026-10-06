@@ -225,28 +225,26 @@ end
     # build their bits the first time `isrequired` asks; from then on it
     # infers and a pass over every combination allocates nothing, as above.
     for request in (constrained, free)
-        classified = @inferred Union{_Classified{TargetList}, _Classified{Vector{Vector{Int}}}} _Classified(request)
+        classified = @inferred Union{_Classified{TargetList}, _Classified{Nothing}} _Classified(request)
         t = classified.targets
         @test t.bits === nothing
         @test (@inferred isrequired(t, 1, 0)) isa Bool
         @test (@inferred _required_bits(t)) isa BitVector
         @test count_required(t) == nrequired(t) && measured(count_required, t) == 0
     end
-    # They are counted from what classification excluded, on the layout it
-    # walked, so nothing is rebuilt and no bit is marked: on 40 binary
-    # parameters at strength 3 with one rule, 78,964 targets required and 76
-    # excluded on 9,880 supports, the targets ask for their counts and the
-    # excluded ids, 8 bytes each, and about 1 KB more (80,768 bytes on Julia
-    # 1.13, 81,088 on 1.10), where from the list alone they ask for 1.9 MB
-    # (2.2 MB on 1.10), the layout and a bit for every combination. The bound
-    # leaves 6.6 KiB.
+    # They are counted from the ids of what classification excluded, on the
+    # layout it walked, so nothing is rebuilt and no bit is marked: on 40
+    # binary parameters at strength 3 with one rule, 78,964 targets required
+    # and 76 excluded on 9,880 supports, the targets ask for their counts
+    # alone, 8 bytes a support and 120 more (79,160 bytes on Julia 1.13),
+    # where from the list alone they ask for 1.9 MB (2.2 MB on 1.10), the
+    # layout and a bit for every combination.
     forty = Request(TestSpace([Symbol(:p, i) for i in 1:40], [1:2 for _ in 1:40],
                               [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5); strength = 3)
     list = TargetList(forty)
-    required, excluded = classify_targets(forty, list)
-    gone = [e.target for e in excluded]
-    @test length(list.supports) == 9_880 && length(gone) == 76
-    @test requested(x -> RequiredTargets(x...), (list, required, gone)) <= 8 * (9_880 + 76) + 8 * 1024
+    ids = _Classified(forty).targets.excluded
+    @test length(list.supports) == 9_880 && length(ids) == 76
+    @test requested(x -> RequiredTargets(x...), (list, ids)) <= 8 * 9_880 + 1024
     # A profile is computed from the parameters, groups and rules, never the
     # targets: about 4.8 KB on Julia 1.13 and 5.5 KB on 1.10 for 250 binary
     # parameters, at strength 2 or 4, where TargetList would list C(250, 4)
@@ -276,6 +274,57 @@ end
     @test (@inferred fit(IPOG(), profile)) isa Fit
     @test (@inferred fit(GND(), profile)) isa Fit
     @test (@inferred Union{GND, IPOG} _engine_for(GND(), constrained)) isa GND
+end
+
+
+@testitem "stability: classification keeps nothing per required target, and the readers of the codes infer" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, RequiredTargets, TargetList, Excluded, _Classified, _classify_targets,
+                          _classify_target, _space_indices, _required_matrix, full_strength_rows, gnd_cover
+    # Phase 5 (plan §5.6): classification walks the layout with two reused
+    # rows and keeps the excluded targets' ids and a count per support. So it
+    # asks for what its feasibility questions ask for, one question per target
+    # (`_classify_target`, which copies the key and keeps the excluded
+    # records), and a count per support beyond them, never a row per target.
+    # On 20 binary parameters at strength 3 with one rule (9,120 targets, 36
+    # excluded, 1,140 supports, each question's answer already cached) the
+    # walk asked for 18,584 bytes more than the questions alone, of which
+    # 9,120 are the counts, on Julia 1.13; a row of 20 kept or made per target
+    # would add 1.6 MB, and even 8 bytes per target 73 KB. The questions are
+    # p5-memo's, and measured beside the walk, so the bound holds whatever
+    # they cost.
+    binary(k) = TestSpace([Symbol(:p, i) for i in 1:k], [1:2 for _ in 1:k],
+                          [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5)
+    twenty = Request(binary(20); strength = 3)
+    layout = TargetList(twenty)
+    walk(x) = _classify_targets(x[1], x[2])
+    function questions(x)
+        request, active, idxs = x
+        f = request.feasibility
+        for idx in idxs
+            _classify_target(request, f, active, idx, idx, "classifying target")
+        end
+        return nothing
+    end
+    walked = requested(walk, (twenty, layout))
+    asked = requested(questions, (twenty, collect(eachindex(twenty.feasibility.tables)),
+                                  [_space_indices(twenty, t) for t in layout]))
+    @test length(layout) == 9_120 && length(layout.supports) == 1_140
+    @test walked - asked <= 8 * 1_140 + 16 * 1024
+    free = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4)); strength = 2)
+    for request in (twenty, free)
+        @test (@inferred Union{Tuple{RequiredTargets{Nothing}, Vector{Excluded}},
+                               Tuple{RequiredTargets{TargetList}, Vector{Excluded}}} _classify_targets(request,
+                                                                                          TargetList(request))) isa Tuple
+    end
+    # Readers that decode the required targets from their codes infer:
+    # `full_strength_rows`, GND's coverage matrix and GND's design.
+    full = Request(TestSpace((a = 1:2, b = 1:3, c = 1:2); constraints = [forbid((a = 1, b = 1))]); strength = 3)
+    targets = _Classified(full).targets
+    @test (@inferred full_strength_rows(full, targets)) == [1 1 1 1 2 2 2 2 2 2; 2 2 3 3 1 1 2 2 3 3; 1 2 1 2 1 2 1 2 1 2]
+    @test (@inferred _required_matrix(targets)) isa Matrix{Int}
+    @test (@inferred gnd_cover(GND(), full, targets)) isa Tuple{Matrix{Int}, Int}
+    ruled = Request(binary(10); strength = 2)
+    @test (@inferred gnd_cover(GND(), ruled, _Classified(ruled).targets)) isa Tuple{Matrix{Int}, Int}
 end
 
 

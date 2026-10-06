@@ -131,15 +131,16 @@ function ipog_order(arity::AbstractVector{<:Integer}, groups)
 end
 
 """
-    full_strength_rows(request, required) -> Matrix{Int}
+    full_strength_rows(request, targets::RequiredTargets) -> Matrix{Int}
 
 Strength equal to the parameter count: every required target is a complete
 valid row, so the design is the must-include rows (partial ones completed)
-followed by every valid row they do not already hold, in lexicographic order.
+followed by every valid row they do not already hold, in lexicographic order
+(the required targets decoded from their codes, `_required_list`, sorted).
 Without must-include rows this is the set `full_factorial` returns (contract
 §7.8, §11.2).
 """
-function full_strength_rows(request::Request, required)
+function full_strength_rows(request::Request, targets::RequiredTargets)
     n = length(request.arity)
     rows = Vector{Int}[]
     for j in axes(request.must_include, 2)
@@ -147,7 +148,7 @@ function full_strength_rows(request::Request, required)
         push!(rows, any(==(0), row) ? witness(request, row) : row)
     end
     held = Set(rows)
-    for t in sort(required)
+    for t in sort!(_required_list(targets))
         t in held || push!(rows, t)
     end
     return isempty(rows) ? zeros(Int, n, 0) : stack(rows)
@@ -289,7 +290,7 @@ infers concretely.
 """
 function _execute(plan::_IPOGPlan, request::Request, targets::RequiredTargets)
     plan.path === :full_strength &&
-        return (full_strength_rows(request, _target_list(targets)), (member = _NO_MEMBER,))
+        return (full_strength_rows(request, targets), (member = _NO_MEMBER,))
     steps = _lookup_steps(targets, request.arity, plan.order)
     isdead = plan.rules ? (row -> dead(request, row)) : Returns(false)
     rows, kept = _fewest_rows(plan.members, _rows_floor(request, targets)) do tiebreak, vertical

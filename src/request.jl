@@ -378,9 +378,13 @@ counts the targets before support `k`; the last entry is the total, checked
 against `Int` overflow. Each index gives a fresh vector, which the caller
 may keep.
 
-An unconstrained request requires every target, so `classify_targets`
-returns this list without building it, and `validate_design` recounts it one
-support at a time (plan Phase 3 review, round 1, item 4).
+It is the request's layout of targets: target `offsets[s] + code + 1` is
+code `code` on support `s`, and that number is its id. Classification walks
+it support by support and code by code (`_classify_targets`), and the
+targets (`RequiredTargets`) and the coverage index read it. An
+unconstrained request requires every target, so its targets are this list
+itself, never materialized, and `validate_design` recounts it one support
+at a time (plan Phase 3 review, round 1, item 4).
 """
 struct TargetList <: AbstractVector{Vector{Int}}
     arity::Vector{Int}
@@ -444,31 +448,69 @@ end
 """
     classify_targets(request, list = TargetList(request)) -> (required, excluded)
 
-Classify every target (contract §1.4): `required` is the list of targets an
-engine must cover, `excluded` the `Excluded` records. An `:unknown` target
-is a `ResourceLimitError`: generation never returns an uncertified design
-(§3.6). An unconstrained request classifies nothing and requires
-everything: `required` is then the `TargetList` itself, never materialized,
-and `validate_design` recounts it one support at a time. A constrained
-request returns a `Vector` of the required targets, in target order.
-Every target of `list` is in one of the two lists, each in target order.
+Every target classified (contract §1.4), as lists, for tests and benchmark
+scripts: `required`, the targets an engine must cover, and `excluded`, the
+`Excluded` records, each in target order, every target of `list` in one of
+the two. An unconstrained request classifies nothing and requires
+everything: `required` is then `list` itself, never materialized. A
+constrained request returns a `Vector` of the required targets, each a
+fresh full-width row of engine positions. An `:unknown` target is a
+`ResourceLimitError` (§3.6).
 
-`list` is the request's `TargetList`, its layout of supports and offsets,
-which a caller that keeps it passes in so that it is built once
-(`_Classified`, which hands it to `RequiredTargets` and so to the coverage
-index).
+Generation keeps no such list: `_Classified` calls `_classify_targets`,
+which this calls, and keeps its `RequiredTargets`, so both ask the same
+questions in the same order and agree target for target.
 """
-function classify_targets(request::Request, all_targets::TargetList = TargetList(request))
-    isconstrained(request) || return all_targets, Excluded[]
+function classify_targets(request::Request, list::TargetList = TargetList(request))
+    isconstrained(request) || return list, Excluded[]
+    targets, excluded = _classify_targets(request, list)
+    return _required_list(targets), excluded
+end
+
+"""
+    _classify_targets(request, layout::TargetList) -> (targets::RequiredTargets, excluded)
+
+Classify every target of `layout`, the request's `TargetList` (contract
+§1.4): `targets`, what an engine must cover (`RequiredTargets`), and
+`excluded`, the `Excluded` record of each target no valid row holds, in
+target order. The walk is the layout's order, support by support and code by
+code, so the feasibility questions come in target order, as they always have
+(their caches' effort, and so every `Excluded` explanation and node count,
+depend on it). Each target is decoded into one reused row (`_decode!`) and
+its space value indices into another, so the walk keeps and allocates
+nothing per target beyond the feasibility question (`_classify_target`); a
+required target leaves no trace but its count. What is kept is the excluded
+targets' ids, `offsets[s] + code + 1`, ascending, from which the targets
+count each support and build their bits (`RequiredTargets`).
+
+An unconstrained request asks nothing: every target is required, and the
+targets are `layout` itself. An `:unknown` target is a `ResourceLimitError`
+naming it (§3.6).
+"""
+function _classify_targets(request::Request, layout::TargetList)
+    isconstrained(request) || return RequiredTargets(request, layout), Excluded[]
     f = request.feasibility
     active = collect(eachindex(f.tables))
-    required = Vector{Int}[]
     excluded = Excluded[]
-    for t in all_targets
-        e = _classify_target(request, f, active, t, _space_indices(request, t), "classifying target")
-        e === nothing ? push!(required, t) : push!(excluded, e)
+    ids = Int[]
+    target = zeros(Int, length(layout.arity))   # one target in engine positions, reused
+    idx = zeros(Int, length(layout.arity))      # the same target as space value indices
+    for (s, support) in enumerate(layout.supports)
+        for code in 0:(ncombinations(layout, s) - 1)
+            _decode!(target, code, support, layout.arity)
+            for p in support
+                idx[p] = request.candidates[p][target[p]]
+            end
+            e = _classify_target(request, f, active, target, idx, "classifying target")
+            e === nothing && continue
+            push!(excluded, e)
+            push!(ids, layout.offsets[s] + code + 1)
+        end
+        for p in support
+            target[p] = idx[p] = 0
+        end
     end
-    return required, excluded
+    return RequiredTargets(layout, ids), excluded
 end
 
 """
@@ -480,8 +522,10 @@ some valid row of `f`'s kind contains it (it is required), otherwise its
 `Excluded` record, with `target` (engine positions) and its rules in the
 space's numbering. `idx` is the target as space value indices. An unknown
 answer throws `ResourceLimitError`, naming the target after `what` (§3.6).
-Ordinary targets (`classify_targets`) and negative targets (invalid.jl) are
-classified here.
+Ordinary targets (`_classify_targets`) and negative targets (invalid.jl) are
+classified here. Neither `target` nor `idx` is kept: the record copies
+`target`, and the search copies `idx` (`explain_partial`), so a caller may
+pass buffers it reuses.
 """
 function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
                           target::AbstractVector{<:Integer}, idx::AbstractVector{<:Integer}, what)
@@ -494,8 +538,9 @@ function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
 end
 
 """
-    RequiredTargets(list::TargetList, required, excluded)
-    RequiredTargets(request, required)
+    RequiredTargets(layout::TargetList, excluded::Vector{Int})
+    RequiredTargets(request, layout::TargetList)
+    RequiredTargets(request, required::Vector{Vector{Int}})
 
 The targets an engine must cover, as the engine protocol asks for them (plan
 §4.2, `CoveringEngine`). For each support `s` of the request, the parameter
@@ -509,73 +554,88 @@ allocate nothing, `isrequired` once its bits are built (below).
 
 `layout` is the request's `TargetList`: its arity, supports and offsets,
 the immutable description of where each combination's bit and count go,
-`offsets[s] + code + 1`. The list classification walked is passed in and
-kept (`_Classified`), and the coverage index reads it (`CoverageIndex`), so
-none of them builds it again. `list` is the required targets as given, which
-IPOG and GND read through `_target_list`: a `TargetList`, every target
-required, or a `Vector` of full-width partial rows.
+its id `offsets[s] + code + 1`. Classification walks it and keeps it here
+(`_Classified`), and the coverage index and the certifier read it, so none
+of them builds it again. No target is listed. What classification keeps is
+`excluded`, the ids of the combinations that are not required, ascending:
+every other combination of the layout is a required target.
 
-- From classification, `RequiredTargets(list, required, excluded)`:
-  `required` and `excluded` (rows of engine positions, as `Excluded.target`)
-  together hold every target of `list` once, as `classify_targets` and
-  `classify_negative_targets` return them, and `excluded` is in target
-  order. A support's count is its combinations less its excluded ones, so
-  the required list is never walked; the bits are built the first time
-  `isrequired` or the coverage index asks (`_required_bits`), every
-  combination but the excluded ones, so an engine that reads only the list,
-  IPOG or GND, and the lower bound without must-include rows never pay for
-  them. A `TargetList` keeps no counts, and its bits, all set, are built
-  only for the coverage index.
-- From a list alone, `RequiredTargets(request, required)`, for a list in
-  any order with nothing excluded given (tests and benchmark scripts): the
-  request's `TargetList` is built, and each target's bit is marked, and
-  counted, in one pass. Misuse is an internal error.
+- From classification, `RequiredTargets(layout, excluded)`, with the ids of
+  the targets it excluded (`_classify_targets`), or from the excluded
+  targets as rows, `RequiredTargets(layout, required, excluded)`, as
+  negative generation splits them (`cover_negative`): a support's count is its combinations less its
+  excluded ones, and the bits are built the first time `isrequired` or the
+  coverage index asks (`_required_bits`), every combination but the
+  excluded ones, so the lower bound without must-include rows never pays
+  for them. The ids cost eight bytes per excluded target, beside the
+  `Excluded` record contract §1.4 keeps for each.
+- Unconstrained, `RequiredTargets(request, layout)`: every target is
+  required, `list` is the layout itself, nothing is counted or excluded,
+  `isrequired` is always `true`, and the bits, all set, are built only for
+  the coverage index.
+- From a list, `RequiredTargets(request, required)`, in any order, for tests
+  and benchmark scripts: the request's `TargetList` is built, each target's
+  bit is marked and counted in one pass, and the other combinations' ids
+  are kept as excluded. Misuse is an internal error.
 
 Once built, the bits never change, and every reader shares them: two
 engines that run on one `RequiredTargets` (`Auto`'s starts, `design_sizes`'
 engines) build them once. The build is not locked: the package runs nothing
 concurrently inside a call, and a `RequiredTargets` lives in one call.
-Phase 5 builds the bits in classification in place of the list (plan §5.6);
-an engine written against the four functions doesn't change then.
+Engines read the four functions above; GND's coverage matrix and
+`full_strength_rows`, which need the required targets as rows, decode them
+from their codes in target order (`_required_matrix`, `_required_list`), and
+so does the certifier (`_recount`).
 """
-mutable struct RequiredTargets{L <: AbstractVector{Vector{Int}}}
-    const list::L
+mutable struct RequiredTargets{L <: Union{Nothing, TargetList}}
+    const list::L                      # the layout itself when every target is required; `nothing` otherwise
     const layout::TargetList
-    const counts::Vector{Int}          # the required targets on each support; empty for a TargetList
+    const counts::Vector{Int}          # the required targets on each support; empty when every target is required
     const excluded::Vector{Int}        # the ids, offsets[s] + code + 1, of the combinations not required, ascending
     bits::Union{Nothing, BitVector}    # bit id set for a required target; `nothing` until first asked for
 end
 
 # Every target of a TargetList is required, so there is nothing to mark or count.
-RequiredTargets(::Request, required::TargetList) = RequiredTargets(required, required, Int[], Int[], nothing)
-
-function RequiredTargets(list::TargetList, required::TargetList, excluded)
-    required === list && isempty(excluded) ||
-        error("internal error: a request's TargetList is required whole, on its own layout")
-    return RequiredTargets(list, list, Int[], Int[], nothing)
+function RequiredTargets(request::Request, layout::TargetList)
+    layout.arity == request.arity || error("internal error: a TargetList of another request")
+    return RequiredTargets(layout, layout, Int[], Int[], nothing)
 end
 
-function RequiredTargets(list::TargetList, required::Vector{Vector{Int}}, excluded)
-    counts = [ncombinations(list, s) for s in eachindex(list.supports)]
+function RequiredTargets(layout::TargetList, excluded::Vector{Int})
+    counts = [ncombinations(layout, s) for s in eachindex(layout.supports)]
+    s = 1
+    for (k, id) in enumerate(excluded)
+        1 <= id <= length(layout) && (k == 1 || id > excluded[k - 1]) ||
+            error("internal error: excluded target id $id is not on the layout, or out of target order")
+        while layout.offsets[s + 1] < id
+            s += 1
+        end
+        counts[s] -= 1
+    end
+    return RequiredTargets(nothing, layout, counts, excluded, nothing)
+end
+
+# From the required and excluded targets as rows, `excluded` in target order,
+# as negative generation splits them by invalid value (`cover_negative`):
+# the excluded targets' ids, with their count checked against the required.
+function RequiredTargets(layout::TargetList, required::Vector{Vector{Int}}, excluded)
     ids = Int[]
     s = 1
     support = Int[]   # one target's support, reused
     for t in excluded
-        _support!(support, t, list.arity, "excluded")
+        _support!(support, t, layout.arity, "excluded")
         # The excluded targets come in target order, so each support is at or after the last one's.
-        while s <= length(list.supports) && list.supports[s] != support
+        while s <= length(layout.supports) && layout.supports[s] != support
             s += 1
         end
-        s <= length(list.supports) ||
+        s <= length(layout.supports) ||
             error("internal error: excluded target $t is on no support of the request, or out of target order")
-        id = list.offsets[s] + _code(t, list.supports[s], list.arity) + 1
-        isempty(ids) || id > last(ids) || error("internal error: excluded target $t is out of target order or listed twice")
-        push!(ids, id)
-        counts[s] -= 1
+        push!(ids, layout.offsets[s] + _code(t, layout.supports[s], layout.arity) + 1)
     end
-    sum(counts) == length(required) || error("internal error: $(length(required)) required and " *
-        "$(length(ids)) excluded targets are not the request's $(length(list)) targets")
-    return RequiredTargets(required, list, counts, ids, nothing)
+    targets = RequiredTargets(layout, ids)
+    nrequired(targets) == length(required) || error("internal error: $(length(required)) required and " *
+        "$(length(ids)) excluded targets are not the request's $(length(layout)) targets")
+    return targets
 end
 
 function RequiredTargets(request::Request, required::Vector{Vector{Int}})
@@ -593,7 +653,7 @@ function RequiredTargets(request::Request, required::Vector{Vector{Int}})
         bits[b] = true
         counts[k] += 1
     end
-    return RequiredTargets(required, every, counts, Int[], bits)
+    return RequiredTargets(nothing, every, counts, findall(!, bits), bits)
 end
 
 "Write into `support` the parameters target `t` sets, checking it is a full-width row of engine positions."
@@ -654,10 +714,42 @@ end
 "The number of required targets on support `s`, or on every support."
 nrequired(t::RequiredTargets{TargetList}, s::Integer) = ncombinations(t, s)
 nrequired(t::RequiredTargets, s::Integer) = t.counts[s]
-nrequired(t::RequiredTargets) = length(t.list)
+nrequired(t::RequiredTargets) = length(t.layout) - length(t.excluded)
 
-"The required targets as `classify_targets` lists them, for the engines that read the list (IPOG, GND)."
-_target_list(t::RequiredTargets) = t.list
+"""
+    _required_list(targets) -> Vector{Vector{Int}}
+    _required_matrix(targets) -> Matrix{Int}
+
+Every required target, in target order, decoded from its code: as fresh
+full-width rows of engine positions, `0` off the target's support, which
+`classify_targets` returns and `full_strength_rows` sorts; or as the columns
+of one matrix, parameters × targets, from which GND builds its coverage
+matrix (`_Greedy`). Read through `isrequired`, so the bits are built if no
+one has asked yet.
+"""
+function _required_list(t::RequiredTargets)
+    layout = t.layout
+    list = Vector{Vector{Int}}(undef, nrequired(t))
+    j = 0
+    for (s, support) in enumerate(layout.supports), code in 0:(ncombinations(layout, s) - 1)
+        isrequired(t, s, code) || continue
+        list[j += 1] = _decode!(zeros(Int, length(layout.arity)), code, support, layout.arity)
+    end
+    j == length(list) || error("internal error: $j required targets, counted $(length(list))")
+    return list
+end
+
+function _required_matrix(t::RequiredTargets)
+    layout = t.layout
+    matrix = zeros(Int, length(layout.arity), nrequired(t))
+    j = 0
+    for (s, support) in enumerate(layout.supports), code in 0:(ncombinations(layout, s) - 1)
+        isrequired(t, s, code) || continue
+        _decode!(view(matrix, :, j += 1), code, support, layout.arity)
+    end
+    j == size(matrix, 2) || error("internal error: $j required targets, counted $(size(matrix, 2))")
+    return matrix
+end
 
 """
     Design
@@ -711,7 +803,7 @@ Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_inclu
            negative_required, negative_covered, negative_excluded, _NO_BOUND)
 
 """
-    validate_design(request, matrix, required; strategy, negative = []) -> Int
+    validate_design(request, matrix, targets; strategy, negative = []) -> Int
 
 Final validation (plan Phase 3 step 6, contract §1.21), in index space:
 every row is complete and within its candidates, every row passes its
@@ -720,14 +812,18 @@ is consulted, lazy ones through the request's memo, §12.19): every rule for
 an ordinary row (§5.4), the rules that omit `p` for a negative row with its
 invalid value at `p` (§5.5), and no row holds two invalid values (§5.7).
 Must-include rows come first in the given order, and for a covering design
-every required ordinary target is covered by an ordinary row, and every
-required negative target in `negative` by a negative row, each recounted
-from the rows (§5.9). Returns the number of required ordinary targets
-covered. A failure is an `ErrorException` beginning "internal error",
-naming the row or target. Values are never looked up; only `to_cases`
-converts rows to values.
+every required ordinary target in `targets` is covered by an ordinary row,
+and every required negative target in `negative` by a negative row, each
+recounted from the rows (§5.9, `_recount`). Returns the number of required
+ordinary targets covered. A failure is an `ErrorException` beginning
+"internal error", naming the row or target. Values are never looked up; only
+`to_cases` converts rows to values.
+
+`targets` is classification's `RequiredTargets` (generation's), a
+`TargetList`, every target required, or a list of required targets as
+`classify_targets` returns it.
 """
-function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, required;
+function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, targets;
                          strategy::Symbol = :covering, negative = Vector{Int}[])
     n = length(request.arity)
     size(matrix, 1) == n || error("internal error: design has $(size(matrix, 1)) rows for $n parameters")
@@ -769,7 +865,7 @@ function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, re
     # Only ordinary rows cover ordinary targets, and only negative rows cover
     # negative targets (§5.9).
     ordinary = any(negative_rows) ? matrix[:, .!negative_rows] : matrix
-    covered = _recount(request, ordinary, required)
+    covered = _recount(request, ordinary, targets)
     isempty(negative) || _recount(request, matrix[:, negative_rows], negative)
     return covered
 end
@@ -777,19 +873,11 @@ end
 _uncovered(request::Request, t) = error(
     "internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")
 
-# The rows' projections onto each target's parameters, built once per
-# parameter set, so the check is linear in targets plus rows.
-function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required)
-    covered = 0
-    projections = Dict{Vector{Int}, Set{Vector{Int}}}()
-    for t in required
-        support = findall(!=(0), t)
-        seen = get!(() -> Set(matrix[support, j] for j in axes(matrix, 2)), projections, support)
-        t[support] in seen || _uncovered(request, t)
-        covered += 1
-    end
-    return covered
-end
+# Classification's targets: their required targets, listed from their codes in
+# target order (`_required_list`), recounted as a list; every target of a
+# TargetList, recounted one support at a time.
+_recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::RequiredTargets) =
+    _recount(request, matrix, targets isa RequiredTargets{TargetList} ? targets.layout : _required_list(targets))
 
 # Every target of an unconstrained request is required. For each support, a
 # row's projection onto it, whose entries were checked against the arity
@@ -806,6 +894,20 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required:
         missed === nothing || _uncovered(request, required[required.offsets[k] + missed])
     end
     return length(required)
+end
+
+# The rows' projections onto each target's parameters, built once per
+# parameter set, so the check is linear in targets plus rows.
+function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required)
+    covered = 0
+    projections = Dict{Vector{Int}, Set{Vector{Int}}}()
+    for t in required
+        support = findall(!=(0), t)
+        seen = get!(() -> Set(matrix[support, j] for j in axes(matrix, 2)), projections, support)
+        t[support] in seen || _uncovered(request, t)
+        covered += 1
+    end
+    return covered
 end
 
 """

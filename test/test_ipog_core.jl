@@ -14,7 +14,7 @@ using TestItemRunner
 @testsnippet LookupSetup begin
     using UnitTestDesign: Request, Design, generate, to_cases, classify_targets, RequiredTargets, Profile,
         _Classified, _IPOGLookup, _IPOGPlan, _prepare, _execute, _lookup_steps, _lookup_cover, _lookup_complete,
-        ipog_order, validate_design, dead, _target_list, _with_must_include, isconstrained, full_strength_rows,
+        ipog_order, validate_design, dead, nrequired, _with_must_include, isconstrained, full_strength_rows,
         _TIEBREAKS, _VERTICALS, _engine_config, _engine_label, engine_record, fit, _fallback, _ipog_members,
         _IPOG_MEMBERS, _engine_registry
     const LOOKUP = _IPOGLookup()
@@ -433,7 +433,7 @@ end
     # Then the run on the completed rows covers everything, the completed rows first.
     rows = _lookup_cover(steps, targets, isdead, completed)
     @test rows[:, 1:3] == completed
-    @test validate_design(_with_must_include(request, completed), rows, _target_list(targets)) == length(_target_list(targets))
+    @test validate_design(_with_must_include(request, completed), rows, targets) == nrequired(targets)
 end
 
 
@@ -451,7 +451,7 @@ end
         f, entry, members = plan.fit, plan.entry, plan.members
         must = request.must_include
         size(must, 2) > 0 && request.strength == length(request.arity) &&
-            return full_strength_rows(request, _target_list(targets)), targets
+            return full_strength_rows(request, targets), targets
         if members === nothing
             rows = _engine_rows(entry, request.arity)
             f.kind === :exact && return rows, targets
@@ -491,7 +491,7 @@ end
         request = Request(space; strength, extra...)
         each = map(_ipog_members()) do (tiebreak, vertical)
             rows, targets = lookup_construction(request; tiebreak, vertical)
-            @test validate_design(request, rows, _target_list(targets)) == length(_target_list(targets))
+            @test validate_design(request, rows, targets) == nrequired(targets)
             rows
         end
         @test generate(Construction(), request).matrix == each[argmin(size.(each, 2))]
