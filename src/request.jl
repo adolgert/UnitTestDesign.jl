@@ -241,7 +241,18 @@ position at `p`, the negative-row search of `feasibility_for(request.context,
 position is allowed.
 """
 function _feasibility(request::Request, row::AbstractVector{<:Integer})
-    _holds_invalid(request, row) || return request.feasibility
+    # A negative row's search, once built, is found by its kind `(p, v)`
+    # without converting the row; `feasibility_for` builds it, and rejects a
+    # row with two invalid positions.
+    p = 0
+    for i in eachindex(row)
+        row[i] > request.arity[i] || continue
+        p == 0 || return first(feasibility_for(request.context, _space_indices(request, row)))
+        p = i
+    end
+    p == 0 && return request.feasibility
+    found = get(request.context.searches, (p, request.candidates[p][row[p]]), nothing)
+    found === nothing || return first(found)
     return first(feasibility_for(request.context, _space_indices(request, row)))
 end
 
@@ -285,9 +296,15 @@ function _positions(request::Request, idx::AbstractVector{<:Integer})
 end
 
 "Space value indices from engine positions (0 stays 0)."
-function _space_indices(request::Request, positions::AbstractVector{<:Integer})
-    return Int[positions[i] == 0 ? 0 : request.candidates[i][positions[i]]
-               for i in eachindex(request.candidates)]
+_space_indices(request::Request, positions::AbstractVector{<:Integer}) =
+    _space_indices!(zeros(Int, length(request.candidates)), request, positions)
+
+"`_space_indices` written into `idx`, which it returns."
+function _space_indices!(idx::Vector{Int}, request::Request, positions::AbstractVector{<:Integer})
+    for i in eachindex(request.candidates)
+        idx[i] = positions[i] == 0 ? 0 : request.candidates[i][positions[i]]
+    end
+    return idx
 end
 
 """
@@ -299,11 +316,16 @@ to have no valid completion; `false` only with a completion witness; throws
 contract §3.6). This is the predicate that replaces `disallow` at every
 engine site. A partial row with an invalid position is judged under the
 negative-row policy (§5.5); an engine's rows never hold one.
+
+The row's value indices are written into the search's own buffer
+(`f.key`): every engine position maps to one of the search's candidates, so
+the key needs no other check. A question the caches answer allocates
+nothing (plan §5.6).
 """
 function dead(request::Request, partial::AbstractVector{<:Integer})
     f = _feasibility(request, partial)
-    key = _checked_key(f, _space_indices(request, partial))
-    status, _ = _completable(f, key, f.limit)
+    key = _space_indices!(f.key, request, partial)
+    status = _completable(f, key, f.limit)
     status === :unknown && throw(ResourceLimitError(
         "placing a value: the feasibility search for $(from_indices(request.space, key))",
         f.limit, :feasibility_limit))
