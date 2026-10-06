@@ -373,12 +373,12 @@ for a space of 250 parameters, for its row type.
 |:--|--:|:--|:--|:--|:--|
 | 10 × 3 values | 2 | IPOG; `Auto()`; compact | 15; 15; 15 (9) | under 1 ms; under 1 ms; 20 ms | 314 MiB |
 | 50 × 4 values | 2 | IPOG; `Auto()`; compact | 46; 40; 38 (16) | 1 ms; 2 ms; 0.14 s | 325 MiB |
-| 250 binary | 2 | IPOG; IPOG, one rule | 17; 18 (4) | 10 to 25 ms; 0.16 s | 472 MiB; 478 MiB |
+| 250 binary | 2 | IPOG; IPOG, one rule | 17; 18 (4) | 10 to 25 ms; 0.15 to 0.16 s | 472 MiB; 461 to 478 MiB |
 | 250 × 4 values | 2 | IPOG; `Auto()` | 62; 52 (16) | 32 ms; 6 to 26 ms | 460 MiB |
 | 8 × 64 values | 2 | IPOG; `Auto()` | 5483; 4096, minimal | 45 ms; 1 ms | 311 MiB |
-| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 255; 264; 178 (64) | 22 ms; 83 ms; 14 s | 320 MiB; 326 MiB; 318 MiB |
+| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 255; 264; 178 (64) | 22 ms; 73 to 83 ms; 14 s | 320 MiB; 320 to 326 MiB; 318 MiB |
 | 15 × 4 values | 4 | IPOG; compact | 948; 825 (256) | 29 ms; 13 s | 316 MiB |
-| 20 binary | 6 | IPOG; IPOG, one rule | 379; 397 (64) | 0.36 s; 0.95 s | 329 MiB; 447 MiB |
+| 20 binary | 6 | IPOG; IPOG, one rule | 379; 397 (64) | 0.36 s; 0.91 to 0.95 s | 329 MiB; 414 to 447 MiB |
 
 (`benchmark/engine_costs.jl` repeats these.) What grows, and what stops a
 call that is too large; a design that can't be certified is not returned:
@@ -397,13 +397,14 @@ call that is too large; a design that can't be certified is not returned:
   into one search whose answers grow with the combinations. A required
   combination keeps nothing but its count; an excluded one keeps its
   explanation. Twenty binary parameters at strength 6 with one rule peaked
-  at 447 MiB, where at the start of this release's work they peaked at 4.3
-  to 7.1 GiB; 200 options with 24 rules took 0.11 seconds and 621 MiB, and
-  400 options with 46 rules 5.7 seconds and 887 MiB, where they took 3
-  seconds and 1.4 GiB, and 19 seconds and 6.2 GiB. Where rules link many
-  parameters, the searches set the time. A rule that reads the whole case
-  is checked only on complete cases, which makes its search far longer than
-  a scoped rule's ([what rules cost](../explain/constraints.md#What-rules-cost)).
+  at 414 to 447 MiB, where at the start of this release's work they peaked
+  at 4.3 to 7.1 GiB; 200 options with 24 rules took about 0.1 seconds and
+  620 MiB, and 400 options with 46 rules 5.5 to 5.7 seconds and 887 to 944
+  MiB, where they took 3 seconds and 1.4 GiB, and 19 seconds and 6.2 GiB.
+  Where rules link many parameters, the searches set the time. A rule that
+  reads the whole case is checked only on complete cases, which makes its
+  search far longer than a scoped rule's
+  ([what rules cost](../explain/constraints.md#What-rules-cost)).
 - **`feasibility_limit`** (1,000,000 nodes per question by default) stops a
   search that can't decide whether a combination or a partial case has a
   valid completion, with a [`ResourceLimitError`](@ref) that names it.
