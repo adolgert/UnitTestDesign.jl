@@ -33,13 +33,14 @@
 # - Vertical growth (`_vertical!`): each combination still uncovered goes to
 #   the first row, in row order, that agrees with it and stays completable,
 #   or else starts a new row. Rows are partitioned by p's value (FIPOG §5.3,
-#   PDF p.12), rows without one being candidates for every value, and only
-#   rows with an unset entry among the parameters added so far are
-#   candidates (FIPOG §4.3). The combinations are taken support by support
-#   (FIPOG's order) or value by value (about the old classic order), and
-#   before a support's combinations are placed, the rows changed so far mark
-#   what they now cover on it (Forbes et al., p.291: "it is important to
-#   capture the unintended coverage"), so no combination is placed twice.
+#   PDF pp.8–9, measured on p.12), rows without one being candidates for
+#   every value, and only rows with an unset entry among the parameters
+#   added so far are candidates (FIPOG §4.3). The combinations are taken
+#   support by support (FIPOG's order) or value by value (about the old
+#   classic order), and before a support's combinations are placed, the rows
+#   changed so far mark what they now cover on it (Forbes et al., p.291: "it
+#   is important to capture the unintended coverage"), so no combination is
+#   placed twice.
 # - The final fill (`_fill!`) gives every unset entry its parameter's least
 #   used value that keeps the row completable, as the old general path did.
 # - Two rules, a tie-break and a vertical order, choose a member of the IPOG
@@ -69,12 +70,21 @@
 The members of the IPOG family that `IPOG()` runs (plan §2.5, §5.5): each
 tie-break rule of `tiebreak` with each vertical order of `vertical`
 (`_IPOGLookup`), tie-break rules first, on the same steps, keeping the design
-with the fewest rows, the first of equals. Chosen by the Phase 4 study of
-rows on the benchmark grid: no single member has no more rows than the old
-paths at 90% of its points, and these four do at 96.7% of 1,826, with 2.0%
-fewer rows in total (p4-core's and p4-switch's notes). Changing the set
-changes `IPOG()`'s rows: the tests that pin them say how to regenerate their
-values.
+with the fewest rows, the first of equals.
+
+A provisional trade-off of rows against time and memory, open for the
+maintainer (p4-switch's notes, judgment call 1). In the Phase 4 study of
+1,826 benchmark grid points no single member has no more rows than the old
+paths at 90% of the points; these four do at 96.7%, with 2.0% fewer rows in
+total and 10 points more than 3% above. By rows alone the study's decision
+rule picks eight members (four tie-breaks by both orders: 97.9%, 4 points
+above 3%). But each member asks the feasibility search, so on constrained
+models more members cost more: in single first calls under load, eight were
+slower than the old paths at 179 of 912 judged points, these four at 72 of
+871, two tie-breaks at 3 of 866 (91.3%, 54 points above 3%); and four
+members make 3.5 to 4 times the old paths' `dead` calls and double one
+strength-3 model's peak memory. Changing the set changes `IPOG()`'s rows: the
+tests that pin them say how to regenerate their values.
 """
 const _IPOG_MEMBERS = (tiebreak = (:lowest, :rotate), vertical = (:support, :value))
 
@@ -503,10 +513,13 @@ end
 The must-include rows `seeds` with their unset entries chosen as
 `_lookup_cover` chooses them before any other row exists: its steps on these
 rows alone, adding no row. At each parameter, in order, each row without a
-value takes the one that holds the most uncovered required targets, and the
+value takes the one horizontal growth gives it (`_horizontal!`): the value
+whose combinations on the supports the row sets in full are the most still
+uncovered, ties broken by the member's rule, among the values that keep the
+row completable (`dead`), and none when the best scores nothing. Then the
 targets still uncovered go to the first row that agrees with them and stays
-completable (`dead`). An entry that no uncovered target asks for stays unset,
-for the rows that follow to use. A set value never changes (contract §7.10),
+completable, and the others stay uncovered. An entry that no uncovered
+target asks for stays unset, for the rows that follow to use. A set value never changes (contract §7.10),
 and the rows stay in order (§10.5). `Construction` calls it before it filters
 the catalog's rows (`_construction_rows`), on the steps the run after it
 reads again.

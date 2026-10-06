@@ -750,10 +750,11 @@ end
 @testitem "report: the bonus counts without listing its targets (plan Stage C step 4)" begin
     using UnitTestDesign: rule_memos, _prepare_rows, _bonus
     # 30 parameters of 5 values, no rules: the bonus has 291,894 missing
-    # triples (287,305 on the 0.5 IPOG's rows). Before Stage C it listed them,
-    # and allocated about 1.0 GB here (Julia 1.13); counting allocates about
-    # 0.22 GB, and a count that listed every target again would allocate
-    # about 0.5 GB.
+    # triples (287,305 on the rows of IPOG's old paths, before Phase 4's
+    # lookup core, which the figures below were measured on). Before Stage C
+    # it listed them, and allocated about 1.0 GB here (Julia 1.13); counting
+    # allocates about 0.22 GB, and a count that listed every target again
+    # would allocate about 0.5 GB.
     space = TestSpace(NamedTuple{Tuple(Symbol("x$i") for i in 1:30)}(Tuple(1:5 for _ in 1:30)))
     cases = all_pairs(space)
     memos = rule_memos(space.tables)

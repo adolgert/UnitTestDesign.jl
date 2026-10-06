@@ -85,7 +85,7 @@ end
 @testitem "construction: seeded under rules, must-include rows and stronger groups" setup=[CatalogSetup, ConstructionSetup] begin
     C = Construction()
     # Probe 11's uniform cases: the catalog's rows that no rule forbids, then
-    # IPOG's general path. Never more rows than IPOG here.
+    # IPOG's core. Never more rows than IPOG here.
     uniform = fill(7, 8)
     for rules in ([forbid((p1 = 1, p2 = 1)), forbid((p3 = 2, p5 = 4)), forbid((p2 = 7, p8 = 1))],
                   [@forbid(p1 == p2)],

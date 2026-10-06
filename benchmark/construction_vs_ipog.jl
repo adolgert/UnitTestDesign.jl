@@ -114,7 +114,7 @@ domains(arity) = NamedTuple{names_for(length(arity))}(Tuple(collect(1:a) for a i
 
 "The seeded path (plan §5.4, 'Seed with a few rules'): rows of Construction() and IPOG() under each case."
 function run_seeded()
-    println("\n== seeded: the catalog's rows that no rule forbids, then IPOG's general path")
+    println("\n== seeded: the catalog's rows that no rule forbids, then IPOG's core")
     println(join(["case", "t", "ipog", "construction", "ipog_s", "construction_s", "mark"], '\t'))
     chain(k) = [forbid((a, b) -> a == b, Symbol(:p, i), Symbol(:p, i + 1)) for i in 1:(k - 1)]
     cases = [

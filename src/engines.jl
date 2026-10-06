@@ -28,7 +28,7 @@ forms.
   its configuration, `record.engine` (`_engine_config`), and names the
   engine by its constructor call (`_engine_label`, its `show`), which must
   repeat its rows, since `report`'s seed line offers that call.
-- **An engine that decides nothing ahead**, as IPOG and GND, defines
+- **An engine that decides nothing ahead**, as GND, defines
   - `fit(engine, profile::Profile) -> Fit`: whether it covers a request of
     this shape, read from the request alone, never by running; and
   - `cover_ordinary(engine, request::Request, targets::RequiredTargets) ->
@@ -37,19 +37,21 @@ forms.
   Its plan is the default, `_DefaultPlan`, which holds the engine and its
   fit; executing it calls `cover_ordinary` and reports nothing.
 - **An engine with a recipe**, such as the catalog entry it builds
-  (`Construction`), its inner engine's plan (`Compact`) or its candidates'
-  plans (`Auto`), defines
+  (`Construction`), its inner engine's plan (`Compact`), its candidates'
+  plans (`Auto`), or the order it adds parameters in and the members it runs
+  (IPOG, `_IPOGPlan`), defines
   - its plan type, a `_Plan` with fields `engine` and `fit` beside the
     recipe;
   - `_prepare(engine, profile) -> plan`, from the profile alone;
   - `_execute(plan, request, targets) -> (matrix, notes)`: the rows, and
     `notes`, a `NamedTuple` of plain data on what it found (the catalog's
-    array, the reducer's run, what it chose). It runs an inner plan with
-    `_run`, and puts the stage `_run` returns into its notes, so that the
-    record keeps every stage;
-  - `fit(engine, p) = _prepare(engine, p).fit`, and `cover_ordinary` as
-    the rows of `_execute(_prepare(engine, Profile(request)), …)`, for the
-    callers that ask for rows alone (`_cover`);
+    array, the reducer's run, what it chose, the member that made the
+    rows). It runs an inner plan with `_run`, and puts the stage `_run`
+    returns into its notes, so that the record keeps every stage;
+  - `fit(engine, p) = _prepare(engine, p).fit` (or a `fit` that its
+    `_prepare` reads, as IPOG's), and `cover_ordinary` as the rows of
+    `_execute(_prepare(engine, Profile(request)), …)`, for the callers that
+    ask for rows alone (`_cover`);
   - where `Auto` or `recommend` may read the plan, `_known_rows`,
     `_at_bound` and `_plan_line`, when the plan knows more than the
     defaults say (the fit's rows, `false`, the fit's reason).
@@ -363,9 +365,9 @@ An engine's answer to whether it covers a request of some shape (`fit`, plan
   it without building anything;
 - `:native`: the engine covers the request with its own search, as IPOG and
   GND cover any request;
-- `:seeded`: the engine builds a start that IPOG's general path extends
-  (§4.1, stage 2), such as a catalog array with the rows a rule forbids
-  dropped;
+- `:seeded`: the engine builds a start that IPOG's core extends
+  (`_lookup_cover`; §4.1, stage 2), such as a catalog array with the rows a
+  rule forbids dropped;
 - `:unsupported`: the engine can't cover it. Where generation hands an engine
   part of a request, that part goes to the engine's fallback instead
   (`_prepare_for`).
@@ -562,8 +564,9 @@ What an engine will build for a request, decided from its `Profile` alone
 has two fields: `engine`, the engine whose plan it is, and `fit`, its `Fit`
 for the request, which `fit(engine, profile)` returns. Beside them it holds
 the engine's recipe: nothing for an engine that decides nothing ahead
-(`_DefaultPlan`), the catalog's entry (`_ConstructionPlan`), the inner
-engine's plan (`_CompactPlan`), the candidates' plans (`_AutoPlan`). A plan
+(`_DefaultPlan`), IPOG's order and members (`_IPOGPlan`), the catalog's entry
+(`_ConstructionPlan`), the inner engine's plan (`_CompactPlan`), the
+candidates' plans (`_AutoPlan`). A plan
 is made once per request and read by every caller that needs the decision:
 `generate` and `design_sizes` execute it, a negative sub-request takes it or
 its fallback's (`_prepare_for`), and `recommend` shows `Auto`'s.
@@ -574,7 +577,7 @@ abstract type _Plan end
     _DefaultPlan(engine, fit)
 
 The plan of an engine that defines `fit` and `cover_ordinary` and decides
-nothing ahead, as IPOG and GND: the engine and its fit. Executing it calls
+nothing ahead, as GND: the engine and its fit. Executing it calls
 `cover_ordinary`, and the engine reports nothing beyond its rows.
 """
 struct _DefaultPlan{E <: CoveringEngine} <: _Plan

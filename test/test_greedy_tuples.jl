@@ -205,7 +205,8 @@ end
 @testitem "GND design size is competitive" setup=[IndexCoverage] begin
     using UnitTestDesign: Request, generate
     # Before the scoring fix in most_matches_existing, GND chose most values
-    # at random and needed 36-38 cases here, compared with 28 for IPOG.
+    # at random and needed 36-38 cases here, compared with 28 for IPOG's old
+    # paths (30 for the lookup core that replaced them in Phase 4).
     arity = fill(4, 10)
     space = TestSpace((Symbol(:p, i) => 1:4 for i in 1:10)...)
     for seed in 1:3

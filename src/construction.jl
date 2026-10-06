@@ -14,7 +14,8 @@
 #   groups: the caller's must-include rows first, unchanged (contract §10.5),
 #   then catalog rows that no rule forbids and, with must-include rows, that
 #   hold a target those and the rows before don't (§9.10, §10.6), as further
-#   seeds of IPOG's general path, which adds what they leave uncovered, the
+#   seeds of IPOG's core (`_lookup_cover`, once for each member `IPOG()`
+#   runs, the fewest rows kept), which adds what they leave uncovered, the
 #   `stronger` targets included (§4.1, stage 2, "Extend"). Partial
 #   must-include rows are completed first, as IPOG completes them, when that
 #   leaves fewer catalog rows to keep. At full strength with must-include
