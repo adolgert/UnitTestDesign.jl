@@ -171,6 +171,31 @@ end
 end
 
 
+@testitem "Auto() is the default engine of covering, the fixed strengths and design_sizes (D1)" setup=[AutoSetup] begin
+    # Decision D1: the covering functions and design_sizes default to
+    # Auto(goal = :balanced), so design_sizes predicts what covering gives,
+    # and IPOG() keeps its own rows, as :fast does. A uniform space, where the
+    # default keeps the catalog's array, and a mixed one, where it is IPOG's.
+    uniform = TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:6)}(Tuple(1:4 for _ in 1:6)))
+    mixed = TestSpace((a = 1:2, b = 1:3, c = 1:4, d = 1:2, e = 1:3))
+    for space in (uniform, mixed)
+        calls = ((s; kw...) -> covering(s; strength = 2, kw...), all_values, all_pairs, all_triples,
+                 (s; kw...) -> covering(s; strength = 3, kw...))
+        for f in calls
+            cases = f(space)
+            @test cases.record.engine.call == "Auto()" && cases.engine === :Auto
+            @test collect(cases) == collect(f(space; engine = Auto()))
+            @test collect(f(space; engine = IPOG())) == collect(f(space; engine = Auto(goal = :fast)))
+        end
+        t = design_sizes(space; distances = Int[])
+        @test t.engines == ["Auto()"]
+        @test [r.cases for r in t.rows if r.kind === :covering] == [length(covering(space; strength = s)) for s in 1:3]
+    end
+    @test length(all_pairs(uniform)) < length(all_pairs(uniform; engine = IPOG()))   # 19 against 24
+    @test all_pairs(mixed).record.ordinary.chose == "IPOG()"
+end
+
+
 @testitem "Auto: keep the smallest, the bound shortcut, and the threshold (§4.1)" setup=[AutoSetup] begin
     plan(space; kw...) = _auto_plan(Auto(), Profile(Request(space; kw...)))
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
