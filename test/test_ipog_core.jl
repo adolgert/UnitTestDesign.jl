@@ -183,15 +183,20 @@ end
 @testitem "lookup core: IPOG() on random problems is its members' smallest design, each certified (§5.5)" setup=[UTSetup, LookupSetup, Checker] begin
     using Random
     # The oracle loops' generator (test/random_problems.jl), at strengths 2
-    # and 3: every member's design is complete by the oracle, and IPOG()'s is
-    # the first of its members' with the fewest rows. Against IPOG's old paths
-    # on 1,000 problems of this stream (Julia 1.13, seed_mod() = 0; p4-core's
-    # notes, §3.6) the default member alone gave totals 0.13% and 0.22% below
-    # theirs; the notes of the switch (p4-switch) give IPOG()'s.
-    rng = Xoshiro(0x2026_1005_0004 ⊻ seed_mod())
+    # and 3, each drawn from the stream's start: every member's design is
+    # complete by the oracle, and IPOG()'s is the first of its members' with
+    # the fewest rows. Against IPOG's old paths on the first 1,000 problems
+    # at each strength (Julia 1.13, seed_mod() = 0; p4-core's notes, §3.6, and
+    # p4-switch's, §6.2) the default member alone gave totals 0.13% and 0.22%
+    # below theirs, and IPOG() 3.29% and 3.22% below, with more rows at 2 and
+    # 58 problems, by at most 1 and 4 rows. IPOG()'s total rows on the first
+    # 40 problems at each strength are pinned (ipog_stream_rows.jl), so that
+    # designs that stay valid but grow are seen.
+    include(joinpath(@__DIR__, "ipog_stream_rows.jl"))
     members = _ipog_members()
     for strength in (2, 3)
-        for _ in 1:max(40, round(Int, 100 * test_run_multiplier()))
+        rng = Xoshiro(IPOG_STREAM_SEED ⊻ seed_mod())
+        for _ in 1:max(IPOG_STREAM_COUNT, round(Int, 100 * test_run_multiplier()))
             problem = random_problem(rng; strength)
             request = Request(test_space(problem.space); strength)
             each = [rows_of(_IPOGLookup(tiebreak = t, vertical = v), request) for (t, v) in members]
@@ -201,6 +206,15 @@ end
             k = argmin([size(rows, 2) for rows in each])   # the first of the fewest
             @test rows_of(IPOG(), request) == each[k]
         end
+    end
+    # The pin, on this Julia version's stream (seed_mod() = 0); a stream with
+    # no entry, another version's or another seed's, is left unpinned.
+    digest, totals = ipog_stream(random_problem, test_space; seed = IPOG_STREAM_SEED ⊻ seed_mod())
+    pinned = get(IPOG_STREAM_ROWS, digest, nothing)
+    if pinned === nothing
+        @test_skip totals == pinned
+    else
+        @test totals == pinned
     end
 end
 
