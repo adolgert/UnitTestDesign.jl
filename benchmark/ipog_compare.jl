@@ -66,8 +66,13 @@
 # every engine (the package's internal `_Classified` and `_generate`, as
 # `design_sizes` does), so the engines' times leave classification out and
 # `classify_s` holds it: on constrained models the feasibility search can be
-# nearly the whole call (ct-comp's MCAC_22: 35.6 of 36.1 s), and a sweep of
-# several candidates then pays for it once.
+# nearly the whole call (ct-comp's MCAC_22: 35.6 of 36.1 s; CASA's benchmark
+# 9 at strength 3: 37 s of 38), and a sweep of several candidates then pays
+# for it once. What the targets build on first use (the required bits) is
+# then built once too, by the first engine that asks, so the warm times leave
+# it out: use the default mode for the time gates, and this one where only
+# the rows matter, as in choosing the tie-break rule (with `--budget 0`, one
+# call per point).
 #
 # `fresh` runs each point and engine in its own Julia process, with the
 # same calls, under `/usr/bin/time -l` (macOS) for the process's peak RSS,
