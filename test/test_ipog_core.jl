@@ -83,6 +83,13 @@ end
     # At full strength no member runs: every valid row, as `full_strength_rows` lists them.
     whole = all_pairs(positional([2, 3]); engine = _IPOGLookup(tiebreak = :rotate))
     @test whole.record.ordinary.member == (tiebreak = :none, vertical = :none) && length(whole) == 6
+    # The steps take the arity of the targets' layout, whose codes the map
+    # decodes, and no other: here a support of 2 × 3 values has 6
+    # combinations under either order of the arity, but only one maps them.
+    two = Request(positional([2, 3]))
+    tt = _Classified(two).targets
+    @test _lookup_steps(tt, [2, 3], [2, 1]).supports == [1]
+    @test_throws ErrorException _lookup_steps(tt, [3, 2], [2, 1])
 end
 
 

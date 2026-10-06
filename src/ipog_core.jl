@@ -330,12 +330,16 @@ end
     _lookup_steps(targets, arity, order) -> _LookupSteps
 
 The supports of `targets` by the step that covers them: a support goes to
-its parameter last in `order`. Each support's combinations must be its
-values' product under `arity`, the layout's radix, which the map's codes
-assume; anything else is an internal error.
+its parameter last in `order`. `arity` must be the targets' layout's
+(`targets.layout.arity`), the radix of the layout's codes: `isrequired`
+decodes a code with it and `_mark_required!` walks the same codes with
+`arity`, so a support's combinations are its values' product under both
+(`TargetList`). Anything else is an internal error.
 """
 function _lookup_steps(targets::RequiredTargets, arity::Vector{Int}, order::Vector{Int})
     n = length(arity)
+    arity == targets.layout.arity ||
+        error("internal error: the arity $arity is not the targets' layout's, $(targets.layout.arity)")
     length(order) == n && isperm(order) || error("internal error: $order is not an order of $n parameters")
     rank = invperm(order)
     sups = supports(targets)
@@ -343,14 +347,11 @@ function _lookup_steps(targets::RequiredTargets, arity::Vector{Int}, order::Vect
     first = zeros(Int, n + 1)
     for (s, support) in enumerate(sups)
         isempty(support) && error("internal error: support $s is empty")
-        l, size = support[1], 1
+        l = support[1]
         for q in support
             1 <= q <= n || error("internal error: support $s names parameter $q of $n")
             rank[q] > rank[l] && (l = q)
-            size = Base.checked_mul(size, arity[q])
         end
-        size == ncombinations(targets, s) ||
-            error("internal error: support $s has $(ncombinations(targets, s)) combinations, not $size")
         last[s] = l
         first[l + 1] += 1
     end
