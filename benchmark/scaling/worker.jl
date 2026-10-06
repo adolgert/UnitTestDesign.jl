@@ -237,9 +237,13 @@ function stats()
     r=LAST_REQUEST[]
     r === nothing && return Dict()
     f=r.feasibility
+    # Phase 5 (plan §5.6) keys the answer caches by component and keeps no
+    # whole-assignment memo: `assignment_memo` is then 0, and
+    # `component_cache` counts the per-component entries on either source.
     return Dict("queries"=>f.stats.queries,"nodes"=>f.stats.total_nodes,
         "memo_hits"=>f.stats.memo_hits,"rule_checks"=>f.stats.evaluations,
-        "rule_memo"=>U.memo_size(r),"assignment_memo"=>length(f.memo),
+        "rule_memo"=>U.memo_size(r),"assignment_memo"=>hasfield(typeof(f), :memo) ? length(f.memo) : 0,
+        "component_cache"=>sum(length, f.witness_cache; init = 0),
         "search_retained_bytes"=>Base.summarysize(f))
 end
 

@@ -277,8 +277,8 @@ end
 
 @testitem "engines: classification keeps the excluded ids, and its targets are the list's bit for bit (§4.2, §1.4)" setup=[EngineSetup] begin
     using UnitTestDesign: CoverageIndex, Excluded, _Classified, _classify_target, _negative_targets!, _required_bits,
-                          _ordinary_bound, _prepare, _run, _space_indices, _slot, classify_negative_targets,
-                          isconstrained, n_must_include
+                          _ordinary_bound, _prepare, _run, _space_indices, _slot, cache_entries,
+                          classify_negative_targets, isconstrained, n_must_include
     # Phase 5 (plan §5.6, "Target storage"): classification walks the
     # request's layout and keeps a count per support, the excluded targets'
     # ids and their `Excluded` records; no required target is listed. Its
@@ -308,7 +308,7 @@ end
         return required, excluded
     end
     fields(e::Excluded) = (e.target, e.status, e.rules, e.minimal, e.limit)
-    effort(f) = (s = f.stats; (s.queries, s.memo_hits, s.total_nodes, s.evaluations, length(f.memo)))
+    effort(f) = (s = f.stats; (s.queries, s.memo_hits, s.total_nodes, s.evaluations, cache_entries(f)))
     stats(r) = effort(r.feasibility)
     negative_stats(r) = sort!([k => effort(first(v)) for (k, v) in r.context.searches if k != (0, 0)])
     rng = Xoshiro(0x2026_1006)
