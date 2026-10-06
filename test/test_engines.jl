@@ -281,7 +281,10 @@ end
     # The maintainer's follow-up 3: the layout classification walks is the one
     # the targets and the coverage index read; the counts come from what is
     # excluded; the bits are built the first time something asks, never by
-    # IPOG, GND or the bound without must-include rows, and then shared.
+    # GND or the bound without must-include rows, and then shared. IPOG's
+    # lookup core asks `isrequired` on a support where a rule excludes some of
+    # its combinations, which builds them, and on no other (p4-core's notes,
+    # §1.8: they cost nothing measurable).
     rng = Xoshiro(0x2026_1006)
     for _ in 1:100
         space = random_space(rng)
@@ -298,11 +301,13 @@ end
         listed = RequiredTargets(request, collect(required))
         @test all(s -> nrequired(t, s) == nrequired(listed, s), eachindex(supports(t)))
         @test t.bits === nothing
-        for engine in (IPOG(), GND())
-            _run(_prepare(engine, Profile(request)), request, t)
-        end
+        _run(_prepare(GND(), Profile(request)), request, t)
         _ordinary_bound(request, t)
         @test t.bits === nothing
+        fresh = _Classified(request).targets
+        _run(_prepare(IPOG(), Profile(request)), request, fresh)
+        @test (fresh.bits === nothing) ==
+              !any(s -> 0 < nrequired(fresh, s) < ncombinations(fresh, s), eachindex(supports(fresh)))
         @test all(isrequired(t, s, code) == isrequired(listed, s, code)
                   for s in eachindex(supports(t)) for code in 0:(ncombinations(t, s) - 1))
         # `isrequired` built them (a TargetList's answer is always true, and the index builds them).

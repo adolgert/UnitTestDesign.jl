@@ -1,11 +1,12 @@
-# IPOG's core that scores by lookup (plan §5.5, Phase 4; Kleine & Simos 2018,
-# "FIPOG"). One algorithm for every request IPOG's two paths in
-# parameter_order.jl take: unconstrained and constrained, one strength or
-# several (`stronger` groups, a negative sub-request at base strength 0),
-# with and without must-include rows, complete and partial. Until it becomes
-# the engine behind `IPOG()` (decision D2), it is the internal engine
-# `_IPOGLookup`, in the registry, so that the oracle loops check it, and the
-# old paths are its reference.
+# IPOG, the engine behind `IPOG()`: in-parameter-order generation that scores
+# by lookup (plan §5.5, Phase 4; Kleine & Simos 2018, "FIPOG"). One algorithm
+# for every request: unconstrained and constrained, one strength or several
+# (`stronger` groups, a negative sub-request at base strength 0), with and
+# without must-include rows, complete and partial. It replaced IPOG's two
+# paths, the classic `ipog` and the general `ipog_multi_way` (decision D2).
+# `Construction`'s seeded path calls its operations (`_lookup_steps`,
+# `_lookup_complete`, `_lookup_cover`), and `_IPOGLookup`, an internal engine
+# outside the registry, runs any of its members, for benchmark studies.
 #
 # Parameters are added in `ipog_order`. A support (a set of parameters that
 # carries targets, `supports(targets)`) belongs to the step of its parameter
@@ -35,39 +36,72 @@
 #   PDF p.12), rows without one being candidates for every value, and only
 #   rows with an unset entry among the parameters added so far are
 #   candidates (FIPOG §4.3). The combinations are taken support by support
-#   (FIPOG's order) or value by value (about today's classic order), and
+#   (FIPOG's order) or value by value (about the old classic order), and
 #   before a support's combinations are placed, the rows changed so far mark
 #   what they now cover on it (Forbes et al., p.291: "it is important to
 #   capture the unintended coverage"), so no combination is placed twice.
 # - The final fill (`_fill!`) gives every unset entry its parameter's least
-#   used value that keeps the row completable, as both old paths do.
-# - The engine's rules, a tie-break and a vertical order, choose a member of
-#   the IPOG family (plan §2.5); given several, it runs each on the same steps
-#   and keeps the fewest rows (`_execute`).
+#   used value that keeps the row completable, as the old general path did.
+# - Two rules, a tie-break and a vertical order, choose a member of the IPOG
+#   family (plan §2.5). `IPOG()` runs several (`_IPOG_MEMBERS`) on the same
+#   steps and keeps the fewest rows (`_execute`).
 #
-# The completability invariant (contract §1.3; the old paths' comment in
-# parameter_order.jl): a value is committed only when the row stays
-# completable, `dead(row)` false. Must-include rows are completable when the
-# request accepts them (§10.4), and every required target is completable
-# (§1.2), so every row starts completable; each of the three placement sites
-# keeps it so (horizontal growth, vertical growth, the final fill); by
-# induction every row is completable after every step, and the fill ends each
-# at a complete completable row, which is a valid row. `dead` answers `true`
-# or `false` or throws `ResourceLimitError`, which propagates (§3.6, §3.8);
-# the core decides only from its answers. An unconstrained request passes
-# `Returns(false)`, which the core never calls with a row; that is the only
-# place where the rules' absence shows, so with `dead` always false a
-# constrained request gives the rows of the unconstrained one.
+# The completability invariant (contract §1.3): a value is committed only when
+# the row stays completable, `dead(row)` false. Must-include rows are
+# completable when the request accepts them (§10.4), and every required target
+# is completable (§1.2), so every row starts completable; each of the three
+# placement sites keeps it so (horizontal growth, vertical growth, the final
+# fill); by induction every row is completable after every step, and the fill
+# ends each at a complete completable row, which is a valid row. `dead`
+# answers `true` or `false` or throws `ResourceLimitError`, which propagates
+# (§3.6, §3.8); the core decides only from its answers. An unconstrained
+# request passes `Returns(false)`, which the core never calls with a row; that
+# is the only place where the rules' absence shows, so with `dead` always
+# false a constrained request gives the rows of the unconstrained one.
 #
 # Deterministic (contract §9.3, §9.4): no randomness, no hashing order; every
 # loop runs in row, support, code or value order.
 
 ## IPOG()
 
+"""
+The members of the IPOG family that `IPOG()` runs (plan §2.5, §5.5): each
+tie-break rule of `tiebreak` with each vertical order of `vertical`
+(`_IPOGLookup`), tie-break rules first, on the same steps, keeping the design
+with the fewest rows, the first of equals. Chosen by the Phase 4 study of
+rows on the benchmark grid: no single member has no more rows than the old
+paths at 90% of its points, and these four do at 96.7% of 1,826, with 2.0%
+fewer rows in total (p4-core's and p4-switch's notes). Changing the set
+changes `IPOG()`'s rows: the tests that pin them say how to regenerate their
+values.
+"""
+const _IPOG_MEMBERS = (tiebreak = (:lowest, :rotate), vertical = (:support, :value))
+
 engine_record(::IPOG) = EngineRecord(:IPOG, nothing)
 
-# Both paths take any request, a negative sub-request at base strength 0 included.
+# The core takes any request, a negative sub-request at base strength 0 included.
 fit(::IPOG, ::Profile) = Fit(:native, "IPOG covers any request")
+
+"The members `IPOG()` runs, in order (`_IPOG_MEMBERS`, `_members`)."
+_ipog_members() = _members(_IPOG_MEMBERS.tiebreak, _IPOG_MEMBERS.vertical)
+
+_prepare(engine::IPOG, p::Profile) = _ipog_plan(engine, p, _ipog_members())
+
+"""
+    cover_ordinary(::IPOG, request::Request, targets::RequiredTargets) -> Matrix{Int}
+
+IPOG's rows for `request` (contract §1.3), its plan's (`_IPOGPlan`,
+`_execute`): the must-include rows first, then rows until every required
+target (`targets`) is in some row, each row valid under the request's rules.
+`generate` classifies the targets, prepares the plan, executes it and
+validates the result (§1.21). No required target and no must-include row
+gives no rows (§1.24); strength equal to the parameter count gives every
+valid row (`full_strength_rows`, §7.8); anything else is the lookup core's
+design for each member of `_IPOG_MEMBERS`, the one with the fewest rows kept,
+with `dead(request, row)` deciding each placement when the request has
+rules. IPOG uses no randomness (§9.4).
+"""
+cover_ordinary(engine::IPOG, request::Request, targets::RequiredTargets) = _cover(engine, request, targets)
 
 """
     ipog_order(arity, groups) -> Vector{Int}
@@ -118,15 +152,18 @@ const _VERTICALS = (:support, :value)
 """
     _IPOGLookup(; tiebreak = :lowest, vertical = :support)
 
-IPOG's core that scores by lookup (plan §5.5, Phase 4), as an internal engine
-beside `IPOG()` until it replaces IPOG's two paths (decision D2). It covers
-any request, as `IPOG()` does, deterministically. Its rows are one member of
-the IPOG family (plan §2.5), chosen by two rules.
+IPOG's core that scores by lookup (plan §5.5, Phase 4) with the members
+given, as an internal engine for studies of the members (benchmark/
+ipog_compare.jl names it). `IPOG()` is the same core with the members
+`_IPOG_MEMBERS`; this engine runs the ones it is given, so it is not in the
+registry, whose oracle loops check `IPOG()`, and test/test_ipog_core.jl checks
+each member. It covers any request, deterministically. Its rows are one
+member of the IPOG family (plan §2.5), chosen by two rules.
 
 `tiebreak` chooses among the values of equal score in horizontal growth
 (probe 08):
 
-- `:lowest`, the lowest value, as both of today's paths choose;
+- `:lowest`, the lowest value, as IPOG's old paths chose;
 - `:highest`, the highest;
 - `:rotate`, the first at or after a start that moves with the row (row `r`
   starts at value `mod1(r, arity)`);
@@ -145,7 +182,7 @@ growth left uncovered:
   order, as FIPOG and Forbes et al. place them;
 - `:value`, by the value of the parameter being added, the highest first,
   then support by support and combination by combination, the last first:
-  about the order today's classic path places them in.
+  about the order the old classic path placed them in.
 
 Either may be a tuple of rules: the engine then runs every combination, a
 tie-break rule with a vertical order, tie-break rules first, and keeps the
@@ -208,15 +245,17 @@ struct _IPOGPlan{E <: CoveringEngine} <: _Plan
     members::Vector{Tuple{Symbol, Symbol}}
 end
 
-"The plan of `engine` for a request with profile `p`, running every tie-break rule of `tiebreak` with every vertical order of `vertical` (`_IPOGPlan`)."
-function _ipog_plan(engine::CoveringEngine, p::Profile, tiebreak::Tuple{Vararg{Symbol}},
-                    vertical::Tuple{Vararg{Symbol}})
+"Each tie-break rule of `tiebreak` with each vertical order of `vertical`, tie-break rules first: the members a plan runs."
+_members(tiebreak::Tuple{Vararg{Symbol}}, vertical::Tuple{Vararg{Symbol}}) =
+    Tuple{Symbol, Symbol}[(t, v) for t in tiebreak for v in vertical]
+
+"The plan of `engine` for a request with profile `p` that runs `members` (`_IPOGPlan`)."
+function _ipog_plan(engine::CoveringEngine, p::Profile, members::Vector{Tuple{Symbol, Symbol}})
     path = p.strength == nparameters(p) ? :full_strength : :lookup
-    members = Tuple{Symbol, Symbol}[(t, v) for t in tiebreak for v in vertical]
     return _IPOGPlan(engine, fit(engine, p), path, ipog_order(p.arity, p.groups), !isempty(p.rules), members)
 end
 
-_prepare(engine::_IPOGLookup, p::Profile) = _ipog_plan(engine, p, engine.tiebreak, engine.vertical)
+_prepare(engine::_IPOGLookup, p::Profile) = _ipog_plan(engine, p, _members(engine.tiebreak, engine.vertical))
 
 "The member a full-strength design records, where no member runs (`_execute`)."
 const _NO_MEMBER = (tiebreak = :none, vertical = :none)

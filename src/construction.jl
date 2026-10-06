@@ -211,13 +211,15 @@ The catalog's rows for `request` (plan §5.4). For an exact shape, the array
 itself. Seeded, the request's must-include rows first (contract §10.5), then
 the catalog's rows that no rule forbids (`_allowed_rows`) and, when there are
 must-include rows, that hold a target they and the rows kept before don't
-(`_new_coverage_rows`, §9.10), and then IPOG's general path (`ipog_multi_way`)
-with all of them as must-include rows, which completes a partial row, adds
-rows until every required target is covered, and keeps each row completable
-(`dead`). Partial must-include rows are first completed by IPOG's steps on
-them alone (`_complete_seeds`), and the catalog's rows filtered against what
-the completed rows hold, when that keeps fewer of them; otherwise they stay
-partial. At full strength with must-include rows the design is every valid
+(`_new_coverage_rows`, §9.10), and then IPOG's core (`_lookup_cover`) with all
+of them as must-include rows, which completes a partial row, adds rows until
+every required target is covered, and keeps each row completable (`dead`).
+Partial must-include rows are first completed by IPOG's steps on them alone
+(`_lookup_complete`), and the catalog's rows filtered against what the
+completed rows hold, when that keeps fewer of them; otherwise they stay
+partial. Both run for each member `IPOG()` runs (`_IPOG_MEMBERS`), and the
+design with the fewest rows is kept, the first of equals, as `IPOG()` keeps
+its own. At full strength with must-include rows the design is every valid
 row after them (`full_strength_rows`, §7.8), as IPOG gives it. The request
 records only its own must-include rows (§10.5); the catalog's are ordinary
 rows. A request `fit` refuses is an `ArgumentError`.
@@ -266,10 +268,11 @@ function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, 
     end
     kept = isconstrained(request) ? _allowed_rows(request, rows) : rows
     isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
-    arity, order = copy(request.arity), ipog_order(request.arity, request.groups)
-    buckets = _ipog_buckets(_target_list(targets), order)
-    if size(must, 2) > 0
-        partial = _new_coverage_rows(must, kept, targets)
+    # IPOG's targets by step, read by every run below (`_lookup_steps`).
+    steps = _lookup_steps(targets, request.arity, ipog_order(request.arity, request.groups))
+    partial = size(must, 2) > 0 ? _new_coverage_rows(must, kept, targets) : kept
+    design, _ = _fewest_rows(_ipog_members()) do tiebreak, vertical
+        seeds, top = must, partial
         # Partial must-include rows hold only what they set, so a design passed
         # back with parameters added or dropped kept about the whole array
         # after it (the maintainer's follow-up 2). Completed first, as IPOG
@@ -278,14 +281,14 @@ function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, 
         # fewer, the rows stay partial, for IPOG to complete beside the
         # catalog's rows: an early completion then only takes from IPOG the
         # entries it would fill with targets the catalog's rows leave.
-        if any(==(0), must)
-            completed = _complete_seeds(arity, buckets, isdead, must, order)
+        if size(must, 2) > 0 && any(==(0), must)
+            completed = _lookup_complete(steps, targets, isdead, must; tiebreak, vertical)
             fewer = _new_coverage_rows(completed, kept, targets)
-            size(fewer, 2) < size(partial, 2) && ((must, partial) = (completed, fewer))
+            size(fewer, 2) < size(partial, 2) && ((seeds, top) = (completed, fewer))
         end
-        kept = partial
+        _lookup_cover(steps, targets, isdead, hcat(seeds, top); tiebreak, vertical)
     end
-    return _ipog_multi_way(arity, buckets, isdead, hcat(must, kept), order)
+    return design
 end
 
 """
@@ -316,7 +319,7 @@ must-include rows the catalog's rows cover only what those leave uncovered
 is not repeated. Greedy in the catalog's order, so deterministic. A row
 holds the targets on the supports it sets in full; a partial must-include
 row holds only those, since its completion is IPOG's to choose, which is why
-`_construction_rows` passes completed rows (`_complete_seeds`) where they
+`_construction_rows` passes completed rows (`_lookup_complete`) where they
 leave out more.
 """
 function _new_coverage_rows(must::Matrix{Int}, rows::Matrix{Int}, targets::RequiredTargets)

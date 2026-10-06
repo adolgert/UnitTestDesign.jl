@@ -364,12 +364,12 @@ end
         6 cases (lower bound 5) · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets
         excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)
              n           m   k
-         1   1           :b  :x
-         2   2           :a  :x
-         3   1           :a  :x
-         4   1           :b  :y
-         5!  Invalid(1)  :b  :y
-         6!  Invalid(1)  :a  :x"""
+         1   1           :a  :x
+         2   1           :b  :y
+         3   2           :a  :x
+         4   1           :b  :x
+         5!  Invalid(1)  :a  :x
+         6!  Invalid(1)  :b  :y"""
     r = report(cases)
     @test r.guarantee == "6 cases cover all 9 feasible pairs of a 12-combination space (2 pairs forbidden, " *
                          "1 impossible under the constraints); negative: covers 4 of 4 feasible pairs"

@@ -117,7 +117,7 @@ outcomes cannot tell them apart, and only new cases can. [`followups`](@ref)
 proposes those cases.
 
 ```jldoctest; setup = :(using UnitTestDesign)
-julia> space = TestSpace((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
+julia> space = TestSpace((n = [10, 100, 1000, 10000], method = [:newton, :bicg, :gmres],
                           tol = [1e-3, 1e-6], sparse = [false, true]));
 
 julia> cases = all_pairs(space);
@@ -125,15 +125,17 @@ julia> cases = all_pairs(space);
 julia> passed = [!(c.method == :newton && c.sparse) for c in cases];   # the bug
 
 julia> diagnose(cases, passed)
-2 failures of 10 cases; 3 suspects in 3 groups (hypotheses, not proof)
-1. (method = :newton, sparse = true) — in 2 of 2 failures
-2. (n = 1000, method = :newton) — in 1 of 2 failures
-3. (n = 100, sparse = true) — in 1 of 2 failures
+3 failures of 12 cases; 6 suspects in 5 groups (hypotheses, not proof)
+1. (method = :newton, sparse = true) — in 3 of 3 failures
+2. (method = :newton, tol = 0.001) — in 2 of 3 failures
+3. (n = 10, method = :newton) — in 1 of 3 failures
+4. (n = 100, method = :newton) — in 1 of 3 failures
+5. (n = 10000, method = :newton) — in 1 of 3 failures — same failures as (n = 10000, sparse = true)
 ```
 
-The true cause ranks first. The other two suspects appeared only in failing
-cases, so nothing yet says whether they work; `followups` finds a case for
-each that holds it and no other suspect.
+The true cause ranks first, in every failure. The other suspects appeared
+only in failing cases too, so nothing yet says whether they work;
+`followups` finds a case for each that holds it and no other suspect.
 
 Read the ranking as hypotheses (§8.6):
 
@@ -531,7 +533,7 @@ rank order, and each has a `status`:
   (§3.17). Retry with a larger limit.
 
 ```jldoctest; setup = :(using UnitTestDesign)
-julia> space = TestSpace((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
+julia> space = TestSpace((n = [10, 100, 1000, 10000], method = [:newton, :bicg, :gmres],
                           tol = [1e-3, 1e-6], sparse = [false, true]));
 
 julia> cases = all_pairs(space);
@@ -539,10 +541,13 @@ julia> cases = all_pairs(space);
 julia> d = diagnose(cases, [!(c.method == :newton && c.sparse) for c in cases]);
 
 julia> followups(d)
-3-element Vector{UnitTestDesign.Followup}:
- (method = :newton, sparse = true): found (n = 10, method = :newton, tol = 0.001, sparse = true), 1 change from case 7
- (n = 1000, method = :newton): found (n = 1000, method = :newton, tol = 0.001, sparse = false), 1 change from case 7
- (n = 100, sparse = true): found (n = 100, method = :bicg, tol = 1.0e-6, sparse = true), 1 change from case 10
+6-element Vector{UnitTestDesign.Followup}:
+ (method = :newton, sparse = true): found (n = 1000, method = :newton, tol = 1.0e-6, sparse = true), 1 change from case 12
+ (method = :newton, tol = 0.001): found (n = 1000, method = :newton, tol = 0.001, sparse = false), 2 changes from case 9
+ (n = 10, method = :newton): found (n = 10, method = :newton, tol = 1.0e-6, sparse = false), 1 change from case 12
+ (n = 100, method = :newton): found (n = 100, method = :newton, tol = 1.0e-6, sparse = false), 2 changes from case 11
+ (n = 10000, method = :newton): found (n = 10000, method = :newton, tol = 1.0e-6, sparse = false), 2 changes from case 9
+ (n = 10000, sparse = true): found (n = 10000, method = :bicg, tol = 0.001, sparse = true), 1 change from case 9
 ```
 
 Each search is the witness search of `explain`, over the space's rules plus

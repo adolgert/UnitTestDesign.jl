@@ -343,9 +343,10 @@ end
     matrix, notes = _compact(request, targets, gnd)
     @test size(matrix, 2) < size(gnd, 2)
     @test validate_design(request, matrix, required) == length(required)
-    # bench12 pairwise: 22 IPOG rows to 18 (plan §5.3's gate), at effort 1 and 3.
+    # bench12 pairwise: IPOG's rows to 18 (plan §5.3's gate, from the old
+    # paths' 22 rows; IPOG's lookup core gives 21), at effort 1 and 3.
     _, _, ipog = start_of(request)
-    @test size(ipog, 2) == 22
+    @test size(ipog, 2) == 21
     one = size(first(_compact(request, targets, ipog)), 2)
     three = size(first(_compact(request, targets, ipog; effort = 3)), 2)
     @test one <= 18 && three <= one

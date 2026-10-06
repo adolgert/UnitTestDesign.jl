@@ -1,14 +1,16 @@
-# Fixed requests whose rows from IPOG's lookup core (`_IPOGLookup`, plan §5.5)
-# test_ipog_core.jl compares with ipog_core_rows.txt, as text, so that the same
-# rows are checked in another process and on each Julia version (contract §9.1,
-# §9.4). No random stream: Julia 1.10's differ from 1.13's. To write the file
-# again after a change to the core's rows, on Julia 1.13, from the repository root:
+# Fixed requests whose rows from IPOG's lookup core (`IPOG()`, and members of it
+# through `_IPOGLookup`; plan §5.5) test_ipog_core.jl compares with
+# ipog_core_rows.txt, as text, so that the same rows are checked in another
+# process and on each Julia version (contract §9.1, §9.4). No random stream:
+# Julia 1.10's differ from 1.13's. To write the file again after a change to
+# the core's rows or to the members `IPOG()` runs (`_IPOG_MEMBERS`), on Julia
+# 1.13, from the repository root:
 #
 #     julia --project=. -e 'include("test/ipog_core_requests.jl");
 #                           write("test/ipog_core_rows.txt", join(lookup_rows_text(), "\n"), "\n")'
 
 using UnitTestDesign
-using UnitTestDesign: Request, generate, _IPOGLookup, _TIEBREAKS
+using UnitTestDesign: Request, generate, CoveringEngine, _IPOGLookup, _TIEBREAKS, _engine_label
 
 "Each request's rows from the lookup core, as lines: a header naming the request, then one line per row."
 function lookup_rows_text()
@@ -24,19 +26,23 @@ function lookup_rows_text()
         "mixed at strength 3" => Request(mixed; strength = 3)]
     lines = String[]
     for (label, request) in requests
-        engines = label == "3^10, strength 2" ? [_IPOGLookup(; tiebreak) for tiebreak in _TIEBREAKS] :
-                  [_IPOGLookup(), _IPOGLookup(vertical = :value)]
+        engines = CoveringEngine[]
+        append!(engines, label == "3^10, strength 2" ? [_IPOGLookup(; tiebreak) for tiebreak in _TIEBREAKS] :
+                         [_IPOGLookup(), _IPOGLookup(vertical = :value)])
         label == "mixed with two rules" && push!(engines, _IPOGLookup(tiebreak = (:lowest, :rotate), vertical = (:support, :value)))
+        push!(engines, IPOG())
         for engine in engines
             matrix = generate(engine, request).matrix
-            push!(lines, "# $label, $engine: $(size(matrix, 2)) rows")
+            push!(lines, "# $label, $(_engine_label(engine)): $(size(matrix, 2)) rows")
             append!(lines, (join(c, " ") for c in eachcol(matrix)))
         end
     end
     # Negative rows, through the public call.
     space = TestSpace((a = [1, 2, Invalid(0)], b = [:x, :y, :z], c = 1:3, d = [true, false]))
-    cases = all_pairs(space; engine = _IPOGLookup())
-    push!(lines, "# a space with an Invalid value: $(length(cases)) cases")
-    append!(lines, (join((repr(x) for x in values(c)), " ") for c in cases))
+    for engine in (_IPOGLookup(), IPOG())
+        cases = all_pairs(space; engine)
+        push!(lines, "# a space with an Invalid value, $(_engine_label(engine)): $(length(cases)) cases")
+        append!(lines, (join((repr(x) for x in values(c)), " ") for c in cases))
+    end
     return lines
 end

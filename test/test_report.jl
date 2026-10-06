@@ -95,8 +95,8 @@ end
         "bonus: 5 of 5 feasible triples covered";
         "prefix curve:";
         "  first 1 of 5 cover 27% (3 of 11)";
-        "  first 2 of 5 cover 45% (5 of 11)";
-        "  first 3 of 5 cover 63% (7 of 11)";
+        "  first 2 of 5 cover 54% (6 of 11)";
+        "  first 3 of 5 cover 72% (8 of 11)";
         "  first 4 of 5 cover 90% (10 of 11)";
         "  first 5 of 5 cover 100% (11 of 11)";
         "seed: none (IPOG uses no randomness)"], "\n")
@@ -104,7 +104,7 @@ end
     @test (r.strategy, r.engine, r.seed, r.n_must_include, r.strength) == (:covering, :IPOG, nothing, 0, 2)
     @test same_exclusions(r.excluded, cases.excluded) && isempty(r.recorded)
     @test r.excluded == r.coverage.ordinary.excluded
-    @test [x.covered for x in r.prefix] == [3, 5, 7, 10, 11]
+    @test [x.covered for x in r.prefix] == [3, 6, 8, 10, 11]
 
     # GND names its seed; must-include rows are counted; stronger groups are named.
     g = report(all_pairs(space; engine = GND(seed = 3)))
@@ -373,23 +373,23 @@ end
     t = design_sizes(fable_domains()...)
     @test [r.strategy for r in t.rows] ==
           ["full_factorial", "covering(1)", "covering(2)", "covering(3)", "excursions(1)", "excursions(2)"]
-    @test [r.cases for r in t.rows] == [81, 3, 10, 31, 9, 33]
+    @test [r.cases for r in t.rows] == [81, 3, 9, 30, 9, 33]
     @test (t.total, t.valid, t.engine) == (81, 81, :IPOG)
     @test all(r -> r.status == :ok, t.rows)
     @test [r.pairs.covered for r in t.rows] == [54, 18, 54, 54, 30, 54]
-    @test [r.triples.covered for r in t.rows] == [108, 12, 39, 108, 28, 76]
+    @test [r.triples.covered for r in t.rows] == [108, 12, 36, 108, 28, 76]
     @test all(r -> (r.pairs.feasible, r.triples.feasible) == (54, 108), t.rows)
     @test shown(t) == join([
         "strategy        cases   share  pairs  triples",
         "full_factorial     81  100.0%  54/54  108/108  valid 81 of 81",
         "covering(1)         3    3.7%  18/54   12/108",
-        "covering(2)        10   12.3%  54/54   39/108",
-        "covering(3)        31   38.3%  54/54  108/108",
+        "covering(2)         9   11.1%  54/54   36/108",
+        "covering(3)        30   37.0%  54/54  108/108",
         "excursions(1)       9   11.1%  30/54   28/108",
         "excursions(2)      33   40.7%  54/54   76/108",
         "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
     # The same through a NamedTuple and a TestSpace; the counts come from running the strategies.
-    @test [r.cases for r in design_sizes(TestSpace(fable_domains()...)).rows] == [81, 3, 10, 31, 9, 33]
+    @test [r.cases for r in design_sizes(TestSpace(fable_domains()...)).rows] == [81, 3, 9, 30, 9, 33]
     @test design_sizes(fable_domains()...).rows[3].cases == length(all_pairs(fable_domains()...))
 
     s = design_sizes(solver_space())
@@ -495,7 +495,7 @@ end
         "bonus: 4 of 4 feasible triples covered; negative: 2 of 3",
         "prefix curve:",
         "  first 2 of 6 cover 66% of ordinary pairs (6 of 9); negative 0 of 4",
-        "  first 3 of 6 cover 77% of ordinary pairs (7 of 9); negative 0 of 4",
+        "  first 3 of 6 cover 88% of ordinary pairs (8 of 9); negative 0 of 4",
         "  first 4 of 6 cover 100% of ordinary pairs (9 of 9); negative 0 of 4",
         "  first 5 of 6 cover 100% of ordinary pairs (9 of 9); negative 2 of 4",
         "  first 6 of 6 cover 100% of ordinary pairs (9 of 9); negative 4 of 4",
@@ -749,17 +749,18 @@ end
 
 @testitem "report: the bonus counts without listing its targets (plan Stage C step 4)" begin
     using UnitTestDesign: rule_memos, _prepare_rows, _bonus
-    # 30 parameters of 5 values, no rules: the bonus has 287,305 missing
-    # triples. Before Stage C it listed them, and allocated about 1.0 GB here
-    # (Julia 1.13); counting allocates about 0.22 GB, and a count that listed
-    # every target again would allocate about 0.5 GB.
+    # 30 parameters of 5 values, no rules: the bonus has 291,894 missing
+    # triples (287,305 on the 0.5 IPOG's rows). Before Stage C it listed them,
+    # and allocated about 1.0 GB here (Julia 1.13); counting allocates about
+    # 0.22 GB, and a count that listed every target again would allocate
+    # about 0.5 GB.
     space = TestSpace(NamedTuple{Tuple(Symbol("x$i") for i in 1:30)}(Tuple(1:5 for _ in 1:30)))
     cases = all_pairs(space)
     memos = rule_memos(space.tables)
     prepared = _prepare_rows(space, memos, collect(cases))
     bonus() = _bonus(prepared, space, 2; memos, feasibility_limit = 1_000_000)
     b = bonus()
-    @test (b.covered, b.feasible, b.unknown) == (220_195, 507_500, 0)
-    @test b.feasible - b.covered == 287_305
+    @test (b.covered, b.feasible, b.unknown) == (215_606, 507_500, 0)
+    @test b.feasible - b.covered == 291_894
     @test @allocated(bonus()) < 400_000_000
 end

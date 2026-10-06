@@ -1,6 +1,6 @@
 # Engine types and the internal engine protocol (plan §4.2 of
 # design/20261003_solver_plan.md). The engines themselves live in
-# parameter_order.jl (IPOG) and greedy_tuples.jl (GND); this file defines the
+# ipog_core.jl (IPOG) and greedy_tuples.jl (GND); this file defines the
 # public structs, the protocol every engine implements (`CoveringEngine`),
 # what an engine's `fit` reads of a request (`Profile`), the plan an engine
 # prepares from it and generation executes (`_prepare`, `_execute`), the
@@ -703,10 +703,7 @@ _engine_registry(seed::Integer = 0) =
                                  "Compact(IPOG())" => Compact(IPOG(); seed),
                                  "Construction()" => Construction(),
                                  "Auto()" => Auto(),
-                                 "Auto(goal = :compact)" => Auto(; goal = :compact, seed),
-                                 # IPOG's core that scores by lookup (plan §5.5, Phase 4), internal
-                                 # until it replaces IPOG's two paths.
-                                 "_IPOGLookup()" => _IPOGLookup()]
+                                 "Auto(goal = :compact)" => Auto(; goal = :compact, seed)]
 
 """
     _check_fit(engine, request) -> plan

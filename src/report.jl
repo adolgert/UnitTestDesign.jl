@@ -147,8 +147,8 @@ size: 5 cases; lower bound 4: the 4 feasible combinations of mode and solver nee
 bonus: 5 of 5 feasible triples covered
 prefix curve:
   first 1 of 5 cover 27% (3 of 11)
-  first 2 of 5 cover 45% (5 of 11)
-  first 3 of 5 cover 63% (7 of 11)
+  first 2 of 5 cover 54% (6 of 11)
+  first 3 of 5 cover 72% (8 of 11)
   first 4 of 5 cover 90% (10 of 11)
   first 5 of 5 cover 100% (11 of 11)
 seed: none (IPOG uses no randomness)
@@ -611,8 +611,8 @@ julia> design_sizes(:n => [1, 2, 3], :level => ["low", "mid", "high"],
 strategy        cases   share  pairs  triples
 full_factorial     81  100.0%  54/54  108/108  valid 81 of 81
 covering(1)         3    3.7%  18/54   12/108
-covering(2)        10   12.3%  54/54   39/108
-covering(3)        31   38.3%  54/54  108/108
+covering(2)         9   11.1%  54/54   36/108
+covering(3)        30   37.0%  54/54  108/108
 excursions(1)       9   11.1%  30/54   28/108
 excursions(2)      33   40.7%  54/54   76/108
 case counts are the rows each strategy produced with IPOG, not lower bounds

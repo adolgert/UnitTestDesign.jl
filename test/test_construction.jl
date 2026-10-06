@@ -120,7 +120,7 @@ end
     # extends its rows to the other parameters and adds what they leave.
     cases = all_pairs(space; engine = C, stronger = [(:p1, :p2, :p3) => 3])
     @test iscomplete(coverage(cases)) && length(cases) == 343
-    for (arity, group, rows) in ((fill(4, 16), (:p1, :p2, :p3, :p4), 64), (fill(3, 50), (:p1, :p2, :p3, :p4), 28),
+    for (arity, group, rows) in ((fill(4, 16), (:p1, :p2, :p3, :p4), 64), (fill(3, 50), (:p1, :p2, :p3, :p4), 27),
                                  (fill(3, 12), Tuple(Symbol(:p, i) for i in 1:12), 53))
         seeded = all_pairs(space_of(arity); engine = C, stronger = [group => 3])
         plain = all_pairs(space_of(arity); stronger = [group => 3])
@@ -186,8 +186,8 @@ end
 
 
 @testitem "construction: partial must-include rows are completed before the catalog's rows are filtered" setup=[CatalogSetup, ConstructionSetup] begin
-    using UnitTestDesign: dead, ipog_order, _ipog_buckets, _ipog_multi_way, _complete_seeds, _with_must_include, _prepare,
-        _execute, _allowed_rows, _new_coverage_rows, _catalog_entry
+    using UnitTestDesign: dead, ipog_order, _lookup_steps, _lookup_complete, _lookup_cover, _ipog_members, _fewest_rows,
+        _with_must_include, _prepare, _execute, _allowed_rows, _new_coverage_rows, _catalog_entry
     C = Construction()
     partial(row, keep) = NamedTuple{Tuple(keys(row)[keep])}(Tuple(values(row)[keep]))
     sets_of(cases, must) = all(i -> all(k -> cases[i][k] == must[i][k], keys(must[i])), eachindex(must))
@@ -208,11 +208,13 @@ end
     @test length(cases) <= length(all_pairs(s9; must_include = oa)) == 91
     @test sets_of(cases, oa) && iscomplete(coverage(cases))
     # Each row with two other parameters dropped (fix-construction's judgment
-    # call 2): 98 rows before, 80 now against IPOG's 74; under a rule 98
-    # before, 77 against 71; a `stronger` group's 64 rows, 92 before, 71
-    # against 69; strength 3, 106 before, 85 against 71. The catalog's rows
-    # still cover what the completed rows leave a little less well than IPOG
-    # does, which `Auto` decides by keeping the smaller start.
+    # call 2): 98 rows before the completion, 75 now against IPOG's 70; under
+    # a rule 98 before, 78 against 72; a `stronger` group's 64 rows, 92
+    # before, 66 against 66; strength 3, 106 before, 76 against 68 (with
+    # IPOG's old paths: 80 against 74, 77 against 71, 71 against 69, 85
+    # against 71). The catalog's rows still cover what the completed rows
+    # leave a little less well than IPOG does, which `Auto` decides by keeping
+    # the smaller start.
     for (space, t, extra, before) in ((s8, 2, (;), 98), (space_of(fill(7, 8); constraints = [@forbid(p1 == p2)]), 2, (;), 98),
                                       (space_of(fill(4, 16)), 2, (; stronger = [(:p1, :p2, :p3, :p4) => 3]), 92),
                                       (space_of(fill(3, 12)), 3, (;), 106))
@@ -225,10 +227,11 @@ end
         @test collect(seeded) == collect(covering(space; strength = t, engine = C, must_include = dropped, extra...))
     end
     # Three partial rows beside which every allowed row of the array holds a
-    # pair: completed first they leave out no catalog row (42 either way), so
-    # they stay partial, for IPOG to complete beside the array, and the design
-    # is the one filtered against the partial rows, 58 rows, where completing
-    # them first gave 59. IPOG alone gives 76.
+    # pair: completed first, by any of IPOG's members, they leave out no
+    # catalog row (42 either way), so they stay partial, for IPOG to complete
+    # beside the array, and the design is the one filtered against the partial
+    # rows, 58 rows, where completing them first gave 58 or 59 by member. IPOG
+    # alone gives 77 (76 with its old paths).
     ruled = space_of(fill(7, 8); constraints = [@forbid(p1 == p2)])
     three = [(p1 = 1, p2 = 2, p5 = 3, p7 = 4), (p2 = 5, p4 = 1, p6 = 6, p8 = 2), (p1 = 3, p3 = 3, p5 = 7, p8 = 7)]
     cases = all_pairs(ruled; engine = C, must_include = three)
@@ -236,32 +239,44 @@ end
     request = Request(ruled; must_include = three)
     required, _ = classify_targets(request)
     targets = RequiredTargets(request, required)
-    arity, order = copy(request.arity), ipog_order(request.arity, request.groups)
-    buckets = _ipog_buckets(required, order)
+    order = ipog_order(request.arity, request.groups)
+    steps = _lookup_steps(targets, request.arity, order)
     isdead(row) = dead(request, row)
-    kept = _allowed_rows(request, _engine_rows(_catalog_entry(2, 7, 8), arity))
-    completed = _complete_seeds(arity, buckets, isdead, request.must_include, order)
-    @test size(_new_coverage_rows(completed, kept, targets), 2) == size(_new_coverage_rows(request.must_include, kept, targets), 2) == 42
-    @test generate(C, request).matrix == _ipog_multi_way(arity, buckets, isdead, hcat(request.must_include,
-                                                         _new_coverage_rows(request.must_include, kept, targets)), order)
+    kept = _allowed_rows(request, _engine_rows(_catalog_entry(2, 7, 8), request.arity))
+    partial_kept = _new_coverage_rows(request.must_include, kept, targets)
+    @test size(partial_kept, 2) == 42
+    for (tiebreak, vertical) in _ipog_members()
+        completed = _lookup_complete(steps, targets, isdead, request.must_include; tiebreak, vertical)
+        @test size(_new_coverage_rows(completed, kept, targets), 2) == 42
+    end
+    # The design is IPOG's on these rows: its members' smallest.
+    fewest, _ = _fewest_rows(_ipog_members()) do tiebreak, vertical
+        _lookup_cover(steps, targets, isdead, hcat(request.must_include, partial_kept); tiebreak, vertical)
+    end
+    @test generate(C, request).matrix == fewest
     # The rows don't depend on feasibility_limit (contract §3.8).
     allowed = [r for r in cut if r.p1 != r.p2][1:20]
     for limit in (1_000, 100_000, 10^8)
         @test all_pairs(ruled; engine = C, must_include = allowed, feasibility_limit = limit) ==
               all_pairs(ruled; engine = C, must_include = allowed)
     end
-    # The completion is IPOG's steps on the must-include rows alone: no row is
-    # added and no set value changes; here every entry is asked for.
+    # The completion is IPOG's steps on the must-include rows alone, for each
+    # member: no row is added and no set value changes; here every entry is
+    # asked for.
     request = Request(ruled; must_include = allowed[1:3])
     required, _ = classify_targets(request)
-    buckets = _ipog_buckets(required, order)
-    completed = _complete_seeds(arity, buckets, row -> dead(request, row), request.must_include, order)
-    @test size(completed) == size(request.must_include) && !any(==(0), completed)
-    @test all(i -> request.must_include[i] == 0 || completed[i] == request.must_include[i], eachindex(completed))
-    @test !any(j -> dead(request, completed[:, j]), axes(completed, 2))
+    targets = RequiredTargets(request, required)
+    steps = _lookup_steps(targets, request.arity, order)
+    for (tiebreak, vertical) in _ipog_members()
+        completed = _lookup_complete(steps, targets, row -> dead(request, row), request.must_include; tiebreak, vertical)
+        @test size(completed) == size(request.must_include) && !any(==(0), completed)
+        @test all(i -> request.must_include[i] == 0 || completed[i] == request.must_include[i], eachindex(completed))
+        @test !any(j -> dead(request, completed[:, j]), axes(completed, 2))
+    end
     whole = Request(s8; must_include = oa)   # complete rows: nothing to choose
-    @test _complete_seeds(copy(whole.arity), _ipog_buckets(first(classify_targets(whole)), 1:8), Returns(false),
-                          whole.must_include, 1:8) == whole.must_include
+    wt = RequiredTargets(whole, first(classify_targets(whole)))
+    @test _lookup_complete(_lookup_steps(wt, whole.arity, collect(1:8)), wt, Returns(false), whole.must_include) ==
+          whole.must_include
     # A search the completion asks for that stops at the limit ends the call:
     # nothing catches its ResourceLimitError (§3.6, §3.8). The must-include
     # rows are put on a request with a limit of 1 after it is built, since

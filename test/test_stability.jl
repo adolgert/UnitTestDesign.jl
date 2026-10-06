@@ -331,7 +331,7 @@ end
 @testitem "stability: every engine's plan infers, its execution infers behind `_run`, and a plan builds nothing" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, RequiredTargets, Profile, Fit, Design, NegativeProjection, classify_targets, fit,
         generate, _prepare, _execute, _run, _prepare_for, _negative_request, _catalog_entry, _DefaultPlan,
-        _ConstructionPlan, _CompactPlan, _AutoPlan
+        _IPOGPlan, _ConstructionPlan, _CompactPlan, _AutoPlan
     # The engine protocol's plans (plan §4.2): `_prepare` is concrete for each
     # engine, `fit` is a `Fit`, and executing a concrete plan gives concrete
     # rows and notes; `Auto` runs its candidates' plans, of different types,
@@ -341,10 +341,10 @@ end
     request = Request(uniform(8, 7))
     profile = Profile(request)
     targets = RequiredTargets(request, first(classify_targets(request)))
-    @test (@inferred _prepare(IPOG(), profile)) isa _DefaultPlan{IPOG}
+    @test (@inferred _prepare(IPOG(), profile)) isa _IPOGPlan{IPOG}
     @test (@inferred _prepare(GND(), profile)) isa _DefaultPlan{GND}
     @test (@inferred _prepare(Construction(), profile)) isa _ConstructionPlan
-    @test (@inferred _prepare(Compact(IPOG()), profile)) isa _CompactPlan{IPOG, _DefaultPlan{IPOG}}
+    @test (@inferred _prepare(Compact(IPOG()), profile)) isa _CompactPlan{IPOG, _IPOGPlan{IPOG}}
     @test (@inferred _prepare(Compact(Construction()), profile)) isa _CompactPlan{Construction, _ConstructionPlan}
     @test (@inferred _prepare(Auto(), profile)) isa _AutoPlan
     for engine in (IPOG(), GND(), Construction(), Compact(Construction()), Auto(), Auto(goal = :compact))
@@ -361,8 +361,8 @@ end
     # A negative sub-request the catalog refuses (strength 1) takes IPOG's plan: a union of two.
     space = TestSpace((a = [1, 2, 3, Invalid(0)], b = 1:3, c = 1:3, d = 1:3))
     sub = _negative_request(Request(space), NegativeProjection(space, 1), zeros(Int, 3, 0))
-    @test (@inferred Union{_ConstructionPlan, _DefaultPlan{IPOG}} _prepare_for(Construction(), Profile(sub))) isa
-          _DefaultPlan{IPOG}
+    @test (@inferred Union{_ConstructionPlan, _IPOGPlan{IPOG}} _prepare_for(Construction(), Profile(sub))) isa
+          _IPOGPlan{IPOG}
     # A plan lists no target and builds nothing: `Auto`'s, which prepares the
     # catalog's once, asks for the catalog's lookup and a few KB, at strength 3
     # on 250 parameters of 7 values, where a second lookup would double it:
@@ -603,7 +603,7 @@ end
     using UnitTestDesign: GaloisField, Request, RequiredTargets, Profile, classify_targets, ipog_order, _catalog_entry,
         _build, _sca_base, _sca_pair, _sca_product_columns, _product_columns, _wide_product_columns,
         _partitioned_columns, _lemma35_entry, _two_constant_rows, _paley12, _zero_sum, _engine_rows,
-        _new_coverage_rows, _hold!, _ipog_buckets, _complete_seeds, _prepare, _execute
+        _new_coverage_rows, _hold!, _lookup_steps, _lookup_complete, _ipog_members, _prepare, _execute
     # `_build` and `_build_full` declare `::Matrix{Int}`, which `@inferred
     # _build(…)` then only restates (review of Phase 2, finding 5); the
     # functions under them are checked here. `_two_constant_rows` was `Any`
@@ -659,9 +659,10 @@ end
     partial = Request(TestSpace(names, [1:7 for _ in 1:8], Constraint[], 10^5);
                       must_include = [(p1 = 1, p2 = 2), (p3 = 3, p8 = 4)])
     required = first(classify_targets(partial))
-    order = ipog_order(partial.arity, partial.groups)
-    buckets = @inferred _ipog_buckets(required, order)
-    @test (@inferred _complete_seeds(copy(partial.arity), buckets, Returns(false), partial.must_include, order)) isa
+    pt = RequiredTargets(partial, required)
+    steps = @inferred _lookup_steps(pt, partial.arity, ipog_order(partial.arity, partial.groups))
+    @test (@inferred _ipog_members()) isa Vector{Tuple{Symbol, Symbol}}
+    @test (@inferred _lookup_complete(steps, pt, Returns(false), partial.must_include; tiebreak = :rotate)) isa
           Matrix{Int}
     plan = _prepare(Construction(), Profile(partial))
     @test first(@inferred _execute(plan, partial, RequiredTargets(partial, required))) isa Matrix{Int}
@@ -684,25 +685,25 @@ end
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     request = Request(uniform(10, 3); strength = 3)
     targets = _Classified(request).targets
-    plan = @inferred _prepare(_IPOGLookup(), Profile(request))
-    @test plan isa _IPOGPlan{_IPOGLookup}
+    plan = @inferred _prepare(IPOG(), Profile(request))
+    @test plan isa _IPOGPlan{IPOG}
     # Every plan's notes name the member that made the rows, one type for
     # one member, several, and full strength, so the stage infers concretely.
     rows, notes = @inferred _execute(plan, request, targets)
-    @test rows isa Matrix{Int} && notes === (member = (tiebreak = :lowest, vertical = :support),)
+    @test rows isa Matrix{Int} && notes.member isa NamedTuple{(:tiebreak, :vertical), Tuple{Symbol, Symbol}}
     @test first(@inferred _run(plan, request, targets)) == rows
-    several = _prepare(_IPOGLookup(tiebreak = (:lowest, :rotate), vertical = (:support, :value)), Profile(request))
-    @test typeof(@inferred _execute(several, request, targets)) === typeof((rows, notes))
+    one = @inferred _prepare(_IPOGLookup(), Profile(request))
+    @test one isa _IPOGPlan{_IPOGLookup} && typeof(@inferred _execute(one, request, targets)) === typeof((rows, notes))
     full = Request(uniform(4, 3); strength = 4)
-    @test typeof(last(@inferred _execute(_prepare(_IPOGLookup(), Profile(full)), full, _Classified(full).targets))) ===
+    @test typeof(last(@inferred _execute(_prepare(IPOG(), Profile(full)), full, _Classified(full).targets))) ===
           typeof(notes)
-    @test (@inferred generate(_IPOGLookup(), request)) isa Design
+    @test (@inferred generate(IPOG(), request)) isa Design
     steps = @inferred _lookup_steps(targets, request.arity, plan.order)
-    @test (@inferred _lookup_cover(steps, targets, Returns(false), request.must_include)) == rows
+    @test (@inferred _lookup_cover(steps, targets, Returns(false), request.must_include; notes.member...)) == rows
     @test (@inferred _lookup_complete(steps, targets, Returns(false), request.must_include)) isa Matrix{Int}
     ruled = Request(stability_space(); strength = 2, must_include = [(a = 2,)])
     rt = _Classified(ruled).targets
-    rsteps = _lookup_steps(rt, ruled.arity, _prepare(_IPOGLookup(), Profile(ruled)).order)
+    rsteps = _lookup_steps(rt, ruled.arity, _prepare(IPOG(), Profile(ruled)).order)
     @test (@inferred _lookup_cover(rsteps, rt, row -> dead(ruled, row), ruled.must_include)) isa Matrix{Int}
     # A run at the eighth parameter's step, after the seven before it, every
     # buffer sized: one step's growth, on a fresh copy each time.
@@ -751,7 +752,7 @@ end
     for (k, v, t) in ((8, 64, 2), (20, 3, 4))
         big = Request(uniform(k, v); strength = t)
         bt = _Classified(big).targets
-        bsteps = _lookup_steps(bt, big.arity, _prepare(_IPOGLookup(), Profile(big)).order)
+        bsteps = _lookup_steps(bt, big.arity, _prepare(IPOG(), Profile(big)).order)
         cover(s) = _lookup_cover(s, bt, Returns(false), big.must_include)
         largest = maximum(p -> sum(s -> ncombinations(bt, s), view(bsteps.supports, bsteps.first[p]:(bsteps.first[p + 1] - 1));
                                    init = 0), 1:k)

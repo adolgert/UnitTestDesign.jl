@@ -1,4 +1,6 @@
-# In-parameter-order generation, IPOG (Lei et al. 2008).
+# In-parameter-order generation, IPOG (Lei et al. 2008): IPOG's two old paths.
+# `IPOG()` and `Construction` run the lookup core (ipog_core.jl) instead, and
+# nothing in the package calls these any more (plan §5.5, decision D2).
 #
 # The first half of this file is the classic, unconstrained algorithm, `ipog`.
 # It sorts parameters by arity and works on "taller" matrices whose last row
@@ -421,41 +423,3 @@ the completed rows leave uncovered (`_construction_rows`); `buckets` are
 """
 _complete_seeds(arity::Vector{Int}, buckets, dead, seeds::Matrix{Int}, order) =
     _ipog_grow(copy(seeds), arity, buckets, dead, order, false)
-
-
-"""
-    cover_ordinary(::IPOG, request::Request, targets::RequiredTargets) -> Matrix{Int}
-
-IPOG's rows for `request` (contract §1.3): the must-include rows first, then
-rows until every required target (`targets`, whose list of classified
-required targets in engine positions IPOG reads as `required`) is in some
-row, each row valid under the request's rules. `generate` classifies the
-targets, calls this, and validates the result (§1.21). The request's
-must-include rows are ordinary. Cases:
-
-1. No required target and no must-include row gives no rows: a proven
-   empty space (§1.24).
-2. Strength equal to the parameter count gives every valid row
-   (`full_strength_rows`, §7.8).
-3. An unconstrained request with one strength and no must-include rows uses
-   the classic `ipog`.
-4. Everything else uses `ipog_multi_way` over the required targets, with
-   `dead(request, row)` deciding each placement.
-
-IPOG uses no randomness (§9.4).
-"""
-function cover_ordinary(::IPOG, request::Request, targets::RequiredTargets)
-    required = _target_list(targets)
-    n = length(request.arity)
-    seeds = request.must_include
-    if isempty(required) && isempty(seeds)
-        return zeros(Int, n, 0)
-    elseif request.strength == n
-        return full_strength_rows(request, required)
-    elseif !isconstrained(request) && isempty(seeds) && length(request.groups) == 1
-        return ipog(request.arity, request.strength)
-    end
-    isdead = isconstrained(request) ? (row -> dead(request, row)) : Returns(false)
-    return ipog_multi_way(request.arity, required, isdead, seeds;
-                          order = ipog_order(request.arity, request.groups))
-end

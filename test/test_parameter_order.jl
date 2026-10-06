@@ -212,9 +212,10 @@ end
 
 
 @testitem "IPOG: bench12 at strengths 2 and 3 (§1.2–§1.4)" setup=[IPOGSetup, Checker] begin
-    # Case counts at this revision: 22 pairwise, 93 three-way. They may change
-    # with the engine (contract §8.1); coverage may not.
-    for (strength, feasible, excluded, rows) in ((2, 586, 4, 22), (3, 5702, 118, 93))
+    # Case counts at this revision: 21 pairwise, 92 three-way (22 and 93 with
+    # IPOG's old paths). They may change with the engine (contract §8.1) and
+    # with the members IPOG runs (`_IPOG_MEMBERS`); coverage may not.
+    for (strength, feasible, excluded, rows) in ((2, 586, 4, 21), (3, 5702, 118, 92))
         request, design, cases, check = ipog_fixture(bench12; strength = strength)
         @test complete(check)
         @test design.required == design.covered == feasible

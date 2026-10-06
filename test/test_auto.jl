@@ -179,12 +179,17 @@ end
         p = plan(uniform(k, v); strength = t)
         @test [(c.label, c.runs) for c in p.candidates] == [("IPOG()", false), ("Construction()", true)] && !p.smallest
     end
-    # Small, above the bound: both, and the fewer rows kept (15 × 6: IPOG has 75, the catalog 76).
-    p = plan(uniform(15, 6))
+    # Small, above the bound: both, and the fewer rows kept (14 × 6: IPOG has
+    # 75, the catalog 76; 16 × 6: 77 and 76; 15 × 6 is a tie at 76, IPOG's
+    # kept. With IPOG's old paths 15 × 6 had 75 and 76).
+    p = plan(uniform(14, 6))
     @test p.smallest && all(c -> c.runs, p.candidates)
-    cases = all_pairs(uniform(15, 6); engine = Auto())
+    cases = all_pairs(uniform(14, 6); engine = Auto())
     @test starts_of(cases) == [("IPOG()", 75), ("Construction()", 76)] && cases.record.ordinary.kept == 1
-    @test cases.record.ordinary.chose == "IPOG()" && cases == all_pairs(uniform(15, 6))
+    @test cases.record.ordinary.chose == "IPOG()" && cases == all_pairs(uniform(14, 6))
+    wider = all_pairs(uniform(16, 6); engine = Auto())
+    @test starts_of(wider) == [("IPOG()", 77), ("Construction()", 76)] && wider.record.ordinary.kept == 2
+    @test wider.record.ordinary.chose == "Construction()" && wider == all_pairs(uniform(16, 6); engine = Construction())
     # A tie goes to IPOG, so Auto gives IPOG's cases unless the catalog's are fewer: the
     # front page's example, where the seeded zero-sum array also takes 5 cases.
     front = TestSpace((mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
