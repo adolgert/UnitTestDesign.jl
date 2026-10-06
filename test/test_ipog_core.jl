@@ -247,6 +247,21 @@ end
         checked[] += 1
     end
     @test checked[] == 32
+    # At strength 1 with a group holding the Invalid value's parameter, a
+    # negative sub-request has base strength 0: only its group carries
+    # targets, and its stage names the engine itself (its own fallback).
+    doms = [collect(Any, d) for d in domains]
+    push!(doms[1], CheckInvalid(0))
+    cs = CheckSpace(names, doms, [rule; chain])
+    for stronger in ([(:a, :b, :c) => 2], [(:a, :b, :c) => 3, (:b, :d) => 2]),
+        must in (NamedTuple[], [(a = CheckInvalid(0),), (b = 2,)])
+        space = test_space(cs)
+        cases = covering(space; strength = 1, stronger, engine = LOOKUP,
+                         must_include = [map(x -> x isa CheckInvalid ? Invalid(x.value) : x, m) for m in must])
+        result = check_design([map(as_check, row) for row in cases], cs; strength = 1, stronger)
+        @test complete(result.ordinary) && complete(result.negative)
+        @test all(n -> n.stage.engine == _engine_label(LOOKUP), cases.record.negative)
+    end
 end
 
 
