@@ -80,15 +80,17 @@
 # same on Julia 1.10 and 1.13), the required targets and the lower bound;
 # `first_s`, `warm_s`, `calls` (warm calls), `bytes`, `gc_s` and `spent_s`
 # (the point's whole time for the engine); `peak_rss_mib` and `wall_s` (fresh
-# only); and the package's commit (`+` when its src/ differs from it), the
-# Julia version and the 1-minute load average when the point started. Rows,
+# only); the package's source (the last commit that changed its src/, `+`
+# when src/ differs from it), the Julia version and the 1-minute load average when the point started. Rows,
 # hashes, bounds, bytes and peak RSS are exact; times are provisional on a
 # busy machine.
 #
 # `summary` joins the lines of one or more files on the point and compares
 # columns: `--ref COL` (default the first column read) against each `--cand
-# COL` (repeatable; default every other column). A column is a label, or
-# `FILE#LABEL` where two files hold the same label. It prints Phase 4's gates
+# COL` (repeatable; default every other column). A column is a label, so one
+# run's files make one column; `LABEL@COMMIT` where the label was measured on
+# two package sources; `…#FILE` where it still holds a point twice
+# (`column_ids`). It prints Phase 4's gates
 # (plan §5.5) for each candidate: the share of points with rows no more than
 # the reference's (gate: 90%), the largest excess in percent and in rows,
 # every point more than 3% above (gate: none); time ratios with the noise
@@ -326,10 +328,12 @@ const COLUMNS = ["family", "point", "ladder", "t", "k", "arity", "rules", "stron
                  "targets", "cost", "label", "expr", "status", "rows", "hash", "required", "bound", "first_s",
                  "warm_s", "calls", "bytes", "gc_s", "spent_s", "peak_rss_mib", "wall_s", "commit", "julia", "load"]
 
+# The package's source: the last commit that changed src/ in its checkout, `+`
+# when src/ differs from it, `?` outside git.
 const COMMIT = let dir = pkgdir(U)
-    head = try readchomp(`git -C $dir rev-parse --short HEAD`) catch; "?" end
+    head = try readchomp(`git -C $dir log -1 --format=%h -- src`) catch; "?" end
     dirty = try !isempty(readchomp(`git -C $dir status --porcelain -- src`)) catch; false end
-    head * (dirty ? "+" : "")
+    (isempty(head) ? "?" : head) * (dirty ? "+" : "")
 end
 
 load1() = @sprintf("%.2f", Sys.loadavg()[1])
@@ -604,21 +608,37 @@ function shape(r)
     return "$(k)x$(v)-t$(r["t"])"
 end
 
-"Columns: a label, or FILE#LABEL where two files hold the same label; in the order first read."
+"""
+The columns of the lines, in the order first read. A column is a label, so
+that one run's files (one per family) make one column; `LABEL@COMMIT` where
+the label was measured on more than one package source, as when today's
+`IPOG()` meets the new branch's; and `…#FILE` where the label (and commit)
+still holds a point twice, as two runs of the same source do.
+"""
 function column_ids(rows)
-    files = Dict{String, Set{String}}()
+    commits = Dict{String, Set{String}}()
     for r in rows
-        push!(get!(files, r["label"], Set{String}()), r["file"])
+        push!(get!(commits, r["label"], Set{String}()), r["commit"])
     end
     for r in rows
-        r["column"] = length(files[r["label"]]) > 1 ? "$(r["file"])#$(r["label"])" : r["label"]
+        r["column"] = length(commits[r["label"]]) > 1 ? "$(r["label"])@$(r["commit"])" : r["label"]
+    end
+    seen = Dict{String, Set{String}}()
+    twice = Set{String}()
+    for r in rows
+        points = get!(seen, r["column"], Set{String}())
+        r["point"] in points && push!(twice, r["column"])
+        push!(points, r["point"])
+    end
+    for r in rows
+        r["column"] in twice && (r["column"] = "$(r["column"])#$(r["file"])")
     end
     return unique(r["column"] for r in rows)
 end
 
 function pick(columns, name)
     name in columns && return name
-    hits = [c for c in columns if endswith(c, "#" * name) || endswith(c, name)]
+    hits = [c for c in columns if startswith(c, name * "@") || startswith(c, name * "#") || endswith(c, name)]
     length(hits) == 1 || error("no single column matches $name; columns: $(join(columns, ", "))")
     return hits[1]
 end
@@ -642,10 +662,11 @@ function compare(ref, cand, by, opts)
     println("\n== $cand against $ref: $(length(both)) points where both completed")
     if !isempty(lost)
         println("  the candidate did not complete $(length(lost)) points the reference did:")
-        for p in lost
+        for p in first(lost, opts.show)
             c = get(by[cand], p, nothing)
             println("    ", p, ": ", c === nothing ? "not run" : c["status"])
         end
+        length(lost) > opts.show && println("    … and $(length(lost) - opts.show) more")
     end
     isempty(gained) || println("  the candidate completed $(length(gained)) points the reference did not: ",
                                join(first(gained, 10), ", "), length(gained) > 10 ? ", …" : "")
