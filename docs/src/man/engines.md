@@ -367,13 +367,13 @@ for a space of 250 parameters, for its row type.
 | Space | Strength | Engine | Cases (lower bound) | Warm call | Peak memory |
 |:--|--:|:--|:--|:--|:--|
 | 10 × 3 values | 2 | IPOG; `Auto()`; compact | 15; 15; 15 (9) | under 1 ms; under 1 ms; 20 ms | 314 MiB |
-| 50 × 4 values | 2 | IPOG; `Auto()`; compact | 46; 40; 38 (16) | 2 ms; 2 ms; 0.14 s | 325 MiB |
-| 250 binary | 2 | IPOG; IPOG, one rule | 17; 18 (4) | 15 ms; 0.82 s | 472 MiB; 1.7 GiB |
-| 250 × 4 values | 2 | IPOG; `Auto()` | 62; 52 (16) | 61 ms; 6 to 26 ms | 460 MiB |
-| 8 × 64 values | 2 | IPOG; `Auto()` | 5483; 4096, minimal | 59 ms; 1 ms | 311 MiB |
-| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 255; 264; 178 (64) | 30 ms; 0.64 s; 14 s | 320 MiB; 813 MiB; 318 MiB |
-| 15 × 4 values | 4 | IPOG; compact | 948; 825 (256) | 51 ms; 13 s | 316 MiB |
-| 20 binary | 6 | IPOG; IPOG, one rule | 379; 397 (64) | 0.50 s; 10 to 13 s | 329 MiB; 4.3 to 7.1 GiB |
+| 50 × 4 values | 2 | IPOG; `Auto()`; compact | 46; 40; 38 (16) | 1 ms; 2 ms; 0.14 s | 325 MiB |
+| 250 binary | 2 | IPOG; IPOG, one rule | 17; 18 (4) | 10 to 25 ms; 0.6 s | 472 MiB; 1.7 GiB |
+| 250 × 4 values | 2 | IPOG; `Auto()` | 62; 52 (16) | 32 ms; 6 to 26 ms | 460 MiB |
+| 8 × 64 values | 2 | IPOG; `Auto()` | 5483; 4096, minimal | 45 ms; 1 ms | 311 MiB |
+| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 255; 264; 178 (64) | 22 ms; 0.44 to 0.65 s; 14 s | 320 MiB; 813 MiB; 318 MiB |
+| 15 × 4 values | 4 | IPOG; compact | 948; 825 (256) | 29 ms; 13 s | 316 MiB |
+| 20 binary | 6 | IPOG; IPOG, one rule | 379; 397 (64) | 0.36 s; 5 to 7 s | 329 MiB; 4.3 to 7.1 GiB |
 
 (`benchmark/engine_costs.jl` repeats these.) What grows, and what stops a
 call that is too large; a design that can't be certified is not returned:
