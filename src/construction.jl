@@ -259,7 +259,7 @@ function _construction_rows(request::Request, targets::RequiredTargets, f::Fit, 
     # whatever the engine (contract §7.8, §11.2): IPOG's rows, where the
     # catalog's would repeat a completed partial row.
     size(must, 2) > 0 && request.strength == length(request.arity) &&
-        return full_strength_rows(request, _target_list(targets))
+        return full_strength_rows(request, targets)
     if members === nothing
         rows = _engine_rows(entry, request.arity)
         f.kind === :exact && return rows

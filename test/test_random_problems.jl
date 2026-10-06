@@ -215,6 +215,58 @@ end
 end
 
 
+@testitem "random problems: the certifier's recount on the layout agrees with the list's and the oracle's (§1.21)" setup=[UTSetup, Checker, RandomGate] begin
+    using UnitTestDesign: _Classified, _recount, classify_targets, nrequired
+    # Phase 5 (plan §5.6): `generate` certifies each design by recounting it
+    # on the request's layout against the ids of the excluded targets
+    # (`_recount`). On random problems, with every registered engine's design
+    # and with designs broken by dropping a row or changing a value, it must
+    # agree with the recount of the classified list (31bef0f's certification)
+    # on the count and on the target a failure names, and, for designs of
+    # valid rows, with the independent oracle on whether every feasible
+    # target is covered.
+    message(f) = try f(); nothing catch e; sprint(showerror, e) end
+    rng = Xoshiro(0x2026_1009 ⊻ seed_mod())
+    compared, failed, judged = Ref(0), Ref(0), Ref(0)
+    for index in 1:15
+        problem = random_problem(rng; strength = rand(rng, 2:3))
+        space = test_space(problem.space)
+        request = Request(space; strength = problem.strength)
+        targets = _Classified(request).targets
+        required, _ = classify_targets(request)
+        for (name, engine) in _engine_registry(index)
+            fit(engine, Profile(request)).kind === :unsupported && continue
+            matrix = generate(engine, request).matrix
+            designs = Matrix{Int}[matrix]
+            for j in unique(rand(rng, axes(matrix, 2), 6))
+                push!(designs, matrix[:, setdiff(axes(matrix, 2), j)])
+            end
+            for _ in 1:3
+                changed = copy(matrix)
+                i, j = rand(rng, axes(changed, 1)), rand(rng, axes(changed, 2))
+                request.arity[i] > 1 || continue
+                changed[i, j] = mod1(changed[i, j] + rand(rng, 1:(request.arity[i] - 1)), request.arity[i])
+                push!(designs, changed)
+            end
+            for m in designs
+                ours, listed = message(() -> _recount(request, m, targets)), message(() -> _recount(request, m, required))
+                @test ours == listed
+                ours === nothing && @test _recount(request, m, targets) == _recount(request, m, required) == nrequired(targets)
+                check = check_design(to_cases(request, m), problem.space; strength = problem.strength)
+                if isempty(check.ordinary.rejected)
+                    @test (ours === nothing) == isempty(check.ordinary.missing)
+                    judged[] += 1
+                end
+                compared[] += 1
+                failed[] += ours !== nothing
+            end
+        end
+    end
+    @info "Recounts compared" compared = compared[] failed = failed[] judged = judged[]
+    @test compared[] > 500 && failed[] > 200 && judged[] > 400
+end
+
+
 @testitem "random problems: one Invalid value, pairwise through every registered engine, both parts (§5, §6)" setup=[UTSetup, Checker] begin
     using Random
     using UnitTestDesign: _engine_registry, fit, Profile, Request

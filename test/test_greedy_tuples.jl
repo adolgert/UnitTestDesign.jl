@@ -165,7 +165,7 @@ end
 
 
 @testitem "GND: the progress guarantee covers a target no candidate reaches" setup=[Checker] begin
-    using UnitTestDesign: Request, generate, to_cases, classify_targets, gnd_cover
+    using UnitTestDesign: Request, RequiredTargets, generate, to_cases, classify_targets, gnd_cover
     # (a = 1, b = 1) is feasible only in the row of all 1s: every c must be 1
     # when a = 1 and b = 1. The must-include rows, a design for the space
     # where (a = 1, b = 1) is forbidden outright, cover every other pair, so
@@ -184,7 +184,8 @@ end
     request = Request(rare; must_include = seeds)
     required, _ = classify_targets(request)
     @test length(required) == 4 * 66
-    runs = [gnd_cover(GND(; seed, candidates = 1), request, required) for seed in 0:19]
+    targets = RequiredTargets(request, required)
+    runs = [gnd_cover(GND(; seed, candidates = 1), request, targets) for seed in 0:19]
     @test all(size(matrix, 2) == length(seeds) + 1 for (matrix, _) in runs)
     @test all(matrix[:, end] == ones(Int, 12) for (matrix, _) in runs)
     @test all(taken <= 1 for (_, taken) in runs)

@@ -272,28 +272,26 @@ end
     # build their bits the first time `isrequired` asks; from then on it
     # infers and a pass over every combination allocates nothing, as above.
     for request in (constrained, free)
-        classified = @inferred Union{_Classified{TargetList}, _Classified{Vector{Vector{Int}}}} _Classified(request)
+        classified = @inferred Union{_Classified{TargetList}, _Classified{Nothing}} _Classified(request)
         t = classified.targets
         @test t.bits === nothing
         @test (@inferred isrequired(t, 1, 0)) isa Bool
         @test (@inferred _required_bits(t)) isa BitVector
         @test count_required(t) == nrequired(t) && measured(count_required, t) == 0
     end
-    # They are counted from what classification excluded, on the layout it
-    # walked, so nothing is rebuilt and no bit is marked: on 40 binary
-    # parameters at strength 3 with one rule, 78,964 targets required and 76
-    # excluded on 9,880 supports, the targets ask for their counts and the
-    # excluded ids, 8 bytes each, and about 1 KB more (80,768 bytes on Julia
-    # 1.13, 81,088 on 1.10), where from the list alone they ask for 1.9 MB
-    # (2.2 MB on 1.10), the layout and a bit for every combination. The bound
-    # leaves 6.6 KiB.
+    # They are counted from the ids of what classification excluded, on the
+    # layout it walked, so nothing is rebuilt and no bit is marked: on 40
+    # binary parameters at strength 3 with one rule, 78,964 targets required
+    # and 76 excluded on 9,880 supports, the targets ask for their counts
+    # alone, 8 bytes a support and 120 more (79,160 bytes on Julia 1.13),
+    # where from the list alone they ask for 1.9 MB (2.2 MB on 1.10), the
+    # layout and a bit for every combination.
     forty = Request(TestSpace([Symbol(:p, i) for i in 1:40], [1:2 for _ in 1:40],
                               [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5); strength = 3)
     list = TargetList(forty)
-    required, excluded = classify_targets(forty, list)
-    gone = [e.target for e in excluded]
-    @test length(list.supports) == 9_880 && length(gone) == 76
-    @test requested(x -> RequiredTargets(x...), (list, required, gone)) <= 8 * (9_880 + 76) + 8 * 1024
+    ids = _Classified(forty).targets.excluded
+    @test length(list.supports) == 9_880 && length(ids) == 76
+    @test requested(x -> RequiredTargets(x...), (list, ids)) <= 8 * 9_880 + 1024
     # A profile is computed from the parameters, groups and rules, never the
     # targets: about 4.8 KB on Julia 1.13 and 5.5 KB on 1.10 for 250 binary
     # parameters, at strength 2 or 4, where TargetList would list C(250, 4)
@@ -323,6 +321,124 @@ end
     @test (@inferred fit(IPOG(), profile)) isa Fit
     @test (@inferred fit(GND(), profile)) isa Fit
     @test (@inferred Union{GND, IPOG} _engine_for(GND(), constrained)) isa GND
+end
+
+
+@testitem "stability: classification keeps nothing per required target, and the recount allocates nothing per row or support" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, RequiredTargets, TargetList, Excluded, _Classified, _classify_targets,
+                          _classify_target, _space_indices, _recount, _required_matrix, cover_ordinary,
+                          full_strength_rows, gnd_cover, _classify_negative, _NegativeTargets, feasibility_for,
+                          _decode!, _negative_targets!, generate
+    # Phase 5 (plan §5.6): classification walks the layout with two reused
+    # rows and keeps the excluded targets' ids and a count per support. So it
+    # asks for what its feasibility questions ask for, one question per target
+    # (`_classify_target`, which copies the key and keeps the excluded
+    # records), and a count per support beyond them, never a row per target.
+    # On 20 binary parameters at strength 3 with one rule (9,120 targets, 36
+    # excluded, 1,140 supports, each question's answer already cached) the
+    # walk asked for 18,584 bytes more than the questions alone, of which
+    # 9,120 are the counts, on Julia 1.13; a row of 20 kept or made per target
+    # would add 1.6 MB, and even 8 bytes per target 73 KB. The questions are
+    # p5-memo's, and measured beside the walk, so the bound holds whatever
+    # they cost.
+    binary(k) = TestSpace([Symbol(:p, i) for i in 1:k], [1:2 for _ in 1:k],
+                          [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5)
+    twenty = Request(binary(20); strength = 3)
+    layout = TargetList(twenty)
+    walk(x) = _classify_targets(x[1], x[2])
+    function questions(x)
+        request, active, idxs = x
+        f = request.feasibility
+        for idx in idxs
+            _classify_target(request, f, active, idx, idx, "classifying target")
+        end
+        return nothing
+    end
+    walked = requested(walk, (twenty, layout))
+    asked = requested(questions, (twenty, collect(eachindex(twenty.feasibility.tables)),
+                                  [_space_indices(twenty, t) for t in layout]))
+    @test length(layout) == 9_120 && length(layout.supports) == 1_140
+    @test walked - asked <= 8 * 1_140 + 16 * 1024
+    free = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4)); strength = 2)
+    for request in (twenty, free)
+        @test (@inferred Union{Tuple{RequiredTargets{Nothing}, Vector{Excluded}},
+                               Tuple{RequiredTargets{TargetList}, Vector{Excluded}}} _classify_targets(request,
+                                                                                          TargetList(request))) isa Tuple
+    end
+    # The recount (`_recount`, contract §1.21) marks each row's code on each
+    # support in one buffer, a bit per combination of the largest support, so
+    # it asks for that buffer and nothing per row or per support: 96 bytes on
+    # Julia 1.13 for 12 binary parameters at strength 2 (66 supports), the
+    # same for three copies of the rows and for 24 parameters (276 supports).
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    recount(x) = _recount(x[1], x[2], x[3])
+    readings = map((12, 24)) do k
+        request = Request(binary(k); strength = 2)
+        targets = _Classified(request).targets
+        rows = cover_ordinary(IPOG(), request, targets)
+        @test (@inferred _recount(request, rows, targets)) == length(TargetList(request)) - 1   # (p1 = 1, p2 = 1) excluded
+        (measured(recount, (request, rows, targets)), measured(recount, (request, hcat(rows, rows, rows), targets)))
+    end
+    @test readings[1][1] == readings[1][2] == readings[2][1] == readings[2][2] <= 256
+    # The negative recount the same: its buffer and the rest of one support,
+    # nothing per row or per block.
+    negative_request = Request(TestSpace([Symbol(:p, i) for i in 1:8], [Any[1, 2, 3, Invalid(0)] for _ in 1:8],
+                                         [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5); strength = 2)
+    negative = _negative_targets!(_Classified(negative_request), negative_request)
+    design = generate(IPOG(), negative_request).matrix
+    holds = [any(i -> design[i, j] > negative_request.arity[i], axes(design, 1)) for j in axes(design, 2)]
+    negative_rows = design[:, holds]
+    @test (@inferred _recount(negative_request, negative_rows, negative)) == negative.required > 0
+    @test measured(recount, (negative_request, negative_rows, negative)) ==
+          measured(recount, (negative_request, hcat(negative_rows, negative_rows, negative_rows), negative)) <= 512
+    # The negative targets are walked as `coverage` walks them
+    # (`_walk_support!`), which makes a few vectors per block of targets (a
+    # support and one invalid value), and classified in one reused row
+    # (`_NegativeIds`), keeping their exclusions' ids and counting the rest:
+    # beyond its questions the walk asks for the same bytes whatever the
+    # number of targets per block, 47,280 bytes for 168 blocks on Julia 1.13
+    # with 3 values per parameter (1,512 targets) and with 5 (4,200 targets).
+    negative_space(v) = TestSpace([Symbol(:p, i) for i in 1:8], [Any[1:v; Invalid(0)] for _ in 1:8],
+                                  [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5)
+    negative_walk(x) = _classify_negative(x[1], x[2])
+    function negative_questions(x)
+        request, ts = x
+        for t in ts
+            f, active = feasibility_for(request.context, t)
+            _classify_target(request, f, active, t, t, "classifying the negative target")
+        end
+        return nothing
+    end
+    "Every negative target as space value indices, in target order (§9.7)."
+    function negative_targets(request)
+        out = Vector{Int}[]
+        for support in TargetList(request).supports, p in support, v in request.space.invalid[p]
+            rest = filter(!=(p), support)
+            for code in 0:(prod(request.arity[rest]) - 1)
+                t = _decode!(zeros(Int, length(request.arity)), code, rest, request.arity)
+                t[rest] = [request.candidates[q][t[q]] for q in rest]
+                t[p] = v
+                push!(out, t)
+            end
+        end
+        return out
+    end
+    beyond = map((3, 5)) do v
+        request = Request(negative_space(v); strength = 3)
+        layout = TargetList(request)
+        requested(negative_walk, (request, layout)) - requested(negative_questions, (request, negative_targets(request)))
+    end
+    @test beyond[2] <= beyond[1] + 1024
+    @test (@inferred _classify_negative(twenty, TargetList(twenty))) isa _NegativeTargets
+    # Readers that decode the required targets from their codes infer:
+    # `full_strength_rows`, GND's coverage matrix and GND's design.
+    full = Request(TestSpace((a = 1:2, b = 1:3, c = 1:2); constraints = [forbid((a = 1, b = 1))]); strength = 3)
+    targets = _Classified(full).targets
+    @test (@inferred full_strength_rows(full, targets)) == [1 1 1 1 2 2 2 2 2 2; 2 2 3 3 1 1 2 2 3 3; 1 2 1 2 1 2 1 2 1 2]
+    @test (@inferred _required_matrix(targets)) isa Matrix{Int}
+    @test (@inferred gnd_cover(GND(), full, targets)) isa Tuple{Matrix{Int}, Int}
+    ruled = Request(binary(10); strength = 2)
+    @test (@inferred gnd_cover(GND(), ruled, _Classified(ruled).targets)) isa Tuple{Matrix{Int}, Int}
 end
 
 

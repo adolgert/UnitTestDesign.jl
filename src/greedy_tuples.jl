@@ -90,12 +90,13 @@ end
 
 
 """
-    _Greedy
+    _Greedy(request, targets::RequiredTargets)
 
 The state one GND call shares: the coverage matrix of uncovered required
 targets, the `dead` predicate (`nothing` when unconstrained), and which
 parameters need it (those in some rule's scope; a parameter no rule reads
-cannot make a completable row dead).
+cannot make a completable row dead). The matrix's columns are the required
+targets in target order, decoded from their codes (`_required_matrix`).
 """
 struct _Greedy{F}
     mc::MatrixCoverage{Int}
@@ -103,9 +104,9 @@ struct _Greedy{F}
     checked::Vector{Bool}
 end
 
-function _Greedy(request::Request, required)
+function _Greedy(request::Request, targets::RequiredTargets)
     n = length(request.arity)
-    allc = isempty(required) ? zeros(Int, n, 0) : reduce(hcat, required)
+    allc = _required_matrix(targets)
     mc = MatrixCoverage(allc, size(allc, 2), copy(request.arity))
     if isconstrained(request)
         checked = [!isempty(request.feasibility.param_tables[i]) for i in 1:n]
@@ -184,19 +185,19 @@ end
 
 
 """
-    gnd_cover(engine::GND, request, required) -> (matrix, progress)
+    gnd_cover(engine::GND, request, targets::RequiredTargets) -> (matrix, progress)
 
-The GND design for `required` targets (engine positions), must-include rows
-first, and the number of rows built by the progress guarantee. Partial
-must-include rows are completed greedily, in place, keeping their assigned
-values (contract §7.10, §10.5). At strength equal to the parameter count
-every required target is a complete row, so the rows are the required
-targets the must-include rows leave uncovered, in target order (§7.8).
+The GND design for the required targets, must-include rows first, and the
+number of rows built by the progress guarantee. Partial must-include rows are
+completed greedily, in place, keeping their assigned values (contract §7.10,
+§10.5). At strength equal to the parameter count every required target is a
+complete row, so the rows are the required targets the must-include rows
+leave uncovered, in target order (§7.8).
 """
-function gnd_cover(engine::GND, request::Request, required)
+function gnd_cover(engine::GND, request::Request, targets::RequiredTargets)
     rng = engine_rng(engine)
     n = length(request.arity)
-    g = _Greedy(request, required)
+    g = _Greedy(request, targets)
     rows = Vector{Int}[]
     for s in axes(request.must_include, 2)
         row = request.must_include[:, s]
@@ -206,9 +207,10 @@ function gnd_cover(engine::GND, request::Request, required)
     end
     progress = 0
     if request.strength == n
+        # The coverage matrix's columns move as rows cover them; the targets don't.
         seen = Set(rows)
-        for t in required
-            t in seen || push!(rows, copy(t))
+        for t in _required_list(targets)
+            t in seen || push!(rows, t)
         end
     else
         progress = _greedy_rounds!(rows, rng, g, engine.candidates)
@@ -222,13 +224,12 @@ end
     cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) -> Matrix{Int}
 
 GND's rows for `request` (contract §1.3): the must-include rows first and
-unchanged (§10.5), then rows until every required target (`targets`, whose
-list of classified required targets in engine positions GND reads) is
+unchanged (§10.5), then rows until every required target (`targets`) is
 covered (`gnd_cover`). `generate` classifies the targets, calls this, and
 validates the result (§1.21). The request's must-include rows are ordinary.
 """
 cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) =
-    first(gnd_cover(engine, request, _target_list(targets)))
+    first(gnd_cover(engine, request, targets))
 
 # The record: randomized; the seed is `engine.seed`, or `nothing` when the
 # engine was given an `rng` (§9.5, §9.6); and `candidates`, which its rows

@@ -319,8 +319,9 @@ _is_covered(::Nothing, t, support) = false
 What a walk of the targets (`_walk_support!`) does with each target that no
 row holds: `_classify!(record, context, support, t)` classifies it and
 returns its status. Measurement lists the targets (`_Lists`) or counts them
-(`_Counts`); negative generation keeps the required ones and the
-exclusions (`_NegativeTargets`, invalid.jl).
+(`_Counts`); negative generation counts the required ones and keeps the
+exclusions (`_NegativeIds`, invalid.jl), and `classify_negative_targets`
+lists both (`_NegativeList`).
 """
 abstract type _Record end
 
