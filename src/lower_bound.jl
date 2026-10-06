@@ -119,7 +119,7 @@ function _held_by(codes::Vector{Int}, seen::BitVector, must::Matrix{Int}, target
             unset += 1
             continue
         end
-        code = _code(row, members, targets.arity)
+        code = _code(row, members, targets.layout.arity)
         if isrequired(targets, s, code) && !seen[code + 1]
             seen[code + 1] = true
             push!(codes, code)

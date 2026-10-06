@@ -186,15 +186,20 @@ function classify_negative_targets(request::Request)
 end
 
 """
-    cover_negative(engine, request, columns) -> (; seeds, rows, required, excluded, bound, stages)
+    cover_negative(engine, request, columns, classified = classify_negative_targets(request))
+        -> (; seeds, rows, required, excluded, bound, stages)
 
 Negative generation (contract §6.7). First classify every negative target
 (`classify_negative_targets`), stopping with `ResourceLimitError` on any
-unknown. Then, for each invalid value `v` of each parameter `p`, in
-parameter order and then domain order, cover the required targets at
-`(p, v)` with `engine` through `_negative_request`, whose must-include rows
-are the negative must-include rows at `(p, v)` (the request's must-include
-`columns` that hold an invalid value). The sub-request's plan is prepared
+unknown: `classified`, which `generate` makes once for the request and
+shares with every engine that covers it (`_Classified`). Then, for each
+invalid value `v` of each parameter `p`, in parameter order and then domain
+order, cover the required targets at `(p, v)` with `engine` through
+`_negative_request`, whose must-include rows are the negative must-include
+rows at `(p, v)` (the request's must-include `columns` that hold an invalid
+value), and whose targets are those at `(p, v)` without `p`, required or
+excluded as they are here (`RequiredTargets` on the sub-request's
+`TargetList`, which they fill). The sub-request's plan is prepared
 once: `engine`'s, or its fallback's where that refuses the sub-request,
 which may have base strength 0 (`_prepare_for`, plan §4.2). At strength 1 the
 target `(p = v)` alone, when it is required, takes one witness row unless a
@@ -217,17 +222,22 @@ rows, and the bound is the sum over `(p, v)` of the sub-request's
 `(p, v)`, and at least one row when the target `(p = v)` alone is required.
 The caller validates the rows (`validate_design`).
 """
-function cover_negative(engine, request::Request, columns::Vector{Int})
+function cover_negative(engine, request::Request, columns::Vector{Int},
+                        classified::Tuple{Vector{Vector{Int}}, Vector{Excluded}} = classify_negative_targets(request))
     space = request.space
     n = length(space.names)
     must = request.must_include
-    required, excluded = classify_negative_targets(request)
-    # The required targets at each (p, v), in target order. A negative target
-    # holds one invalid position, v at p.
+    required, excluded = classified
+    # The required and the excluded targets at each (p, v), in target order. A
+    # negative target holds one invalid position, v at p.
+    at_value(t) = (p = findfirst(q -> t[q] > request.arity[q], eachindex(t)); (p, t[p]))
     targets = Dict{Tuple{Int, Int}, Vector{Vector{Int}}}()
     for t in required
-        p = findfirst(q -> t[q] > request.arity[q], eachindex(t))
-        push!(get!(() -> Vector{Int}[], targets, (p, t[p])), t)
+        push!(get!(() -> Vector{Int}[], targets, at_value(t)), t)
+    end
+    left_out = Dict{Tuple{Int, Int}, Vector{Vector{Int}}}()
+    for e in excluded
+        push!(get!(() -> Vector{Int}[], left_out, at_value(e.target)), e.target)
     end
     seeds = Dict{Int, Vector{Int}}()
     rows = Vector{Int}[]
@@ -249,9 +259,11 @@ function cover_negative(engine, request::Request, columns::Vector{Int})
             value = space.values[p][request.candidates[p][position]]
             if pr !== nothing
                 sub = _negative_request(request, pr, must[pr.kept, at])
-                # Every target here but (p = v) alone is p = v beside a target of the sub-request.
+                # Every target here but (p = v) alone is p = v beside a target
+                # of the sub-request, required or excluded as it is here.
                 sub_required = [t[pr.kept] for t in here if count(!=(0), t) > 1]
-                sub_targets = RequiredTargets(sub, sub_required)
+                sub_excluded = (t[pr.kept] for t in get(left_out, (p, position), Vector{Int}[]) if count(!=(0), t) > 1)
+                sub_targets = RequiredTargets(TargetList(sub), sub_required, sub_excluded)
                 bound += max(_ordinary_bound(sub, sub_targets).rows, alone === nothing ? 0 : 1)
                 matrix, stage = try
                     # An engine that can't cover the sub-request hands it to its fallback (plan §4.2).

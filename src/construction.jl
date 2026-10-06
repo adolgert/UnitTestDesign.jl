@@ -320,7 +320,7 @@ row holds only those, since its completion is IPOG's to choose, which is why
 leave out more.
 """
 function _new_coverage_rows(must::Matrix{Int}, rows::Matrix{Int}, targets::RequiredTargets)
-    held = falses(last(targets.offsets))      # by id, offsets[s] + code + 1, as in `RequiredTargets`
+    held = falses(last(targets.layout.offsets))   # by id, offsets[s] + code + 1, as in `RequiredTargets`
     for j in axes(must, 2)
         _hold!(held, view(must, :, j), targets)
     end
@@ -336,9 +336,9 @@ function _hold!(held::BitVector, row::AbstractVector{Int}, targets::RequiredTarg
     new = false
     for (s, support) in enumerate(supports(targets))
         any(p -> row[p] == 0, support) && continue
-        code = _code(row, support, targets.arity)
+        code = _code(row, support, targets.layout.arity)
         isrequired(targets, s, code) || continue
-        id = targets.offsets[s] + code + 1
+        id = targets.layout.offsets[s] + code + 1
         new |= !held[id]
         held[id] = true
     end

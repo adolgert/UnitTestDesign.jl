@@ -442,7 +442,7 @@ struct Excluded
 end
 
 """
-    classify_targets(request) -> (required, excluded)
+    classify_targets(request, list = TargetList(request)) -> (required, excluded)
 
 Classify every target (contract §1.4): `required` is the list of targets an
 engine must cover, `excluded` the `Excluded` records. An `:unknown` target
@@ -451,9 +451,14 @@ is a `ResourceLimitError`: generation never returns an uncertified design
 everything: `required` is then the `TargetList` itself, never materialized,
 and `validate_design` recounts it one support at a time. A constrained
 request returns a `Vector` of the required targets, in target order.
+Every target of `list` is in one of the two lists, each in target order.
+
+`list` is the request's `TargetList`, its layout of supports and offsets,
+which a caller that keeps it passes in so that it is built once
+(`_Classified`, which hands it to `RequiredTargets` and so to the coverage
+index).
 """
-function classify_targets(request::Request)
-    all_targets = TargetList(request)
+function classify_targets(request::Request, all_targets::TargetList = TargetList(request))
     isconstrained(request) || return all_targets, Excluded[]
     f = request.feasibility
     active = collect(eachindex(f.tables))
@@ -489,6 +494,7 @@ function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
 end
 
 """
+    RequiredTargets(list::TargetList, required, excluded)
     RequiredTargets(request, required)
 
 The targets an engine must cover, as the engine protocol asks for them (plan
@@ -499,29 +505,78 @@ request.arity)` that orders the targets in `TargetList` (contract §9.7). The
 codes on support `s` are `0:ncombinations(t, s) - 1`, `_decode!` turns one
 back into a row, and `isrequired(t, s, code)` says whether it is a required
 target; `nrequired(t, s)` counts them. All four answer in constant time and
-allocate nothing.
+allocate nothing, `isrequired` once its bits are built (below).
 
-`required` is what `classify_targets` returned, or a negative sub-request's
-targets (`cover_negative`): a `TargetList`, every target required, or a
-`Vector` of the required targets as full-width partial rows, in any order.
-It is kept as given, and IPOG and GND read it through `_target_list`. For a
-`Vector` the constructor marks each target's bit, one bit for every
-combination of every support, in one pass. Phase 5 builds those bits in
-classification in place of the list (plan §5.6); an engine written against
-the four functions doesn't change then.
+`layout` is the request's `TargetList`: its arity, supports and offsets,
+the immutable description of where each combination's bit and count go,
+`offsets[s] + code + 1`. The list classification walked is passed in and
+kept (`_Classified`), and the coverage index reads it (`CoverageIndex`), so
+none of them builds it again. `list` is the required targets as given, which
+IPOG and GND read through `_target_list`: a `TargetList`, every target
+required, or a `Vector` of full-width partial rows.
+
+- From classification, `RequiredTargets(list, required, excluded)`:
+  `required` and `excluded` (rows of engine positions, as `Excluded.target`)
+  together hold every target of `list` once, as `classify_targets` and
+  `classify_negative_targets` return them, and `excluded` is in target
+  order. A support's count is its combinations less its excluded ones, so
+  the required list is never walked; the bits are built the first time
+  `isrequired` or the coverage index asks (`_required_bits`), every
+  combination but the excluded ones, so an engine that reads only the list,
+  IPOG or GND, and the lower bound without must-include rows never pay for
+  them. A `TargetList` keeps no counts, and its bits, all set, are built
+  only for the coverage index.
+- From a list alone, `RequiredTargets(request, required)`, for a list in
+  any order with nothing excluded given (tests and benchmark scripts): the
+  request's `TargetList` is built, and each target's bit is marked, and
+  counted, in one pass. Misuse is an internal error.
+
+Once built, the bits never change, and every reader shares them: two
+engines that run on one `RequiredTargets` (`Auto`'s starts, `design_sizes`'
+engines) build them once. The build is not locked: the package runs nothing
+concurrently inside a call, and a `RequiredTargets` lives in one call.
+Phase 5 builds the bits in classification in place of the list (plan §5.6);
+an engine written against the four functions doesn't change then.
 """
-struct RequiredTargets{L <: AbstractVector{Vector{Int}}}
-    list::L
-    arity::Vector{Int}
-    supports::Vector{Vector{Int}}
-    offsets::Vector{Int}    # as in TargetList: offsets[s] combinations come before support s
-    counts::Vector{Int}     # the required targets on each support; empty for a TargetList
-    bits::BitVector         # bit offsets[s] + code + 1 is set for a required target; empty for a TargetList
+mutable struct RequiredTargets{L <: AbstractVector{Vector{Int}}}
+    const list::L
+    const layout::TargetList
+    const counts::Vector{Int}          # the required targets on each support; empty for a TargetList
+    const excluded::Vector{Int}        # the ids, offsets[s] + code + 1, of the combinations not required, ascending
+    bits::Union{Nothing, BitVector}    # bit id set for a required target; `nothing` until first asked for
 end
 
 # Every target of a TargetList is required, so there is nothing to mark or count.
-RequiredTargets(::Request, required::TargetList) =
-    RequiredTargets(required, required.arity, required.supports, required.offsets, Int[], BitVector())
+RequiredTargets(::Request, required::TargetList) = RequiredTargets(required, required, Int[], Int[], nothing)
+
+function RequiredTargets(list::TargetList, required::TargetList, excluded)
+    required === list && isempty(excluded) ||
+        error("internal error: a request's TargetList is required whole, on its own layout")
+    return RequiredTargets(list, list, Int[], Int[], nothing)
+end
+
+function RequiredTargets(list::TargetList, required::Vector{Vector{Int}}, excluded)
+    counts = [ncombinations(list, s) for s in eachindex(list.supports)]
+    ids = Int[]
+    s = 1
+    support = Int[]   # one target's support, reused
+    for t in excluded
+        _support!(support, t, list.arity, "excluded")
+        # The excluded targets come in target order, so each support is at or after the last one's.
+        while s <= length(list.supports) && list.supports[s] != support
+            s += 1
+        end
+        s <= length(list.supports) ||
+            error("internal error: excluded target $t is on no support of the request, or out of target order")
+        id = list.offsets[s] + _code(t, list.supports[s], list.arity) + 1
+        isempty(ids) || id > last(ids) || error("internal error: excluded target $t is out of target order or listed twice")
+        push!(ids, id)
+        counts[s] -= 1
+    end
+    sum(counts) == length(required) || error("internal error: $(length(required)) required and " *
+        "$(length(ids)) excluded targets are not the request's $(length(list)) targets")
+    return RequiredTargets(required, list, counts, ids, nothing)
+end
 
 function RequiredTargets(request::Request, required::Vector{Vector{Int}})
     every = TargetList(request)
@@ -530,13 +585,7 @@ function RequiredTargets(request::Request, required::Vector{Vector{Int}})
     bits = falses(length(every))
     support = Int[]   # one target's support, reused
     for t in required
-        length(t) == length(every.arity) || error("internal error: required target $t is not a full-width row")
-        empty!(support)
-        for i in eachindex(t)
-            t[i] == 0 && continue
-            1 <= t[i] <= every.arity[i] || error("internal error: required target $t is not in engine positions")
-            push!(support, i)
-        end
+        _support!(support, t, every.arity, "required")
         k = get(position, support, 0)
         k == 0 && error("internal error: required target $t is on no support of the request")
         b = every.offsets[k] + _code(t, every.supports[k], every.arity) + 1
@@ -544,14 +593,29 @@ function RequiredTargets(request::Request, required::Vector{Vector{Int}})
         bits[b] = true
         counts[k] += 1
     end
-    return RequiredTargets(required, every.arity, every.supports, every.offsets, counts, bits)
+    return RequiredTargets(required, every, counts, Int[], bits)
 end
 
+"Write into `support` the parameters target `t` sets, checking it is a full-width row of engine positions."
+function _support!(support::Vector{Int}, t::AbstractVector{<:Integer}, arity::Vector{Int}, what::String)
+    length(t) == length(arity) || error("internal error: $what target $t is not a full-width row")
+    empty!(support)
+    for i in eachindex(t)
+        t[i] == 0 && continue
+        1 <= t[i] <= arity[i] || error("internal error: $what target $t is not in engine positions")
+        push!(support, i)
+    end
+    return support
+end
+
+"The number of combinations on support `s` of `list`."
+ncombinations(list::TargetList, s::Integer) = list.offsets[s + 1] - list.offsets[s]
+
 "The parameter sets that carry targets, in target order; `s` in the other functions indexes them. Not to be changed."
-supports(t::RequiredTargets) = t.supports
+supports(t::RequiredTargets) = t.layout.supports
 
 "The number of combinations on support `s`: its codes are `0:ncombinations(t, s) - 1`."
-ncombinations(t::RequiredTargets, s::Integer) = t.offsets[s + 1] - t.offsets[s]
+ncombinations(t::RequiredTargets, s::Integer) = ncombinations(t.layout, s)
 
 "Whether the combination whose code is `code` on support `s` is a required target."
 @inline function isrequired(t::RequiredTargets{TargetList}, s::Integer, code::Integer)
@@ -561,7 +625,30 @@ end
 
 @inline function isrequired(t::RequiredTargets, s::Integer, code::Integer)
     @boundscheck 0 <= code < ncombinations(t, s) || throw(BoundsError(t, (s, code)))
-    return @inbounds t.bits[t.offsets[s] + code + 1]
+    return @inbounds _required_bits(t)[t.layout.offsets[s] + code + 1]
+end
+
+"""
+    _required_bits(targets) -> BitVector
+
+The required bit of every combination, by id `offsets[s] + code + 1`: built
+the first time it is asked for, every combination but the excluded ones (all
+of them for a `TargetList`), and then kept and shared, never changed
+(`RequiredTargets`). The coverage index holds these bits, not a copy.
+"""
+@inline function _required_bits(t::RequiredTargets)
+    bits = t.bits
+    bits === nothing || return bits
+    return _build_required_bits!(t)
+end
+
+@noinline function _build_required_bits!(t::RequiredTargets)
+    bits = trues(last(t.layout.offsets))
+    for id in t.excluded
+        bits[id] = false
+    end
+    t.bits = bits
+    return bits
 end
 
 "The number of required targets on support `s`, or on every support."

@@ -239,7 +239,8 @@ end
 
 @testitem "stability: the targets interface answers in place, and a profile lists no target" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, RequiredTargets, Profile, TargetList, classify_targets, supports,
-                          ncombinations, isrequired, nrequired, engine_record, fit, _engine_for, Fit, EngineRecord
+                          ncombinations, isrequired, nrequired, engine_record, fit, _engine_for, Fit, EngineRecord,
+                          _Classified, _required_bits
     # The engine protocol (plan §4.2): an engine reads its targets through
     # `supports`, `ncombinations`, `isrequired` and `nrequired` in its inner
     # loops, so each infers its type and a pass over every combination of
@@ -269,6 +270,31 @@ end
         @test (@inferred supports(t)) isa Vector{Vector{Int}}
     end
     @test RequiredTargets(free, first(classify_targets(free))) isa RequiredTargets{TargetList}
+    # Classification's targets (`_Classified`, the maintainer's follow-up 3)
+    # build their bits the first time `isrequired` asks; from then on it
+    # infers and a pass over every combination allocates nothing, as above.
+    for request in (constrained, free)
+        classified = @inferred Union{_Classified{TargetList}, _Classified{Vector{Vector{Int}}}} _Classified(request)
+        t = classified.targets
+        @test t.bits === nothing
+        @test (@inferred isrequired(t, 1, 0)) isa Bool
+        @test (@inferred _required_bits(t)) isa BitVector
+        @test count_required(t) == nrequired(t) && measured(count_required, t) == 0
+    end
+    # They are counted from what classification excluded, on the layout it
+    # walked, so nothing is rebuilt and no bit is marked: on 40 binary
+    # parameters at strength 3 with one rule, 78,964 targets required and 76
+    # excluded on 9,880 supports, the targets ask for their counts and the
+    # excluded ids, 8 bytes each, and about 1 KB more (80,768 bytes on Julia
+    # 1.13), where from the list alone they ask for 1.9 MB, the layout and a
+    # bit for every combination. The bound leaves 7 KiB.
+    forty = Request(TestSpace([Symbol(:p, i) for i in 1:40], [1:2 for _ in 1:40],
+                              [forbid((a, b) -> a == 1 && b == 1, :p1, :p2)], 10^5); strength = 3)
+    list = TargetList(forty)
+    required, excluded = classify_targets(forty, list)
+    gone = [e.target for e in excluded]
+    @test length(list.supports) == 9_880 && length(gone) == 76
+    @test requested(x -> RequiredTargets(x...), (list, required, gone)) <= 8 * (9_880 + 76) + 8 * 1024
     # A profile is computed from the parameters, groups and rules, never the
     # targets: about 4.8 KB on Julia 1.13 and 5.5 KB on 1.10 for 250 binary
     # parameters, at strength 2 or 4, where TargetList would list C(250, 4)
@@ -353,7 +379,7 @@ end
 
 @testitem "stability: the coverage index and the reducer's moves answer in place" setup=[StabilitySetup] begin
     using Random: Xoshiro
-    using UnitTestDesign: Request, RequiredTargets, CoverageIndex, classify_targets, cover_ordinary,
+    using UnitTestDesign: Request, RequiredTargets, CoverageIndex, classify_targets, cover_ordinary, _Classified,
                           combination, add_row!, remove_row!, move_entry!, entry_score, singly_covered,
                           random_uncovered, decode!, nuncovered, nrows, max_support, members_of, _allows,
                           _allows_write, _holder, _replace_row!, _compact, _space_indices
@@ -369,9 +395,11 @@ end
     # the buffers' first growth).
     measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
     request = Request(stability_space(); strength = 2, stronger = [(:a, :b, :c) => 3])
-    required, _ = classify_targets(request)
-    targets = RequiredTargets(request, required)
+    # Classification's targets, whose bits the index builds and then holds.
+    targets = _Classified(request).targets
+    @test targets.bits === nothing
     index = @inferred CoverageIndex(request, targets)
+    @test index.required === targets.bits
     start = cover_ordinary(IPOG(), request, targets)
     rows = [start[:, j] for j in axes(start, 2)]
     foreach(row -> add_row!(index, row), rows)
@@ -519,8 +547,8 @@ end
 
 
 @testitem "stability: Auto's choice, the lower bound and recommend infer, and the bound reads supports in place" setup=[StabilitySetup] begin
-    using UnitTestDesign: Profile, Request, RequiredTargets, classify_targets, _auto_plan, _AutoPlan, _ordinary_bound,
-        _SupportBound, _bound_record, _request_bound, _recommendation, _prepare, _execute
+    using UnitTestDesign: Profile, Request, RequiredTargets, classify_targets, supports, _auto_plan, _AutoPlan,
+        _ordinary_bound, _SupportBound, _bound_record, _request_bound, _recommendation, _prepare, _execute
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     # Auto's choice (plan §4.1) is a function of the profile, with one concrete type,
     # whichever rule it takes: the catalog alone, both starts, or IPOG alone.
@@ -536,7 +564,7 @@ end
     targets = RequiredTargets(ruled, first(classify_targets(ruled)))
     b = @inferred _ordinary_bound(ruled, targets)
     @test b isa _SupportBound && b.rows == 8
-    @test (@inferred _bound_record(9, b, 0, ruled.space.names, ruled.arity, targets.supports)) isa
+    @test (@inferred _bound_record(9, b, 0, ruled.space.names, ruled.arity, supports(targets))) isa
           @NamedTuple{lower_bound::Int, minimal::Bool, proof::String}
     request = Request(uniform(8, 7))
     @test (@inferred Union{Tuple{Int, String}, Tuple{Nothing, String}} _request_bound(request)) == (49, _request_bound(request)[2])
@@ -618,12 +646,12 @@ end
     targets = RequiredTargets(request, first(classify_targets(request)))
     rows = _engine_rows(_catalog_entry(2, 7, 8), request.arity)
     @test (@inferred _new_coverage_rows(request.must_include, rows, targets)) isa Matrix{Int}
-    held = falses(last(targets.offsets))
+    held = falses(last(targets.layout.offsets))
     @test (@inferred _hold!(held, view(rows, :, 1), targets)) === true
     @test measured(x -> _hold!(x[1], view(x[2], :, 2), x[3]), (held, rows, targets)) == 0
     # It allocates its bits, one per combination, and the rows it keeps.
     filtered(r) = _new_coverage_rows(r.must_include, rows, targets)
-    @test measured(filtered, request) <= sizeof(rows) + cld(last(targets.offsets), 8) + 8192
+    @test measured(filtered, request) <= sizeof(rows) + cld(last(targets.layout.offsets), 8) + 8192
     # Partial must-include rows are completed first by IPOG's steps on them
     # alone (the maintainer's follow-up 2): the targets by step, the completed
     # rows and the design have concrete types.

@@ -61,8 +61,12 @@ request's must-include rows come first, in order, unchanged where they are
 set and completed in place where they are not (contract §10.5, §7.10); then
 rows until every required target is in some row. The targets are read
 through `supports`, `ncombinations`, `isrequired` and `nrequired`
-(`RequiredTargets`). `generate` certifies the result (`validate_design`,
-§1.21), so a wrong design is an internal error, never a wrong answer.
+(`RequiredTargets`); they are shared with every engine that covers the same
+request (`Auto`'s starts, `design_sizes`' engines), so an engine never
+changes them and keeps its search state, a coverage index's counts for one,
+in what it builds for its run. `generate` certifies the result
+(`validate_design`, §1.21), so a wrong design is an internal error, never a
+wrong answer.
 
 What an engine reports stays in its own stage of the result's record (its
 `ordinary` stage, or a negative sub-request's in `negative`), beside the
@@ -745,7 +749,52 @@ with a target unresolved or dropped.
 generate(engine::CoveringEngine, request::Request) = _generate(_check_fit(engine, request), request)
 
 """
-    _generate(plan, request) -> Design
+    _Classified(request)
+
+A request's targets, classified once (contract §1.4, §6): `targets`, the
+ordinary targets as engines read them, a `RequiredTargets` on the
+`TargetList` that classification walked (`classify_targets`), so that the
+layout is built once; `excluded`, the ordinary `Excluded` records; and, for
+a space with `Invalid` values, `negative`, the negative targets'
+`(required, excluded)` (`classify_negative_targets`), classified the first
+time negative generation asks (`_negative_targets!`), after the ordinary
+design, as before, so that a request whose ordinary design stops at a
+resource limit stops there. Classification is a function of the request's
+space, strength, groups and limits, never of its must-include rows (the
+ordinary request of a space with `Invalid` values has the same targets) or of
+the engine, so every generation of such a request reads the same, and
+`design_sizes` hands one to each engine at a strength.
+
+What engines may share is immutable: the targets' layout, lists and counts,
+and the parts made on first use, each written once (the required bits, the
+negative targets) and then only read. An engine's search state, a coverage
+index's counts or the reducer's, is made for each run and never kept here.
+The package runs nothing concurrently inside a call, and design_sizes runs
+its engines one after another, so the parts made on first use need no lock.
+"""
+mutable struct _Classified{L <: AbstractVector{Vector{Int}}}
+    const targets::RequiredTargets{L}
+    const excluded::Vector{Excluded}
+    negative::Union{Nothing, Tuple{Vector{Vector{Int}}, Vector{Excluded}}}
+end
+
+function _Classified(request::Request)
+    list = TargetList(request)
+    required, excluded = classify_targets(request, list)
+    return _Classified(RequiredTargets(list, required, (e.target for e in excluded)), excluded, nothing)
+end
+
+"The negative targets of `classified`'s request, classified on first use (`_Classified`)."
+function _negative_targets!(classified::_Classified, request::Request)
+    negative = classified.negative
+    negative === nothing || return negative
+    negative = classify_negative_targets(request)
+    classified.negative = negative
+    return negative
+end
+
+"""
+    _generate(plan, request[, classified]) -> Design
 
 `generate` for a plan of `request`'s profile that covers it, which
 `design_sizes` also calls with the plan whose fit it read. The ordinary
@@ -763,16 +812,22 @@ The result's record (`_covering_record`) holds the lower bound on its rows
 (`_ordinary_bound`, and the negative rows' from `cover_negative`), the
 engine's configuration (`_engine_config`), and the stages that ran: the
 ordinary design's, and each negative sub-request's.
+
+`classified` is the request's targets (`_Classified`), classified here
+unless a caller that generates several designs for one request passes them
+(`design_sizes`).
 """
-function _generate(plan::_Plan, request::Request)
+_generate(plan::_Plan, request::Request) = _generate(plan, request, _Classified(request))
+
+function _generate(plan::_Plan, request::Request, classified::_Classified)
     engine = plan.engine
-    required, excluded = classify_targets(request)
+    targets, excluded = classified.targets, classified.excluded
+    required = _target_list(targets)
     record = engine_record(engine)
     name, seed = record.name, record.seed
     config = _engine_config(engine)
     names = request.space.names
     if !_has_invalid(request.space)
-        targets = RequiredTargets(request, required)
         matrix, stage = _run(plan, request, targets)
         covered = validate_design(request, matrix, required)
         bound = _bound_record(size(matrix, 2), _ordinary_bound(request, targets), 0, names, request.arity,
@@ -784,10 +839,9 @@ function _generate(plan::_Plan, request::Request)
     must = request.must_include
     negative_columns = [j for j in axes(must, 2) if _holds_invalid(request, view(must, :, j))]
     ordinary_columns = [j for j in axes(must, 2) if !(j in negative_columns)]
-    ordinary_request = _with_must_include(request, must[:, ordinary_columns])
-    targets = RequiredTargets(ordinary_request, required)
+    ordinary_request = _with_must_include(request, must[:, ordinary_columns])   # the same targets
     ordinary, stage = _run(plan, ordinary_request, targets)
-    negative = cover_negative(engine, request, negative_columns)
+    negative = cover_negative(engine, request, negative_columns, _negative_targets!(classified, request))
     # Must-include rows in the order given, each completed by its kind's step.
     rows = Vector{Vector{Int}}(undef, size(must, 2))
     for (k, j) in enumerate(ordinary_columns)

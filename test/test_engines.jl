@@ -275,6 +275,77 @@ end
 end
 
 
+@testitem "engines: classified targets share one layout and build their bits when first asked (§4.2)" setup=[EngineSetup] begin
+    using UnitTestDesign: CoverageIndex, _Classified, _negative_targets!, _required_bits, _ordinary_bound, _prepare,
+                          _run, classify_negative_targets
+    # The maintainer's follow-up 3: the layout classification walks is the one
+    # the targets and the coverage index read; the counts come from what is
+    # excluded; the bits are built the first time something asks, never by
+    # IPOG, GND or the bound without must-include rows, and then shared.
+    rng = Xoshiro(0x2026_1006)
+    for _ in 1:100
+        space = random_space(rng)
+        n = length(space.names)
+        strength = rand(rng, 1:min(3, n))
+        request = Request(space; strength, stronger = random_groups(rng, n, strength))
+        classified = _Classified(request)
+        t = classified.targets
+        required, excluded = classify_targets(request)
+        @test _target_list(t) == required && [e.target for e in classified.excluded] == [e.target for e in excluded]
+        list = TargetList(request)
+        @test t.layout.supports == list.supports && t.layout.offsets == list.offsets && t.layout.arity == request.arity
+        required isa TargetList && @test _target_list(t) === t.layout   # the very list classification returned
+        listed = RequiredTargets(request, collect(required))
+        @test all(s -> nrequired(t, s) == nrequired(listed, s), eachindex(supports(t)))
+        @test t.bits === nothing
+        for engine in (IPOG(), GND())
+            _run(_prepare(engine, Profile(request)), request, t)
+        end
+        _ordinary_bound(request, t)
+        @test t.bits === nothing
+        @test all(isrequired(t, s, code) == isrequired(listed, s, code)
+                  for s in eachindex(supports(t)) for code in 0:(ncombinations(t, s) - 1))
+        # `isrequired` built them (a TargetList's answer is always true, and the index builds them).
+        @test (t.bits === nothing) == (required isa TargetList)
+        bits = _required_bits(t)
+        @test t.bits === bits && CoverageIndex(request, t).required === bits
+        # A negative sub-request's targets, counted from its excluded targets,
+        # answer as the list of its required ones does.
+        any(!isempty, space.invalid) || continue
+        negative_required, negative_excluded = _negative_targets!(classified, request)
+        @test _negative_targets!(classified, request) === classified.negative   # classified once
+        @test negative_required == first(classify_negative_targets(request))
+        for q in 1:n, position in (request.arity[q] + 1):length(request.candidates[q])
+            strength > 1 || any(g -> q in g.first, request.groups[2:end]) || continue
+            pr = NegativeProjection(space, q)
+            sub = _negative_request(request, pr, zeros(Int, n - 1, 0))
+            sub_required = [r[pr.kept] for r in negative_required if r[q] == position && count(!=(0), r) > 1]
+            gone = [e.target[pr.kept] for e in negative_excluded if e.target[q] == position && count(!=(0), e.target) > 1]
+            st = RequiredTargets(TargetList(sub), sub_required, gone)
+            sl = RequiredTargets(sub, sub_required)
+            @test all(s -> nrequired(st, s) == nrequired(sl, s), eachindex(supports(st)))
+            @test _required_bits(st) == _required_bits(sl)
+        end
+    end
+    # Unconstrained: the TargetList, no counts, and bits only for the index, all set.
+    request = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4)); strength = 2)
+    t = _Classified(request).targets
+    @test t isa RequiredTargets{TargetList} && t.bits === nothing && [nrequired(t, s) for s in 1:3] == [6, 12, 8]
+    @test CoverageIndex(request, t).required === t.bits && all(t.bits) && length(t.bits) == 26
+    # What is excluded must be the rest of the request's targets, in target order.
+    ruled = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4); constraints = [forbid((a = 1, b = 1))]); strength = 2)
+    list = TargetList(ruled)
+    required, excluded = classify_targets(ruled, list)
+    gone = [e.target for e in excluded]
+    @test length(gone) == 1 && RequiredTargets(list, required, gone).counts == [5, 12, 8]
+    @test_throws ErrorException RequiredTargets(list, required, Vector{Int}[])            # the rest is not excluded
+    @test_throws ErrorException RequiredTargets(list, required[2:end], gone)              # nor required
+    @test_throws ErrorException RequiredTargets(list, required[2:end], [[required[1]]; gone])   # out of target order
+    @test_throws ErrorException RequiredTargets(list, required, [[1, 0, 0]])              # no such support
+    @test_throws ErrorException RequiredTargets(list, list, gone)                          # a TargetList is whole
+end
+
+
 @testitem "engines: an engine that refuses a negative sub-request hands it to IPOG (§4.2)" setup=[EngineSetup] begin
     space = TestSpace((a = [1, 2, Invalid(0)], b = [:x, :y, :z], c = [true, false], d = 1:3);
                       constraints = [forbid((b = :y, c = true))])

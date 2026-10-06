@@ -30,7 +30,8 @@ combinations only one row holds (`singly_covered`), and the uncovered
 required combinations (`nuncovered`, `random_uncovered`, `decode!`).
 
 **Memory.** Two bytes of count and two bits per combination (the required
-bit and a bit that marks an id on the uncovered list), plus, per support, its
+bit, which is the targets' and not copied, and a bit that marks an id on the
+uncovered list), plus, per support, its
 members and their strides, and, per parameter, the supports that hold it.
 The uncovered list holds ids, and only of combinations that became
 uncovered: it is built when it is first needed (a fresh index has every
@@ -50,7 +51,10 @@ wraps. The supported scale holds designs of more rows (three parameters of
 become a type parameter.
 
 The structure is read-only for its consumers; its fields are internal. The
-supports are `targets`' own vectors, not copies, and must not be changed.
+arity, supports, offsets and required bits are `targets`' own (its layout and
+its bits, `RequiredTargets`), not copies, and must not be changed; an index
+made for each run keeps its own counts and uncovered list, so runs that share
+targets share no search state.
 """
 mutable struct CoverageIndex
     arity::Vector{Int}
@@ -72,9 +76,12 @@ mutable struct CoverageIndex
 end
 
 function CoverageIndex(request::Request, targets::RequiredTargets)
-    arity = copy(request.arity)
-    sets = supports(targets)
-    offsets = zeros(Int, length(sets) + 1)
+    # The arity, supports, offsets and required bits are the targets' own,
+    # shared and never changed (`RequiredTargets`); the counts and the
+    # uncovered list are this index's.
+    layout = targets.layout
+    arity, sets, offsets = layout.arity, layout.supports, layout.offsets
+    arity == request.arity || error("internal error: the coverage index's targets are not the request's")
     member_first = ones(Int, length(sets) + 1)
     members, strides = Int[], Int[]
     held = [Tuple{Int, Int}[] for _ in arity]   # (support, stride) for each parameter
@@ -88,7 +95,6 @@ function CoverageIndex(request::Request, targets::RequiredTargets)
         end
         stride == ncombinations(targets, s) ||
             error("internal error: support $support has $(ncombinations(targets, s)) combinations, not $stride")
-        offsets[s + 1] = offsets[s] + stride
         member_first[s + 1] = length(members) + 1
     end
     holder_first = ones(Int, length(arity) + 1)
@@ -98,23 +104,11 @@ function CoverageIndex(request::Request, targets::RequiredTargets)
     holder_support = Int[s for h in held for (s, _) in h]
     holder_stride = Int[stride for h in held for (_, stride) in h]
     total = last(offsets)
-    required = _required_bits(targets, offsets)
+    required = _required_bits(targets)   # built now if no one asked before, then shared
     uncovered = count(required)
     return CoverageIndex(arity, sets, offsets, member_first, members, strides, holder_first,
                          holder_support, holder_stride, zeros(UInt16, total), required, Int[],
                          falses(total), uncovered == 0, uncovered, 0)
-end
-
-# Every combination of an unconstrained request's TargetList is required, and
-# such targets keep no bits.
-_required_bits(::RequiredTargets{TargetList}, offsets::Vector{Int}) = trues(last(offsets))
-
-# A list's bits are laid out as the index's ids are, combination `code` on
-# support `s` at `offsets[s] + code + 1` (`RequiredTargets`), so they are copied.
-function _required_bits(targets::RequiredTargets, offsets::Vector{Int})
-    offsets == targets.offsets && length(targets.bits) == last(offsets) ||
-        error("internal error: the coverage index's combinations are not laid out as its targets' bits")
-    return copy(targets.bits)
 end
 
 "The number of combinations the index counts, over every support: its length in counts."
