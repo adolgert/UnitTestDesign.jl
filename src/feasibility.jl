@@ -172,12 +172,12 @@ one empty `Dict`.
 Scratch, reused by every question so that a cache hit allocates nothing:
 `key` holds the question (`_checked_key`), `subkeys[c]` component `c`'s
 sub-assignment for a lookup, `pending` the components left to search, and
-`search` the backtracking state, whose `work` vector holds the witness of a
-feasible answer (`_witness`). A caller that keeps a witness copies it. So even a
-question answered from the caches writes to the object: a `Feasibility` is
-not safe to share between tasks or threads. The package never shares one:
-each is built inside one call (a `Request`, a `FeasibilityContext`, a
-deletion trial) and used by that call alone, and a `TestSpace` holds none.
+`search` the backtracking state, whose `work` vector holds a feasible
+answer's witness (`_witness`); a caller that keeps a witness copies it. So
+even a question answered from the caches writes to the object: a
+`Feasibility` is not safe to share between tasks or threads. The package
+never shares one: each is built inside one call, in a `Request`, a
+`FeasibilityContext` or a deletion trial, and never on a `TestSpace`.
 
 Fields: `candidates`, `tables`, `limit`, the component structure
 (`components`, `component_of`, `component_tables`, `param_tables`),
