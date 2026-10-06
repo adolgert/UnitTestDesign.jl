@@ -71,15 +71,18 @@ end
 """
 Counters for one `Feasibility`, for tests and for reporting search effort.
 `evaluations` counts every rule check made through the object: each
-`forbids` call by `violates`, `violated_rules`, the direct check of
-`completable` and `explain_partial`, and forward-checking prunes. A check of a
-tabulated table is a bit test and a check of a lazy one a lookup in the
-operation's memo, evaluating the predicate on a miss, so `evaluations` bounds
-the predicate calls from above.
+`forbids` call by `violates`, `violated_rules`, the direct check that every
+`completable` question and `explain_partial` makes, and forward-checking
+prunes. A check of a tabulated table is a bit test and a check of a lazy one
+a lookup in the operation's memo, evaluating the predicate on a miss, so
+`evaluations` bounds the predicate calls from above. `memo_hits` counts the
+questions answered with no search after the direct check found nothing:
+every constrained component left to solve was in its cache (a cached
+infeasible one settles the question), or none was left.
 """
 mutable struct SearchStats
     queries::Int      # `completable` questions asked, cached or not
-    memo_hits::Int    # questions answered from the whole-assignment memo
+    memo_hits::Int    # questions answered from the component caches, with no search
     last_nodes::Int   # nodes spent by the most recent question
     total_nodes::Int  # nodes spent by every question
     evaluations::Int  # rule checks (`forbids` calls) by every question and check
@@ -105,6 +108,23 @@ struct RuleMemo
 end
 
 RuleMemo(n::Int) = RuleMemo(Dict{Vector{Int}, Bool}(), zeros(Int, n))
+
+
+# Backtracking state, one per `Feasibility`, reused by every question that
+# searches. `work` is the witness under construction: a component's tables
+# read only that component's parameters, so components share it without
+# interference. `alive[p][k]` says whether `candidates[p][k]` survives forward
+# checking, `live[p]` counts the survivors, and `trail` records removals so a
+# backtrack can undo them. `limit` and `nodes` are the current question's
+# budget and spending.
+mutable struct _Search
+    const work::Vector{Int}
+    const alive::Vector{Vector{Bool}}
+    const live::Vector{Int}
+    const trail::Vector{Tuple{Int, Int}}
+    limit::Int
+    nodes::Int
+end
 
 
 """
@@ -137,11 +157,32 @@ component, the only kind of parameter the search fills freely (with its
 first candidate). Components are ordered by their smallest parameter, with
 parameters ascending (`components`).
 
+The caches are kept by component (plan §5.6; IPOG-C's constraint groups and
+solving history, Yu et al. 2013). `witness_cache[c]` maps component `c`'s
+sub-assignment, the assignment's values at `components[c]` in that order, to
+the component's witness values in the same order, or to `nothing` when the
+component is proven to have no valid completion. Nothing is cached for a whole
+assignment: a question's answer is assembled from its components', so a
+question whose assigned parameters lie outside every table's scope stores
+nothing once its constrained components' sub-assignments are cached, and only
+a component that spans every parameter (a whole-case table) has full-width
+keys. An unconstrained component's cache is never written: all of them share
+one empty `Dict`.
+
+Scratch, reused by every question so that a cache hit allocates nothing:
+`key` holds the question (`_checked_key`), `subkeys[c]` component `c`'s
+sub-assignment for a lookup, `pending` the components left to search, and
+`search` the backtracking state, whose `work` vector holds a feasible
+answer's witness (`_witness`); a caller that keeps a witness copies it. So
+even a question answered from the caches writes to the object: a
+`Feasibility` is not safe to share between tasks or threads. The package
+never shares one: each is built inside one call, in a `Request`, a
+`FeasibilityContext` or a deletion trial, and never on a `TestSpace`.
+
 Fields: `candidates`, `tables`, `limit`, the component structure
 (`components`, `component_of`, `component_tables`, `param_tables`),
-`memo` (whole assignment ⇒ witness, or `nothing` for proven infeasible),
-`witness_cache` (one `Dict` per component: the component's sub-assignment
-⇒ the component's witness values, or `nothing`), `rule_memo`, and `stats`.
+`witness_cache`, `rule_memo`, `stats`, and the scratch `key`, `subkeys`,
+`pending` and `search`.
 
 The lazy-rule memo (contract §3.5, §12.19). `rule_memo[k]` is `nothing` for
 a tabulated table and, for a lazy one, a `RuleMemo` from the scope's value
@@ -163,10 +204,13 @@ struct Feasibility
     component_of::Vector{Int}
     component_tables::Vector{Vector{Int}}
     param_tables::Vector{Vector{Int}}
-    memo::Dict{Vector{Int}, Union{Nothing, Vector{Int}}}
     witness_cache::Vector{Dict{Vector{Int}, Union{Nothing, Vector{Int}}}}
     rule_memo::Vector{Union{Nothing, RuleMemo}}
     stats::SearchStats
+    key::Vector{Int}
+    subkeys::Vector{Vector{Int}}
+    pending::Vector{Int}
+    search::_Search
 end
 
 "An empty verdict memo for a lazy table, `nothing` for a tabulated one."
@@ -218,11 +262,20 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
             push!(param_tables[p], k)
         end
     end
+    # Only constrained components are looked up and searched; the others
+    # share one empty cache, sub-assignment and survivor list, never written.
+    constrained = [!isempty(ts) for ts in component_tables]
+    unwritten = Dict{Vector{Int}, Union{Nothing, Vector{Int}}}()
+    caches = [constrained[c] ? Dict{Vector{Int}, Union{Nothing, Vector{Int}}}() : unwritten
+              for c in eachindex(components)]
+    no_values, no_survivors = Int[], Bool[]
+    subkeys = [constrained[c] ? zeros(Int, length(components[c])) : no_values for c in eachindex(components)]
+    alive = [constrained[component_of[p]] ? Vector{Bool}(undef, length(cands[p])) : no_survivors for p in 1:n]
+    search = _Search(zeros(Int, n), alive, zeros(Int, n), Tuple{Int, Int}[], Int(limit), 0)
     return Feasibility(cands, rules, Int(limit), components, component_of,
-        component_tables, param_tables,
-        Dict{Vector{Int}, Union{Nothing, Vector{Int}}}(),
-        [Dict{Vector{Int}, Union{Nothing, Vector{Int}}}() for _ in components],
-        collect(Union{Nothing, RuleMemo}, memos), SearchStats())
+        component_tables, param_tables, caches,
+        collect(Union{Nothing, RuleMemo}, memos), SearchStats(),
+        zeros(Int, n), subkeys, Int[], search)
 end
 
 "Union-find over table scopes. Components ordered by smallest member, members ascending."
@@ -302,19 +355,32 @@ end
 The number of lazy-rule verdicts memoized in `f.rule_memo`, summed over its
 tables: `0` when every table is tabulated. Memos shared with other
 `Feasibility` objects of the same operation (see `memos`) are counted as
-they stand. Not exported; the benchmarks and tests read it.
+they stand. The answer caches are not counted; `cache_entries` counts them.
+Not exported; the benchmarks and tests read it.
 """
 memo_size(f::Feasibility) = sum((length(m.verdicts) for m in f.rule_memo if m !== nothing); init = 0)
+
+"""
+    cache_entries(f::Feasibility) -> Int
+
+The answers `f` keeps: the entries of its component caches (`witness_cache`),
+one per sub-assignment of a constrained component that a search resolved.
+Not exported; the benchmarks and tests read it.
+"""
+cache_entries(f::Feasibility) = sum(length, f.witness_cache; init = 0)
 
 "Whether component `c` has a table, so that it must be solved (§3.4)."
 _constrained(f::Feasibility, c::Int) = !isempty(f.component_tables[c])
 
-"Validate a partial assignment and return it as a fresh `Vector{Int}`."
+"""
+Validate a partial assignment and copy it into `f.key`, which it returns:
+the object's buffer, which the next question overwrites (see `Feasibility`).
+"""
 function _checked_key(f::Feasibility, partial::AbstractVector{<:Integer})
     n = length(f.candidates)
     length(partial) == n || throw(ArgumentError(
         "a partial assignment has one entry per parameter: expected $n, got $(length(partial))"))
-    key = collect(Int, partial)
+    key = copyto!(f.key, partial)
     for i in 1:n
         v = key[i]
         (v == 0 || v in f.candidates[i]) || throw(ArgumentError(
@@ -391,16 +457,19 @@ ties to the lowest index; values are tried in candidate order. The node
 budget (`limit`, one per call, shared across components) counts tentative
 assignments, including undone ones (§3.3, §3.4).
 
-Answers are cached: the whole assignment in `f.memo`, and each component's
-witness in `f.witness_cache`, keyed by that component's sub-assignment, so
-a later question that shares it costs no nodes. The witness is a function of
-`partial` alone: the order of earlier questions and the size of the limit
-never change it (§3.8, §9.3).
+Answers are cached by component: each searched component's witness, or
+`nothing` when it has none, in `f.witness_cache`, keyed by that component's
+sub-assignment, so a later question that shares the sub-assignment costs no
+nodes, and a question whose every constrained component is cached (or fully
+assigned) needs no search. The direct check runs for every question. The
+witness is a function of `partial` alone: the order of earlier questions and
+the size of the limit never change it (§3.8, §9.3). It is a fresh vector,
+which the caller may keep.
 """
 function completable(f::Feasibility, partial::AbstractVector{<:Integer}; limit::Integer = f.limit)
     limit >= 1 || throw(ArgumentError("feasibility_limit must be a positive Int, got $limit"))
-    status, witness = _completable(f, _checked_key(f, partial), Int(limit))
-    return status, witness === nothing ? nothing : copy(witness)
+    status = _completable(f, _checked_key(f, partial), Int(limit))
+    return status, status === :feasible ? copy(_witness(f)) : nothing
 end
 
 """
@@ -409,33 +478,39 @@ end
 The engines' predicate (plan Phase 3 step 1): `true` only when `partial`
 is proven to have no valid completion, `false` only when a witness exists.
 When the search reaches `f.limit` it throws `ResourceLimitError` naming
-`feasibility_limit`, never guessing either way (contract §1.7, §3.6).
+`feasibility_limit`, never guessing either way (contract §1.7, §3.6). A
+question the caches answer allocates nothing; one that searches allocates
+only the entries it stores.
 """
 function dead(f::Feasibility, partial::AbstractVector{<:Integer})
     key = _checked_key(f, partial)
-    status, _ = _completable(f, key, f.limit)
+    status = _completable(f, key, f.limit)
     status === :unknown && throw(ResourceLimitError(
         "the feasibility search for the partial assignment $key", f.limit, :feasibility_limit))
     return status === :infeasible
 end
 
-# The internal question: `key` is validated and owned by the caller, and the
-# returned witness is the memo's own vector, not a copy.
+# The internal question: `:feasible`, `:infeasible` or `:unknown`. `key` is
+# validated, and may be `f.key`; it is only read. The witness of a feasible
+# answer is `_witness(f)`, the object's scratch, which the next question
+# overwrites: a caller that keeps it copies it. (The status alone is
+# returned because a tuple of a status and a witness or `nothing` is a union
+# of tuple types, which a call returns boxed: 32 bytes a question.)
+#
+# Nothing is cached for the whole assignment (plan §5.6): the direct check
+# runs every time, then each constrained component that is not fully
+# assigned is looked up by its sub-assignment, and only the components not
+# found are searched. A question asked again therefore finds every component
+# it needs in the caches and costs no nodes, as a whole-assignment memo's hit
+# did, and its answer and witness are those it had the first time.
 function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
     stats = f.stats
     stats.queries += 1
     stats.last_nodes = 0
-    if haskey(f.memo, key)
-        stats.memo_hits += 1
-        witness = f.memo[key]
-        return witness === nothing ? (:infeasible, nothing) : (:feasible, witness)
-    end
-    if _violates(f, key)
-        f.memo[key] = nothing
-        return (:infeasible, nothing)
-    end
-    witness = copy(key)
-    pending = Int[]
+    _violates(f, key) && return :infeasible
+    search = f.search
+    witness = copyto!(search.work, key)
+    pending = empty!(f.pending)
     # Free parameters and cached components first: they cost no nodes, and
     # a cached infeasible component settles the question at once.
     for c in eachindex(f.components)
@@ -446,83 +521,73 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
             end
             continue
         end
-        all(p -> key[p] != 0, params) && continue  # fully assigned; `_violates` checked it
-        cached = get(f.witness_cache[c], key[params], missing)
+        _all_assigned(key, params) && continue  # `_violates` checked it
+        cached = get(f.witness_cache[c], _subkey!(f, c, key), missing)
         if cached === missing
             push!(pending, c)
         elseif cached === nothing
-            f.memo[key] = nothing
-            return (:infeasible, nothing)
+            stats.memo_hits += 1
+            return :infeasible
         else
-            witness[params] .= cached
-        end
-    end
-    status = :feasible
-    nodes = 0
-    if !isempty(pending)   # a query with no component left to solve builds no search state
-        search = _Search(f, witness, limit)
-        for c in pending
-            params = f.components[c]
-            status = _solve_component!(search, c)
-            if status === :feasible
-                f.witness_cache[c][key[params]] = witness[params]
-            elseif status === :infeasible
-                f.witness_cache[c][key[params]] = nothing
-                break
-            else
-                break  # :unknown, the budget is spent; store nothing
+            for (k, p) in enumerate(params)
+                witness[p] = cached[k]
             end
         end
-        nodes = search.nodes
     end
-    stats.last_nodes = nodes
-    stats.total_nodes += nodes
-    if status === :feasible
-        f.memo[key] = witness
-        return (:feasible, witness)
-    elseif status === :infeasible
-        f.memo[key] = nothing
-        return (:infeasible, nothing)
-    else
-        return (:unknown, nothing)
+    if isempty(pending)   # a query with no component left to solve searches nothing
+        stats.memo_hits += 1
+        return :feasible
     end
+    search.limit = limit
+    search.nodes = 0
+    empty!(search.trail)
+    status = :feasible
+    for c in pending
+        status = _solve_component!(search, f, c)
+        status === :unknown && break   # the budget is spent; store nothing
+        # `subkeys[c]` still holds the sub-assignment: no search writes it.
+        f.witness_cache[c][copy(f.subkeys[c])] = status === :feasible ? witness[f.components[c]] : nothing
+        status === :infeasible && break
+    end
+    stats.last_nodes = search.nodes
+    stats.total_nodes += search.nodes
+    return status
 end
 
-# Backtracking state for one `completable` question. `work` is the witness
-# under construction: a component's tables read only that component's
-# parameters, so components share it without interference. `alive[p][k]`
-# says whether `candidates[p][k]` survives forward checking, `live[p]` counts
-# the survivors, and `trail` records removals so a backtrack can undo them.
-mutable struct _Search
-    const f::Feasibility
-    const work::Vector{Int}
-    const alive::Vector{Vector{Bool}}
-    const live::Vector{Int}
-    const trail::Vector{Tuple{Int, Int}}
-    const limit::Int
-    nodes::Int
+"The witness of the last question `f` answered `:feasible`: `f`'s scratch, not a copy."
+_witness(f::Feasibility) = f.search.work
+
+"Whether every parameter of `params` is assigned in `key`."
+function _all_assigned(key::Vector{Int}, params::Vector{Int})
+    for p in params
+        key[p] == 0 && return false
+    end
+    return true
 end
 
-function _Search(f::Feasibility, work::Vector{Int}, limit::Int)
-    n = length(f.candidates)
-    return _Search(f, work, [Bool[] for _ in 1:n], zeros(Int, n), Tuple{Int, Int}[], limit, 0)
+"Component `c`'s sub-assignment of `key`, gathered into `f.subkeys[c]`, which it returns."
+function _subkey!(f::Feasibility, c::Int, key::Vector{Int})
+    sub = f.subkeys[c]
+    for (k, p) in enumerate(f.components[c])
+        sub[k] = key[p]
+    end
+    return sub
 end
 
-function _solve_component!(s::_Search, c::Int)
-    f = s.f
+function _solve_component!(s::_Search, f::Feasibility, c::Int)
     params = f.components[c]
     for p in params
         if s.work[p] == 0
-            s.alive[p] = fill(true, length(f.candidates[p]))
+            fill!(s.alive[p], true)
             s.live[p] = length(f.candidates[p])
         end
     end
     # The initial prune: tables already down to one unset parameter.
     for t in f.component_tables[c]
         y = _sole_unassigned(f.tables[t], s.work)
-        y > 0 && !_prune!(s, t, y) && return :infeasible
+        y > 0 && !_prune!(s, f, t, y) && return :infeasible
     end
-    return _backtrack!(s, params)
+    return _backtrack!(s, f, params)
 end
 
 "The one unset parameter of a table's scope; 0 if none is unset, -1 if several are."
@@ -539,15 +604,15 @@ end
 
 # Remove from `y` every surviving candidate that table `t` forbids, given the
 # rest of its scope is assigned. False when no candidate survives.
-function _prune!(s::_Search, t::Int, y::Int)
-    cands = s.f.candidates[y]
+function _prune!(s::_Search, f::Feasibility, t::Int, y::Int)
+    cands = f.candidates[y]
     alive = s.alive[y]
-    stats = s.f.stats
+    stats = f.stats
     for k in eachindex(cands)
         alive[k] || continue
         s.work[y] = cands[k]
         stats.evaluations += 1
-        if forbids(s.f, t, s.work)
+        if forbids(f, t, s.work)
             alive[k] = false
             s.live[y] -= 1
             push!(s.trail, (y, k))
@@ -560,10 +625,10 @@ end
 # After assigning `x`, prune through every table of `x` that now has one
 # unset parameter. A table that becomes fully assigned needs no check: it had
 # `x` as its one unset parameter, so `x`'s value already survived it.
-function _forward_check!(s::_Search, x::Int)
-    for t in s.f.param_tables[x]
-        y = _sole_unassigned(s.f.tables[t], s.work)
-        y > 0 && !_prune!(s, t, y) && return false
+function _forward_check!(s::_Search, f::Feasibility, x::Int)
+    for t in f.param_tables[x]
+        y = _sole_unassigned(f.tables[t], s.work)
+        y > 0 && !_prune!(s, f, t, y) && return false
     end
     return true
 end
@@ -576,7 +641,7 @@ function _undo!(s::_Search, mark::Int)
     end
 end
 
-function _backtrack!(s::_Search, params::Vector{Int})
+function _backtrack!(s::_Search, f::Feasibility, params::Vector{Int})
     x = 0
     fewest = typemax(Int)
     for p in params
@@ -586,7 +651,7 @@ function _backtrack!(s::_Search, params::Vector{Int})
         end
     end
     x == 0 && return :feasible
-    cands = s.f.candidates[x]
+    cands = f.candidates[x]
     alive = s.alive[x]
     for k in eachindex(cands)
         alive[k] || continue
@@ -594,8 +659,8 @@ function _backtrack!(s::_Search, params::Vector{Int})
         s.nodes += 1
         s.work[x] = cands[k]
         mark = length(s.trail)
-        if _forward_check!(s, x)
-            result = _backtrack!(s, params)
+        if _forward_check!(s, f, x)
+            result = _backtrack!(s, f, params)
             result === :infeasible || return result
         end
         _undo!(s, mark)
@@ -670,10 +735,10 @@ function explain_partial(f::Feasibility, partial::AbstractVector{<:Integer};
     direct = _violated_rules(f, key)
     isempty(direct) ||
         return IndexExplanation(:forbidden, direct, :not_applicable, nothing, nothing, cost()...)
-    all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, key, nothing, cost()...)
-    status, witness = _completable(f, key, f.limit)
+    all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, copy(key), nothing, cost()...)
+    status = _completable(f, key, f.limit)
     if status === :feasible
-        return IndexExplanation(:completable, Int[], :not_applicable, copy(witness::Vector{Int}), nothing, cost()...)
+        return IndexExplanation(:completable, Int[], :not_applicable, copy(_witness(f)), nothing, cost()...)
     elseif status === :unknown
         return IndexExplanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit, cost()...)
     end
@@ -707,7 +772,7 @@ function _deletion_search(f::Feasibility, key::Vector{Int}, explanation_limit::I
         trial_rules = filter(!=(r), keep)
         trial = Feasibility(f.candidates, f.tables[trial_rules]; limit = f.limit,
                             memos = f.rule_memo[trial_rules])
-        status, _ = _completable(trial, key, min(f.limit, remaining))
+        status = _completable(trial, key, min(f.limit, remaining))
         remaining -= trial.stats.last_nodes
         nodes += trial.stats.total_nodes
         evaluations += trial.stats.evaluations
@@ -772,7 +837,7 @@ function _status(f::Feasibility, partial::AbstractVector{<:Integer})
     key = _checked_key(f, partial)
     _violates(f, key) && return _STATUS_OF_OUTCOME.forbidden
     all(!=(0), key) && return _STATUS_OF_OUTCOME.allowed
-    status, _ = _completable(f, key, f.limit)
+    status = _completable(f, key, f.limit)
     status === :feasible && return _STATUS_OF_OUTCOME.completable
     status === :unknown && return _STATUS_OF_OUTCOME.unknown
     return _STATUS_OF_OUTCOME.infeasible

@@ -103,8 +103,55 @@ end
     @test (@inferred dead(request, [1, 0, 0, 0, 0])) isa Bool
     @test (@inferred _status(f, key)) isa Symbol
     @test (@inferred explain_partial(f, key)) isa IndexExplanation
-    @test (@inferred Union{Tuple{Symbol, Vector{Int}}, Tuple{Symbol, Nothing}} _completable(f, key, 100)) isa Tuple
+    @test (@inferred _completable(f, key, 100)) isa Symbol
     @test (@inferred TargetList(request)[3]) isa Vector{Int}
+end
+
+
+@testitem "stability: a question the component caches answer allocates nothing (plan §5.6)" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, dead, _completable, _checked_key, _subkey!, _space_indices!, _witness,
+        cache_entries
+    # Two constrained components, {a, b} and {c, d}, two free parameters, and
+    # an Invalid value of a, whose negative rows have a search of their own.
+    space = TestSpace((a = [1, 2, 3, Invalid(0)], b = [:x, :y, :z], c = [true, false], d = 1:3, e = [:p, :q],
+                       g = 1:4); constraints = [forbid((a = 1, b = :y)), forbid((c, d) -> c && d == 3, :c, :d)])
+    request = Request(space; strength = 2)
+    f = request.feasibility
+    @test f.components == [[1, 2], [3, 4], [5], [6]]
+    row = [1, 0, 0, 0, 2, 0]   # engine positions, a = 1 and e = :q
+    key = [2, 0, 1, 0, 0, 3]   # value indices, a = 2, c = true, g = 3
+    lookup(f, c, key) = get(f.witness_cache[c], _subkey!(f, c, key), missing)
+    @test (@inferred _subkey!(f, 1, key)) == [2, 0]
+    @test (@inferred Union{Missing, Nothing, Vector{Int}} lookup(f, 1, key)) === missing
+    # Asked a second time, each is answered from the caches with no search,
+    # and the conversion to value indices, the key's check, the lookups and
+    # the witness use the object's buffers.
+    @test allocated(dead, request, row) == 0
+    @test allocated(dead, f, key) == 0
+    @test allocated(_completable, f, key, 100) == 0
+    @test allocated(lookup, f, 1, key) == 0
+    @test allocated(_space_indices!, f.key, request, row) == 0
+    @test allocated(_checked_key, f, key) == 0
+    @test _completable(f, key, 100) === :feasible && _witness(f) == [2, 1, 1, 1, 1, 3]
+    negative = [4, 1, 0, 0, 0, 0]   # a = Invalid(0): rules that read a don't apply
+    @test allocated(dead, request, negative) == 0
+    @test !dead(request, negative)
+    # A miss stores the component's sub-assignment and witness, and nothing
+    # else is allocated (the cache has room: no rehash).
+    sizehint!(f.witness_cache[1], 64)
+    two = @allocated zeros(Int, 2)
+    for k in ([3, 0, 0, 0, 0, 0], [0, 3, 0, 0, 0, 0])   # (a = 3,), then (b = :z,): new to {a, b}
+        before = cache_entries(f)
+        @test (@allocated dead(f, k)) <= 2 * two
+        @test cache_entries(f) == before + 1
+    end
+    # A whole-case rule makes one component of every parameter: its keys are
+    # whole assignments, and a hit still allocates nothing.
+    whole = Request(TestSpace((a = 1:3, b = 1:3, c = 1:3); constraints = [forbid(r -> r.a == 1 && r.b == 2 && r.c == 3)]);
+                    strength = 2)
+    @test whole.feasibility.components == [[1, 2, 3]]
+    @test allocated(dead, whole, [1, 2, 0]) == 0
+    @test !dead(whole, [1, 2, 0]) && dead(whole, [1, 2, 3])
 end
 
 
