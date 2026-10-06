@@ -79,9 +79,9 @@ paths at 90% of the points; these four do at 96.7%, with 2.0% fewer rows in
 total and 10 points more than 3% above. By rows alone the study's decision
 rule picks eight members (four tie-breaks by both orders: 97.9%, 4 points
 above 3%). But each member asks the feasibility search, so on constrained
-models more members cost more: in single first calls under load, eight were
-slower than the old paths at 179 of 912 judged points, these four at 72 of
-871, two tie-breaks at 3 of 866 (91.3%, 54 points above 3%); and four
+models more members cost more: on 777 constrained points, timed warm and
+quietly, eight were slower than the old paths at 145, these four at 74, two
+tie-breaks at 6 (91.3%, 54 points above 3%) and one member at 3; four
 members make 3.5 to 4 times the old paths' `dead` calls and double one
 strength-3 model's peak memory. Changing the set changes `IPOG()`'s rows: the
 tests that pin them say how to regenerate their values.

@@ -216,19 +216,19 @@ Added 2026-10-06 by the solver plan's Phase 4
   `stronger` groups. It finds the best value for each case by lookup
   (Kleine and Simos's FIPOG) instead of scanning every combination, and
   holds one step's combinations at a time.
-- Its speed depends on the rules. Without rules, or with a few, it is about
-  10 to 200 times faster where the engine it replaced took more than a
-  second (8 parameters of 64 values at strength 2: 1.6 s to 0.05 s; strength
-  6 on 20 three-valued parameters: about 6 minutes to 5 s). On heavily
-  constrained models it can be slower and take more memory, because it
-  builds four designs and each asks the feasibility search. The engine took
-  up to about four times as long as before on the benchmark's ct-comp
-  models at strength 2 and about five times on a space with three rules
-  that read the whole case, and on one ct-comp model at strength 3 the
-  process's peak memory doubled (about 620 MiB to 1,250 MiB). These figures
-  were measured with other jobs running and are provisional; the solver
-  plan's quiet re-measurement and Phase 5 (the feasibility memo by
-  component) revisit them.
+- Its speed depends on the rules. Without rules, or with a few, a whole call
+  is about 10 to 95 times faster where the engine it replaced took more than
+  a second (8 parameters of 64 values at strength 2: 1.7 s to 0.045 s;
+  strength 6 on 20 three-valued parameters: 5.6 minutes to 5.7 s). On
+  heavily constrained models it can be slower and take more memory, because
+  it builds four designs and each asks the feasibility search. Over the
+  benchmark's constrained models at strength 2, whole calls took longer at
+  68 of 907 points, up to about three times as long, and the engine alone
+  took up to about five times as long, the most with rules that read the
+  whole case. Peak memory rose on some: 5.3 to 8.1 GiB on the largest cart
+  model at strength 2, about 630 to 1,250 MiB on a ct-comp model at strength
+  3 (the solver plan's quiet re-measurement). Its Phase 5, the feasibility
+  memo by component, is meant to reduce this cost.
 - Its cases change. It runs four members of the IPOG family, two tie-break
   rules by two orders of vertical growth, and keeps the design with the
   fewest cases. Over the package's benchmark grid, against the engine it

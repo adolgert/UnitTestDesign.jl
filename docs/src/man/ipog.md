@@ -153,9 +153,9 @@ sometimes much more, with no member best everywhere. The package's engine
 has two tie-break rules, the lowest value and a value that rotates with the
 case, and two orders of vertical growth, support by support and value by
 value. `IPOG()` runs all four combinations on the same steps and keeps the
-design with the fewest cases, the first of equals. It stops early when a
-design has as many cases as one set of parameters has combinations to
-cover, since no design can have fewer. The result's record says which
+design with the fewest cases, the first of equals. It stops at a design no
+design can beat: as many cases as its must-include rows, or as one set of
+parameters has combinations to cover. The result's record says which
 member made the cases, in `record.ordinary.member`:
 
 ```jldoctest; setup = :(using UnitTestDesign)
