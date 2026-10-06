@@ -567,6 +567,59 @@ end
 end
 
 
+@testitem "feasibility: explain_partial without the witness asks and answers the same, plan §5.6" setup=[FeasibilitySetup, UTSetup] begin
+    # Classification keeps no witness, so it asks `explain_partial` with
+    # `witness = false` (`_classify_target`), which copies no full-width row
+    # for an `:allowed` or `:completable` answer (p5-memo's judgment call J5).
+    # Every question here is asked, in the same order, of two objects over the
+    # same tables, one with the witness and one without: every field but the
+    # witness must be the same, the witness `nothing`, and the two objects'
+    # statistics and caches the same after each question, so the change moves
+    # no answer, record, node or rule check.
+    using Random
+    using UnitTestDesign: cache_entries
+    rng = Xoshiro(0x2026_1006_5e1f ⊻ seed_mod())
+    tally = Dict(k => 0 for k in (:allowed, :completable, :forbidden, :infeasible, :unknown, :lazy, :whole))
+    stats(f) = (s = f.stats; (s.queries, s.memo_hits, s.total_nodes, s.last_nodes, s.evaluations, cache_entries(f)))
+    for problem in 1:100
+        n = rand(rng, 3:6)
+        arity = rand(rng, 2:3, n)
+        cands = [collect(1:a) for a in arity]
+        tables = RuleTable[]
+        for _ in 1:rand(rng, 1:4)
+            whole = rand(rng) < 0.1
+            scope = whole ? collect(1:n) : randperm(rng, n)[1:rand(rng, 1:min(3, n))]
+            share = whole ? rand(rng, (0.3, 0.6, 0.9)) : rand(rng, (0.2, 0.4, 0.6))
+            tuples = Iterators.product((1:arity[p] for p in scope)...)
+            forbidden = Set{NTuple{length(scope), Int}}(t for t in tuples if rand(rng) < share)
+            if whole || rand(rng) < 0.3
+                tally[whole ? :whole : :lazy] += 1
+                push!(tables, RuleTable(scope, key -> Tuple(key) in forbidden))
+            else
+                push!(tables, RuleTable(scope, forbidden))
+            end
+        end
+        limit = rand(rng, (1, 2, 5, 10^6))
+        with, without = Feasibility(cands, tables; limit), Feasibility(cands, tables; limit)
+        questions = small_targets(cands)
+        append!(questions, [[rand(rng, 0:a) for a in arity] for _ in 1:10])
+        append!(questions, [[rand(rng, 1:a) for a in arity] for _ in 1:5])   # complete rows
+        for key in questions
+            explanation_limit = rand(rng, (1, 3, 10^6))
+            a = explain_partial(with, key; explanation_limit)
+            b = explain_partial(without, key; explanation_limit, witness = false)
+            @test verdict(b) == Base.setindex(verdict(a), nothing, 4)   # all but the witness, the fourth field
+            @test (a.nodes, a.evaluations) == (b.nodes, b.evaluations)
+            @test b.witness === nothing
+            @test (a.witness !== nothing) == (a.outcome in (:allowed, :completable))
+            @test stats(with) == stats(without)
+            tally[a.outcome] += 1
+        end
+    end
+    @test all(>(0), values(tally))
+end
+
+
 @testitem "feasibility: the caches by component answer as the whole-assignment memo did, plan §5.6 §3.3–§3.8 §9.3" setup=[FeasibilitySetup, UTSetup] begin
     # Phase 5 dropped the memo keyed by the whole assignment (31bef0f) and
     # answers from the caches by component alone. Every question here is

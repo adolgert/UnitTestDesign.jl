@@ -359,6 +359,17 @@ end
                                   [_space_indices(twenty, t) for t in layout]))
     @test length(layout) == 9_120 && length(layout.supports) == 1_140
     @test walked - asked <= 8 * 1_140 + 16 * 1024
+    # Nor does a question copy a required target's witness, a full-width row
+    # that nothing keeps (`explain_partial`'s `witness = false`): on 512
+    # binary parameters a required target's question, answered from the
+    # caches, asks for less than one row of 512 entries (4 KiB), which the
+    # witness alone took.
+    wide = Request(binary(512); strength = 2)
+    pair = zeros(Int, 512)
+    pair[3] = pair[4] = 1   # (p3 = 1, p4 = 1), required
+    one_question(x) = _classify_target(x[1], x[1].feasibility, x[2], x[3], x[3], "classifying target")
+    @test one_question((wide, [1], pair)) === nothing
+    @test requested(one_question, (wide, [1], pair)) < 8 * 512
     free = Request(TestSpace((a = 1:3, b = 1:2, c = 1:4)); strength = 2)
     for request in (twenty, free)
         @test (@inferred Union{Tuple{RequiredTargets{Nothing}, Vector{Excluded}},

@@ -713,7 +713,7 @@ struct IndexExplanation
 end
 
 """
-    explain_partial(f::Feasibility, partial; explanation_limit = 1_000_000) -> IndexExplanation
+    explain_partial(f::Feasibility, partial; explanation_limit = 1_000_000, witness = true) -> IndexExplanation
 
 Why `partial` is or is not part of a valid row, as one of the five outcomes
 of contract §1.26 (see `IndexExplanation`). The direct check comes first, so a
@@ -723,9 +723,14 @@ forbids is `:allowed`. Otherwise `completable` decides between
 `:completable`, `:unknown`, and `:infeasible`; only a proven infeasible
 assignment gets a deletion search, whose budget is `explanation_limit`
 (§3.13). Infeasibility never depends on that budget (§3.15).
+
+With `witness = false`, an `:allowed` or `:completable` answer carries no
+witness (`nothing`), so no full-width row is copied for it: classification
+keeps none (`_classify_target`). Everything else is the same: the questions
+asked, in the same order, the outcome, its rules, and its cost.
 """
 function explain_partial(f::Feasibility, partial::AbstractVector{<:Integer};
-                         explanation_limit::Integer = 1_000_000)
+                         explanation_limit::Integer = 1_000_000, witness::Bool = true)
     explanation_limit >= 1 || throw(ArgumentError(
         "explanation_limit must be a positive Int, got $explanation_limit"))
     key = _checked_key(f, partial)
@@ -735,10 +740,12 @@ function explain_partial(f::Feasibility, partial::AbstractVector{<:Integer};
     direct = _violated_rules(f, key)
     isempty(direct) ||
         return IndexExplanation(:forbidden, direct, :not_applicable, nothing, nothing, cost()...)
-    all(!=(0), key) && return IndexExplanation(:allowed, Int[], :not_applicable, copy(key), nothing, cost()...)
+    all(!=(0), key) &&
+        return IndexExplanation(:allowed, Int[], :not_applicable, witness ? copy(key) : nothing, nothing, cost()...)
     status = _completable(f, key, f.limit)
     if status === :feasible
-        return IndexExplanation(:completable, Int[], :not_applicable, copy(_witness(f)), nothing, cost()...)
+        return IndexExplanation(:completable, Int[], :not_applicable, witness ? copy(_witness(f)) : nothing,
+                                nothing, cost()...)
     elseif status === :unknown
         return IndexExplanation(:unknown, Int[], :not_applicable, nothing, :feasibility_limit, cost()...)
     end

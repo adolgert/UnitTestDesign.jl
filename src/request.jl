@@ -548,11 +548,14 @@ answer throws `ResourceLimitError`, naming the target after `what` (§3.6).
 Ordinary targets (`_classify_targets`) and negative targets (invalid.jl) are
 classified here. Neither `target` nor `idx` is kept: the record copies
 `target`, and the search copies `idx` (`explain_partial`), so a caller may
-pass buffers it reuses.
+pass buffers it reuses. A required target's witness is not copied
+(`explain_partial`'s `witness = false`), since nothing keeps it: the answer,
+its rules and its cost are the same.
 """
 function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
                           target::AbstractVector{<:Integer}, idx::AbstractVector{<:Integer}, what)
-    c = IndexClassification(explain_partial(f, idx; explanation_limit = request.explanation_limit))
+    c = IndexClassification(explain_partial(f, idx; explanation_limit = request.explanation_limit,
+                                            witness = false))
     c.status === :unknown && throw(ResourceLimitError("$what $(from_indices(request.space, idx))",
                                                       request.feasibility_limit, :feasibility_limit))
     c.status === :required && return nothing
