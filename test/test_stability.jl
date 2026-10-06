@@ -666,3 +666,90 @@ end
     plan = _prepare(Construction(), Profile(partial))
     @test first(@inferred _execute(plan, partial, RequiredTargets(partial, required))) isa Matrix{Int}
 end
+
+
+@testitem "stability: IPOG's lookup core scores and places in place" setup=[StabilitySetup] begin
+    using UnitTestDesign: Request, Profile, Design, RequiredTargets, _Classified, _IPOGLookup, _IPOGPlan, _prepare,
+        _execute, _run, _lookup_steps, _LookupSteps, _lookup_cover, _lookup_complete, _LookupRun, _lookup_grow!,
+        _begin_step!, _horizontal!, _vertical!, _base, _cover_on!, _choose, _find_row, _decode_combo!, _agrees,
+        _tiekey, _fill!, generate, dead, supports, ncombinations
+    # The core of plan §5.5 (Phase 4): its plan and its operations infer, a
+    # lookup and a placement allocate nothing, horizontal growth over a whole
+    # step allocates nothing, nor does vertical growth that starts no row, and
+    # a whole run asks for its rows, its largest step's map and small
+    # buffers, never something per row or per lookup.
+    measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
+    "Bytes `g(x)` allocates on a fresh `x = make()`, after a first call on another compiled it."
+    allocated_fresh(g, make) = (g(make()); x = make(); @allocated g(x))
+    uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
+    request = Request(uniform(10, 3); strength = 3)
+    targets = _Classified(request).targets
+    plan = @inferred _prepare(_IPOGLookup(), Profile(request))
+    @test plan isa _IPOGPlan{_IPOGLookup}
+    # One member's notes are empty; several members' say which was kept, so
+    # the result is a union of two concrete types.
+    rows, notes = @inferred Tuple{Matrix{Int}, NamedTuple} _execute(plan, request, targets)
+    @test rows isa Matrix{Int} && notes === (;)
+    @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _run(plan, request, targets)) == rows
+    @test (@inferred generate(_IPOGLookup(), request)) isa Design
+    steps = @inferred _lookup_steps(targets, request.arity, plan.order)
+    @test (@inferred _lookup_cover(steps, targets, Returns(false), request.must_include)) == rows
+    @test (@inferred _lookup_complete(steps, targets, Returns(false), request.must_include)) isa Matrix{Int}
+    ruled = Request(stability_space(); strength = 2, must_include = [(a = 2,)])
+    rt = _Classified(ruled).targets
+    rsteps = _lookup_steps(rt, ruled.arity, _prepare(_IPOGLookup(), Profile(ruled)).order)
+    @test (@inferred _lookup_cover(rsteps, rt, row -> dead(ruled, row), ruled.must_include)) isa Matrix{Int}
+    # A run at the eighth parameter's step, after the seven before it, every
+    # buffer sized: one step's growth, on a fresh copy each time.
+    function at_step(k; tiebreak = :lowest)
+        run = _LookupRun(steps, Returns(false), zeros(Int, 10, 0), tiebreak, :support)
+        for p in steps.order[1:(k - 1)]
+            steps.first[p] == steps.first[p + 1] && continue
+            _begin_step!(run, steps, targets, p)
+            _horizontal!(run)
+            _vertical!(run, true)
+        end
+        _begin_step!(run, steps, targets, steps.order[k])
+        return run
+    end
+    for tiebreak in (:lowest, :rotate, :leastused, :mostleft)
+        template = at_step(8; tiebreak)
+        @test allocated_fresh(_horizontal!, () -> deepcopy(template)) == 0
+    end
+    # Vertical growth that starts no row allocates only its candidate lists,
+    # when they outgrow what the steps before left them: a few words a row.
+    # Each placement allocates nothing (below).
+    template = at_step(8)
+    grown() = (run = deepcopy(template); _horizontal!(run); run)
+    @test sum(grown().left) > 0   # vertical growth has combinations to place
+    @test allocated_fresh(run -> _vertical!(run, false), grown) <= 32 * (template.nrows + 16)
+    # One lookup, one choice, one row search, one coverage mark.
+    run = grown()
+    @test (@inferred _base(run, 0, 1)) isa Int
+    @test measured(r -> _base(r, 0, 1), run) == 0
+    @test measured(r -> _cover_on!(r, 0, 1), run) == 0
+    @test (@inferred _choose(run, 1, 0)) isa Int
+    @test measured(r -> _choose(r, 1, 0), run) == 0
+    @test (@inferred _tiekey(run, 3, 2)) isa Int
+    @test measured(r -> _find_row(r, 1, _decode_combo!(r, 1, 0)), run) == 0
+    @test measured(r -> _agrees(r, 0, 1), run) == 0
+    # The final fill allocates nothing either.
+    filled() = (run = _LookupRun(steps, Returns(false), zeros(Int, 10, 0), :lowest, :support); _lookup_grow!(run, steps, targets, true))
+    @test allocated_fresh(_fill!, filled) == 0
+    # A whole run asks for its rows (grown as they are added, then copied
+    # once), its largest step's map (grown as the steps grow), and its
+    # per-step buffers: at most 8 times the rows' bytes, 4 times the map's,
+    # and 64 KiB, here on 8 × 64 at
+    # strength 2 (7,168 rows; 2.75 MB on Julia 1.13) and 20 × 3 at strength 4.
+    # At 0ce33a4 IPOG asked for 9.7 MB on 8 × 64 and the scan for every
+    # tuple of a step at each row.
+    for (k, v, t) in ((8, 64, 2), (20, 3, 4))
+        big = Request(uniform(k, v); strength = t)
+        bt = _Classified(big).targets
+        bsteps = _lookup_steps(bt, big.arity, _prepare(_IPOGLookup(), Profile(big)).order)
+        cover(s) = _lookup_cover(s, bt, Returns(false), big.must_include)
+        largest = maximum(p -> sum(s -> ncombinations(bt, s), view(bsteps.supports, bsteps.first[p]:(bsteps.first[p + 1] - 1));
+                                   init = 0), 1:k)
+        @test requested(cover, bsteps) <= 8 * sizeof(cover(bsteps)) + 4 * largest + 64 * 1024
+    end
+end
