@@ -110,16 +110,16 @@ all_pairs([1, 2, 3], ["low", "mid", "high"], [1.0, 3.7, 4.9], [:greedy, :relax, 
   and no percentage. Nothing is called covered, excluded or complete that was
   not decided.
 - The same call, under the same package and Julia versions, gives the same
-  cases. [`IPOG`](@ref), the default engine, uses no randomness;
+  cases. [`Auto`](@ref)`()`, the default engine, uses no randomness;
   [`GND`](@ref) draws from a fixed default seed. To keep a list of cases
   across releases and edits, commit it, or pass it back as `must_include`.
 
 The designs are compact, with no promise of a minimum number of cases. Each
 result states a proven lower bound beside its count, and says "minimal" when
-the count meets it. [`Auto`](@ref)`()` chooses among the engines for your
-space, [`recommend`](@ref) says what it would choose, and
-[`design_sizes`](@ref) shows how many cases each strategy gives before you
-choose one. The full statement is the [contract](dev/contract.md).
+the count meets it. The default engine, [`Auto`](@ref)`()`, chooses for
+your space between IPOG's design and an algebraic array from a catalog,
+[`recommend`](@ref) says what it would choose, and [`design_sizes`](@ref)
+shows how many cases each strategy gives before you choose one. The full statement is the [contract](dev/contract.md).
 
 ## The manual
 

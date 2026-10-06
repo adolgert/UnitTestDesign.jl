@@ -137,13 +137,17 @@ Whether `engine` covers a request with this `Profile`, and how
 function fit end
 
 """
-Use when you want the default engine: deterministic and free of randomness, so
-the same inputs always give the same cases.
+Use when you want IPOG's design itself, which `Auto(goal = :fast)` also runs:
+deterministic and free of randomness, so the same inputs always give the
+same cases, and covering any request.
 
     IPOG()
 
 In-parameter-order General (IPOG): deterministic, no randomness (contract
-§9.4).
+§9.4). It builds the design one parameter at a time, as four members of the
+IPOG family, and keeps the smallest (the manual's IPOG page). The default
+engine, [`Auto`](@ref)`()`, gives IPOG's design except where the catalog's
+array ([`Construction`](@ref)) is smaller.
 
 Lei, Yu, Raghu Kacker, D. Richard Kuhn, Vadim Okun, and James Lawrence. 2008.
 "IPOG/IPOG-D: Efficient Test Generation for Multi-Way Combinatorial Testing."

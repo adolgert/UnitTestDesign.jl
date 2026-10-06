@@ -175,13 +175,13 @@ An excursion and a full factorial have no engine: `engine`, `ordinary` and
 a table (§1.22):
 
 ```
-5 cases (lower bound 4) · strength 2 · IPOG · 3 parameters · 12 combinations
+5 cases (lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations
 excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
- 1  :exact  :qr     1.0e-6
- 2  :exact  :lu     1.0e-6
- 3  :exact  :none   1.0e-6
- 4  :fast   :none   0.001
+ 1  :fast   :none   0.001
+ 2  :exact  :none   1.0e-6
+ 3  :exact  :lu     1.0e-6
+ 4  :exact  :qr     1.0e-6
  5  :fast   :none   1.0e-6
 ```
 
@@ -204,15 +204,15 @@ marked with `!` after its row number. For
 constraints = [@forbid(n == 2 && m == :b), @forbid(m == :a && k == :y)]))`:
 
 ```
-6 cases (lower bound 5) · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets
+6 cases (lower bound 5) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations · 4 negative targets
 excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)
      n           m   k
- 1   1           :b  :x
- 2   2           :a  :x
- 3   1           :a  :x
- 4   1           :b  :y
- 5!  Invalid(1)  :b  :y
- 6!  Invalid(1)  :a  :x
+ 1   1           :a  :x
+ 2   1           :b  :y
+ 3   2           :a  :x
+ 4   1           :b  :x
+ 5!  Invalid(1)  :a  :x
+ 6!  Invalid(1)  :b  :y
 ```
 
 In a REPL (an `IOContext` with

@@ -134,6 +134,9 @@ resolve 0.5 on their next update.
   example.
 - `Counter`, `generate_tuples`, and `Excursion` removed from the public
   surface.
+- The default engine of `covering`, `all_values`, `all_pairs`,
+  `all_triples` and `design_sizes` is `Auto()`, where 0.4's was IPOG; see
+  "The default engine is `Auto()`" below.
 - TODO (Phase 8): confirm any others, such as the `julia = "1.10"` floor.
 
 ### Deprecations
@@ -160,7 +163,8 @@ them.
 ### New engines, and the lower bound (solver plan, Phase 3)
 
 Added 2026-10-04 by the solver plan's Phase 3
-(`design/20261003_solver_plan.md`, §6). The default engine is still `IPOG()`.
+(`design/20261003_solver_plan.md`, §6). The default engine stayed `IPOG()`
+until the change below.
 
 - `Auto(; goal = :balanced, seed = 0, effort = 1)`, an engine that chooses.
   `goal = :fast` is IPOG; `:balanced` keeps the smaller of IPOG's design and
@@ -245,6 +249,37 @@ Added 2026-10-06 by the solver plan's Phase 4
   never changes the cases of a call that succeeded (contract §3.8).
 - `Construction()`'s seeded path and `Auto` start from the same engine, so
   their designs change with it.
+
+### The default engine is `Auto()` (solver plan, decision D1)
+
+Added 2026-10-06, after the review of Phase 4 (`design/20261003_solver_plan.md`,
+§7.5; `design/20261004_decisions.md`).
+
+- `covering`, `all_values`, `all_pairs`, `all_triples` and `design_sizes`
+  default to `engine = Auto()`, which is `Auto(goal = :balanced)`: where
+  the catalog applies (parameters that all have the same number of values,
+  or `strength + 1` parameters), the smaller of IPOG's design and the
+  catalog's array, IPOG's on a tie; elsewhere IPOG's design. `IPOG()` keeps
+  its name and behaviour, and `Auto(goal = :fast)` runs it; a call that
+  names `engine = IPOG()` gets IPOG's design, as 0.4's default did.
+- On the solver plan's 681 benchmark points, `Auto()` never has more cases
+  than IPOG. It has fewer on 30 of the 85 spaces with equal value counts or
+  `strength + 1` parameters, and on the uniform families 23% to 27% fewer
+  on average; on spaces of mixed value counts it is IPOG's design (0.2%
+  fewer cases on average over 341 points). A warm call took at most about
+  1 ms longer than IPOG alone at any of those points. The first call of the
+  manual's first example, in a fresh process, takes about 0.1 s.
+- Results say what `Auto` chose: the summary line reads `Auto: IPOG()` or
+  `Auto: Construction()` where it read `IPOG`, `report`'s seed line "Auto
+  uses no randomness", `design_sizes`' footer "with Auto", and
+  `record.engine` and `record.ordinary` hold Auto's configuration, each
+  start it ran and the one it kept. `recommend`'s last line says what
+  `covering(…)` would use.
+- Where `Auto` keeps the catalog's array, the cases differ from IPOG's, and
+  an orthogonal array, holding each combination once, covers fewer
+  combinations of the next strength by accident than IPOG's larger design.
+  To keep a design across this change, pass it back as `must_include`
+  (contract §9.10).
 
 ### Fixed
 

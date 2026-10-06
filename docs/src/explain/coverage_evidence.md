@@ -12,7 +12,7 @@ cases *covers* the pair when at least one case holds both values. More
 generally, a ``t``-way combination fixes ``t`` parameters to one value each,
 and ``t`` is the *strength*. The word also has a plain use: in a result's
 summary line, such as
-`5 cases (lower bound 4) · strength 2 · IPOG · 3 parameters · 12 combinations`,
+`5 cases (lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations`,
 it counts the full product, every way to give each parameter a value. The
 lower bound beside the count is a number of cases no design can have fewer
 of: the 4 feasible pairs of `mode` and `solver` each need a case of their
@@ -70,7 +70,7 @@ end
 ```
 
 A designed suite covers all of the pairs, and a random suite of the same size
-covers an expected 64 to 93 percent of them. Two facts explain the pattern.
+covers an expected 64 to 90 percent of them. Two facts explain the pattern.
 
 - A pairwise design must hold all ``v^2`` combinations of any two
   parameters, so it has at least ``v^2`` cases. A random suite of that size
@@ -80,14 +80,14 @@ covers an expected 64 to 93 percent of them. Two facts explain the pattern.
   finds interaction faults more often than coverage figures alone suggest.
 - The number of cases a design needs grows only with the logarithm of the
   number of parameters. As parameters are added, a random suite of the
-  design's size therefore covers a larger share, which is why it reaches 93
-  percent at forty parameters.
+  design's size therefore covers a larger share, which is why it reaches 90
+  percent at forty four-valued parameters.
 
 The last few combinations are the expensive ones to hit by chance. In a
 simulation made while this release was designed, random suites needed three
 and a half to five times as many cases as the design to cover every pair
-(for ten four-valued parameters, a median of 106 random cases against the
-design's 30).
+(for ten four-valued parameters, a median of 106 random cases against
+IPOG's design of 30 cases; the default engine now gives 28).
 
 With rules, a sensible random suite draws from the valid cases, and the
 chance of covering a combination depends on how many valid cases contain it.

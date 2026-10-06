@@ -414,7 +414,9 @@ end
     @test (r.parameters, r.values, r.strength, r.n_rules, r.targets) == ([Symbol(:p, i) for i in 1:8], fill(7, 8), 2, 0, 1372)
     text = sprint(show, MIME"text/plain"(), r)
     @test startswith(text, "Recommendation: 8 parameters × 7 values, strength 2, no rules; 1372 combinations to cover")
-    @test endswith(text, "covering(…; engine = Auto()) would use Construction().")
+    @test endswith(text, "covering(…) would use Construction().")   # Auto() is covering's default
+    @test endswith(sprint(show, MIME"text/plain"(), recommend(fill(1:7, 8)...; goal = :compact)),
+                   "covering(…; engine = Auto(goal = :compact)) would use Compact(Construction()).")
     @test repr(r) == "Recommendation: Construction() for 8 parameters"
     # What recommend says Auto runs is what Auto runs.
     for (space, t) in ((TestSpace(NamedTuple{Tuple(Symbol(:p, i) for i in 1:15)}(Tuple(1:6 for _ in 1:15))), 2),

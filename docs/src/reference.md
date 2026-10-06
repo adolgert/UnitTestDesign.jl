@@ -63,9 +63,10 @@ ResourceLimitError
 
 ### Engines
 
-The covering functions take an `engine`. [`IPOG`](@ref) is the default;
-[`Auto`](@ref) chooses among the others by the space and the `goal`, and
-[`recommend`](@ref) says what it would choose before generating. The
+The covering functions take an `engine`. The default, [`Auto`](@ref)`()`,
+chooses among the others by the space and the `goal`, and
+[`recommend`](@ref) says what it would choose before generating;
+[`IPOG`](@ref)`()` alone is `Auto(goal = :fast)`. The
 [Engines](man/engines.md) page compares them.
 
 ```@docs

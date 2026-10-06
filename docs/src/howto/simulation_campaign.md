@@ -57,7 +57,7 @@ every feasible triple within the group, 146 combinations in all. The
 
 ## 4. Make the design reproducible
 
-The default engine, [`IPOG`](@ref), uses no randomness, so the same space
+The default engine, [`Auto`](@ref)`()`, uses no randomness, so the same space
 gives the same cases. [`GND`](@ref) draws candidate rows at random; give it
 a seed, and the same seed gives the same cases, and `report` prints it:
 

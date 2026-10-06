@@ -49,7 +49,7 @@ A covering engine that picks its method from the request (plan §6.1).
 | `goal` | Runs | For |
 |:--|:--|:--|
 | `:fast` | [`IPOG`](@ref) alone, the same rows as `engine = IPOG()` | cheap tests |
-| `:balanced` | the smaller of IPOG's design and the catalog's array ([`Construction`](@ref)) where the catalog applies | the default for `Auto` |
+| `:balanced` | the smaller of IPOG's design and the catalog's array ([`Construction`](@ref)) where the catalog applies | the default, and `covering`'s default engine |
 | `:compact` | that, then the row reducer ([`Compact`](@ref)) with `effort` | expensive tests |
 
 Where the catalog's array has as many rows as the lower bound, no design
@@ -336,7 +336,7 @@ Recommendation: 8 parameters × 32 values, strength 2, no rules; 28672 combinati
   use   Construction()  1024 rows: Bush orthogonal array, every combination exactly once
 lower bound: 1024 cases: the 32 × 32 = 1024 combinations of p1 and p2 need a case each
 goals: :fast (IPOG alone) known only after running; :balanced 1024 cases, the minimum; :compact 1024 cases, the minimum
-covering(…; engine = Auto()) would use Construction().
+covering(…) would use Construction().
 ```
 """
 struct Recommendation
@@ -384,7 +384,7 @@ Recommendation: 8 parameters × 7 values, strength 2, no rules; 1372 combination
   use   Construction()  49 rows: Bush orthogonal array, every combination exactly once
 lower bound: 49 cases: the 7 × 7 = 49 combinations of p1 and p2 need a case each
 goals: :fast (IPOG alone) known only after running; :balanced 49 cases, the minimum; :compact 49 cases, the minimum
-covering(…; engine = Auto()) would use Construction().
+covering(…) would use Construction().
 
 julia> recommend(fill(1:6, 15)...)
 Recommendation: 15 parameters × 6 values, strength 2, no rules; 3780 combinations to cover
@@ -393,7 +393,7 @@ Recommendation: 15 parameters × 6 values, strength 2, no rules; 3780 combinatio
 rule: 3780 combinations to cover, at most 100000: both run, and the fewer rows are kept, IPOG's on a tie
 lower bound: 36 cases: the 6 × 6 = 36 combinations of p1 and p2 need a case each
 goals: :fast (IPOG alone) known only after running; :balanced at most 76 cases; :compact at most 76 cases
-covering(…; engine = Auto()) would use the smaller of IPOG() and Construction().
+covering(…) would use the smaller of IPOG() and Construction().
 ```
 
 The goals lean toward `:balanced` (decision D8): it returns no more cases
@@ -572,7 +572,8 @@ function Base.show(io::IO, ::MIME"text/plain", r::Recommendation)
     for note in r.notes
         print(io, "\nnote: ", note)
     end
-    call = r.goal === :balanced ? "Auto()" : "Auto(goal = $(repr(r.goal)))"
-    print(io, "\ncovering(…; engine = $call) would use $(r.engine).")
+    # `Auto()` is covering's default engine, so the line for :balanced names none.
+    call = r.goal === :balanced ? "covering(…)" : "covering(…; engine = Auto(goal = $(repr(r.goal))))"
+    print(io, "\n$call would use $(r.engine).")
     return nothing
 end

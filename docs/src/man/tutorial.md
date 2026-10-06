@@ -18,9 +18,10 @@ The three lists have 3 × 2 × 2 = 12 combinations. The six cases hold every
 *pair* of values: each value of the first argument appears beside each value
 of the second, each value of the first beside each value of the third, and each
 value of the second beside each value of the third. The summary line says what
-was asked (strength 2, which means pairs), which engine built it (IPOG, the
-default), and how large the full product is. The columns are named `p1`, `p2`,
-`p3` because the arguments have no names yet.
+was asked (strength 2, which means pairs), which engine built it (the
+default, `Auto`, and what it chose: here the catalog's array,
+`Construction()`), and how large the full product is. The columns are
+named `p1`, `p2`, `p3` because the arguments have no names yet.
 
 `cases` is a vector of tuples, so a test loops over it:
 
@@ -302,11 +303,12 @@ excursions(space; from = (mode = :exact, solver = :lu, tol = 1e-6), distance = 1
 ```
 
 !!! note "Choosing an engine"
-    [`IPOG`](@ref), the default, builds cases one parameter at a time and uses
-    no randomness. [`Auto`](@ref)`()` also builds the catalog's algebraic
-    array where every parameter has the same number of values, and keeps
-    whichever design is smaller; `Auto(goal = :compact)` then removes rows
-    with a reducer, for tests that are expensive to run. [`GND`](@ref) builds
+    [`Auto`](@ref)`()`, the default, builds cases with [`IPOG`](@ref), one
+    parameter at a time, and also builds the catalog's algebraic array where
+    every parameter has the same number of values, keeping whichever design
+    is smaller; neither uses randomness, and `engine = IPOG()` builds IPOG's
+    design alone. `Auto(goal = :compact)` then removes rows with a reducer,
+    for tests that are expensive to run. [`GND`](@ref) builds
     each case from random candidates drawn from a fixed seed, so it too gives
     the same cases on every run, and `GND(seed = 7)` gives a different design
     with the same guarantee. Every engine covers every feasible combination;

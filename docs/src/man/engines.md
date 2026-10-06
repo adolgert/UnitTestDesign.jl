@@ -1,7 +1,8 @@
 # Engines
 
 A covering design comes from an engine, chosen with the `engine` keyword of
-[`covering`](@ref), [`all_pairs`](@ref), and the other covering functions.
+[`covering`](@ref), [`all_pairs`](@ref), and the other covering functions,
+whose default is [`Auto`](@ref)`()`.
 Every engine keeps the same promise: every returned case is valid, every
 feasible combination is covered, and every excluded combination is reported
 (contract §1.3, §1.4). Generation checks the cases against the rules and the
@@ -12,8 +13,8 @@ whether they use randomness. [`excursions`](@ref) and
 
 | Engine | What it does | Randomness | Use when |
 |:--|:--|:--|:--|
-| [`IPOG`](@ref)`()`, the default | Builds the design one parameter at a time | none | tests are cheap, or for any space at all |
-| [`Auto`](@ref)`()` | The smaller of IPOG's design and the catalog's array | none | you want fewer cases at little cost |
+| [`Auto`](@ref)`()`, the default | The smaller of IPOG's design and the catalog's array | none | most uses: fewer cases at little cost |
+| [`IPOG`](@ref)`()` | Builds the design one parameter at a time | none | you want IPOG's design itself; `Auto(goal = :fast)` runs it |
 | `Auto(goal = :compact)` | That, then the row reducer | seeded | each case is expensive |
 | [`Construction`](@ref)`()` | An algebraic array from a catalog | none | every parameter has the same number of values |
 | [`Compact`](@ref)`(inner)` | Removes rows from `inner`'s design | seeded | each case is expensive, with an engine you choose |
@@ -36,11 +37,11 @@ cases (§8.4, §8.7):
 
 ```@example engines
 using UnitTestDesign
-all_pairs(fill(1:3, 4)...)
+all_pairs(fill(1:3, 4)...; engine = IPOG())
 ```
 
 ```@example engines
-all_pairs(fill(1:3, 4)...; engine = Auto())
+all_pairs(fill(1:3, 4)...)
 ```
 
 `cases.record` holds the bound, its proof in words, and whether the count
@@ -77,7 +78,7 @@ cost, which the space can't tell:
 | `goal` | Runs | For |
 |:--|:--|:--|
 | `:fast` | IPOG alone, the same cases as `engine = IPOG()` | cheap tests |
-| `:balanced`, the default | the smaller of IPOG's design and the catalog's array, where the catalog applies | most uses |
+| `:balanced`, the default, and `covering`'s | the smaller of IPOG's design and the catalog's array, where the catalog applies | most uses |
 | `:compact` | that, then the row reducer with `effort` | expensive tests |
 
 `:balanced` is never larger than `:fast` wherever it builds IPOG's design
@@ -112,7 +113,7 @@ the same way, for each invalid value, and the record keeps each choice.
 
 ```@example engines
 eight = fill(1:7, 8)          # eight parameters with seven values each
-(IPOG = length(all_pairs(eight...)), Auto = length(all_pairs(eight...; engine = Auto())))
+(IPOG = length(all_pairs(eight...; engine = IPOG())), Auto = length(all_pairs(eight...)))
 ```
 
 ```@example engines
@@ -318,7 +319,7 @@ cases; a failed check is an internal error, never a returned design
 Cases for some spaces at this release, with the lower bound each result
 records. "Compact" is `Auto(goal = :compact)` at its default effort and seed.
 
-| Space | Strength | IPOG | GND, seed 0 | `Auto()` | Compact | Lower bound |
+| Space | Strength | IPOG | GND, seed 0 | `Auto()`, the default | Compact | Lower bound |
 |:--|--:|--:|--:|--:|--:|--:|
 | 8 binary flags | 2 | 8 | 8 | 6 | 6 | 4 |
 | 3 parameters × 6 values | 2 | 36 | 40 | 36 | 36 | 36 |
@@ -352,7 +353,11 @@ the reduced 18 cover 56.1%. When tests are cheap, the larger design is
 arguably the better one: it finds more of the failures that need three
 values together. [`report`](@ref)'s "bonus" line counts these triples for
 any result, and [`all_triples`](@ref) covers them all. This is why no
-default reduces a design.
+default reduces a design. The default `Auto()` does keep the catalog's array
+where it has fewer cases, and an orthogonal array holds each combination
+once, so it covers fewer triples too: for 8 parameters of 7 values, IPOG's
+78 cases cover 21.8% of the triples and the array's 49 cover 14.3%. Name
+`engine = IPOG()` for IPOG's larger design.
 
 ## What a call costs, and where it stops
 
@@ -411,17 +416,19 @@ call that is too large; a design that can't be certified is not returned:
 
 ## Which to choose
 
-- **Use IPOG** when tests are cheap. It is the default, it is deterministic,
-  and it covers any request. It is fast without rules or with a few. With
-  many rules it slows down and takes more memory: each of the four designs
-  it builds asks the feasibility search whether a partial case can still be
-  completed, so on a heavily constrained space it can take a few times as
-  long as one design would.
-- **Use `Auto()`** when cases cost something to run: it is never larger
-  than IPOG where it builds both (and above 100,000 combinations, on the
-  package's benchmarks, it never was), and much smaller when every
-  parameter has the same number of values. [`recommend`](@ref) shows what
-  it would do.
+- **Use the default, `Auto()`**, for most tests: it is never larger than
+  IPOG where it builds both (and above 100,000 combinations, on the
+  package's benchmarks, it never was), much smaller when every parameter has
+  the same number of values, and IPOG's design on most other spaces. On 681
+  of the package's benchmark spaces, a warm call took at most about a
+  millisecond longer than IPOG alone.
+  [`recommend`](@ref) shows what it would do.
+- **`IPOG()`** builds IPOG's design alone, which is what `Auto(goal =
+  :fast)` runs. It is deterministic and covers any request. It is fast
+  without rules or with a few. With many rules it slows down and takes more
+  memory: each of the four designs it builds asks the feasibility search
+  whether a partial case can still be completed, so on a heavily
+  constrained space it can take a few times as long as one design would.
 - **Use `Auto(goal = :compact)`**, or `Compact` around an engine you choose,
   when each case is expensive, such as a simulation or a hardware run. Its
   lower bound tells you how far from the minimum the design can be.

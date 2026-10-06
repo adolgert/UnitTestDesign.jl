@@ -908,7 +908,8 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `Invalid`, `hasinvalid` | type, function | new | §5, §6. |
 | `Partition`, `realize` | type, function | new | §4. |
 | `ResourceLimitError` | exception | new | §3.7. |
-| `IPOG()` | engine | kept | Default engine. |
+| `Auto(; goal = :balanced, seed = 0, effort = 1)` | engine | new | Default engine of `covering`, `all_values`, `all_pairs`, `all_triples` and `design_sizes`. No randomness at `:fast` and `:balanced` (§9.4); decides from the request alone (§9.12). |
+| `IPOG()` | engine | kept | 0.4's default engine; `Auto(goal = :fast)` runs it. Its cases change in 0.5 (§9.4, §9.8). |
 | `GND(; seed = 0, candidates = 50, rng = nothing)` | engine | changed | Fixed default seed (§9.5). |
 | `GND(M = ...)` | keyword | deprecated | Alias for `candidates`. |
 
