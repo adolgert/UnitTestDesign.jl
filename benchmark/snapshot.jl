@@ -25,8 +25,9 @@
 #
 # The corpus, each part at the default limits and at tight ones:
 #
-# - Generation: `covering` at strengths 1 to 3 with IPOG and with GND (fixed
-#   seeds), `excursions` and `full_factorial`, on spaces with tabulated and
+# - Generation: `covering` at strengths 1 to 3 with the default engine
+#   (IPOG() until decision D1 made it Auto()), with IPOG() and GND (fixed
+#   seeds) named, `excursions` and `full_factorial`, on spaces with tabulated and
 #   lazy rules, whole-case rules, partitions, `Invalid` values, `stronger`
 #   groups that hold an invalid parameter, and ordinary and negative
 #   must-include rows (groups and must-include rows at strengths 1 and 2);

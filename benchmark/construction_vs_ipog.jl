@@ -142,9 +142,9 @@ function run_seeded()
     larger = String[]
     for (label, arity, t, rules, extra) in cases
         space = TestSpace(domains(arity); constraints = rules)
-        covering(space; strength = t, extra...)
+        covering(space; strength = t, engine = IPOG(), extra...)
         covering(space; strength = t, engine = C, extra...)
-        a = @timed covering(space; strength = t, extra...)
+        a = @timed covering(space; strength = t, engine = IPOG(), extra...)
         b = @timed covering(space; strength = t, engine = C, extra...)
         iscomplete(coverage(b.value)) || error("the seeded design for $label is incomplete")
         mark = length(b.value) > length(a.value) ? "larger" : length(b.value) == length(a.value) ? "equal" : "smaller"

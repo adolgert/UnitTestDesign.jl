@@ -26,9 +26,10 @@
 #              array, and its display: the first call of Auto's catalog path
 #              (plan Phase 3), a new row type included, as in `other`
 #
-# With `--engine EXPR` the example's and the second space's `all_pairs` take
-# `engine = EXPR`, such as `--engine "Auto()"`: the first call if that
-# engine were the default (plan §7.5, decision D1).
+# The example's and the second space's `all_pairs` name no engine, so they
+# measure the package's default engine, `Auto()` since decision D1. With
+# `--engine EXPR` they take `engine = EXPR` instead, such as
+# `--engine "IPOG()"`, the first call of a caller who names IPOG.
 #
 # With `--precompile` it first times `Base.compilecache` of the package in a
 # child process: the one-time cost of precompiling, which the workload

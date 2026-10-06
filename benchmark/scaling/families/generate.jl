@@ -62,7 +62,7 @@ function generate()
             space = TestSpace((names[i] => domains[i] for i in eachindex(names))...;
                               constraints = [UnitTestDesign.forbid(r.predicate, names[r.scope]...) for r in rules])
             try
-                covering(space; strength = base.strength)
+                covering(space; strength = base.strength, engine = IPOG())   # IPOG(), as when the file was written
             catch err
                 push!(dropped, "$id: $(sprint(showerror, err))")
                 continue
@@ -98,7 +98,7 @@ function verify(spaces)
         ratios = Float64[]; at = 0
         for s in selected
             space = TestSpace((Symbol(:p, i) => collect(1:a) for (i, a) in enumerate(s.arity))...)
-            rows = length(covering(space; strength = s.strength))
+            rows = length(covering(space; strength = s.strength, engine = IPOG()))
             push!(ratios, rows / bound(s.arity, s.strength)); at += rows == bound(s.arity, s.strength)
         end
         mean = round(sum(ratios) / length(ratios); digits = 3)

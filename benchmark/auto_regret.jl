@@ -22,9 +22,12 @@
 # `summary` reads the tables and prints the gates of §7.5 for
 # Auto(goal = :balanced): rows never above IPOG's; time at most twice IPOG's
 # wherever Auto picks something other than IPOG, unless the rows fall by 20%
-# or more. It prints the D1 bar (fewer rows on a quarter or more of the
-# uniform and t + 1 spaces of mainstream and smallest, never more rows on any
-# space, warm time within twice IPOG's or 10 ms), and, for the
+# or more. A point where both times are under 1 ms is not judged: the floor
+# the maintainer set after Phase 4, as ipog_compare.jl's noise allowance has
+# it, since below a millisecond the order of two calls moves their times as
+# much as the engine does. It prints the D1 bar (fewer rows on a quarter or
+# more of the uniform and t + 1 spaces of mainstream and smallest, never
+# more rows on any space, warm time within twice IPOG's or 10 ms), and, for the
 # keep-the-smallest threshold, what Auto would return at other thresholds:
 # where the catalog's array is larger than IPOG's design, and at how many
 # targets, since above the threshold an exact shape takes the catalog
@@ -130,6 +133,8 @@ function read_tables(paths)
 end
 
 num(x) = parse(Float64, x)
+"§7.5's time floor: a point where both warm times are under it is not judged."
+const FLOOR = 0.001
 int(x) = parse(Int, x)
 median(x) = (s = sort(x); isempty(s) ? NaN : isodd(length(s)) ? s[(end + 1) ÷ 2] : (s[end ÷ 2] + s[end ÷ 2 + 1]) / 2)
 
@@ -139,8 +144,9 @@ function summary(paths)
     # §7.5's gates for :balanced.
     above = [r for r in rows if int(r["balanced"]) > int(r["ipog"])]
     other = [r for r in rows if r["balanced_chose"] != "IPOG()"]
-    slow = [r for r in other if num(r["balanced_s"]) > 2num(r["ipog_s"]) &&
-                                 int(r["balanced"]) > 0.8int(r["ipog"])]
+    judged = [r for r in other if max(num(r["balanced_s"]), num(r["ipog_s"])) >= FLOOR]
+    slow = [r for r in judged if num(r["balanced_s"]) > 2num(r["ipog_s"]) &&
+                                  int(r["balanced"]) > 0.8int(r["ipog"])]
     fewer = [r for r in rows if int(r["balanced"]) < int(r["ipog"])]
     println("\n== §7.5 gates for Auto(goal = :balanced)")
     @printf("  rows never above IPOG's: %s (%d points above)\n", isempty(above) ? "PASS" : "FAIL", length(above))
@@ -148,8 +154,8 @@ function summary(paths)
         println("    above: ", r["id"], " ipog ", r["ipog"], " balanced ", r["balanced"], " (", r["balanced_chose"], ")")
     end
     @printf("  Auto picks something other than IPOG on %d points; fewer rows on %d\n", length(other), length(fewer))
-    @printf("  time at most twice IPOG's there, unless rows fall 20%% or more: %s (%d points over, provisional)\n",
-            isempty(slow) ? "PASS" : "FAIL", length(slow))
+    @printf("  time at most twice IPOG's there, unless rows fall 20%% or more, with a %.0f ms floor: %s (%d of %d judged points over, provisional; %d with both times under the floor not judged)\n",
+            1000FLOOR, isempty(slow) ? "PASS" : "FAIL", length(slow), length(judged), length(other) - length(judged))
     for r in slow
         @printf("    slow: %s ipog %s rows %.4f s, balanced %s rows %.4f s (%s)\n", r["id"], r["ipog"],
                 num(r["ipog_s"]), r["balanced"], num(r["balanced_s"]), r["balanced_chose"])
