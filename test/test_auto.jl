@@ -497,7 +497,9 @@ end
     @test [(r.level, r.engine) for r in covering_rows] ==
           [(s, e) for s in 1:3 for e in t.engines]
     @test all(r -> r.engine === nothing, (r for r in t.rows if r.kind !== :covering))
-    @test [r.cases for r in covering_rows if r.level == 2] == [10, 9, 9]
+    # Each engine's row is its own call's count (IPOG's 10 at 0ce33a4, the catalog's 9 and Auto's 9).
+    @test [r.cases for r in covering_rows if r.level == 2] ==
+          [length(covering(space; strength = 2, engine)) for engine in (IPOG(), Construction(), Auto(goal = :compact))]
     text = sprint(show, MIME"text/plain"(), t)
     @test startswith(text, "strategy        engine                 cases")
     @test endswith(text, "case counts are the rows each strategy produced with each engine, not lower bounds")

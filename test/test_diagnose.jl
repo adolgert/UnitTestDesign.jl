@@ -17,6 +17,26 @@ using TestItemRunner
                                 tol = [1e-3, 1e-6], sparse = [false, true]))
     newton_bug(c) = c.method == :newton && c.sparse
 
+    """
+    Opus's ten cases for the solver space, which `all_pairs(newton_space())`
+    gave until IPOG's lookup core replaced its two paths (plan §5.5, Phase 4;
+    it gives 9 now). The tests here are about `diagnose`, so they keep these
+    rows as data, whatever the engine's member: passed back as must-include
+    rows, which cover every pair, they are the whole design.
+    """
+    const OPUS_ROWS = [(n = 10, method = :newton, tol = 1e-3, sparse = false),
+                       (n = 10, method = :bicg, tol = 1e-6, sparse = true),
+                       (n = 10, method = :gmres, tol = 1e-3, sparse = true),
+                       (n = 100, method = :newton, tol = 1e-6, sparse = false),
+                       (n = 100, method = :bicg, tol = 1e-3, sparse = false),
+                       (n = 100, method = :gmres, tol = 1e-6, sparse = false),
+                       (n = 1000, method = :newton, tol = 1e-3, sparse = true),
+                       (n = 1000, method = :bicg, tol = 1e-6, sparse = false),
+                       (n = 1000, method = :gmres, tol = 1e-3, sparse = true),
+                       (n = 100, method = :newton, tol = 1e-6, sparse = true)]
+    "Opus's ten cases as a pairwise result on the solver space."
+    opus_cases() = all_pairs(newton_space(); must_include = OPUS_ROWS)
+
     shown(x) = sprint(show, MIME"text/plain"(), x)
 
     "The ArgumentError message of `f()`, or what happened instead."
@@ -193,7 +213,7 @@ end
 
 @testitem "diagnose: Opus's newton/sparse example ranks the true cause first (§8.6)" setup=[DiagnoseSetup] begin
     space = newton_space()
-    cases = all_pairs(space)
+    cases = opus_cases()
     @test length(cases) == 10
     passed = [!newton_bug(c) for c in cases]
     failing = findall(!, passed)
@@ -235,7 +255,7 @@ end
 
 @testitem "followups: every newton/sparse suspect is isolated near a failing case (§3.17, §8.6)" setup=[DiagnoseSetup] begin
     space = newton_space()
-    cases = all_pairs(space)
+    cases = opus_cases()
     passed = [!newton_bug(c) for c in cases]
     d = diagnose(cases, passed)
     fs = followups(d)
@@ -269,7 +289,7 @@ end
 
 @testitem "diagnose agrees with the brute-force oracle at strengths 1 to 3" setup=[DiagnoseSetup] begin
     space = newton_space()
-    cases = all_pairs(space)
+    cases = opus_cases()
     bugs = [c -> c.method == :newton && c.sparse,
             c -> c.tol == 1e-6,
             c -> (c.method == :gmres && c.tol == 1e-3) || newton_bug(c),
@@ -293,7 +313,7 @@ end
 
 @testitem "diagnose: two independent faults are both ranked, and an innocent pair can lead (§8.6)" setup=[DiagnoseSetup] begin
     space = newton_space()
-    cases = all_pairs(space)
+    cases = opus_cases()
     gmres_bug(c) = c.method == :gmres && c.tol == 1e-3
     passed = [!(newton_bug(c) || gmres_bug(c)) for c in cases]
     d = diagnose(cases, passed)
@@ -369,7 +389,7 @@ end
 
     # With no rule at all, the other suspects can cover every value of a parameter.
     space = newton_space()
-    cases = all_pairs(space)
+    cases = opus_cases()
     passed = [!(newton_bug(c) || (c.method == :gmres && c.tol == 1e-3)) for c in cases]
     d = diagnose(cases, passed)
     fs = followups(d)
@@ -769,7 +789,7 @@ end
 
 @testitem "diagnose: no failures, all failures, and repeated cases with conflicting outcomes" setup=[DiagnoseSetup] begin
     space = newton_space()
-    cases = all_pairs(space)
+    cases = opus_cases()
     passed = [!newton_bug(c) for c in cases]
 
     d = diagnose(cases, fill(true, 10))
@@ -818,7 +838,7 @@ end
 
 @testitem "diagnose: input errors name the problem" setup=[DiagnoseSetup] begin
     space = newton_space()
-    cases = all_pairs(space)
+    cases = opus_cases()
     passed = [!newton_bug(c) for c in cases]
     @test message(() -> diagnose(cases, [true])) ==
         "diagnose got 1 outcome for 10 cases; passed needs one outcome per case, in case order"
@@ -858,7 +878,7 @@ end
     @test d.strength == 1 && [s.combination for s in d.suspects] == [(a = 2,)]
 
     # An explicit strength replaces the result's; strength 1 can leave no suspect.
-    cases = all_pairs(space)
+    cases = opus_cases()
     passed = [!newton_bug(c) for c in cases]
     @test diagnose(cases, passed; strength = 3).strength == 3
     d = diagnose(cases, passed; strength = 1)
@@ -876,7 +896,8 @@ end
     @test [s.combination for s in vectors.suspects] == [s.combination for s in named.suspects]
 
     # A positional result names its parameters p1, p2, ….
-    pc = all_pairs([10, 100, 1000], [:newton, :bicg, :gmres], [1e-3, 1e-6], [false, true])
+    pc = all_pairs([10, 100, 1000], [:newton, :bicg, :gmres], [1e-3, 1e-6], [false, true];
+                   must_include = [Tuple(r) for r in OPUS_ROWS])
     ppassed = [!(c[2] == :newton && c[4]) for c in pc]
     d = diagnose(pc, ppassed)
     @test [s.combination for s in d.suspects] == [(p2 = :newton, p4 = true), (p1 = 1000, p2 = :newton), (p1 = 100, p4 = true)]

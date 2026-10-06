@@ -18,7 +18,7 @@ using TestItemRunner
                           validate_design, _compact, _negative_request, _fallback, _randomized, _engine_phrase,
                           _seed_text, _engine_config, _engine_registry, _COMPACT_MAX_COMBINATIONS
 
-    "A request's required targets, through the targets interface, and IPOG's rows for it."
+    "A request's required targets, through the targets interface, and `engine`'s rows for it (IPOG's by default)."
     function start_of(request; engine = IPOG())
         required, _ = classify_targets(request)
         targets = RequiredTargets(request, required)
@@ -98,7 +98,7 @@ end
     # records it (benchmark/scaling/metrics.jl).
     stage = cases.record.ordinary
     @test stage.engine == "Compact(IPOG(); seed = 0, effort = 1)" && stage.rows == length(cases)
-    @test stage.start == (engine = "IPOG()", rows = length(all_pairs(space)))
+    @test stage.start == all_pairs(space).record.ordinary   # IPOG's own stage
     @test stage.reducer.start == length(all_pairs(space)) && stage.reducer.rows == length(cases)
     @test stage.reducer.stop in (:bound, :budget, :work)
     @test cases.record.randomized && isempty(cases.notes)
@@ -127,7 +127,9 @@ end
     # certified. In the test mode (`check = true`) every changed row is checked
     # against every rule and every complete design is recounted. The request's
     # feasibility search answers no question for the reducer (its query and
-    # node counts don't move), while its rule checks are counted.
+    # node counts don't move), while its rule checks are counted. The start is
+    # GND's, seeded, whose designs leave the reducer more to do than IPOG's,
+    # so that the count of reduced designs doesn't depend on IPOG's member.
     rng = Xoshiro(0x2026_1004_02)
     reduced = Ref(0)
     for _ in 1:40
@@ -144,7 +146,7 @@ end
         end
         # Ordinary rows only, as `generate` hands an engine (the negative rows are below).
         any(row -> any(i -> row[i] > request.arity[i], eachindex(row)), eachcol(request.must_include)) && continue
-        required, targets, start = start_of(request)
+        required, targets, start = start_of(request; engine = GND(seed = 1))
         stats = request.feasibility.stats
         queries, nodes, checks = stats.queries, stats.total_nodes, stats.evaluations
         matrix, notes = _compact(request, targets, start; seed = rand(rng, 0:9), check = true, budget = 3_000)
@@ -271,10 +273,10 @@ end
 @testitem "compact: it stops at the bound, at the must-include rows, at a budget, and past its caps (§5.3)" setup=[CompactSetup] begin
     # At the bound: the result's lower bound (`_ordinary_bound`), here the most
     # required combinations on one support. 3 × 3 at strength 2 has a bound of
-    # 9, which the reducer reaches from IPOG's 9 + k rows.
+    # 9, which the reducer reaches from GND's 12 rows (seed 2).
     space = TestSpace((a = 1:3, b = 1:3, c = 1:3, d = 1:2, e = 1:2))
     request = Request(space)
-    required, targets, start = start_of(request)
+    required, targets, start = start_of(request; engine = GND(seed = 2))
     matrix, notes = _compact(request, targets, start)
     @test size(start, 2) > 9 && size(matrix, 2) == 9
     @test notes.reducer_stop === :bound && notes.reducer_bound == 9 && notes.reducer_steps < notes.reducer_budget

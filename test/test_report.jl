@@ -687,8 +687,15 @@ end
         end
     end
     # The space of two components is the one where a shared answer cache
-    # shows (14 unresolved triples with one).
-    r = report(covering(TestSpace(two; constraints = two_rules); strength = 2); feasibility_limit = 4)
+    # shows (14 unresolved triples with one), on the ten cases IPOG gave there
+    # until its lookup core (plan §5.5, Phase 4), kept as data: passed back as
+    # must-include rows, which cover every pair, they are the whole design.
+    ten = [(2, 2, 1, 2, 1, 2, 1, 2), (1, 2, 1, 2, 2, 1, 2, 1), (2, 1, 2, 1, 2, 1, 1, 2), (2, 1, 1, 2, 1, 2, 1, 2),
+           (2, 1, 2, 2, 1, 2, 1, 2), (2, 1, 2, 1, 1, 2, 1, 2), (1, 2, 1, 2, 1, 2, 1, 2), (1, 2, 1, 2, 2, 2, 1, 2),
+           (2, 1, 2, 1, 2, 1, 2, 1), (1, 2, 1, 2, 2, 1, 2, 2)]
+    pinned = covering(TestSpace(two; constraints = two_rules); strength = 2, must_include = ten)
+    @test length(pinned) == 10
+    r = report(pinned; feasibility_limit = 4)
     @test r.bonus.unknown == 10
 
     # design_sizes keeps one memo for the call; each figure is that of
