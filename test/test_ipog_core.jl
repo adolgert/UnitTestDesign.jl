@@ -66,11 +66,15 @@ end
     @test several.members == [(:lowest, :support), (:lowest, :value), (:rotate, :support), (:rotate, :value)]
     full = _prepare(LOOKUP, Profile(Request(positional([2, 3]))))
     @test full.path === :full_strength && !full.rules
-    # A design records the engine, its rows, and no notes.
+    # A design records the engine, its rows, and the member that made them.
     cases = all_pairs(positional([2, 3, 4, 2]); engine = LOOKUP)
     @test cases.engine === :IPOGLookup && iscomplete(coverage(cases))
     @test cases.record.ordinary ==
-          (engine = "UnitTestDesign._IPOGLookup(tiebreak = :lowest, vertical = :support)", rows = length(cases))
+          (engine = "UnitTestDesign._IPOGLookup(tiebreak = :lowest, vertical = :support)", rows = length(cases),
+           member = (tiebreak = :lowest, vertical = :support))
+    # At full strength no member runs: every valid row, as `full_strength_rows` lists them.
+    whole = all_pairs(positional([2, 3]); engine = _IPOGLookup(tiebreak = :rotate))
+    @test whole.record.ordinary.member == (tiebreak = :none, vertical = :none) && length(whole) == 6
 end
 
 
@@ -86,11 +90,12 @@ end
         engine = _IPOGLookup(tiebreak = (:lowest, :rotate), vertical = (:support, :value))
         design = generate(engine, request)
         @test design.matrix == rows[first_fewest]
-        kept = design.record.ordinary.kept
-        @test (kept.tiebreak, kept.vertical) == first_fewest
+        member = design.record.ordinary.member
+        @test (member.tiebreak, member.vertical) == first_fewest
     end
-    # One member: no notes.
-    @test !haskey(generate(LOOKUP, Request(positional(fill(8, 8)))).record.ordinary, :kept)
+    # One member: it is the one recorded.
+    @test generate(LOOKUP, Request(positional(fill(8, 8)))).record.ordinary.member ==
+          (tiebreak = :lowest, vertical = :support)
 end
 
 

@@ -686,11 +686,16 @@ end
     targets = _Classified(request).targets
     plan = @inferred _prepare(_IPOGLookup(), Profile(request))
     @test plan isa _IPOGPlan{_IPOGLookup}
-    # One member's notes are empty; several members' say which was kept, so
-    # the result is a union of two concrete types.
-    rows, notes = @inferred Tuple{Matrix{Int}, NamedTuple} _execute(plan, request, targets)
-    @test rows isa Matrix{Int} && notes === (;)
-    @test first(@inferred Tuple{Matrix{Int}, NamedTuple} _run(plan, request, targets)) == rows
+    # Every plan's notes name the member that made the rows, one type for
+    # one member, several, and full strength, so the stage infers concretely.
+    rows, notes = @inferred _execute(plan, request, targets)
+    @test rows isa Matrix{Int} && notes === (member = (tiebreak = :lowest, vertical = :support),)
+    @test first(@inferred _run(plan, request, targets)) == rows
+    several = _prepare(_IPOGLookup(tiebreak = (:lowest, :rotate), vertical = (:support, :value)), Profile(request))
+    @test typeof(@inferred _execute(several, request, targets)) === typeof((rows, notes))
+    full = Request(uniform(4, 3); strength = 4)
+    @test typeof(last(@inferred _execute(_prepare(_IPOGLookup(), Profile(full)), full, _Classified(full).targets))) ===
+          typeof(notes)
     @test (@inferred generate(_IPOGLookup(), request)) isa Design
     steps = @inferred _lookup_steps(targets, request.arity, plan.order)
     @test (@inferred _lookup_cover(steps, targets, Returns(false), request.must_include)) == rows

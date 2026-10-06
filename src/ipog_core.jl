@@ -150,7 +150,7 @@ growth left uncovered:
 Either may be a tuple of rules: the engine then runs every combination, a
 tie-break rule with a vertical order, tie-break rules first, and keeps the
 design with the fewest rows, the first of equals (plan §4.1's "keep the
-smallest"), and the stage's notes say which (`kept`).
+smallest"). The stage's notes say which member made the rows (`member`).
 """
 struct _IPOGLookup <: CoveringEngine
     tiebreak::Tuple{Vararg{Symbol}}
@@ -195,9 +195,9 @@ The lookup core's plan for a request (`_prepare`, plan §4.2), from its
 is the number of parameters (every valid row, `full_strength_rows`, §7.8),
 otherwise `:lookup`; `order`, the order in which parameters are added
 (`ipog_order`); `rules`, whether the request has rules, so that `dead` is
-asked; and `members`, each `(tiebreak, vertical)` the engine runs
-(`_IPOGLookup`). The engine is a type parameter so that `IPOG()`'s plan can be
-this one when the core replaces the old paths.
+asked; and `members`, each `(tiebreak, vertical)` the engine runs, tie-break
+rules first (`_IPOGLookup`). The engine is a type parameter, so that one plan
+serves `_IPOGLookup` and `IPOG()` (`_ipog_plan`).
 """
 struct _IPOGPlan{E <: CoveringEngine} <: _Plan
     engine::E
@@ -208,36 +208,61 @@ struct _IPOGPlan{E <: CoveringEngine} <: _Plan
     members::Vector{Tuple{Symbol, Symbol}}
 end
 
-function _prepare(engine::_IPOGLookup, p::Profile)
+"The plan of `engine` for a request with profile `p`, running every tie-break rule of `tiebreak` with every vertical order of `vertical` (`_IPOGPlan`)."
+function _ipog_plan(engine::CoveringEngine, p::Profile, tiebreak::Tuple{Vararg{Symbol}},
+                    vertical::Tuple{Vararg{Symbol}})
     path = p.strength == nparameters(p) ? :full_strength : :lookup
-    members = Tuple{Symbol, Symbol}[(t, v) for t in engine.tiebreak for v in engine.vertical]
+    members = Tuple{Symbol, Symbol}[(t, v) for t in tiebreak for v in vertical]
     return _IPOGPlan(engine, fit(engine, p), path, ipog_order(p.arity, p.groups), !isempty(p.rules), members)
 end
 
+_prepare(engine::_IPOGLookup, p::Profile) = _ipog_plan(engine, p, engine.tiebreak, engine.vertical)
+
+"The member a full-strength design records, where no member runs (`_execute`)."
+const _NO_MEMBER = (tiebreak = :none, vertical = :none)
+
 """
-    _execute(plan::_IPOGPlan, request, targets) -> (matrix, notes)
+    _execute(plan::_IPOGPlan, request, targets) -> (matrix, (member = (; tiebreak, vertical),))
 
 The lookup core's rows (`CoveringEngine`): the must-include rows first, in
 order, unchanged where set (contract §10.5, §7.10), then rows until every
 required target is covered, each valid under the request's rules. At full
-strength, every valid row (`full_strength_rows`, as both old paths give it);
-otherwise `_lookup_cover`, which with no required target and no must-include
-row gives no rows (§1.24), for each member of the plan on the same steps,
-keeping the fewest rows, the first of equals. No notes for one member; for
-several, `kept`, the member kept, as `(tiebreak, vertical)`.
+strength, every valid row (`full_strength_rows`), which no member changes, so
+the notes' `member` is `(tiebreak = :none, vertical = :none)`; otherwise
+`_lookup_cover`, which with no required target and no must-include row gives
+no rows (§1.24), for each member of the plan on the same steps, keeping the
+fewest rows, the first of equals (`_fewest_rows`), and the notes' `member` is
+the one kept. The notes have one type for every plan, so that `_run`'s stage
+infers concretely.
 """
 function _execute(plan::_IPOGPlan, request::Request, targets::RequiredTargets)
-    plan.path === :full_strength && return (full_strength_rows(request, _target_list(targets)), (;))
+    plan.path === :full_strength &&
+        return (full_strength_rows(request, _target_list(targets)), (member = _NO_MEMBER,))
     steps = _lookup_steps(targets, request.arity, plan.order)
     isdead = plan.rules ? (row -> dead(request, row)) : Returns(false)
-    best, kept = zeros(Int, length(request.arity), 0), 0
-    for (k, (tiebreak, vertical)) in enumerate(plan.members)
-        rows = _lookup_cover(steps, targets, isdead, request.must_include; tiebreak, vertical)
-        (kept == 0 || size(rows, 2) < size(best, 2)) && ((best, kept) = (rows, k))
+    rows, kept = _fewest_rows(plan.members) do tiebreak, vertical
+        _lookup_cover(steps, targets, isdead, request.must_include; tiebreak, vertical)
     end
-    length(plan.members) == 1 && return (best, (;))
     tiebreak, vertical = plan.members[kept]
-    return (best, (kept = (; tiebreak, vertical),))
+    return (rows, (member = (; tiebreak, vertical),))
+end
+
+"""
+    _fewest_rows(f, members) -> (rows, k)
+
+`f(tiebreak, vertical)` for each member of `members` in order, and of its
+results the one with the fewest rows, the first of equals, with the index of
+the member that made it: plan §4.1's "keep the smallest", decided from the
+rows alone, so deterministic.
+"""
+function _fewest_rows(f, members::Vector{Tuple{Symbol, Symbol}})
+    isempty(members) && error("internal error: an IPOG plan with no member")
+    best, kept = f(members[1]...)::Matrix{Int}, 1
+    for k in 2:length(members)
+        rows = f(members[k]...)::Matrix{Int}
+        size(rows, 2) < size(best, 2) && ((best, kept) = (rows, k))
+    end
+    return best, kept
 end
 
 cover_ordinary(engine::_IPOGLookup, request::Request, targets::RequiredTargets) = _cover(engine, request, targets)
