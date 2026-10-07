@@ -394,17 +394,26 @@ call that is too large; a design that can't be certified is not returned:
   searches' answers for the parameters that rules link together: a rule over
   two parameters keeps a few answers however wide the space, while a rule
   that reads the whole case, or rules that chain many parameters, link them
-  into one search whose answers grow with the combinations. A required
-  combination keeps nothing but its count; an excluded one keeps its
-  explanation. Twenty binary parameters at strength 6 with one rule peaked
+  into one search whose answers grow with the combinations. Classification
+  keeps nothing for a required combination but its count, and for an
+  excluded one its explanation. During the call, IPOG marks with a bit each
+  combination of a set of parameters that a rule partly excludes, and GND
+  holds every required combination as a column of the parameters, eight
+  bytes each. Twenty binary parameters at strength 6 with one rule peaked
   at 414 to 447 MiB, where at the start of this release's work they peaked
-  at 4.3 to 7.1 GiB; 200 options with 24 rules took about 0.1 seconds and
-  620 MiB, and 400 options with 46 rules 5.5 to 5.7 seconds and 887 to 944
-  MiB, where they took 3 seconds and 1.4 GiB, and 19 seconds and 6.2 GiB.
-  Where rules link many parameters, the searches set the time. A rule that
-  reads the whole case is checked only on complete cases, which makes its
-  search far longer than a scoped rule's
-  ([what rules cost](../explain/constraints.md#What-rules-cost)).
+  at 4.3 to 7.1 GiB. On 200 options with 24 rules a first call, which
+  compiles, took 2.1 seconds and a warm call 0.05 seconds, peaking at 445
+  MiB, where a first call took 3 seconds and 1.4 GiB; on 400 options with 46
+  rules a first call took 9.2 seconds and a warm call 2.5 seconds, peaking
+  at 760 to 780 MiB, where a first call took 19 seconds and 6.2 GiB. There
+  classification is nearly the whole call, and most of it is explaining the
+  3,281 combinations that the rules exclude only together: the search for
+  the rules behind each, which `explanation_limit` bounds (with a limit of 1,
+  which leaves those explanations unresolved, classification took 0.3
+  seconds where it took 2.4). Where rules link many parameters into one
+  search, that search sets the time. A rule that reads the whole case is
+  checked only on complete cases, which makes its search far longer than a
+  scoped rule's ([what rules cost](../explain/constraints.md#What-rules-cost)).
 - **`feasibility_limit`** (1,000,000 nodes per question by default) stops a
   search that can't decide whether a combination or a partial case has a
   valid completion, with a [`ResourceLimitError`](@ref) that names it.
