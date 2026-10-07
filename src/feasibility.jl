@@ -264,13 +264,37 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
             throw(ArgumentError("memos[$k] does not fit table $k"))
         end
     end
-    components, component_of = _connected_components(n, rules)
-    component_tables = [Int[] for _ in components]
-    param_tables = [Int[] for _ in 1:n]
+    return _Feasibility(cands, rules, Int(limit), collect(Union{Nothing, RuleMemo}, memos), nothing)
+end
+
+"""
+    _Feasibility(cands, rules, limit, memos, parent) -> Feasibility
+
+The rest of `Feasibility`'s construction, from validated parts it keeps as
+given: the candidates, the rule tables and the memos aligned with them. A
+deletion trial (`_deletion_search`) builds its search here from its
+`parent`'s: the same candidates, which never change, and a subset of the
+parent's tables and memos, so nothing needs checking again (review p5-perf
+3). Its components are those of its own rules, as `Feasibility` would find
+them; a parameter alone in its component in both reuses the parent's vector
+for it, which nothing changes. Otherwise `parent` is `nothing`.
+"""
+function _Feasibility(cands::Vector{Vector{Int}}, rules::Vector{RuleTable}, limit::Int,
+                      memos::Vector{Union{Nothing, RuleMemo}}, parent::Union{Nothing, Feasibility})
+    n = length(cands)
+    components, component_of = _connected_components(n, rules, parent)
+    # A parameter in no scope, and a component without a table, share one
+    # empty list of tables, never written.
+    none = Int[]
+    component_tables = fill(none, length(components))
+    param_tables = fill(none, n)
     for (k, t) in enumerate(rules)
         isempty(t.scope) && continue
-        push!(component_tables[component_of[first(t.scope)]], k)
+        c = component_of[first(t.scope)]
+        component_tables[c] === none && (component_tables[c] = Int[])
+        push!(component_tables[c], k)
         for p in t.scope
+            param_tables[p] === none && (param_tables[p] = Int[])
             push!(param_tables[p], k)
         end
     end
@@ -285,14 +309,17 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
     alive = [constrained[component_of[p]] ? Vector{Bool}(undef, length(cands[p])) : no_survivors for p in 1:n]
     search = _Search(zeros(Int, n), alive, zeros(Int, n), Tuple{Int, Int}[], Int(limit), 0)
     template = all(constrained) ? Int[] : [constrained[component_of[p]] ? 0 : cands[p][1] for p in 1:n]
-    return Feasibility(cands, rules, Int(limit), components, component_of,
+    return Feasibility(cands, rules, limit, components, component_of,
         component_tables, param_tables, findall(constrained), template, caches,
-        collect(Union{Nothing, RuleMemo}, memos), SearchStats(),
-        zeros(Int, n), subkeys, Int[], search)
+        memos, SearchStats(), zeros(Int, n), subkeys, Int[], search)
 end
 
-"Union-find over table scopes. Components ordered by smallest member, members ascending."
-function _connected_components(n::Int, tables::Vector{RuleTable})
+"""
+Union-find over table scopes. Components ordered by smallest member, members
+ascending. A component of one parameter reuses `shared`'s vector for it when
+that is a component of one parameter too (a deletion trial's parent's).
+"""
+function _connected_components(n::Int, tables::Vector{RuleTable}, shared::Union{Nothing, Feasibility} = nothing)
     parent = collect(1:n)
     function root(i)
         while parent[i] != i
@@ -305,13 +332,23 @@ function _connected_components(n::Int, tables::Vector{RuleTable})
         a, b = root(t.scope[1]), root(t.scope[k])
         a == b || (parent[max(a, b)] = min(a, b))
     end
+    members = zeros(Int, n)   # the size of the component whose root is p
+    for p in 1:n
+        members[root(p)] += 1
+    end
     components = Vector{Int}[]
     label = zeros(Int, n)
     component_of = zeros(Int, n)
     for p in 1:n
         r = root(p)
         if label[r] == 0
-            push!(components, Int[])
+            if members[r] == 1 && shared !== nothing && length(shared.components[shared.component_of[p]]) == 1
+                push!(components, shared.components[shared.component_of[p]])
+                label[r] = length(components)
+                component_of[p] = label[r]
+                continue
+            end
+            push!(components, sizehint!(Int[], members[r]))
             label[r] = length(components)
         end
         push!(components[label[r]], p)
@@ -800,8 +837,7 @@ function _deletion_search(f::Feasibility, key::Vector{Int}, explanation_limit::I
             break
         end
         trial_rules = filter(!=(r), keep)
-        trial = Feasibility(f.candidates, f.tables[trial_rules]; limit = f.limit,
-                            memos = f.rule_memo[trial_rules])
+        trial = _Feasibility(f.candidates, f.tables[trial_rules], f.limit, f.rule_memo[trial_rules], f)
         status = _completable(trial, key, min(f.limit, remaining))
         remaining -= trial.stats.last_nodes
         nodes += trial.stats.total_nodes

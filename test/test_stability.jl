@@ -91,7 +91,8 @@ end
 
 
 @testitem "stability: the search's entry points infer their return types" setup=[StabilitySetup] begin
-    using UnitTestDesign: Request, TargetList, IndexExplanation, dead, explain_partial, _status, _completable
+    using UnitTestDesign: Request, TargetList, IndexExplanation, dead, explain_partial, _status, _completable,
+        _Feasibility, _deletion_search
     space = stability_space()
     request = Request(space; strength = 2)
     f = request.feasibility
@@ -104,6 +105,11 @@ end
     @test (@inferred _status(f, key)) isa Symbol
     @test (@inferred explain_partial(f, key)) isa IndexExplanation
     @test (@inferred _completable(f, key, 100)) isa Symbol
+    # A deletion trial, built from its parent (review p5-perf 3).
+    keep = collect(2:length(f.tables))
+    @test (@inferred _Feasibility(f.candidates, f.tables[keep], f.limit, f.rule_memo[keep], f)) isa Feasibility
+    @test (@inferred Tuple{Vector{Int}, Symbol, Union{Nothing, Symbol}, Tuple{Int, Int}} _deletion_search(
+        f, [2, 0, 0, 1, 0], 100)) isa Tuple   # the limit that stopped it, or `nothing`: a small union
     @test (@inferred TargetList(request)[3]) isa Vector{Int}
 end
 

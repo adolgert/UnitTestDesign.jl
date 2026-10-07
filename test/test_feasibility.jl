@@ -968,3 +968,46 @@ end
     @test memo_size(h) == 0
     @test !forbids(h, 1, [1]) && memo_size(h) == 1
 end
+
+
+@testitem "feasibility: a deletion trial is built from its parent as a fresh search would be (review p5-perf 3)" setup=[FeasibilitySetup] begin
+    using Random
+    using UnitTestDesign: _Feasibility
+    # `_deletion_search` builds each trial with `_Feasibility` from its
+    # parent's candidates, tables and memos, checking nothing again and
+    # reusing the parent's vector for a parameter alone in its component in
+    # both, where it built a whole `Feasibility` (its candidates copied,
+    # every list allocated). The trial must be the search `Feasibility` would
+    # build over the same rules: the same components in the same order, the
+    # same tables per component and per parameter, the same constrained list
+    # and template. The equivalence test above checks its answers, rules,
+    # nodes and rule checks against 31bef0f's deletion search.
+    rng = Xoshiro(0x2026_1006_7a)
+    shared = Ref(0)
+    for _ in 1:200
+        n = rand(rng, 1:9)
+        cands = [collect(1:rand(rng, 1:3)) for _ in 1:n]
+        tables = RuleTable[]
+        for _ in 1:rand(rng, 0:6)
+            scope = randperm(rng, n)[1:rand(rng, 1:min(n, 3))]
+            push!(tables, tabulate(scope, length.(cands), (xs...) -> rand(rng) < 0.3))
+        end
+        rand(rng) < 0.2 && push!(tables, tabulate(1:n, length.(cands), (xs...) -> false))   # whole-case
+        f = Feasibility(cands, tables)
+        for keep in (filter(_ -> rand(rng) < 0.6, collect(eachindex(tables))), collect(2:length(tables)))
+            trial = _Feasibility(f.candidates, f.tables[keep], f.limit, f.rule_memo[keep], f)
+            fresh = Feasibility(f.candidates, f.tables[keep]; limit = f.limit, memos = f.rule_memo[keep])
+            @test trial.candidates === f.candidates
+            @test (trial.components, trial.component_of, trial.component_tables, trial.param_tables,
+                   trial.constrained, trial.template) ==
+                  (fresh.components, fresh.component_of, fresh.component_tables, fresh.param_tables,
+                   fresh.constrained, fresh.template)
+            for members in trial.components
+                length(members) == 1 && length(f.components[f.component_of[only(members)]]) == 1 || continue
+                @test members === f.components[f.component_of[only(members)]]
+                shared[] += 1
+            end
+        end
+    end
+    @test shared[] > 100
+end
