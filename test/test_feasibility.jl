@@ -926,6 +926,66 @@ end
 end
 
 
+@testitem "feasibility: a request's row is checked and asked through its map of positions (the review's R2)" setup=[FeasibilitySetup] begin
+    using Random
+    using UnitTestDesign: Request, _mapped_completable, _mapped_key!, _completable, _checked_key, _witness,
+        _feasibility, _space_indices, _Feasibility, from_indices
+    # `dead(request, partial)` hands the search of the row's kind the row in
+    # engine positions and the request's map from positions to value
+    # indices, `candidates`. The search writes the key and checks it as
+    # `_checked_key` checks an assignment, through a table of the map it
+    # makes once (`_map!`); the request no longer writes the search's key.
+    space = TestSpace((a = [1, 2, 3, Invalid(0)], b = [:x, Invalid(:bad), :y, :z], c = [true, false], d = 1:3);
+                      constraints = [forbid((a = 1, b = :y)), forbid((c, d) -> c && d == 3, :c, :d)])
+    request = Request(space; strength = 2)
+    map = request.candidates
+    @test map == [[1, 2, 3, 4], [1, 3, 4, 2], [1, 2], [1, 2, 3]]   # b's Invalid is value index 2, position 4
+    # The same key, answer and witness as the value indices checked by
+    # `_checked_key`, on random rows of every kind.
+    rng = Xoshiro(0x2026_1007_0002)
+    searches = Set{Any}()
+    for _ in 1:600
+        row = [rand(rng) < 0.5 ? 0 : rand(rng, 1:length(map[i])) for i in 1:4]
+        count(i -> row[i] > request.arity[i], 1:4) > 1 && continue
+        f = _feasibility(request, row)
+        push!(searches, f)
+        idx = _space_indices(request, row)
+        @test _mapped_key!(f, map, row) == idx && f.mapped.map === map
+        status = _mapped_completable(f, map, row)
+        w = status === :feasible ? copy(_witness(f)) : nothing
+        @test _completable(f, _checked_key(f, idx), f.limit) === status
+        @test w === nothing || w == _witness(f)
+        @test dead(request, row) == (status === :infeasible)
+    end
+    @test length(searches) == 3   # ordinary rows, and negative rows at a and at b
+    # A row that doesn't fit the search is an `ArgumentError`, as for `_checked_key`.
+    f = request.feasibility
+    negative = _feasibility(request, [4, 0, 0, 0])
+    @test negative !== f
+    @test_throws "not among its candidates" _mapped_completable(f, map, [4, 0, 0, 0])         # a = Invalid(0)
+    @test_throws "not among its candidates" _mapped_completable(f, map, [0, 4, 0, 0])         # b = Invalid(:bad)
+    @test_throws "not among its candidates" _mapped_completable(negative, map, [1, 0, 0, 0])  # a = 1
+    @test_throws "not among its candidates" _mapped_completable(negative, map, [4, 4, 0, 0])
+    @test_throws "outside its 4 mapped value indices" _mapped_completable(f, map, [5, 0, 0, 0])
+    @test_throws "outside its 2 mapped value indices" _mapped_completable(f, map, [0, 0, -1, 0])
+    @test_throws "one entry per parameter" _mapped_completable(f, map, [1, 0, 0])
+    @test_throws "one list of value indices per parameter" _mapped_completable(f, map[1:3], [1, 0, 0, 0])
+    # The table is whole after each error, and a map of the same content is another map.
+    @test _mapped_completable(f, map, [1, 2, 0, 0]) === :infeasible && f.mapped.map === map   # (a = 1, b = :y)
+    other = deepcopy(map)
+    @test _mapped_completable(f, other, [1, 2, 0, 0]) === :infeasible && f.mapped.map === other
+    @test _mapped_completable(negative, map, [4, 3, 1, 3]) === :infeasible   # (c, d) = (true, 3)
+    # A deletion trial shares its parent's table: the same candidates.
+    @test _Feasibility(f.candidates, f.tables[1:1], f.limit, f.rule_memo[1:1], f).mapped === f.mapped
+    # The request's `ResourceLimitError` names the row in values, as before.
+    tight = Request(TestSpace((a = 1:3, b = 1:3, c = 1:3); constraints = [forbid((a, b) -> a == b, :a, :b),
+                    forbid((b, c) -> b == c, :b, :c), forbid((a, c) -> a == c, :a, :c)]); feasibility_limit = 1)
+    err = try dead(tight, [1, 0, 0]); nothing catch e; e end
+    @test err isa ResourceLimitError &&
+          err.what == "placing a value: the feasibility search for $(from_indices(tight.space, [1, 0, 0]))"
+end
+
+
 @testitem "feasibility: the lazy-rule memo is the operation's, shared by its trials (§3.5, §12.19)" setup=[FeasibilitySetup] begin
     using UnitTestDesign: memo_size, rule_memos, RuleMemo
     # A lazy three-parameter rule and a tabulated one, as in Fable's solver:

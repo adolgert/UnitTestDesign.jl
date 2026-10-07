@@ -317,17 +317,16 @@ contract §3.6). This is the predicate that replaces `disallow` at every
 engine site. A partial row with an invalid position is judged under the
 negative-row policy (§5.5); an engine's rows never hold one.
 
-The row's value indices are written into the search's own buffer
-(`f.key`): every engine position maps to one of the search's candidates, so
-the key needs no other check. A question the caches answer allocates
-nothing (plan §5.6).
+The search of the row's kind answers it through `candidates`, the map from
+engine positions to value indices (`_mapped_completable`, feasibility.jl),
+which converts and checks the row in the search's own buffer, so a question
+the caches answer allocates nothing (plan §5.6).
 """
 function dead(request::Request, partial::AbstractVector{<:Integer})
     f = _feasibility(request, partial)
-    key = _space_indices!(f.key, request, partial)
-    status = _completable(f, key, f.limit)
+    status = _mapped_completable(f, request.candidates, partial)
     status === :unknown && throw(ResourceLimitError(
-        "placing a value: the feasibility search for $(from_indices(request.space, key))",
+        "placing a value: the feasibility search for $(from_indices(request.space, _space_indices(request, partial)))",
         f.limit, :feasibility_limit))
     return status === :infeasible
 end

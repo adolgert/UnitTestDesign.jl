@@ -92,7 +92,7 @@ end
 
 @testitem "stability: the search's entry points infer their return types" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, TargetList, IndexExplanation, dead, explain_partial, _status, _completable,
-        _Feasibility, _deletion_search
+        _Feasibility, _deletion_search, _mapped_completable
     space = stability_space()
     request = Request(space; strength = 2)
     f = request.feasibility
@@ -102,6 +102,7 @@ end
     @test (@inferred _violates(f, key)) isa Bool
     @test (@inferred dead(f, key)) isa Bool
     @test (@inferred dead(request, [1, 0, 0, 0, 0])) isa Bool
+    @test (@inferred _mapped_completable(f, request.candidates, [1, 0, 0, 0, 0])) isa Symbol
     @test (@inferred _status(f, key)) isa Symbol
     @test (@inferred explain_partial(f, key)) isa IndexExplanation
     @test (@inferred _completable(f, key, 100)) isa Symbol
@@ -115,8 +116,8 @@ end
 
 
 @testitem "stability: a question the component caches answer allocates nothing (plan §5.6)" setup=[StabilitySetup] begin
-    using UnitTestDesign: Request, dead, _completable, _checked_key, _subkey!, _space_indices!, _witness,
-        cache_entries
+    using UnitTestDesign: Request, dead, _completable, _checked_key, _subkey!, _mapped_key!, _mapped_completable,
+        _witness, cache_entries
     # Two constrained components, {a, b} and {c, d}, two free parameters, and
     # an Invalid value of a, whose negative rows have a search of their own.
     space = TestSpace((a = [1, 2, 3, Invalid(0)], b = [:x, :y, :z], c = [true, false], d = 1:3, e = [:p, :q],
@@ -133,13 +134,15 @@ end
     @test (@inferred _subkey!(f, 1, key)) == [2, 0]
     @test (@inferred Union{Missing, Nothing, Vector{Int}} lookup(f, 1, key)) === missing
     # Asked a second time, each is answered from the caches with no search,
-    # and the conversion to value indices, the key's check, the lookups and
-    # the witness use the object's buffers.
+    # and the conversion to value indices through the request's map, the
+    # key's check, the lookups and the witness use the object's buffers (the
+    # map's table is made by the first question).
     @test allocated(dead, request, row) == 0
     @test allocated(dead, f, key) == 0
     @test allocated(_completable, f, key, 100) == 0
     @test allocated(lookup, f, 1, key) == 0
-    @test allocated(_space_indices!, f.key, request, row) == 0
+    @test allocated(_mapped_key!, f, request.candidates, row) == 0
+    @test allocated(_mapped_completable, f, request.candidates, row) == 0
     @test allocated(_checked_key, f, key) == 0
     @test _completable(f, key, 100) === :feasible && _witness(f) == [2, 1, 1, 1, 1, 3]
     negative = [4, 1, 0, 0, 0, 0]   # a = Invalid(0): rules that read a don't apply

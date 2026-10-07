@@ -126,6 +126,21 @@ mutable struct _Search
     nodes::Int
 end
 
+# A map into value indices from another numbering, the request's engine
+# positions (`_mapped_completable`), checked against the candidates once.
+# `map` is the map the table was made from, `nothing` before the first
+# mapped question. For parameter `i` and position `k` of `map[i]`,
+# `values[first[i] + k + 1]` is `map[i][k]` when that is one of `i`'s
+# candidates and -1 when it is not; `k = 0`, unset, reads 0. A deletion
+# trial shares its parent's: it has the same candidates.
+mutable struct _Mapped
+    map::Union{Nothing, Vector{Vector{Int}}}
+    const first::Vector{Int}
+    const values::Vector{Int}
+end
+
+_Mapped() = _Mapped(nothing, Int[], Int[])
+
 
 """
     Feasibility(candidates, tables; limit = 1_000_000)
@@ -180,19 +195,22 @@ question the caches answer costs a pass over the assignment and time in its
 constrained components, not in every component (review p5-perf 1).
 
 Scratch, reused by every question so that a cache hit allocates nothing:
-`key` holds the question (`_checked_key`), `subkeys[c]` component `c`'s
-sub-assignment for a lookup, `pending` the components left to search, and
-`search` the backtracking state, whose `work` vector holds a feasible
-answer's witness (`_witness`); a caller that keeps a witness copies it. So
-even a question answered from the caches writes to the object: a
-`Feasibility` is not safe to share between tasks or threads. The package
-never shares one: each is built inside one call, in a `Request`, a
-`FeasibilityContext` or a deletion trial, and never on a `TestSpace`.
+`key` holds the question (`_checked_key`, or `_mapped_key!` for a row in a
+request's engine positions), `subkeys[c]` component `c`'s sub-assignment
+for a lookup, `pending` the components left to search, and `search` the
+backtracking state, whose `work` vector holds a feasible answer's witness
+(`_witness`); a caller that keeps a witness copies it. `mapped` is the
+table through which a request's rows are converted and checked
+(`_mapped_completable`). So even a question answered from the caches writes
+to the object: a `Feasibility` is not safe to share between tasks or
+threads. The package never shares one: each is built inside one call, in a
+`Request`, a `FeasibilityContext` or a deletion trial, and never on a
+`TestSpace`.
 
 Fields: `candidates`, `tables`, `limit`, the component structure
 (`components`, `component_of`, `component_tables`, `param_tables`,
-`constrained`, `template`), `witness_cache`, `rule_memo`, `stats`, and the
-scratch `key`, `subkeys`, `pending` and `search`.
+`constrained`, `template`), `witness_cache`, `rule_memo`, `stats`, the
+scratch `key`, `subkeys`, `pending` and `search`, and `mapped`.
 
 The lazy-rule memo (contract §3.5, §12.19). `rule_memo[k]` is `nothing` for
 a tabulated table and, for a lazy one, a `RuleMemo` from the scope's value
@@ -223,6 +241,7 @@ struct Feasibility
     subkeys::Vector{Vector{Int}}
     pending::Vector{Int}
     search::_Search
+    mapped::_Mapped
 end
 
 "An empty verdict memo for a lazy table, `nothing` for a tabulated one."
@@ -277,7 +296,9 @@ deletion trial (`_deletion_search`) builds its search here from its
 parent's tables and memos, so nothing needs checking again (review p5-perf
 3). Its components are those of its own rules, as `Feasibility` would find
 them; a parameter alone in its component in both reuses the parent's vector
-for it, which nothing changes. Otherwise `parent` is `nothing`.
+for it, which nothing changes, and it shares the parent's table of a
+request's map (`_Mapped`), which depends on the candidates alone. Otherwise
+`parent` is `nothing`.
 """
 function _Feasibility(cands::Vector{Vector{Int}}, rules::Vector{RuleTable}, limit::Int,
                       memos::Vector{Union{Nothing, RuleMemo}}, parent::Union{Nothing, Feasibility})
@@ -309,9 +330,10 @@ function _Feasibility(cands::Vector{Vector{Int}}, rules::Vector{RuleTable}, limi
     alive = [constrained[component_of[p]] ? Vector{Bool}(undef, length(cands[p])) : no_survivors for p in 1:n]
     search = _Search(zeros(Int, n), alive, zeros(Int, n), Tuple{Int, Int}[], Int(limit), 0)
     template = all(constrained) ? Int[] : [constrained[component_of[p]] ? 0 : cands[p][1] for p in 1:n]
+    mapped = parent === nothing ? _Mapped() : parent.mapped   # the same candidates
     return Feasibility(cands, rules, limit, components, component_of,
         component_tables, param_tables, findall(constrained), template, caches,
-        memos, SearchStats(), zeros(Int, n), subkeys, Int[], search)
+        memos, SearchStats(), zeros(Int, n), subkeys, Int[], search, mapped)
 end
 
 """
@@ -540,6 +562,90 @@ function dead(f::Feasibility, partial::AbstractVector{<:Integer})
     status === :unknown && throw(ResourceLimitError(
         "the feasibility search for the partial assignment $key", f.limit, :feasibility_limit))
     return status === :infeasible
+end
+
+"""
+    _mapped_completable(f::Feasibility, map, positions) -> Symbol
+
+The internal question (`_completable`, at `f.limit`) for a partial row
+given in another numbering: `positions[i]` is 0, unset, or a position in
+`map[i]`, which holds the value index of parameter `i` there. A request asks
+this way with its engine positions and its `candidates` (`dead(request,
+partial)`). `_mapped_key!` writes the value indices into the object's key
+and checks them as `_checked_key` checks an assignment, so the request
+neither touches the key nor relies on its rows fitting the search, and a
+question the caches answer allocates nothing.
+"""
+function _mapped_completable(f::Feasibility, map::Vector{Vector{Int}}, positions::AbstractVector{<:Integer})
+    return _completable(f, _mapped_key!(f, map, positions), f.limit)
+end
+
+"""
+`positions` through `map` (see `_mapped_completable`), checked and written
+into `f.key`, which it returns. The checks are `_checked_key`'s: the row has
+one entry per parameter, and each nonzero position is within its
+parameter's map and maps to one of `f.candidates`. The value indices come
+from `f.mapped`, the table of `map` made the first time it is given
+(`_map!`), which says for each position whether its value index is a
+candidate. So the check reads one entry a parameter without a branch (an
+unset parameter reads its 0), and costs less than converting the row alone
+did, whose branch on an unset entry half-assigned rows mispredict (the
+maintainer's review, R2). `map` must not change once given; a request's
+`candidates` never do.
+"""
+function _mapped_key!(f::Feasibility, map::Vector{Vector{Int}}, positions::AbstractVector{<:Integer})
+    n = length(f.candidates)
+    Base.require_one_based_indexing(positions)
+    length(positions) == n || _mapped_error(f, map, positions)
+    mapped = f.mapped
+    mapped.map === map || _map!(mapped, f, map)
+    first, values, key = mapped.first, mapped.values, f.key
+    valid = true
+    @inbounds for i in 1:n
+        k = Int(positions[i])
+        start = first[i]
+        inside = k % UInt < (first[i + 1] - start) % UInt   # 0 ≤ k ≤ length(map[i])
+        v = values[ifelse(inside, start + k + 1, 1)]
+        valid &= inside & (v >= 0)
+        key[i] = v
+    end
+    valid || _mapped_error(f, map, positions)
+    return key
+end
+
+"The table of `map` for `f`'s candidates, made in `mapped` (see `_Mapped`)."
+function _map!(mapped::_Mapped, f::Feasibility, map::Vector{Vector{Int}})
+    n = length(f.candidates)
+    length(map) == n || throw(ArgumentError(
+        "a map has one list of value indices per parameter: expected $n, got $(length(map))"))
+    mapped.map = nothing   # until the table is whole
+    first, values = empty!(mapped.first), empty!(mapped.values)
+    push!(first, 0)
+    for i in 1:n
+        push!(values, 0)
+        for v in map[i]
+            push!(values, v in f.candidates[i] ? v : -1)
+        end
+        push!(first, length(values))
+    end
+    mapped.map = map
+    return mapped
+end
+
+"The error for a row `_mapped_key!` rejects: the first entry that fails its check."
+@noinline function _mapped_error(f::Feasibility, map::Vector{Vector{Int}}, positions::AbstractVector{<:Integer})
+    n = length(f.candidates)
+    length(positions) == n || throw(ArgumentError(
+        "a partial row has one entry per parameter: expected $n, got $(length(positions))"))
+    for (i, k) in enumerate(positions)
+        k == 0 && continue
+        1 <= k <= length(map[i]) || throw(ArgumentError(
+            "parameter $i is at position $k, outside its $(length(map[i])) mapped value indices"))
+        v = map[i][k]
+        v in f.candidates[i] || throw(ArgumentError(
+            "parameter $i is at position $k, value index $v, which is not among its candidates $(f.candidates[i])"))
+    end
+    error("internal error: the partial row $positions was rejected with no entry outside its candidates")
 end
 
 # The internal question: `:feasible`, `:infeasible` or `:unknown`. `key` is
