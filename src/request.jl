@@ -1190,7 +1190,8 @@ required ordinary targets covered. A failure is an `ErrorException` beginning
 `targets` is generation's: classification's `RequiredTargets`, recounted on
 the request's layout against the ids of the excluded targets; and so is
 `negative`, the `_NegativeTargets`, recounted in the negative targets' order
-on the same layout. Tests and scripts may pass a `TargetList`, every target
+on the same layout, whenever it is given, even with no negative target
+required (`_recounts`). Tests and scripts may pass a `TargetList`, every target
 required, and lists of required targets as `classify_targets` and
 `classify_negative_targets` return them; a list is recounted target by
 target, the same count and first uncovered target by other arithmetic,
@@ -1239,13 +1240,23 @@ function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, ta
     # negative targets (§5.9).
     ordinary = any(negative_rows) ? matrix[:, .!negative_rows] : matrix
     covered = _recount(request, ordinary, targets)
-    _nrequired(negative) == 0 || _recount(request, matrix[:, negative_rows], negative)
+    _recounts(negative) && _recount(request, matrix[:, negative_rows], negative)
     return covered
 end
 
-"The number of negative targets `validate_design` must find covered: a list's length, or the classified count."
-_nrequired(negative) = length(negative)
-_nrequired(negative::_NegativeTargets) = negative.required
+"""
+Whether `validate_design` recounts the negative targets `negative`: always
+when classification supplied them, even with none required. The recount
+also checks that no negative row holds a target classification excluded
+(§1.4), so the required count, classification's own output, can't decide
+whether classification is checked: were every negative target wrongly
+excluded, a negative row holding one would pass unchecked (the
+maintainer's review, R3). A list, from tests and scripts, holds only
+required targets and can't name a held excluded one, so an empty list
+leaves nothing to recount.
+"""
+_recounts(negative) = !isempty(negative)
+_recounts(::_NegativeTargets) = true
 
 _uncovered(request::Request, t) = error(
     "internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")

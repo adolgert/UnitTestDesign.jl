@@ -857,7 +857,11 @@ end
         classified = _Classified(request)
         design = _generate(_check_fit(IPOG(), request), request, classified)
         negative = classified.negative
-        (negative === nothing || negative.required == 0) && continue
+        # A request with no negative target required is recounted too, as
+        # `validate_design` recounts it (the maintainer's review, R3): here
+        # that is a space with no valid row (one of the 150), whose design is
+        # empty, and the recount accepts it with every target excluded.
+        negative === nothing && continue
         list, excluded = classify_negative_targets(request)
         gone = Set(e.target for e in excluded)
         walked = Vector{Int}[]   # every negative target, in the order of §9.7
@@ -876,6 +880,7 @@ end
             push!(variants, rows[:, setdiff(axes(rows, 2), j)])
         end
         for _ in 1:4
+            isempty(rows) && break   # no negative row to change
             changed = copy(rows)
             i, j = rand(rng, axes(changed, 1)), rand(rng, axes(changed, 2))
             changed[i, j] > request.arity[i] && continue   # the invalid value stays
@@ -900,4 +905,57 @@ end
     end
     @info "Negative recounts compared" compared = compared[] failed = failed[] held = held[]
     @test compared[] > 1000 && failed[] > 800 && held[] > 5
+end
+
+
+@testitem "invalid: the negative recount runs with no negative target required, and names a held excluded one (§1.4, §1.21)" setup=[Checker, InvalidSetup, RecountVerdict] begin
+    using UnitTestDesign: Request, TargetList, _Classified, _NegativeTargets, _check_fit, _decode!, _generate,
+                          nrequired, validate_design
+    # The maintainer's review, R3: `validate_design` skipped the negative
+    # recount when classification required no negative target, but the
+    # recount also checks that no negative row holds a target classification
+    # excluded (§1.4), so a classification that wrongly excluded every
+    # negative target let a negative row holding one pass. With a right
+    # classification a valid negative row holds at least one required
+    # negative target, so "none required, beside a negative row" is exactly
+    # the wrong classification the check is for. Here it is made by hand:
+    # the request's own negative targets with every one excluded, beside the
+    # design's negative rows. At 81f8056 `validate_design` passes it.
+    space = TestSpace((a = [1, 2, Invalid(0)], b = [:x, :y, Invalid(:bad)], c = [true, false]);
+                      constraints = [forbid((b = :y, c = false))])
+    request = Request(space; strength = 2)
+    classified = _Classified(request)
+    design = _generate(_check_fit(IPOG(), request), request, classified)
+    m, targets, right = design.matrix, classified.targets, classified.negative
+    holds = [any(i -> m[i, j] > request.arity[i], axes(m, 1)) for j in axes(m, 2)]
+    @test count(holds) >= 2 && right.required > 0
+    @test validate_design(request, m, targets; negative = right) == nrequired(targets)
+    # Every negative target excluded: the recount reads the layout, the
+    # excluded numbers and the required count.
+    total = right.required + length(right.ids)
+    none = _NegativeTargets(right.layout, 0, empty(right.excluded), collect(1:total), right.first, right.count,
+                            right.excluded_at, right.alone)
+    walked = Vector{Int}[]   # every negative target, in the order of §9.7
+    for support in TargetList(request).supports, q in support, v in (request.arity[q] + 1):length(request.candidates[q])
+        rest = filter(!=(q), support)
+        for code in 0:(prod(request.arity[rest]; init = 1) - 1)
+            push!(walked, setindex!(_decode!(zeros(Int, 3), code, rest, request.arity), v, q))
+        end
+    end
+    @test length(walked) == total
+    # The first negative target in target order that a negative row holds is named, by `_held`.
+    msg = message(() -> validate_design(request, m, targets; negative = none))
+    @test startswith(msg, "internal error: excluded target") &&
+          endswith(msg, "classification found no valid row that holds it (contract §1.4)")
+    @test msg == layout_verdict(request, m[:, holds], walked, Set(walked))
+    @test_throws ErrorException validate_design(request, m, targets; negative = none)
+    # Each negative row alone beside the ordinary rows: still named.
+    for j in findall(holds)
+        keep = [!holds[k] || k == j for k in axes(m, 2)]
+        @test message(() -> validate_design(request, m[:, keep], targets; negative = none)) ==
+              layout_verdict(request, m[:, [j]], walked, Set(walked))
+    end
+    # With no negative row, nothing is held and none is required: it passes,
+    # its count and numbers being the layout's.
+    @test validate_design(request, m[:, .!holds], targets; negative = none) == nrequired(targets)
 end
