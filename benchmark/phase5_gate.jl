@@ -172,8 +172,17 @@
 #   alternating run of the points outside, from `outside`), a point fails
 #   only if it is outside in both runs. `chain`, `noop_scoped` and points
 #   past the study's limits are judged the same way and reported, not gated;
-# - rows: at every (point, engine, mode) both completed, the same rows and
-#   hash (Phase 5 changes no row); any difference fails.
+# - completed: every (point, engine, mode) the base completed and the
+#   branch ran, gated or not, completes on the branch (an error,
+#   `nondeterministic` or a stop there fails), and a branch line that is an
+#   error or `nondeterministic` fails wherever the base stood;
+# - rows: at every (point, engine, mode) both completed, the same rows,
+#   hash, `required`, `excluded` and `bound` (Phase 5 changes no row or
+#   count); any difference fails.
+#
+# One line is kept per (point, label, mode): a completed one over a failed,
+# stopped or skipped one, the later among equals, but a `nondeterministic`
+# one over every other, so that a resumed file can't hide it.
 #
 # Without `--branch` it prints the base's table and the thresholds only.
 # `outside` prints the ids of the ladder points outside the time rule, one per
@@ -702,18 +711,28 @@ function files_after(args, name)
     return files
 end
 
-"The lines of `paths`, one per (point, label, mode): a completed line over a failed, stopped or skipped one (ipog_compare.jl's `rank`), the later among equals."
+"""
+The lines of `paths`, one per (point, label, mode): a completed line over a
+failed, stopped or skipped one (ipog_compare.jl's `rank`), the later among
+equals; but a `nondeterministic` line over every other, so that a resumed
+file's later `ok` line can't hide it (review p5-evidence 2).
+"""
 function by_key(paths)
     by = Dict{Tuple{String, String, String}, Dict{String, String}}()
+    rank(r) = r["status"] == "nondeterministic" ? 4 : IC.rank(r)
     for r in read_lines(paths)
         key = (r["point"], r["label"], r["mode"])
         old = get(by, key, nothing)
-        (old === nothing || IC.rank(r) >= IC.rank(old)) && (by[key] = r)
+        (old === nothing || rank(r) >= rank(old)) && (by[key] = r)
     end
     return by
 end
 
 ok(r) = r !== nothing && r["status"] == "ok"
+"A line whose status is a finding against the code wherever the base stood: an error or `nondeterministic`."
+broken(r) = r["status"] == "nondeterministic" || startswith(r["status"], "error:")
+"The columns that must be equal wherever base and branch both completed: Phase 5 changes no row or count."
+const SAME_COLUMNS = ("rows", "hash", "required", "excluded", "bound")
 num(r, c) = (x = tryparse(Float64, get(r, c, "")); x === nothing ? NaN : x)
 "The larger of two byte counts that may be missing (NaN), as a number."
 larger(a, b) = isnan(a) ? b : isnan(b) ? a : max(a, b)
@@ -778,16 +797,24 @@ function judge_gates(base, branch, rb = Dict(), rr = Dict(); tol = 0.10, floor =
                       ratio = num(c, "warm_s") / num(b, "warm_s"), first, recheck, verdict,
                       status = "ok"))
     end
-    # Rows: the same rows and hash wherever both completed.
+    # Completion (review p5-evidence 2): every (point, engine, mode) the base completed and the branch
+    # ran must complete on the branch, at every point and mode, gated or not; and a branch line that
+    # is an error or `nondeterministic` fails wherever the base stood.
+    failed = [(; key = k, base_status = haskey(base, k) ? base[k]["status"] : "not run", branch_status = c["status"])
+              for (k, c) in sort!(collect(branch); by = first) if !ok(c) && (ok(get(base, k, nothing)) || broken(c))]
+    # Rows: the same rows, hash and counts (required, excluded, bound) wherever both completed.
     rows = [(; key = k, base_rows = base[k]["rows"], branch_rows = branch[k]["rows"], base_hash = base[k]["hash"],
-             branch_hash = branch[k]["hash"]) for k in keys_both
-            if base[k]["rows"] != branch[k]["rows"] || base[k]["hash"] != branch[k]["hash"]]
+             branch_hash = branch[k]["hash"], differ = [c for c in SAME_COLUMNS if get(base[k], c, "") != get(branch[k], c, "")])
+            for k in keys_both]
+    filter!(x -> !isempty(x.differ), rows)
     verdict(xs) = isempty(xs) ? :missing : all(x -> x.verdict == :pass, xs) ? :pass : :fail
     return (; gate2, gate2_verdict = verdict(gate2), gate3,
             gate3_verdict = verdict([x for x in gate3 if x.gated]), gate4,
             gate4_verdict = verdict([x for x in gate4 if x.gated]),
-            reported4_verdict = verdict([x for x in gate4 if !x.gated]), rows, compared = length(keys_both),
-            rows_verdict = isempty(keys_both) ? :missing : isempty(rows) ? :pass : :fail, tol, floor)
+            reported4_verdict = verdict([x for x in gate4 if !x.gated]), failed,
+            completed_verdict = isempty(branch) ? :missing : isempty(failed) ? :pass : :fail, rows,
+            compared = length(keys_both), rows_verdict = isempty(keys_both) ? :missing : isempty(rows) ? :pass : :fail,
+            tol, floor)
 end
 
 word(v) = v == :pass ? "PASS" : v == :fail ? "FAIL" : "NOT MEASURED"
@@ -884,10 +911,16 @@ function print_summary(args)
     end
     println("  gate 4: ", word(v.gate4_verdict), " (provisional unless measured quiet); reported ladders: ",
             word(v.reported4_verdict))
-    println("\n== rows: the same rows and hash at every (point, engine, mode) both completed")
+    println("\n== completed: every (point, engine, mode) the base completed and the branch ran completes on the branch; ",
+            "no branch line is an error or nondeterministic")
+    for x in v.failed
+        @printf("  %-16s %-8s %-8s base %s, branch %s\n", x.key[1], x.key[2], x.key[3], x.base_status, x.branch_status)
+    end
+    @printf("  %d failing: %s\n", length(v.failed), word(v.completed_verdict))
+    println("\n== rows: the same rows, hash, required, excluded and bound at every (point, engine, mode) both completed")
     for x in v.rows
-        @printf("  %-16s %-8s %-8s rows %s → %s, hash %s → %s\n", x.key[1], x.key[2], x.key[3], x.base_rows,
-                x.branch_rows, x.base_hash, x.branch_hash)
+        @printf("  %-16s %-8s %-8s rows %s → %s, hash %s → %s; differ: %s\n", x.key[1], x.key[2], x.key[3], x.base_rows,
+                x.branch_rows, x.base_hash, x.branch_hash, join(x.differ, ", "))
     end
     @printf("  %d compared, %d differ: %s\n", v.compared, length(v.rows), word(v.rows_verdict))
     return v

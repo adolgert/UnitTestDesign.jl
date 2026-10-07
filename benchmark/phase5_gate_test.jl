@@ -189,6 +189,8 @@ end
         @test !g4["noop_whole-n64"].gated && g4["noop_whole-n64"].verdict == :fail
         @test v.gate4_verdict == :fail
         @test v.rows_verdict == :fail && [x.key for x in v.rows] == [("whole-n8", "IPOG()", "covering")]
+        @test only(v.rows).differ == ["hash"]
+        @test v.completed_verdict == :fail && [x.key for x in v.failed] == [("whole-n16", "IPOG()", "covering")]
         @test files_after(["summary", "--base", "a", "b", "--branch", "c", "--base", "d"], "--base") == ["a", "b", "d"]
         # Without the recheck, the point outside once fails.
         v1 = judge_gates(by_key([files[1]]), by_key([files[2]]))
@@ -201,7 +203,35 @@ end
                 made("equality-n64", "IPOG()", "index"; warm_s = 0.002), made("gcc200", "Auto()", "index"; ret_g_b = MiB),
                 made("bin1024-noop", "Auto()", "peak"; peak_rss_mib = 700), made("chain-n8", "IPOG()", "index"; warm_s = 0.01)]
         v2 = judge_gates(by_key([files[1]]), by_key([write_lines(joinpath(dir, "good.tsv"), good)]))
-        @test v2.gate2_verdict == v2.gate3_verdict == v2.gate4_verdict == v2.rows_verdict == :pass
+        @test v2.gate2_verdict == v2.gate3_verdict == v2.gate4_verdict == v2.rows_verdict == v2.completed_verdict == :pass
+        # Review p5-evidence 2's blind spots (`gate_blindspots.jl`). (1) The base
+        # completes gcc200's peak and covering lines and the branch's certifier
+        # fails one (an internal error) while the other is nondeterministic:
+        # outside gates 2–4, so only the completion check sees them; and an
+        # internal error where the base was stopped fails too.
+        judged(b, c) = judge_gates(by_key([write_lines(joinpath(dir, "b.tsv"), b)]),
+                                   by_key([write_lines(joinpath(dir, "c.tsv"), c)]))
+        v3 = judged([good; made("gcc200", "IPOG()", "peak"); made("gcc200", "IPOG()", "covering"; warm_s = 0.4);
+                     made("gcc400", "IPOG()", "index"; status = "rss_limit(classify)")],
+                    [good; made("gcc200", "IPOG()", "peak"; status = "error:ErrorException");
+                     made("gcc200", "IPOG()", "covering"; status = "nondeterministic", warm_s = 0.4);
+                     made("gcc400", "IPOG()", "index"; status = "error:ErrorException")])
+        @test v3.gate2_verdict == v3.gate3_verdict == v3.gate4_verdict == v3.rows_verdict == :pass
+        @test v3.completed_verdict == :fail &&
+              [x.key for x in v3.failed] == [("gcc200", "IPOG()", "covering"), ("gcc200", "IPOG()", "peak"),
+                                             ("gcc400", "IPOG()", "index")]
+        # (2) The same rows and hash, other counts.
+        v4 = judged([good; made("gcc200", "IPOG()", "peak")], [good; made("gcc200", "IPOG()", "peak"; required = 99, excluded = 6)])
+        @test v4.rows_verdict == :fail && only(v4.rows).differ == ["required", "excluded"]
+        v5 = judged([good; made("gcc200", "IPOG()", "peak")], [good; made("gcc200", "IPOG()", "peak"; bound = 3)])
+        @test v5.rows_verdict == :fail && only(v5.rows).differ == ["bound"]
+        # (3) A resumed file: a nondeterministic line, then an `ok` one for the same key, is kept as nondeterministic.
+        resumed = write_lines(joinpath(dir, "resumed.tsv"), [good; made("gcc200", "IPOG()", "peak"; status = "nondeterministic");
+                                                             made("gcc200", "IPOG()", "peak")])
+        @test by_key([resumed])[("gcc200", "IPOG()", "peak")]["status"] == "nondeterministic"
+        v6 = judge_gates(by_key([write_lines(joinpath(dir, "b.tsv"), [good; made("gcc200", "IPOG()", "peak")])]),
+                         by_key([resumed]))
+        @test v6.completed_verdict == :fail && only(v6.failed).branch_status == "nondeterministic"
         # The printed summary and `outside` run on the files.
         text = mktemp() do path, io
             redirect_stdout(io) do
@@ -212,7 +242,7 @@ end
             read(path, String)
         end
         @test occursin("gate 2: FAIL", text) && occursin("gate 3: PASS", text) && occursin("gate 4: FAIL", text)
-        @test occursin("1 differ: FAIL", text)
+        @test occursin("1 differ: FAIL", text) && occursin("1 failing: FAIL", text)
         ids = mktemp() do path, io
             redirect_stdout(() -> outside_points(["outside", "--base", files[1], "--branch", files[2]]), io)
             close(io)
