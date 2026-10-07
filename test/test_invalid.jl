@@ -819,3 +819,85 @@ end
     @info "Negative sub-requests whose groups change order" drawn = drawn[] reordered = reordered[] with_excluded = with_excluded[]
     @test reordered[] >= 40 && with_excluded[] >= 15
 end
+
+
+@testitem "invalid: the certifier's negative recount agrees with the list's on failing designs (§1.21, §6.7)" setup=[Checker, InvalidSetup, RecountVerdict] begin
+    using UnitTestDesign: Request, TargetList, _Classified, _check_fit, _decode!, _generate, _recount,
+                          classify_negative_targets
+    # `generate` certifies the negative rows by recounting them on the
+    # layout against the numbers of the excluded negative targets
+    # (`_recount(request, rows, ::_NegativeTargets)`). Review p5-evidence 1:
+    # no test gave it a design that fails, so a recount that checked nothing
+    # passed every test. Here, on random spaces with Invalid values, rules,
+    # strengths 1 to 3 and sometimes a group, each IPOG design's negative
+    # rows, with each row dropped and with ordinary values changed, get the
+    # verdict written out from lists (`layout_verdict`, over the negative
+    # targets in the order of §9.7): the first negative target that is
+    # required and held by no negative row, or excluded and held by one; and,
+    # wherever no row holds an excluded target, the message of the list
+    # recount of `classify_negative_targets` (31bef0f's certification). Enough
+    # of them must fail that a vacuous recount fails this item.
+    rng = Xoshiro(0x2026_1006_e1)
+    compared, failed, held = Ref(0), Ref(0), Ref(0)
+    for trial in 1:150
+        n = rand(rng, 3:6)
+        domains = [Any[1:rand(rng, 1:4)...] for _ in 1:n]
+        for _ in 1:rand(rng, 1:3)
+            p = rand(rng, 1:n)
+            push!(domains[p], Invalid(100 + length(domains[p])))
+        end
+        names = [Symbol(:p, i) for i in 1:n]
+        rules = Constraint[]
+        rand(rng) < 0.6 && push!(rules, forbid((a, b) -> a == 1 && b == 1, names[1], names[2]))
+        rand(rng) < 0.3 && push!(rules, forbid((a, b) -> a == 2 && b == 1, names[2], names[3]))
+        space = TestSpace(NamedTuple{Tuple(names)}(Tuple(domains)); constraints = rules)
+        strength = rand(rng, 1:min(3, n))
+        stronger = rand(rng) < 0.3 && n >= 4 ? [Tuple(names[1:4]) => min(strength + 1, 4)] : []
+        request = Request(space; strength, stronger)
+        classified = _Classified(request)
+        design = _generate(_check_fit(IPOG(), request), request, classified)
+        negative = classified.negative
+        (negative === nothing || negative.required == 0) && continue
+        list, excluded = classify_negative_targets(request)
+        gone = Set(e.target for e in excluded)
+        walked = Vector{Int}[]   # every negative target, in the order of §9.7
+        for support in TargetList(request).supports, q in support, v in (request.arity[q] + 1):length(request.candidates[q])
+            rest = filter(!=(q), support)
+            for code in 0:(prod(request.arity[rest]; init = 1) - 1)
+                target = _decode!(zeros(Int, n), code, rest, request.arity)
+                target[q] = v
+                push!(walked, target)
+            end
+        end
+        m = design.matrix
+        rows = m[:, [any(i -> m[i, j] > request.arity[i], axes(m, 1)) for j in axes(m, 2)]]
+        variants = Matrix{Int}[rows]
+        for j in axes(rows, 2)
+            push!(variants, rows[:, setdiff(axes(rows, 2), j)])
+        end
+        for _ in 1:4
+            changed = copy(rows)
+            i, j = rand(rng, axes(changed, 1)), rand(rng, axes(changed, 2))
+            changed[i, j] > request.arity[i] && continue   # the invalid value stays
+            request.arity[i] > 1 || continue
+            changed[i, j] = mod1(changed[i, j] + rand(rng, 1:(request.arity[i] - 1)), request.arity[i])
+            push!(variants, changed)
+        end
+        for v in variants
+            ours, listed = message(() -> _recount(request, v, negative)), message(() -> _recount(request, v, list))
+            ours == "no error" && (ours = nothing)
+            listed == "no error" && (listed = nothing)
+            @test ours == layout_verdict(request, v, walked, gone)
+            if ours !== nothing && startswith(ours, "internal error: excluded target")
+                held[] += 1
+            else
+                @test ours == listed
+            end
+            ours === nothing && @test _recount(request, v, negative) == _recount(request, v, list) == negative.required
+            compared[] += 1
+            failed[] += ours !== nothing
+        end
+    end
+    @info "Negative recounts compared" compared = compared[] failed = failed[] held = held[]
+    @test compared[] > 1000 && failed[] > 800 && held[] > 5
+end
