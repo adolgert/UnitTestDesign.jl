@@ -539,20 +539,53 @@ end
 end
 
 
-@testitem "request: the recount counts on the layout, names the first uncovered target, and counts no excluded one (§1.21)" setup=[RequestSetup] begin
-    using UnitTestDesign: _Classified, _recount, nrequired
+@testsnippet RecountVerdict begin
+    using UnitTestDesign: from_indices, _space_indices
+
+    """
+    The layout recount's verdict on the rows `m` (columns, engine positions),
+    written out from lists: the message for the first target of `walked`,
+    every target in target order, that is excluded (in `gone`) and held by a
+    row, or required and held by none, or `nothing`. The recount checks the
+    exclusions against the rows as well as their coverage (contract §1.4,
+    §1.21); the list recount, from the required targets alone, can't.
+    """
+    function layout_verdict(request, m, walked, gone)
+        named(t) = from_indices(request.space, _space_indices(request, t))
+        holds(t, j) = all(i -> t[i] == 0 || t[i] == m[i, j], eachindex(t))
+        for t in walked
+            j = findfirst(j -> holds(t, j), axes(m, 2))
+            if t in gone
+                j === nothing || return "internal error: excluded target $(named(t)) is held by the row " *
+                                        "$(named(m[:, j])); classification found no valid row that holds it " *
+                                        "(contract §1.4)"
+            elseif j === nothing
+                return "internal error: required target $(named(t)) is not covered"
+            end
+        end
+        return nothing
+    end
+end
+
+
+@testitem "request: the recount counts on the layout, names the first uncovered target, and rejects a held excluded one (§1.21)" setup=[RequestSetup, RecountVerdict] begin
+    using UnitTestDesign: TargetList, _Classified, _recount, nrequired
     # Phase 5 (plan §5.6): `generate` certifies a design by recounting it on
     # the request's layout against the ids of the targets classification
     # excluded (`_recount`), with no list of required targets. It counts what
     # the list recount counts, 31bef0f's certification of the classified
-    # list, which stays for tests and scripts, and a failure names the same
-    # target: the first uncovered required one in target order. A row that
-    # holds an excluded target counts nothing. Rows of every kind are given to
-    # `_recount` itself, which `validate_design` calls after it has checked
-    # each row.
+    # list, which stays for tests and scripts, and a failure names the first
+    # target in target order that is required and held by no row or, since
+    # review p5-core 5, excluded and held by one: every row has been checked
+    # valid by then, and no valid row holds an excluded target (§1.4), so
+    # that means classification was wrong. Where no row holds an excluded
+    # target, the failure is the list recount's. Rows of every kind are given
+    # to `_recount` itself, which `validate_design` calls after it has
+    # checked each row, so a changed value can break a rule here.
     request = Request(solver_space(); must_include = [(solver = :lu,)])
     layout_targets = _Classified(request).targets
     required, excluded = classify_targets(request)
+    walked, gone = collect(TargetList(request)), Set(e.target for e in excluded)
     good = [2 1 1 2 2; 2 1 1 1 3; 2 1 2 2 2]
     @test validate_design(request, good, layout_targets) == validate_design(request, good, required) ==
           nrequired(layout_targets) == 11
@@ -564,25 +597,30 @@ end
         changed[i, j] = v
         push!(designs, changed)
     end
-    failures = Ref(0)
+    uncovered, held = Ref(0), Ref(0)
     for m in designs
         ours, listed = msg(m, layout_targets), msg(m, required)
-        @test ours == listed
-        ours === nothing ? (@test _recount(request, m, layout_targets) == _recount(request, m, required) == 11) :
-                           (failures[] += 1)
+        @test ours == layout_verdict(request, m, walked, gone)
+        if ours === nothing
+            @test _recount(request, m, layout_targets) == _recount(request, m, required) == 11
+        elseif startswith(ours, "internal error: excluded target")
+            held[] += 1
+        else
+            @test ours == listed
+            uncovered[] += 1
+        end
     end
-    @test failures[] >= 5
+    @test uncovered[] >= 5 && held[] >= 5
     @test msg(good[:, 1:4], layout_targets) == "internal error: required target (mode = :exact, solver = :qr) is not covered"
-    # An excluded target held by a row covers no required one: added to the
-    # design it counts nothing, and alone it leaves the first required target
-    # uncovered.
-    gone = [e.target for e in excluded]
+    # Each excluded target, held by a row added to the design or alone, is
+    # named, unless a required target before it in target order is uncovered.
     @test length(gone) == 5
     for t in gone
         row = [x == 0 ? 1 : x for x in t]
-        @test _recount(request, hcat(good, row), layout_targets) == 11
-        @test msg(reshape(row, :, 1), layout_targets) == msg(reshape(row, :, 1), required) !== nothing
-        @test msg(hcat(good[:, 1:4], row), layout_targets) == msg(hcat(good[:, 1:4], row), required) !== nothing
+        for m in (hcat(good, row), reshape(row, :, 1), hcat(good[:, 1:4], row))
+            @test msg(m, layout_targets) == layout_verdict(request, m, walked, gone) !== nothing
+        end
+        @test startswith(msg(hcat(good, row), layout_targets), "internal error: excluded target")
     end
 end
 

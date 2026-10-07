@@ -1179,8 +1179,9 @@ invalid value at `p` (§5.5), and no row holds two invalid values (§5.7).
 Must-include rows come first in the given order, and for a covering design
 every required ordinary target in `targets` is covered by an ordinary row,
 and every required negative target in `negative` by a negative row, each
-recounted from the rows (§5.9, `_recount`). Returns the number of required
-ordinary targets covered. A failure is an `ErrorException` beginning
+recounted from the rows (§5.9, `_recount`), which also checks that no row
+holds a target classification excluded (§1.4). Returns the number of
+required ordinary targets covered. A failure is an `ErrorException` beginning
 "internal error", naming the row or target. Values are never looked up; only
 `to_cases` converts rows to values.
 
@@ -1190,7 +1191,8 @@ the request's layout against the ids of the excluded targets; and so is
 on the same layout. Tests and scripts may pass a `TargetList`, every target
 required, and lists of required targets as `classify_targets` and
 `classify_negative_targets` return them; a list is recounted target by
-target, the same certification by other arithmetic.
+target, the same count and first uncovered target by other arithmetic,
+though a list of required targets can't say which rows hold an excluded one.
 """
 function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, targets;
                          strategy::Symbol = :covering, negative = Vector{Int}[])
@@ -1247,14 +1249,30 @@ _uncovered(request::Request, t) = error(
     "internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")
 
 """
+The recounts' error for an excluded target `t` that a row of `matrix` holds.
+The rows were checked valid before, so classification was wrong to exclude
+it (contract §1.4): no valid row of its kind holds an excluded target.
+"""
+@noinline function _held(request::Request, matrix::AbstractMatrix{<:Integer}, t::Vector{Int})
+    j = findfirst(j -> all(i -> t[i] == 0 || matrix[i, j] == t[i], eachindex(t)), axes(matrix, 2))
+    named(row) = from_indices(request.space, _space_indices(request, row))
+    error("internal error: excluded target $(named(t)) is held by the row $(named(matrix[:, something(j)])); " *
+          "classification found no valid row that holds it (contract §1.4)")
+end
+
+"""
     _recount(request, matrix, targets::RequiredTargets) -> Int
 
 The certifier's recount (contract §1.21): the number of required targets
 that the rows, the columns of `matrix`, hold, or an internal error naming
-the first required target, in target order, that none holds. For each
-support of the layout, in order, it marks the code (`_code`) of each row's
-combination on the support, then walks the support's codes: a code no row
-holds must be the id of a target classification excluded.
+the first target, in target order, that is required and held by no row, or
+excluded and held by one. For each support of the layout, in order, it marks
+the code (`_code`) of each row's combination on the support, then walks the
+support's codes: a code no row holds must be the id of a target
+classification excluded, and an excluded one no row may hold, since every
+row was checked valid before and no valid row holds an excluded target
+(§1.4). So it checks classification's exclusions against the rows as well
+as their coverage, for one bit read per excluded target.
 
 It trusts two things, both classification's. The layout, `targets.layout`,
 is the request's `TargetList`: its supports are every set of parameters that
@@ -1288,7 +1306,10 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::
         end
         for code in 0:(n - 1)
             if next <= length(excluded) && excluded[next] == layout.offsets[s] + code + 1
-                next += 1   # excluded: no row need hold it
+                # Excluded: no row need hold it, and no valid row can.
+                seen[code + 1] && _held(request, matrix, _decode!(zeros(Int, length(layout.arity)), code, support,
+                                                                  layout.arity))
+                next += 1
             elseif seen[code + 1]
                 covered += 1
             else
@@ -1305,14 +1326,16 @@ end
 
 The certifier's recount of the negative targets (contract §1.21, §6, §5.9):
 the number of required negative targets that the negative rows, the columns
-of `matrix`, hold, or an internal error naming the first, in target order,
-that none holds. The negative targets are numbered 1, 2, … in the order of
-§9.7 (`_NegativeTargets`): for each support of the layout, each parameter
-`p` of it and each of `p`'s invalid values `v`, in engine positions after
-its ordinary ones, the block of every assignment of ordinary values to the
-rest of the support, by code on the rest. For each block it marks the code
-of each row that holds `v` at `p`, then walks the block's codes: a code no
-row holds must be the number of a target classification excluded.
+of `matrix`, hold, or an internal error naming the first negative target, in
+target order, that is required and held by no row, or excluded and held by
+one. The negative targets are numbered 1, 2, … in the order of §9.7
+(`_NegativeTargets`): for each support of the layout, each parameter `p` of
+it and each of `p`'s invalid values `v`, in engine positions after its
+ordinary ones, the block of every assignment of ordinary values to the rest
+of the support, by code on the rest. For each block it marks the code of
+each row that holds `v` at `p`, then walks the block's codes: a code no row
+holds must be the number of a target classification excluded, and an
+excluded one no row may hold, as in the ordinary recount.
 
 It trusts what the ordinary recount trusts, the layout, whose supports the
 negative targets lie on as well, and `negative.ids`, the numbers of the
@@ -1346,7 +1369,13 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, negative:
         for code in 0:(n - 1)
             number += 1
             if next <= length(ids) && ids[next] == number
-                next += 1   # excluded: no row need hold it
+                # Excluded: no row need hold it, and no valid negative row can.
+                if seen[code + 1]
+                    target = _decode!(zeros(Int, length(arity)), code, rest, arity)
+                    target[p] = v
+                    _held(request, matrix, target)
+                end
+                next += 1
             elseif seen[code + 1]
                 covered += 1
             else

@@ -215,25 +215,49 @@ end
 end
 
 
-@testitem "random problems: the certifier's recount on the layout agrees with the list's and the oracle's (§1.21)" setup=[UTSetup, Checker, RandomGate] begin
-    using UnitTestDesign: _Classified, _recount, classify_targets, nrequired
+@testitem "random problems: the certifier's recount on the layout agrees with the list's and the oracle's (§1.21)" setup=[UTSetup, Checker, RandomGate, RecountVerdict] begin
+    using UnitTestDesign: TargetList, _Classified, _recount, classify_targets, nrequired
     # Phase 5 (plan §5.6): `generate` certifies each design by recounting it
     # on the request's layout against the ids of the excluded targets
-    # (`_recount`). On random problems, with every registered engine's design
-    # and with designs broken by dropping a row or changing a value, it must
-    # agree with the recount of the classified list (31bef0f's certification)
-    # on the count and on the target a failure names, and, for designs of
-    # valid rows, with the independent oracle on whether every feasible
-    # target is covered.
+    # (`_recount`). On random problems, some with overlapping `stronger`
+    # groups (listed supports, subsets two groups share) and must-include
+    # rows (review p5-evidence 6), with every registered engine's design and
+    # with designs broken by dropping a row or changing a value, it must give
+    # the verdict written out from lists (`layout_verdict`): the first target
+    # in target order that is required and held by no row, or excluded and
+    # held by one (which only a row that breaks a rule can do); agree with
+    # the recount of the classified list (31bef0f's certification) on the
+    # count and on the target a failure names wherever no row holds an
+    # excluded target; and, for designs of valid rows, agree with the
+    # independent oracle on whether every feasible target is covered.
     message(f) = try f(); nothing catch e; sprint(showerror, e) end
     rng = Xoshiro(0x2026_1009 ⊻ seed_mod())
-    compared, failed, judged = Ref(0), Ref(0), Ref(0)
+    compared, failed, judged, held, grouped = Ref(0), Ref(0), Ref(0), Ref(0), Ref(0)
     for index in 1:15
         problem = random_problem(rng; strength = rand(rng, 2:3))
+        n, strength = length(problem.names), problem.strength
+        stronger = Pair{Vector{Symbol}, Int}[]
+        if rand(rng) < 0.6 && strength < n
+            for _ in 1:rand(rng, 1:3)
+                k = rand(rng, (strength + 1):n)
+                members = problem.names[sort(randperm(rng, n)[1:k])]
+                push!(stronger, members => rand(rng, (strength + 1):min(k, strength + 2)))
+            end
+        end
+        must = NamedTuple[]
+        if rand(rng) < 0.4
+            rows = valid_rows(problem.space)
+            for row in rows[unique(rand(rng, eachindex(rows), rand(rng, 1:2)))]
+                kept = Tuple(k for k in keys(row) if rand(rng) < 0.7)
+                push!(must, isempty(kept) ? row : NamedTuple{kept}(Tuple(row[k] for k in kept)))
+            end
+        end
         space = test_space(problem.space)
-        request = Request(space; strength = problem.strength)
+        request = Request(space; strength, stronger, must_include = must)
+        grouped[] += length(request.groups) > 1
         targets = _Classified(request).targets
-        required, _ = classify_targets(request)
+        required, excluded = classify_targets(request)
+        walked, gone = collect(TargetList(request)), Set(e.target for e in excluded)
         for (name, engine) in _engine_registry(index)
             fit(engine, Profile(request)).kind === :unsupported && continue
             matrix = generate(engine, request).matrix
@@ -250,9 +274,15 @@ end
             end
             for m in designs
                 ours, listed = message(() -> _recount(request, m, targets)), message(() -> _recount(request, m, required))
-                @test ours == listed
+                @test ours == layout_verdict(request, m, walked, gone)
+                check = check_design(to_cases(request, m), problem.space; strength, stronger)
+                if ours !== nothing && startswith(ours, "internal error: excluded target")
+                    @test !isempty(check.ordinary.rejected)   # only a row that breaks a rule holds one
+                    held[] += 1
+                else
+                    @test ours == listed
+                end
                 ours === nothing && @test _recount(request, m, targets) == _recount(request, m, required) == nrequired(targets)
-                check = check_design(to_cases(request, m), problem.space; strength = problem.strength)
                 if isempty(check.ordinary.rejected)
                     @test (ours === nothing) == isempty(check.ordinary.missing)
                     judged[] += 1
@@ -262,8 +292,8 @@ end
             end
         end
     end
-    @info "Recounts compared" compared = compared[] failed = failed[] judged = judged[]
-    @test compared[] > 500 && failed[] > 200 && judged[] > 400
+    @info "Recounts compared" compared = compared[] failed = failed[] judged = judged[] held = held[] grouped = grouped[]
+    @test compared[] > 500 && failed[] > 200 && judged[] > 400 && held[] > 5 && grouped[] >= 5
 end
 
 
