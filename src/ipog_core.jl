@@ -10,7 +10,9 @@
 #
 # Parameters are added in `ipog_order`. A support (a set of parameters that
 # carries targets, `supports(targets)`) belongs to the step of its parameter
-# that comes last in the order (`_lookup_steps`). At step p the run keeps a
+# that comes last in the order (`_lookup_steps`), and the step reads its
+# parameters through the layout (`_each_base_support`, `_support!`), which
+# alone knows how supports are stored and numbered. At step p the run keeps a
 # map of the step's supports only (CAgen drops finished columns): one entry
 # per combination, `true` while it is required and uncovered, laid out as
 # FIPOG lays out its coverage map (PDF p.5, p.8, p.10). A support's
@@ -352,8 +354,9 @@ The targets by step, shared by every run on one request (`_lookup_steps`):
 `order`, the parameters in the order they are added; `arity`; and, for each
 parameter `p`, the positions in `supports(targets)` of the supports whose
 parameter last in `order` is `p`, `supports[first[p]:(first[p + 1] - 1)]`,
-ascending. Only read, so `_lookup_complete` and the run after it share one
-(`Construction`'s seeded path).
+ascending, the order in which `_begin_step!` reads them. Only read, so
+`_lookup_complete` and the run after it share one (`Construction`'s seeded
+path).
 """
 struct _LookupSteps
     order::Vector{Int}
@@ -423,7 +426,10 @@ start of its block (`offset`), how many of its combinations are uncovered
 uncovered combinations holding it; `tried`. `tiebreak` and `vertical` are
 the run's member (`_IPOGLookup`). `pass` numbers the passes of vertical
 growth, so that `stamp[r] == pass` marks row `r` as changed in the current
-one. The other buffers are scratch, sized once per step or once per run.
+one. The step's supports are read through the layout (`_begin_step!`):
+`before` is the set the layout's walk of the step's base supports takes,
+and `walks` and `support` are what the walk and `_support!` write. The
+other buffers are scratch, sized once per step or once per run.
 """
 mutable struct _LookupRun{D}
     const n::Int
@@ -453,10 +459,10 @@ mutable struct _LookupRun{D}
     const tried::Vector{Bool}
     const putative::Vector{Int}      # one row, for `dead`
     const combo::Vector{Int}         # a combination's values on a support's other parameters
-    const support::Vector{Int}       # one listed support's parameters (`_support!`), for `_begin_step!` and `_mark_required!`
+    const support::Vector{Int}       # one support's parameters by position (`_support!`), for `_begin_step!` and `_mark_required!`
     const before::Vector{Int}        # the parameters before the step's in the order, ascending (`_before!`)
     nbefore::Int                     # how many of `order`'s parameters `before` holds
-    const places::Vector{Int}        # an odometer over the (t - 1)-subsets of `before`, for `_begin_step!`
+    const walks::_BaseWalkBuffers    # what the layout's walk of a step's base supports writes (`_each_base_support`)
     const digits::Vector{Int}        # an odometer over one support, for `_mark_required!`
     const fstride::Vector{Int}
     const lists::Vector{Vector{Int}} # vertical growth's candidate rows, by p's value, `lists[1]` without one
@@ -484,7 +490,7 @@ function _LookupRun(steps::_LookupSteps, dead::D, seeds::AbstractMatrix{<:Intege
                          0, 0, 0, 0,
                          Int[], Int[], Int[], Int[], Int[], Int[], Bool[], Int[],
                          zeros(Int, vmax), zeros(Int, vmax), zeros(Int, vmax), zeros(Bool, vmax),
-                         zeros(Int, n), Int[], Int[], sizehint!(Int[], n), 0, Int[], Int[], Int[],
+                         zeros(Int, n), Int[], Int[], sizehint!(Int[], n), 0, _BaseWalkBuffers(), Int[], Int[],
                          [Int[] for _ in 1:(vmax + 1)], Int[],
                          zeros(Int, nrows), zeros(Int, isempty(arity) ? 0 : sum(arity)), hoff)
 end
@@ -558,14 +564,13 @@ Make the map of step `p`: its supports, their strides and blocks, each
 combination marked when it is required (`_mark_required!`), then unmarked
 where a row that already holds `p`, a must-include row, covers it.
 
-The supports' parameters are read without unranking (plan §5.6). The step's
-base supports (`_Supports`) come first, since their positions are below the
-listed ones': `p` beside each `(t - 1)`-subset of the `k` parameters before
-it in the order, `C(k, t - 1)` of them (`_base_with`), in the order of their
-positions, which is the lexicographic order of those subsets drawn from the
-parameters before `p` in ascending order (`_before!`). So an odometer over
-the subsets (`places`) gives each one's other parameters, in support order.
-A listed support is copied (`_support!`).
+The step's supports are read in the order the steps list them, ascending
+(`_lookup_steps`), each one's parameters but `p` in support order. Those
+the layout's walk gives, the base supports that hold `p` and parameters
+before it in the order (`_each_base_support` on `_before!`), are read from
+it, in the same order and without unranking (plan §5.6); any other is read
+by its position (`_support!`). Every support the walk gives has `p` last in
+the order, so the step lists it: one it doesn't is an internal error.
 """
 function _begin_step!(run::_LookupRun, steps::_LookupSteps, targets::RequiredTargets, p::Int)
     arity = run.arity
@@ -581,36 +586,20 @@ function _begin_step!(run::_LookupRun, steps::_LookupSteps, targets::RequiredTar
     empty!(run.params)
     empty!(run.strides)
     sups = supports(targets)
-    nb = _base_with(sups, run.rank[p] - 1)
-    nbase = _nbase(sups)
-    nb <= m && (nb == 0 || steps.supports[lo + nb - 1] <= nbase) && (nb == m || steps.supports[lo + nb] > nbase) ||
-        error("internal error: step $p's supports are not its $nb base supports and then listed ones")
-    before, places = run.before, run.places
-    if nb > 0
-        _before!(run, p)
-        resize!(places, _base_strength(sups) - 1)
-        for i in eachindex(places)
-            places[i] = i
-        end
-    end
+    walk = _each_base_support(sups, p, _before!(run, p), run.walks)
+    next = iterate(walk)
     total = 0
     for j in 1:m
         s = steps.supports[lo + j - 1]
         run.sidx[j] = s
         start = length(run.params)
         run.pfirst[j] = start + 1
-        if j <= nb
-            for i in eachindex(places)
-                push!(run.params, before[places[i]])
-                push!(run.strides, 0)
-            end
-            _next_places!(places, length(before))
+        if next !== nothing && first(first(next)) == s
+            _push_params!(run, last(first(next)))
+            next = iterate(walk, last(next))   # after the read: the walk writes the same buffer
         else
-            for q in _support!(run.support, sups, s)
-                q == p && continue
-                push!(run.params, q)
-                push!(run.strides, 0)
-            end
+            next === nothing || first(first(next)) > s || _unlisted(p, first(first(next)))
+            _push_params!(run, _support!(run.support, sups, s))
         end
         # p is the least significant digit, then the other parameters from
         # the last to the first: lexicographic, as FIPOG's `pack`.
@@ -622,6 +611,7 @@ function _begin_step!(run::_LookupRun, steps::_LookupSteps, targets::RequiredTar
         run.offset[j] = total
         total += stride
     end
+    next === nothing || _unlisted(p, first(first(next)))
     run.pfirst[m + 1] = length(run.params) + 1
     run.offset[m + 1] = total
     resize!(run.uncovered, total)
@@ -641,8 +631,23 @@ function _begin_step!(run::_LookupRun, steps::_LookupSteps, targets::RequiredTar
     return run
 end
 
+"Append `support`'s parameters but the step's to the map's, each with a stride to set (`_begin_step!`)."
+@inline function _push_params!(run::_LookupRun, support::Vector{Int})
+    for q in support
+        q == run.p && continue
+        push!(run.params, q)
+        push!(run.strides, 0)
+    end
+    return run
+end
+
+"A support the layout's walk gives at step `p` and the step doesn't list (`_begin_step!`)."
+@noinline _unlisted(p::Int, s::Int) =
+    error("internal error: support $s holds parameter $p and parameters before it in the order, but step $p doesn't list it")
+
 """
-The parameters before `p` in the run's order, ascending, in `run.before`:
+The parameters before `p` in the run's order, ascending, in `run.before`, as
+the layout's walk of the step's base supports takes them (`_begin_step!`):
 the ones added since the last step are inserted, so a run's steps keep it in
 O(n) each, and a step before the last one asked rebuilds it.
 """

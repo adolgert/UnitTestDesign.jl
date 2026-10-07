@@ -373,8 +373,12 @@ strength would be a base subset, so it is never listed.
 `supports[s]` is a fresh vector, which the caller may keep, for tests and
 cold paths. Loops read a support into a buffer of their own, which nothing
 allocates once it has grown to the size of a support: `_support!` for one
-support, and `_each_support` to step through all of them in order, a base
-support from the one before in place.
+support; `_each_support` to step through all of them in order, a base
+support from the one before in place; and `_each_base_support` for the base
+supports that hold one parameter and others from a given set, in order, an
+IPOG step's. Code outside this file reads supports through these three,
+or `supports[s]` on a cold path, so how they are stored and numbered is
+known here alone.
 """
 struct _Supports <: AbstractVector{Vector{Int}}
     n::Int                       # the base group's parameters, 1:n
@@ -417,17 +421,6 @@ end
 
 "The number of base supports, `C(n, t)`: supports `1:_nbase(supports)` are the base group's."
 _nbase(supports::_Supports) = supports.nbase
-
-"The base strength `t`, the size of every base support."
-_base_strength(supports::_Supports) = supports.t
-
-"""
-How many base supports hold one given parameter and `t - 1` of `k` others,
-`C(k, t - 1)`: the base supports of an IPOG step whose parameter comes after
-`k` others (`_begin_step!`). 0 without base supports.
-"""
-_base_with(supports::_Supports, k::Int) =
-    supports.nbase == 0 || k < supports.t - 1 ? 0 : _choose(supports, k, supports.t - 1)
 
 """
     _support!(buffer, supports, s) -> buffer
@@ -559,6 +552,152 @@ end
         _listed!(buffer, supports, s - supports.nbase)
     end
     return buffer
+end
+
+"""
+    _BaseWalkBuffers()
+
+What a walk of base supports (`_each_base_support`) writes: the support it
+yields and its odometer. The caller keeps them, so that its walks allocate
+nothing once they have grown to a support.
+"""
+struct _BaseWalkBuffers
+    support::Vector{Int}   # the support yielded, ascending
+    places::Vector{Int}    # the odometer: the places in `earlier` of the support's parameters other than `p`
+end
+
+_BaseWalkBuffers() = _BaseWalkBuffers(Int[], Int[])
+
+"""
+    _each_base_support(supports, p, earlier, buffers = _BaseWalkBuffers())
+
+The base supports that hold parameter `p` and `t - 1` of the parameters
+`earlier` (ascending, without `p`), as `(s, support)` in increasing `s`,
+`support` being `buffers.support` holding support `s`'s parameters,
+ascending: every `t`-subset of `earlier` and `p` that holds `p`, `C(k, t -
+1)` of them for `k` parameters in `earlier`, and none at base strength 0.
+An IPOG step reads its base supports so (`_begin_step!`), `earlier` being
+the parameters before its own in the order. Unless `t = 1`, when the support
+is `p` alone, an `earlier` that is not ascending within `1:n`, or that holds
+`p`, is an internal error.
+
+Why in that order: the positions number the base supports in lexicographic
+order (`_Supports`), and inserting `p` into two sorted subsets keeps their
+order (where they first differ, at values `a < b`, `p` lands at the same
+place in both, or between `a` and `b`). So an odometer over the `(t -
+1)`-subsets of `earlier`, in lexicographic order, gives the supports in
+order of position, each without unranking (plan §5.6): its parameters are
+the subset with `p` inserted, and its position the sum over its places
+(`_base_support!`), in O(t). Nothing allocates once the buffers have grown
+to a support. As with `_each_support`, the loop's body must not change
+`support` or `earlier`, and must copy `support` to keep it; the state is the
+last position.
+"""
+struct _BaseSupportWalk
+    supports::_Supports
+    p::Int
+    earlier::Vector{Int}
+    buffers::_BaseWalkBuffers
+end
+
+_each_base_support(supports::_Supports, p::Int, earlier::Vector{Int}, buffers::_BaseWalkBuffers = _BaseWalkBuffers()) =
+    _BaseSupportWalk(supports, p, earlier, buffers)
+
+Base.IteratorSize(::Type{_BaseSupportWalk}) = Base.SizeUnknown()
+Base.eltype(::Type{_BaseSupportWalk}) = Tuple{Int, Vector{Int}}
+
+# Inlined, as `_SupportWalk`'s, so that the tuple each step returns, which
+# holds the buffer, is not allocated.
+@inline function Base.iterate(walk::_BaseSupportWalk)
+    _start_walk!(walk) || return nothing
+    s = _base_support!(walk)
+    return (s, walk.buffers.support), s
+end
+
+@inline function Base.iterate(walk::_BaseSupportWalk, s::Int)
+    supports, p, earlier = walk.supports, walk.p, walk.earlier
+    support, places = walk.buffers.support, walk.buffers.places
+    u = length(places)
+    # The common step: the odometer's last place moves on without passing p,
+    # so one parameter of the support changes, at its place f, and the
+    # position changes by that place's term (`_base_support!`).
+    if u > 0
+        i = places[u]
+        if i < length(earlier)
+            b, c = earlier[i], earlier[i + 1]
+            if (b < p) == (c < p)
+                f = b < p ? u : u + 1
+                n, j = supports.n, u + 2 - f
+                places[u] = i + 1
+                support[f] = c
+                s += _choose(supports, n - b, j) - _choose(supports, n - c, j)
+                return (s, support), s
+            end
+        end
+    end
+    s = _carry_walk!(walk)
+    s == 0 && return nothing
+    return (s, support), s
+end
+
+"The walk's next support from its odometer, its position, or 0 after the last."
+@noinline function _carry_walk!(walk::_BaseSupportWalk)
+    _next_places!(walk.buffers.places, length(walk.earlier)) || return 0
+    return _base_support!(walk)
+end
+
+"Check `walk`'s parameter and set, and set its odometer at the first subset: `false` if there is none."
+function _start_walk!(walk::_BaseSupportWalk)
+    supports, p, earlier = walk.supports, walk.p, walk.earlier
+    n, u = supports.n, supports.t - 1   # u: the support's parameters other than p
+    1 <= p <= n || error("internal error: parameter $p is not one of 1:$n")
+    supports.nbase == 0 && return false
+    if u > 0
+        a = 0
+        for q in earlier
+            a < q <= n && q != p || error("internal error: $earlier is not an ascending subset of 1:$n without $p")
+            a = q
+        end
+        length(earlier) < u && return false
+    end
+    resize!(walk.buffers.support, u + 1)
+    places = resize!(walk.buffers.places, u)
+    for i in 1:u
+        places[i] = i
+    end
+    return true
+end
+
+"""
+The support at `walk`'s odometer, `p` and `earlier[places]`, written into
+`buffers.support`, ascending, and its position: `C(n, t)` less the subsets
+after it in lexicographic order, which are, for each place `i` and its
+parameter `c`, those that agree with it before `i` and hold a larger
+parameter at `i`, `C(n - c, t - i + 1)`. A sorted subset has `i ≤ c ≤ n - t
++ i`, so each is in the table (`_choose`).
+"""
+@inline function _base_support!(walk::_BaseSupportWalk)
+    supports, p, earlier = walk.supports, walk.p, walk.earlier
+    support, places = walk.buffers.support, walk.buffers.places
+    n, t = supports.n, supports.t
+    s = supports.nbase
+    i = 1   # the support's next place
+    for k in eachindex(places)
+        c = earlier[places[k]]
+        if i == k && p < c   # p comes before c and is not yet placed
+            support[i] = p
+            s -= _choose(supports, n - p, t - i + 1)
+            i += 1
+        end
+        support[i] = c
+        s -= _choose(supports, n - c, t - i + 1)
+        i += 1
+    end
+    if i == t   # p after the others
+        support[t] = p
+        s -= _choose(supports, n - p, 1)
+    end
+    return s
 end
 
 """
