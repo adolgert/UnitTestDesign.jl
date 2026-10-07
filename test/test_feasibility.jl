@@ -782,7 +782,7 @@ end
 
 
 @testitem "feasibility: one scoped rule keeps a few cache entries, however many parameters (probe 06, plan §5.6)" begin
-    using UnitTestDesign: Request, classify_targets, generate, cache_entries
+    using UnitTestDesign: Request, _Classified, classify_targets, generate, cache_entries
     # Probe 06: n two-valued parameters and one scoped rule that excludes
     # nothing. Before Phase 5 the whole-assignment memo kept one full-width
     # entry per target (32,512 entries, 67 MiB at n = 128). Now every target's
@@ -801,6 +801,13 @@ end
         @test sort(collect(keys(f.witness_cache[1]))) == [[0, 0], [0, 1], [0, 2], [1, 0], [2, 0]]
         # A pointer per component; the free parameters share one empty cache.
         @test Base.summarysize(f.witness_cache) < 2048 + 16n
+        # What a request and its classification retain, plan §5.6's quantity
+        # (review p5-evidence 7): about 0.18 MB at n = 128 since Phase 5, the
+        # layout and the search's structure; 31bef0f retained 106 MB.
+        if n == 128
+            fresh = Request(space; strength = 2)
+            @test Base.summarysize((fresh, _Classified(fresh))) < 2^20
+        end
         # IPOG asks of rows that assign p1 and p2 together, which the direct
         # check decides, or of these five.
         if n <= 32

@@ -466,6 +466,19 @@ end
     @test results[1].nodes > 0          # the deletion trials search
     @test results[2].nodes == 0         # a direct exclusion needs no search
     @test explain(solver, (solver = :lu, tol = 1e-3)).nodes == results[1].nodes
+    # A target listed twice (p5-memo's judgment call J1, review p5-integration
+    # 3): the second answer comes from the component caches with no node, and
+    # its rule checks are its direct check twice, once by the explanation and
+    # once by the feasibility question it asks. Before Phase 5 the
+    # whole-assignment memo answered that question before its direct check,
+    # so the repeat reported one check, (:required, 0, 1). A target that
+    # completes no rule's scope makes no direct check, either way.
+    twice = TestSpace((a = 1:2, b = 1:3, c = 1:2);
+                      constraints = [forbid((a = 1, b = 1)), forbid((b, c) -> b == 2 && c == 1, :b, :c)])
+    repeated = classify(twice, [(a = 2, b = 2), (a = 2, b = 2)])
+    @test [(c.status, c.nodes, c.evaluations) for c in repeated] == [(:required, 1, 4), (:required, 0, 2)]
+    repeated = classify(twice, [(a = 1, c = 1), (a = 1, c = 1)])
+    @test [c.nodes for c in repeated][2] == 0 && [c.evaluations for c in repeated][2] == 0
     # An assignment with two Invalid values is decided without a check.
     neg = TestSpace((a = [1, Invalid(0)], b = [1, Invalid(0)]))
     e = explain(neg, (a = Invalid(0), b = Invalid(0)))

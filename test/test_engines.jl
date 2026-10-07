@@ -282,13 +282,20 @@ end
     # Phase 5 (plan §5.6, "Target storage"): classification walks the
     # request's layout and keeps a count per support, the excluded targets'
     # ids and their `Excluded` records; no required target is listed. Its
-    # targets must be the list path's, 31bef0f's classification written out
-    # below (every target of the TargetList as a fresh vector, classified in
-    # target order, then counted and marked by the list-alone constructor),
-    # bit for bit, with the same records, after the same feasibility
-    # questions in the same order: on a fresh request of its own, the list
-    # path leaves the search with the same statistics. `classify_targets`,
-    # which tests and scripts read, returns the same lists.
+    # targets must be the list path's, 31bef0f's loop written out below
+    # (every target of the TargetList as a fresh vector, classified in target
+    # order, then counted and marked by the list-alone constructor), bit for
+    # bit, with the same records, after the same feasibility questions in the
+    # same order: on a fresh request of its own, the list path leaves the
+    # search with the same statistics. `classify_targets`, which tests and
+    # scripts read, returns the same lists. The two paths share
+    # `_classify_target`, the `TargetList` they walk and
+    # `RequiredTargets(request, required)`, so this compares the walk's order
+    # and its storage, not those: the supports are compared with 31bef0f's
+    # listing in test_request.jl ("the layout's supports and offsets are the
+    # listed layout's"), and `_classify_target`'s question without the
+    # witness with the full one in test_feasibility.jl ("explain_partial
+    # without the witness asks and answers the same").
     #
     # The follow-ups' laziness stays: the bits are built the first time
     # something asks, never by the bound without must-include rows, and then
@@ -365,8 +372,10 @@ end
         # The negative targets: counted, each exclusion kept with its number
         # in target order and its record's position under its invalid value,
         # after the same questions as the list path
-        # (`classify_negative_targets`, 31bef0f's), whose lists they must
-        # reproduce.
+        # (`classify_negative_targets`, 31bef0f's record renamed), whose lists
+        # they must reproduce. The two share `_classify_target` and the walk
+        # (`_walk_support!`), so this compares the numbering and the storage;
+        # the order is stated a third time below.
         any(!isempty, space.invalid) || continue
         negative = _negative_targets!(classified, request)
         @test _negative_targets!(classified, request) === classified.negative   # classified once
