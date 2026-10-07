@@ -124,7 +124,8 @@ The row reducer's core (plan §5.3), for any start design. `start` is
 parameters × rows in engine positions: complete rows, each valid under
 `request`'s rules, the request's must-include rows first (completed where
 they were partial), and together covering every required target of
-`targets` (`RequiredTargets(request, required)`). The result has the same
+`targets` (`RequiredTargets`; generation's comes from classification, the
+layout and the excluded ids). The result has the same
 form and at most as many rows: the start's must-include rows first and
 unchanged, then rows that cover what they leave. It never calls the
 feasibility search (`dead`, `witness`), so it can't throw

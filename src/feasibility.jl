@@ -165,9 +165,11 @@ component is proven to have no valid completion. Nothing is cached for a whole
 assignment: a question's answer is assembled from its components', so a
 question whose assigned parameters lie outside every table's scope stores
 nothing once its constrained components' sub-assignments are cached, and only
-a component that spans every parameter (a whole-case table) has full-width
-keys. An unconstrained component's cache is never written: all of them share
-one empty `Dict`.
+a component that spans every parameter has full-width keys: a whole-case
+table's, or one that scoped rules link through every parameter (a chain of
+pair rules, the equality ladder, a model whose rules connect all its
+parameters). An unconstrained component's cache is never written: all of
+them share one empty `Dict`.
 
 Scratch, reused by every question so that a cache hit allocates nothing:
 `key` holds the question (`_checked_key`), `subkeys[c]` component `c`'s
@@ -480,7 +482,9 @@ is proven to have no valid completion, `false` only when a witness exists.
 When the search reaches `f.limit` it throws `ResourceLimitError` naming
 `feasibility_limit`, never guessing either way (contract §1.7, §3.6). A
 question the caches answer allocates nothing; one that searches allocates
-only the entries it stores.
+the entries it stores and, until they reach their largest size, the growth
+of the object's search buffers (the trail of pruned candidates and the list
+of components to search).
 """
 function dead(f::Feasibility, partial::AbstractVector{<:Integer})
     key = _checked_key(f, partial)
@@ -677,10 +681,11 @@ The index-space answer of `explain_partial`, which `explain(space, ...)` turns
 into an `Explanation` (contract §1.26). `outcome` is one of
 
 - `:allowed`: the assignment is complete and no table forbids it; `witness`
-  is the assignment itself.
+  is the assignment itself, unless asked with `witness = false`.
 - `:forbidden`: `rules` lists every table, in table order, whose scope is
   entirely assigned and which forbids the assignment (§1.4 *direct*).
-- `:completable`: `witness` is a valid complete row extending it.
+- `:completable`: `witness` is a valid complete row extending it, unless
+  asked with `witness = false`.
 - `:infeasible`: proven to have no valid completion, though no table forbids
   it directly. `rules` is a proven sufficient set from the deletion search
   (§3.13–§3.15), in table order, possibly one rule whose scope reaches
@@ -800,7 +805,9 @@ end
 One target's classification in index space, which `classify(space, ...)` turns
 into a `Classification` (contract §1.2, §1.4, §1.7). `status` is
 
-- `:required`: feasible; `witness` is a valid row containing it.
+- `:required`: feasible; `witness` is a valid row containing it, or
+  `nothing` when the explanation was asked with `witness = false` (as
+  classification asks, `_classify_target`).
 - `:forbidden`: `rules` lists every table, in table order, whose scope lies
   within the target's assigned parameters and which forbids it (*direct*).
 - `:implied`: proven infeasible with no direct rule; `rules` is a proven

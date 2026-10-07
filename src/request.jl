@@ -682,10 +682,12 @@ It is the request's layout of targets: target `offsets[s] + code + 1` is
 code `code` on support `s`, and that number is its id. Classification walks
 it support by support and code by code (`_classify_targets`), the targets
 (`RequiredTargets`), the coverage index and the certifier's recount
-(`validate_design`) read it, and no target is ever listed from it in
-production. An unconstrained request requires every target, so its targets
-are this list itself, never materialized (plan Phase 3 review, round 1,
-item 4).
+(`validate_design`) read it, and neither classification nor the certifier
+keeps a list of targets. GND and full-strength generation decode the
+required targets from their codes during a call (`_required_matrix`,
+`_required_list`). An unconstrained request requires every target, so its
+targets are this list itself, which classification never materializes (plan
+Phase 3 review, round 1, item 4).
 
 The supports are `_Supports`: the base group's are computed from their
 position, not listed (plan §5.6), so the layout keeps 8 bytes a support, its
