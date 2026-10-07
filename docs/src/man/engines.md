@@ -373,10 +373,10 @@ for a space of 250 parameters, for its row type.
 |:--|--:|:--|:--|:--|:--|
 | 10 × 3 values | 2 | IPOG; `Auto()`; compact | 15; 15; 15 (9) | under 1 ms; under 1 ms; 20 ms | 314 MiB |
 | 50 × 4 values | 2 | IPOG; `Auto()`; compact | 46; 40; 38 (16) | 1 ms; 2 ms; 0.14 s | 325 MiB |
-| 250 binary | 2 | IPOG; IPOG, one rule | 17; 18 (4) | 10 to 25 ms; 0.15 to 0.16 s | 472 MiB; 461 to 478 MiB |
-| 250 × 4 values | 2 | IPOG; `Auto()` | 62; 52 (16) | 32 ms; 6 to 26 ms | 460 MiB |
+| 250 binary | 2 | IPOG; IPOG, one rule | 17; 18 (4) | 10 to 25 ms; 45 to 60 ms | 472 MiB; 461 to 478 MiB |
+| 250 × 4 values | 2 | IPOG; `Auto()` | 62; 52 (16) | 32 ms; 4 to 18 ms | 460 MiB |
 | 8 × 64 values | 2 | IPOG; `Auto()` | 5483; 4096, minimal | 45 ms; 1 ms | 311 MiB |
-| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 255; 264; 178 (64) | 22 ms; 73 to 83 ms; 14 s | 320 MiB; 320 to 326 MiB; 318 MiB |
+| 30 × 4 values | 3 | IPOG; IPOG, one rule; compact | 255; 264; 178 (64) | 22 ms; 53 to 55 ms; 14 s | 320 MiB; 320 to 326 MiB; 318 MiB |
 | 15 × 4 values | 4 | IPOG; compact | 948; 825 (256) | 29 ms; 13 s | 316 MiB |
 | 20 binary | 6 | IPOG; IPOG, one rule | 379; 397 (64) | 0.36 s; 0.91 to 0.95 s | 329 MiB; 414 to 447 MiB |
 

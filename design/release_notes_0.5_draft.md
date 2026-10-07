@@ -224,15 +224,25 @@ Added 2026-10-06 by the solver plan's Phase 4
   is about 10 to 95 times faster where the engine it replaced took more than
   a second (8 parameters of 64 values at strength 2: 1.7 s to 0.045 s;
   strength 6 on 20 three-valued parameters: 5.6 minutes to 5.7 s). On
-  heavily constrained models it can be slower and take more memory, because
-  it builds four designs and each asks the feasibility search. Over the
-  benchmark's constrained models at strength 2, whole calls took longer at
-  68 of 907 points, up to about three times as long, and the engine alone
-  took up to about five times as long, the most with rules that read the
-  whole case. Peak memory rose on some: 5.3 to 8.1 GiB on the largest cart
-  model at strength 2, about 630 to 1,250 MiB on a ct-comp model at strength
-  3 (the solver plan's quiet re-measurement). Its Phase 5, the feasibility
-  memo by component, is meant to reduce this cost.
+  heavily constrained models it builds four designs and each asks the
+  feasibility search. That made it slower and larger there until the solver
+  plan's Phase 5 (2026-10-07) kept the search's answers by the groups of
+  parameters that rules link, and classification kept only a count for the
+  required combinations. On the benchmark's constrained models (777 points,
+  about 500 timed), a whole call now takes longer than with the engine it
+  replaced at 7 points, all at strength 2 with 3 to 30 rules, by up to 1.6
+  times; before Phase 5 it did at 64 of them (68 of 907 timed points on the
+  whole grid), by up to about three times. The engine alone still takes up
+  to about five times as long where rules link nearly every parameter, the
+  most with rules that read the whole case; classification, which every
+  engine shares, is now cheap enough to hide most of it. Peak memory fell
+  below the engine it replaced on the largest models: 5.0 GiB to 470 MiB on
+  the largest cart model at strength 2 (8.1 GiB before Phase 5), 1,125 to
+  1,040 MiB on a ct-comp model at strength 3 (2.3 GiB before), and CASA's 35
+  models at strength 3 all complete, 34 under 2 GiB, where the engine it
+  replaced needed 0.4 to 10.4 GiB of resident memory on 30 of them, and on
+  the other 5 more than 40 GiB counting compressed memory before it was
+  stopped (the solver plan's quiet re-measurements).
 - Its cases change. It runs four members of the IPOG family, two tie-break
   rules by two orders of vertical growth, and keeps the design with the
   fewest cases. Over the package's benchmark grid, against the engine it
