@@ -637,7 +637,7 @@ end
     rng = Xoshiro(0x2026_1006_c0de ⊻ seed_mod())
     tally = Dict(k => 0 for k in (:none, :some, :all, :repeat, :hit, :feasible, :infeasible, :unknown,
                                   :cached_infeasible, :dead, :dead_throws, :completable, :negative,
-                                  :lazy, :whole, :components, :trial, :trial_unresolved))
+                                  :lazy, :whole, :components, :trial, :trial_unresolved, :unset))
 
     "The rule checks of the direct check: assigned tables in order, up to the first that forbids."
     function direct_checks(f, key)
@@ -670,6 +670,9 @@ end
         how === :dead && (limit = f.limit)   # `dead` asks with the object's limit
         checks, hits, ref_checks = f.stats.evaluations, ref.memo_hits, ref.evaluations
         answered = f.stats.memo_hits
+        # Every constrained component's all-unset answer is cached, so only
+        # the components the question assigns are looked up (plan §12.3 item 8).
+        f.unset.cached == length(f.constrained) > 0 && (tally[:unset] += 1)
         expected, ew = reference_completable(ref, key, limit)
         ew = ew === nothing ? nothing : copy(ew)
         if how === :internal
@@ -777,6 +780,7 @@ end
     @test length(refs) == 3   # ordinary rows, and negative rows at a and at b
 
     # The problems exercised every kind of question.
+    @info "Questions compared with the whole-assignment memo's" tally[:none] tally[:some] tally[:all] tally[:repeat] tally[:unset]
     @test all(>(0), values(tally))
 end
 

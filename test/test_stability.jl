@@ -157,6 +157,16 @@ end
         @test (@allocated dead(f, k)) <= 2 * two
         @test cache_entries(f) == before + 1
     end
+    # Once every constrained component's all-unset sub-assignment is cached
+    # (here by the empty question, for {a, b}), a question looks up only the
+    # components it assigns (plan §12.3 item 8): a hit still allocates
+    # nothing, and the witness is the same.
+    @test f.unset.cached == 1
+    @test !dead(f, zeros(Int, 6)) && f.unset.cached == length(f.constrained) == 2
+    @test f.unset.witness == [1, 1, 1, 1, 1, 1]
+    @test allocated(dead, request, row) == 0
+    @test allocated(_completable, f, key, 100) == 0
+    @test _completable(f, key, 100) === :feasible && _witness(f) == [2, 1, 1, 1, 1, 3]
     # A whole-case rule makes one component of every parameter: its keys are
     # whole assignments, and a hit still allocates nothing.
     whole = Request(TestSpace((a = 1:3, b = 1:3, c = 1:3); constraints = [forbid(r -> r.a == 1 && r.b == 2 && r.c == 3)]);

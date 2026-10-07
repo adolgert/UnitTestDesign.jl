@@ -141,6 +141,19 @@ end
 
 _Mapped() = _Mapped(nothing, Int[], Int[])
 
+# The answers of the all-unset sub-assignments, one per `Feasibility`
+# (review p5-perf 1 and 2; plan §12.3 item 8). `cached` counts the
+# constrained components whose all-unset sub-assignment is cached feasible,
+# and `witness` holds their witness values beside each free parameter's
+# first candidate. Once every constrained component's is (`cached ==
+# length(f.constrained)`), a question starts from `witness` and looks up
+# only the components that hold an assigned parameter, since each of the
+# others would find its all-unset entry.
+mutable struct _Unset
+    cached::Int
+    const witness::Vector{Int}
+end
+
 
 """
     Feasibility(candidates, tables; limit = 1_000_000)
@@ -190,9 +203,15 @@ A question visits only the constrained components (`constrained`, in
 order), and its witness is the assignment merged with `template`, each free
 parameter's first candidate (0 at a constrained component's parameters,
 which the caches or the search fill; empty when no parameter is free, and
-the assignment is copied), without a branch per parameter, so that a
-question the caches answer costs a pass over the assignment and time in its
-constrained components, not in every component (review p5-perf 1).
+the assignment is copied), without a branch per parameter (review p5-perf
+1). Once every constrained component's all-unset sub-assignment is cached
+feasible (`unset`), the witness starts from those components' witnesses
+instead, and only the components that hold an assigned parameter are
+looked up, since each of the others would find its all-unset entry (plan
+§12.3 item 8). So a question the caches answer costs a pass over the
+assignment, the direct check, a check of each constrained component for an
+assigned parameter, and one lookup per component it assigns, not one per
+component.
 
 Scratch, reused by every question so that a cache hit allocates nothing:
 `key` holds the question (`_checked_key`, or `_mapped_key!` for a row in a
@@ -210,7 +229,8 @@ threads. The package never shares one: each is built inside one call, in a
 Fields: `candidates`, `tables`, `limit`, the component structure
 (`components`, `component_of`, `component_tables`, `param_tables`,
 `constrained`, `template`), `witness_cache`, `rule_memo`, `stats`, the
-scratch `key`, `subkeys`, `pending` and `search`, and `mapped`.
+scratch `key`, `subkeys`, `pending` and `search`, `mapped`, and `unset`, the
+all-unset sub-assignments' witnesses.
 
 The lazy-rule memo (contract §3.5, §12.19). `rule_memo[k]` is `nothing` for
 a tabulated table and, for a lazy one, a `RuleMemo` from the scope's value
@@ -242,6 +262,7 @@ struct Feasibility
     pending::Vector{Int}
     search::_Search
     mapped::_Mapped
+    unset::_Unset
 end
 
 "An empty verdict memo for a lazy table, `nothing` for a tabulated one."
@@ -329,11 +350,12 @@ function _Feasibility(cands::Vector{Vector{Int}}, rules::Vector{RuleTable}, limi
     subkeys = [constrained[c] ? zeros(Int, length(components[c])) : no_values for c in eachindex(components)]
     alive = [constrained[component_of[p]] ? Vector{Bool}(undef, length(cands[p])) : no_survivors for p in 1:n]
     search = _Search(zeros(Int, n), alive, zeros(Int, n), Tuple{Int, Int}[], Int(limit), 0)
-    template = all(constrained) ? Int[] : [constrained[component_of[p]] ? 0 : cands[p][1] for p in 1:n]
+    firsts = [constrained[component_of[p]] ? 0 : cands[p][1] for p in 1:n]
+    template = all(constrained) ? Int[] : firsts
     mapped = parent === nothing ? _Mapped() : parent.mapped   # the same candidates
     return Feasibility(cands, rules, limit, components, component_of,
         component_tables, param_tables, findall(constrained), template, caches,
-        memos, SearchStats(), zeros(Int, n), subkeys, Int[], search, mapped)
+        memos, SearchStats(), zeros(Int, n), subkeys, Int[], search, mapped, _Unset(0, copy(firsts)))
 end
 
 """
@@ -551,10 +573,14 @@ The engines' predicate (plan Phase 3 step 1): `true` only when `partial`
 is proven to have no valid completion, `false` only when a witness exists.
 When the search reaches `f.limit` it throws `ResourceLimitError` naming
 `feasibility_limit`, never guessing either way (contract §1.7, §3.6). A
-question the caches answer allocates nothing; one that searches allocates
-the entries it stores and, until they reach their largest size, the growth
-of the object's search buffers (the trail of pruned candidates and the list
-of components to search).
+question the caches answer allocates nothing and costs a pass over the
+assignment, the direct check, and a lookup per constrained component it
+assigns, once every constrained component's all-unset sub-assignment is
+cached (before that, a lookup per constrained component; see
+`Feasibility`). One that searches allocates the entries it stores and,
+until they reach their largest size, the growth of the object's search
+buffers (the trail of pruned candidates and the list of components to
+search).
 """
 function dead(f::Feasibility, partial::AbstractVector{<:Integer})
     key = _checked_key(f, partial)
@@ -658,9 +684,16 @@ end
 # Nothing is cached for the whole assignment (plan §5.6): the direct check
 # runs every time, then each constrained component that is not fully
 # assigned is looked up by its sub-assignment, and only the components not
-# found are searched. A question asked again therefore finds every component
-# it needs in the caches and costs no nodes, as a whole-assignment memo's hit
-# did, and its answer and witness are those it had the first time.
+# found are searched. Once every constrained component's all-unset
+# sub-assignment is cached feasible (`f.unset`), a component that holds no
+# assigned parameter would find that entry, so it isn't looked up: its
+# witness values come from `f.unset.witness`, and only the components the
+# question assigns are looked up (plan §12.3 item 8). That changes no
+# answer, witness, node count or counter: a skipped component would find a
+# feasible entry, so the same components are searched, in the same order. A
+# question asked again therefore finds every component it needs in the
+# caches and costs no nodes, as a whole-assignment memo's hit did, and its
+# answer and witness are those it had the first time.
 function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
     stats = f.stats
     stats.queries += 1
@@ -668,35 +701,35 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
     _violates(f, key) && return :infeasible
     search = f.search
     witness = search.work
-    template = f.template
-    # The assignment, with each free parameter's first candidate where it is
-    # unset; a constrained component's unset parameters stay 0 for the
-    # caches or the search to fill. `ifelse`, not a branch: half-assigned
-    # rows would mispredict it.
-    if isempty(template)
-        copyto!(witness, key)
-    else
-        @inbounds for p in eachindex(witness, key, template)
-            v = key[p]
-            witness[p] = ifelse(v == 0, template[p], v)
-        end
-    end
     pending = empty!(f.pending)
+    unset = f.unset
     # Cached components first: they cost no nodes, and a cached infeasible
     # component settles the question at once.
-    for c in f.constrained
-        params = f.components[c]
-        _all_assigned(key, params) && continue  # `_violates` checked it
-        cached = get(f.witness_cache[c], _subkey!(f, c, key), missing)
-        if cached === missing
-            push!(pending, c)
-        elseif cached === nothing
+    if unset.cached == length(f.constrained)
+        # Every constrained component's all-unset sub-assignment is cached:
+        # start from their witnesses, and look up only the components that
+        # hold an assigned parameter. (`ifelse`, not a branch: half-assigned
+        # rows would mispredict it.)
+        _merge!(witness, key, unset.witness)
+        for c in f.constrained
+            params = f.components[c]
+            _any_assigned(key, params) || continue
+            for p in params   # its unset parameters back to 0, for the cache or the search
+                @inbounds witness[p] = key[p]
+            end
+            _look_up!(f, c, key, witness, pending) === :infeasible || continue
             stats.memo_hits += 1
             return :infeasible
-        else
-            for (k, p) in enumerate(params)
-                witness[p] = cached[k]
-            end
+        end
+    else
+        # The assignment, with each free parameter's first candidate where it
+        # is unset; a constrained component's unset parameters stay 0 for the
+        # caches or the search to fill.
+        isempty(f.template) ? copyto!(witness, key) : _merge!(witness, key, f.template)
+        for c in f.constrained
+            _look_up!(f, c, key, witness, pending) === :infeasible || continue
+            stats.memo_hits += 1
+            return :infeasible
         end
     end
     if isempty(pending)   # a query with no component left to solve searches nothing
@@ -712,11 +745,55 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
         status === :unknown && break   # the budget is spent; store nothing
         # `subkeys[c]` still holds the sub-assignment: no search writes it.
         f.witness_cache[c][copy(f.subkeys[c])] = status === :feasible ? witness[f.components[c]] : nothing
+        if status === :feasible && all(iszero, f.subkeys[c])   # its all-unset entry, stored once
+            for p in f.components[c]
+                unset.witness[p] = witness[p]
+            end
+            unset.cached += 1
+        end
         status === :infeasible && break
     end
     stats.last_nodes = search.nodes
     stats.total_nodes += search.nodes
     return status
+end
+
+"Whether some parameter of `params` is assigned in `key`."
+function _any_assigned(key::Vector{Int}, params::Vector{Int})
+    for p in params
+        @inbounds key[p] == 0 || return true
+    end
+    return false
+end
+
+"`witness` gets `key`'s assigned values and `base`'s where `key` is unset, without a branch per parameter."
+@inline function _merge!(witness::Vector{Int}, key::Vector{Int}, base::Vector{Int})
+    @inbounds for p in eachindex(witness, key, base)
+        v = key[p]
+        witness[p] = ifelse(v == 0, base[p], v)
+    end
+    return witness
+end
+
+"""
+Component `c`'s answer from its cache, for `_completable`: `:infeasible`
+when the cache holds `nothing` for its sub-assignment; otherwise its witness
+values are written into `witness` (`:found`), it is fully assigned, which the
+direct check decided (`:found`), or it goes on `pending` (`:missing`).
+"""
+@inline function _look_up!(f::Feasibility, c::Int, key::Vector{Int}, witness::Vector{Int}, pending::Vector{Int})
+    params = f.components[c]
+    _all_assigned(key, params) && return :found  # `_violates` checked it
+    cached = get(f.witness_cache[c], _subkey!(f, c, key), missing)
+    cached === nothing && return :infeasible
+    if cached === missing
+        push!(pending, c)
+        return :missing
+    end
+    for (k, p) in enumerate(params)
+        @inbounds witness[p] = cached[k]
+    end
+    return :found
 end
 
 "The witness of the last question `f` answered `:feasible`: `f`'s scratch, not a copy."
