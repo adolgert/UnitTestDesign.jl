@@ -245,7 +245,10 @@ end
         @test [(r["mode"], r["status"], r["rows"]) for r in lines] == [("index", "ok", "2"), ("covering", "ok", "2")]
         r = lines[1]
         @test r["required"] == "56" && r["excluded"] == "56" && parse(Int, r["ret_c_b"]) > 0 &&
-              parse(Int, r["live_c_b"]) > 0 && startswith(r["memo_c"], "memo=") && r["hash"] == lines[2]["hash"]
+              parse(Int, r["live_c_b"]) > 0 && r["hash"] == lines[2]["hash"]
+        # The memo column's `name=count` pairs, whatever the tree's fields: at
+        # 31bef0f `memo=… witness_cache[]=…`, since Phase 5 `witness_cache[]=…`.
+        @test occursin(r"^\S+=\d+( \S+=\d+)*$", r["memo_c"]) && occursin("witness_cache[]=", r["memo_c"])
         @test parse(Int, r["calls"]) == 1 && parse(Float64, r["peak_rss_mib"]) > 100
         stopped = joinpath(dir, "stopped.tsv")
         run(pipeline(`$julia $script fresh --point equality-n8 --engine 'IPOG()' --mode index --rss-mib 100 --out $stopped`;
