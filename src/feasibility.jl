@@ -171,6 +171,14 @@ pair rules, the equality ladder, a model whose rules connect all its
 parameters). An unconstrained component's cache is never written: all of
 them share one empty `Dict`.
 
+A question visits only the constrained components (`constrained`, in
+order), and its witness is the assignment merged with `template`, each free
+parameter's first candidate (0 at a constrained component's parameters,
+which the caches or the search fill; empty when no parameter is free, and
+the assignment is copied), without a branch per parameter, so that a
+question the caches answer costs a pass over the assignment and time in its
+constrained components, not in every component (review p5-perf 1).
+
 Scratch, reused by every question so that a cache hit allocates nothing:
 `key` holds the question (`_checked_key`), `subkeys[c]` component `c`'s
 sub-assignment for a lookup, `pending` the components left to search, and
@@ -182,9 +190,9 @@ never shares one: each is built inside one call, in a `Request`, a
 `FeasibilityContext` or a deletion trial, and never on a `TestSpace`.
 
 Fields: `candidates`, `tables`, `limit`, the component structure
-(`components`, `component_of`, `component_tables`, `param_tables`),
-`witness_cache`, `rule_memo`, `stats`, and the scratch `key`, `subkeys`,
-`pending` and `search`.
+(`components`, `component_of`, `component_tables`, `param_tables`,
+`constrained`, `template`), `witness_cache`, `rule_memo`, `stats`, and the
+scratch `key`, `subkeys`, `pending` and `search`.
 
 The lazy-rule memo (contract §3.5, §12.19). `rule_memo[k]` is `nothing` for
 a tabulated table and, for a lazy one, a `RuleMemo` from the scope's value
@@ -206,6 +214,8 @@ struct Feasibility
     component_of::Vector{Int}
     component_tables::Vector{Vector{Int}}
     param_tables::Vector{Vector{Int}}
+    constrained::Vector{Int}           # the components with a table, in order
+    template::Vector{Int}              # a free parameter's first candidate, 0 elsewhere; empty if none is free
     witness_cache::Vector{Dict{Vector{Int}, Union{Nothing, Vector{Int}}}}
     rule_memo::Vector{Union{Nothing, RuleMemo}}
     stats::SearchStats
@@ -274,8 +284,9 @@ function Feasibility(candidates::AbstractVector, tables::AbstractVector; limit::
     subkeys = [constrained[c] ? zeros(Int, length(components[c])) : no_values for c in eachindex(components)]
     alive = [constrained[component_of[p]] ? Vector{Bool}(undef, length(cands[p])) : no_survivors for p in 1:n]
     search = _Search(zeros(Int, n), alive, zeros(Int, n), Tuple{Int, Int}[], Int(limit), 0)
+    template = all(constrained) ? Int[] : [constrained[component_of[p]] ? 0 : cands[p][1] for p in 1:n]
     return Feasibility(cands, rules, Int(limit), components, component_of,
-        component_tables, param_tables, caches,
+        component_tables, param_tables, findall(constrained), template, caches,
         collect(Union{Nothing, RuleMemo}, memos), SearchStats(),
         zeros(Int, n), subkeys, Int[], search)
 end
@@ -513,18 +524,25 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
     stats.last_nodes = 0
     _violates(f, key) && return :infeasible
     search = f.search
-    witness = copyto!(search.work, key)
-    pending = empty!(f.pending)
-    # Free parameters and cached components first: they cost no nodes, and
-    # a cached infeasible component settles the question at once.
-    for c in eachindex(f.components)
-        params = f.components[c]
-        if !_constrained(f, c)
-            for p in params
-                witness[p] == 0 && (witness[p] = f.candidates[p][1])
-            end
-            continue
+    witness = search.work
+    template = f.template
+    # The assignment, with each free parameter's first candidate where it is
+    # unset; a constrained component's unset parameters stay 0 for the
+    # caches or the search to fill. `ifelse`, not a branch: half-assigned
+    # rows would mispredict it.
+    if isempty(template)
+        copyto!(witness, key)
+    else
+        @inbounds for p in eachindex(witness, key, template)
+            v = key[p]
+            witness[p] = ifelse(v == 0, template[p], v)
         end
+    end
+    pending = empty!(f.pending)
+    # Cached components first: they cost no nodes, and a cached infeasible
+    # component settles the question at once.
+    for c in f.constrained
+        params = f.components[c]
         _all_assigned(key, params) && continue  # `_violates` checked it
         cached = get(f.witness_cache[c], _subkey!(f, c, key), missing)
         if cached === missing

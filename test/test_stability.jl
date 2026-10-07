@@ -118,6 +118,9 @@ end
     request = Request(space; strength = 2)
     f = request.feasibility
     @test f.components == [[1, 2], [3, 4], [5], [6]]
+    # A question visits the constrained components only, and its witness
+    # starts from the free parameters' first candidates (review p5-perf 1).
+    @test f.constrained == [1, 2] && f.template == [0, 0, 0, 0, 1, 1]
     row = [1, 0, 0, 0, 2, 0]   # engine positions, a = 1 and e = :q
     key = [2, 0, 1, 0, 0, 3]   # value indices, a = 2, c = true, g = 3
     lookup(f, c, key) = get(f.witness_cache[c], _subkey!(f, c, key), missing)
@@ -149,7 +152,7 @@ end
     # whole assignments, and a hit still allocates nothing.
     whole = Request(TestSpace((a = 1:3, b = 1:3, c = 1:3); constraints = [forbid(r -> r.a == 1 && r.b == 2 && r.c == 3)]);
                     strength = 2)
-    @test whole.feasibility.components == [[1, 2, 3]]
+    @test whole.feasibility.components == [[1, 2, 3]] && isempty(whole.feasibility.template)   # none is free
     @test allocated(dead, whole, [1, 2, 0]) == 0
     @test !dead(whole, [1, 2, 0]) && dead(whole, [1, 2, 3])
 end
