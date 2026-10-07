@@ -73,7 +73,7 @@ def flatten(study,r,table={}):
         peak_rss_bytes=rss,peak_footprint_bytes=r.get('os_peak_footprint_bytes'),
         result_retained_bytes=last.get('retained_bytes'),search_retained_bytes=search.get('search_retained_bytes'),
         primary_queries=search.get('queries'),primary_nodes=search.get('nodes'),primary_rule_checks=search.get('rule_checks'),
-        assignment_memo=search.get('assignment_memo'),rule_memo=search.get('rule_memo'),
+        assignment_memo=search.get('assignment_memo'),component_cache=search.get('component_cache'),rule_memo=search.get('rule_memo'),
         warm_construct_seconds=statistics.median(m['seconds'] for m in construct) if construct else None,
         completed_warm_runs=r.get('completed_warm_runs'),wall_seconds=r.get('wall_seconds'),
         exhaustive_validation=validation.get('exhaustive'),public_validation=validation.get('public_coverage'),
