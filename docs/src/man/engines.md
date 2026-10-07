@@ -405,7 +405,7 @@ call that is too large; a design that can't be certified is not returned:
   compiles, took 2.1 seconds and a warm call 0.05 seconds, peaking at 445
   MiB, where a first call took 3 seconds and 1.4 GiB; on 400 options with 46
   rules a first call took 9.2 seconds and a warm call 2.5 seconds, peaking
-  at 760 to 780 MiB, where a first call took 19 seconds and 6.2 GiB. There
+  at 756 to 775 MiB, where a first call took 19 seconds and 6.2 GiB. There
   classification is nearly the whole call, and most of it is explaining the
   3,281 combinations that the rules exclude only together: the search for
   the rules behind each, which `explanation_limit` bounds (with a limit of 1,
