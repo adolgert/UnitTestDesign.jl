@@ -1263,6 +1263,22 @@ it (contract §1.4): no valid row of its kind holds an excluded target.
 end
 
 """
+Check that the first `n` marks of `seen` are set, chunk by chunk
+(`findnext`), for a block of codes on `support` that holds no excluded
+target: otherwise the recounts' internal error for the first code that is
+unset, decoded as a target, with `fixed = p => v` set in it for a negative
+block (`0` for none). The marks past `n` are other blocks', so a gap there
+means nothing.
+"""
+function _every_code(request::Request, seen::BitVector, n::Int, support::Vector{Int}, arity::Vector{Int}, fixed)
+    missed = findnext(!, seen, 1)
+    (missed === nothing || missed > n) && return nothing
+    target = _decode!(zeros(Int, length(arity)), missed - 1, support, arity)
+    fixed isa Pair && (target[fixed.first] = fixed.second)
+    _uncovered(request, target)
+end
+
+"""
     _recount(request, matrix, targets::RequiredTargets) -> Int
 
 The certifier's recount (contract §1.21): the number of required targets
@@ -1274,7 +1290,9 @@ support's codes: a code no row holds must be the id of a target
 classification excluded, and an excluded one no row may hold, since every
 row was checked valid before and no valid row holds an excluded target
 (§1.4). So it checks classification's exclusions against the rows as well
-as their coverage, for one bit read per excluded target.
+as their coverage, for one bit read per excluded target. A support with no
+excluded target needs every code marked, which its marks' chunks show
+without a walk (`_every_code`).
 
 It trusts two things, both classification's. The layout, `targets.layout`,
 is the request's `TargetList`: its supports are every set of parameters that
@@ -1305,6 +1323,13 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::
         fill!(view(seen, 1:n), false)
         for j in axes(matrix, 2)
             seen[_code(view(matrix, :, j), support, layout.arity) + 1] = true
+        end
+        if next > length(excluded) || excluded[next] > layout.offsets[s] + n
+            # No excluded target here: every code must be marked, which the
+            # marks' chunks show at once (review p5-perf 6).
+            _every_code(request, seen, n, support, layout.arity, 0)
+            covered += n
+            continue
         end
         for code in 0:(n - 1)
             if next <= length(excluded) && excluded[next] == layout.offsets[s] + code + 1
@@ -1337,7 +1362,8 @@ ordinary ones, the block of every assignment of ordinary values to the rest
 of the support, by code on the rest. For each block it marks the code of
 each row that holds `v` at `p`, then walks the block's codes: a code no row
 holds must be the number of a target classification excluded, and an
-excluded one no row may hold, as in the ordinary recount.
+excluded one no row may hold, as in the ordinary recount, and a block with
+no excluded target is checked by its marks' chunks.
 
 It trusts what the ordinary recount trusts, the layout, whose supports the
 negative targets lie on as well, and `negative.ids`, the numbers of the
@@ -1367,6 +1393,12 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, negative:
         fill!(view(seen, 1:n), false)
         for j in axes(matrix, 2)
             matrix[p, j] == v && (seen[_code(view(matrix, :, j), rest, arity) + 1] = true)
+        end
+        if next > length(ids) || ids[next] > number + n
+            _every_code(request, seen, n, rest, arity, p => v)   # no excluded target in the block
+            number += n
+            covered += n
+            continue
         end
         for code in 0:(n - 1)
             number += 1
