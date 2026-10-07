@@ -277,7 +277,7 @@ end
 
 @testitem "engines: classification keeps the excluded ids, and its targets are the list's bit for bit (§4.2, §1.4)" setup=[EngineSetup] begin
     using UnitTestDesign: CoverageIndex, Excluded, _Classified, _classify_target, _negative_targets!, _required_bits,
-                          _ordinary_bound, _prepare, _run, _space_indices, _slot, cache_entries,
+                          _ordinary_bound, _prepare, _run, _space_indices, _slot, _sub_excluded, cache_entries,
                           classify_negative_targets, isconstrained, n_must_include
     # Phase 5 (plan §5.6, "Target storage"): classification walks the
     # request's layout and keeps a count per support, the excluded targets'
@@ -363,9 +363,10 @@ end
         @test bits == _required_bits(listed_t)
         @test t.bits === bits && CoverageIndex(request, t).required === bits
         # The negative targets: counted, each exclusion kept with its number
-        # in target order and its id on its sub-request's layout, after the
-        # same questions as the list path (`classify_negative_targets`,
-        # 31bef0f's), whose lists they must reproduce.
+        # in target order and its record's position under its invalid value,
+        # after the same questions as the list path
+        # (`classify_negative_targets`, 31bef0f's), whose lists they must
+        # reproduce.
         any(!isempty, space.invalid) || continue
         negative = _negative_targets!(classified, request)
         @test _negative_targets!(classified, request) === classified.negative   # classified once
@@ -388,19 +389,22 @@ end
         @test negative.ids == findall(in(gone), walked)
         @test walked[setdiff(eachindex(walked), negative.ids)] == negative_required
         # Each invalid value's sub-request: its targets are the ones at that
-        # value without p, required or excluded as here, in the same order.
+        # value without p, required or excluded as here (not always in the
+        # same order: test_invalid.jl's items on groups that change order).
         for q in 1:n, position in (request.arity[q] + 1):length(request.candidates[q])
             slot = _slot(negative, request, q, position)
             here = [r for r in negative_required if r[q] == position]
             @test (negative.alone[slot] === :required) == any(r -> count(!=(0), r) == 1, here)
+            @test negative.excluded_at[slot] ==
+                  findall(e -> e.target[q] == position && count(!=(0), e.target) > 1, negative.excluded)
             if !(strength > 1 || any(g -> q in g.first, request.groups[2:end]))
-                @test negative.count[slot] == 0 && isempty(negative.sub_excluded[slot])
+                @test negative.count[slot] == 0 && isempty(negative.excluded_at[slot])
                 continue
             end
             pr = NegativeProjection(space, q)
             sub = _negative_request(request, pr, zeros(Int, n - 1, 0))
             sub_required = [r[pr.kept] for r in here if count(!=(0), r) > 1]
-            st = RequiredTargets(TargetList(sub), negative.sub_excluded[slot])
+            st = RequiredTargets(TargetList(sub), _sub_excluded(negative, slot, pr, TargetList(sub)))
             sl = RequiredTargets(sub, sub_required)
             @test negative.count[slot] == length(TargetList(sub))
             @test all(s -> nrequired(st, s) == nrequired(sl, s), eachindex(supports(st)))

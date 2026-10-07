@@ -10,7 +10,8 @@
 # Then, for each invalid value `v` of each parameter `p`, in parameter order
 # and then domain order, the same engine covers the required targets at
 # `(p, v)` on a sub-request over the other parameters (`NegativeProjection`,
-# `_negative_request`), read from those ids on its own layout. No active rule
+# `_negative_request`), the excluded ones found on its own layout from their
+# targets (`_sub_excluded`). No active rule
 # reads `p`, so a negative row at `(p, v)` is `p = v` beside a valid row of the
 # sub-space, and it holds a target at `(p, v)` exactly when that row holds the
 # target without `p`: those are the sub-request's required targets, and
@@ -105,11 +106,18 @@ sub-space, sharing the lazy-rule memos of its rules with `request` (§3.5);
 at base strength `request.strength - 1`, which may be 0; with each
 `stronger` group `G` that contains `p` as `G \\ {p}` at its strength less one.
 So, for each invalid value `v` of `p`, its targets are the negative targets
-at `(p, v)` other than `(p = v)` alone, without `p`, in the same order (a
-test pins this): the engine is given the required ones, and reads the
-strength and the groups for its parameter order. `seeds` are its
-must-include rows, engine positions over the other parameters. Nothing is
-validated or tabulated again, and no predicate is called.
+at `(p, v)` other than `(p = v)` alone, without `p` (a test pins this): the
+engine is given the required ones, and reads the strength and the groups for
+its parameter order. They are the same targets but not always in the same
+order: `_groups` sorts the groups again without `p`, so where one group
+without `p` becomes a prefix of another (`[1, 2, 3, 4]` sorts before
+`[1, 2, 4]`, but without 4 `[1, 2]` sorts before `[1, 2, 3]`), their supports
+come in the other order. So `cover_negative` finds the excluded ones on the
+sub-request's layout from the targets themselves (`_sub_excluded`); the
+groups keep `_groups`' order, which IPOG's parameter order, and so its rows,
+depend on. `seeds` are its must-include rows, engine positions over the other
+parameters. Nothing is validated or tabulated again, and no predicate is
+called.
 
 It checks that `request`'s rule tables are the projection's space's, in
 order, so that `request`'s `k`-th memo is that of the space's rule `k`; and
@@ -145,11 +153,12 @@ Negative generation's `_Record` for the walk that `coverage` makes
 (`_walk_support!`): each negative target is classified by the negative-row
 search of its invalid value (`feasibility_for`, §6.2) through
 `_classify_target`, and numbered in the walk's order. A required one is
-counted; an excluded one keeps its `Excluded` record (§1.4, §6.7), its
-number and its id on its sub-request's layout (`_NegativeTargets`). The
-target is written in engine positions into one reused row, so nothing is
-kept or made per required target beyond its feasibility question. An
-unknown answer throws `ResourceLimitError` (§3.6, §6.7).
+counted; an excluded one keeps its `Excluded` record (§1.4, §6.7) and its
+number, and, unless it is `(p = v)` alone, its record's position under its
+invalid value (`_NegativeTargets`). The target is written in engine
+positions into one reused row, so nothing is kept or made per required
+target beyond its feasibility question. An unknown answer throws
+`ResourceLimitError` (§3.6, §6.7).
 """
 mutable struct _NegativeIds <: _Record
     const request::Request
@@ -160,7 +169,7 @@ mutable struct _NegativeIds <: _Record
     const ids::Vector{Int}
     const first::Vector{Int}
     const count::Vector{Int}
-    const sub_excluded::Vector{Vector{Int}}
+    const excluded_at::Vector{Vector{Int}}
     const alone::Vector{Symbol}
 end
 
@@ -199,7 +208,7 @@ function _classify!(record::_NegativeIds, context::FeasibilityContext, support::
     end
     push!(record.excluded, e)
     push!(record.ids, record.walked)
-    alone ? (record.alone[slot] = :excluded) : push!(record.sub_excluded[slot], record.count[slot])
+    alone ? (record.alone[slot] = :excluded) : push!(record.excluded_at[slot], length(record.excluded))
     return e.status
 end
 
@@ -220,7 +229,25 @@ function _classify_negative(request::Request, layout::TargetList)
         _walk_support!(record, request.context, support, :negative, nothing)
     end
     return _NegativeTargets(layout, record.required, record.excluded, record.ids, record.first, record.count,
-                            record.sub_excluded, record.alone)
+                            record.excluded_at, record.alone)
+end
+
+"""
+    _sub_excluded(negative, slot, projection, layout) -> Vector{Int}
+
+The ids, ascending, on `layout`, the `TargetList` of the negative
+sub-request at `slot`'s invalid value `(p, v)`, of the negative targets at
+`(p, v)` that classification excluded, other than `(p = v)` alone. Each such
+target without `p` (`projection.kept`) is a target of the sub-request
+(`_negative_request`), found on its layout from the parameters it sets and
+their values (`_target_ids`), not from where the walk met it: the
+sub-request's groups are sorted again without `p`, so its supports need not
+come in the order the walk met them at `(p, v)`.
+"""
+function _sub_excluded(negative::_NegativeTargets, slot::Int, pr::NegativeProjection, layout::TargetList)
+    at = negative.excluded_at[slot]
+    isempty(at) && return Int[]
+    return _target_ids(layout, (view(negative.excluded[k].target, pr.kept) for k in at), "excluded negative")
 end
 
 """
@@ -284,13 +311,14 @@ required targets at `(p, v)` with `engine` through `_negative_request`, whose
 must-include rows are the negative must-include rows at `(p, v)` (the
 request's must-include `columns` that hold an invalid value), and whose
 targets are those at `(p, v)` without `p`, required or excluded as they are
-here: `RequiredTargets` on the sub-request's `TargetList`, from the ids of
-the excluded ones there (`_NegativeTargets`), checked to be that layout's
-whole. The sub-request's plan is prepared once: `engine`'s, or its
-fallback's where that refuses the sub-request, which may have base strength
-0 (`_prepare_for`, plan §4.2). At strength 1 the target `(p = v)` alone,
-when it is required, takes one witness row unless a must-include or
-generated row already holds `p = v` (§6.4).
+here: `RequiredTargets` on the sub-request's `TargetList`, checked to hold
+as many targets as the walk met at `(p, v)`, from the ids there of the
+excluded ones, found from their targets (`_sub_excluded`). The
+sub-request's plan is prepared once: `engine`'s, or its fallback's where
+that refuses the sub-request, which may have base strength 0
+(`_prepare_for`, plan §4.2). At strength 1 the target `(p = v)` alone, when
+it is required, takes one witness row unless a must-include or generated
+row already holds `p = v` (§6.4).
 
 Returns, in engine positions: `seeds`, each negative must-include column's
 completed row, by column; `rows`, the generated negative rows, in `(p, v)`
@@ -333,12 +361,13 @@ function cover_negative(engine, request::Request, columns::Vector{Int},
             if pr !== nothing
                 sub = _negative_request(request, pr, must[pr.kept, at])
                 # Every target here but (p = v) alone is p = v beside a target
-                # of the sub-request, in the same order, required or excluded
-                # as it is here.
+                # of the sub-request, required or excluded as it is here; not
+                # always in the same order (`_negative_request`), so the
+                # excluded ones are found on its layout from their targets.
                 layout = TargetList(sub)
                 length(layout) == negative.count[slot] || error("internal error: the negative targets at " *
                     "$(space.names[p]) = $(repr(value)) are not its sub-request's $(length(layout)) targets")
-                sub_targets = RequiredTargets(layout, negative.sub_excluded[slot])
+                sub_targets = RequiredTargets(layout, _sub_excluded(negative, slot, pr, layout))
                 bound += max(_ordinary_bound(sub, sub_targets).rows, alone ? 1 : 0)
                 matrix, stage = try
                     # An engine that can't cover the sub-request hands it to its fallback (plan §4.2).

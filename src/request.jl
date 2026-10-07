@@ -959,6 +959,34 @@ function _target_support!(support::Vector{Int}, t::AbstractVector{<:Integer}, ar
     return support
 end
 
+"""
+    _target_ids(layout, targets, what) -> Vector{Int}
+
+The ids on `layout` (`offsets[s] + code + 1`) of `targets`, full-width rows
+of engine positions in any order, ascending. A target's support, the
+parameters it sets, is found by its rank among the base supports
+(`_support_rank`), or among the listed ones by a dictionary of them built
+once; its code is `_code`. A target on no support of the layout, outside the
+arity, or given twice is an internal error naming it after `what`. For a
+negative sub-request's excluded targets (`_sub_excluded`), so not on a hot
+path.
+"""
+function _target_ids(layout::TargetList, targets, what::String)
+    sups = layout.supports
+    listed = Dict(sups[k] => k for k in (sups.nbase + 1):length(sups))
+    ids = Int[]
+    support = Int[]   # one target's support, reused
+    for t in targets
+        _target_support!(support, t, layout.arity, what)
+        s = sups.t > 0 && length(support) == sups.t ? _support_rank(sups, support) : get(listed, support, 0)
+        s == 0 && error("internal error: $what target $t is on no support of the request")
+        push!(ids, layout.offsets[s] + _code(t, support, layout.arity) + 1)
+    end
+    sort!(ids)
+    allunique(ids) || error("internal error: a $what target is given twice")
+    return ids
+end
+
 "The number of combinations on support `s` of `list`."
 ncombinations(list::TargetList, s::Integer) = list.offsets[s + 1] - list.offsets[s]
 
@@ -1063,10 +1091,12 @@ values to the rest of the support, the first parameter fastest.
   its `target` holding the invalid position (§1.4, §6.7); and `ids`, their
   numbers, ascending, which the certifier reads (`_recount`).
 - For each invalid value, in parameter order and then domain order (`slot`):
-  `count`, its targets other than `(p = v)` alone, which are its negative
-  sub-request's targets in the same order (`_negative_request`);
-  `sub_excluded`, the ids of its excluded ones on that sub-request's layout
-  (`RequiredTargets`); and `alone`, whether the target `(p = v)` alone, a
+  `count`, the number of its targets other than `(p = v)` alone, which are
+  its negative sub-request's targets, though not always in the same order
+  (`_negative_request`); `excluded_at`, the positions in `excluded` of its
+  excluded ones other than `(p = v)` alone, in target order, from which
+  negative generation finds their ids on the sub-request's layout
+  (`_sub_excluded`); and `alone`, whether the target `(p = v)` alone, a
   target only at strength 1, is `:required`, `:excluded` or `:none`.
 
 `classify_negative_targets` lists the same targets for tests and scripts.
@@ -1078,7 +1108,7 @@ struct _NegativeTargets
     ids::Vector{Int}
     first::Vector{Int}                 # parameter p's first invalid value's slot; its values follow
     count::Vector{Int}
-    sub_excluded::Vector{Vector{Int}}
+    excluded_at::Vector{Vector{Int}}
     alone::Vector{Symbol}
 end
 

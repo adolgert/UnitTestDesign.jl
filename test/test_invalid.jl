@@ -625,14 +625,17 @@ end
 end
 
 
-@testitem "invalid: a negative sub-request's targets are the negative targets at its value, in target order (§6.1, §6.3, §9.7)" setup=[Checker, InvalidSetup] begin
+@testitem "invalid: a negative sub-request's targets are the negative targets at its value (§6.1, §6.3, §9.7)" setup=[Checker, InvalidSetup] begin
     using UnitTestDesign: Request, NegativeProjection, TargetList, parent_row, _negative_request, _space_indices,
                           from_indices
     # The negative targets at (p, v), in the order coverage lists them, are
     # (p = v) at strength 1, then (p = v) beside each target of the
-    # sub-request at (p, v), in TargetList order. So a sub-request built from
-    # the required negative targets at (p, v), taken in target order, gets
-    # its targets in the order its own TargetList would give them.
+    # sub-request at (p, v). On these requests they come in the order of the
+    # sub-request's own TargetList. Not always: where one group without p
+    # becomes a prefix of another, the sub-request sorts the two the other
+    # way (the item on groups that change order, below), so negative
+    # generation finds the excluded ones on the sub-request's layout from
+    # their targets, not from their order (`_sub_excluded`).
     interleaved = TestSpace((a = [1, 2], b = [1, Invalid(0), 2, Invalid(9)], c = [1, 2, 3], d = [Invalid(:x), 1, 2],
                              e = [1, 2]);
         constraints = [forbid((b = 2, c = 3)), forbid((a = 1, e = 2)), forbid((c = 1, d = 2))])
@@ -679,4 +682,140 @@ end
             @test filter(in(excluded), listed) == filter(t -> length(t) > 1, excluded)
         end
     end
+end
+
+
+@testitem "invalid: a negative sub-request whose groups change order without its invalid parameter (§6.3, §6.7)" setup=[Checker, InvalidSetup] begin
+    using UnitTestDesign: Request, NegativeProjection, TargetList, RequiredTargets, _Classified, _negative_targets!,
+                          _negative_request, _ordinary_bound, _required_bits, _slot, _sub_excluded,
+                          classify_negative_targets, from_indices, parent_row, _space_indices
+    # A negative sub-request's groups are sorted again without the invalid
+    # parameter p (`_groups`), so where one group without p becomes a prefix
+    # of another, their supports come in the other order: (p1, p2, p3, p4)
+    # sorts before (p1, p2, p4), but without p4 (p1, p2) sorts before
+    # (p1, p2, p3). Negative generation finds the excluded targets on the
+    # sub-request's layout from the targets themselves (`_sub_excluded`). At
+    # f249ffc it read their numbers in the parent's walk as ids on that
+    # layout, and all three requests below ended in internal errors (review
+    # p5-core 1); 31bef0f handled the first two, with these rows and bounds,
+    # and stopped on the third ("excluded target … out of target order").
+    # Every design is judged by the oracle (`checked_design`).
+    space_with(rule) = CheckSpace((p1 = [1, 2], p2 = [1, 2], p3 = [1, 2], p4 = [1, 2, CheckInvalid(:x)],
+                                   p5 = [1, 2]), [rule])
+    rule13 = ((:p1, :p3), (a, c) -> a == 1 && c == 1)
+    rule12 = ((:p1, :p2), (a, b) -> a == 1 && b == 1)
+    requests = [(space_with(rule13), 2, [(:p1, :p2, :p3, :p4) => 4, (:p1, :p2, :p4) => 3], 18, 18),
+                (space_with(rule12), 1, [(:p1, :p2, :p4, :p5) => 3, (:p1, :p4) => 2], 15, 12),
+                (space_with(rule12), 2, [(:p1, :p2, :p3, :p4, :p5) => 4, (:p1, :p2, :p4) => 3], 30, 24)]
+    for (cs, strength, stronger, rows, bound) in requests
+        space = test_space(cs)
+        for engine in (IPOG(), GND(), Auto(), Compact(IPOG()))
+            @testset "$stronger at $strength, $engine" begin
+                cases = checked_design(space, cs; engine, strength, stronger)
+                @test length(cases) == rows && cases.record.lower_bound == bound
+            end
+        end
+        # The sub-request at p4 = Invalid(:x) lists the targets at that value
+        # in another order than coverage does, and the ids found from the
+        # excluded targets give it the list path's targets, counts and bound.
+        request = Request(space; strength, stronger)
+        p, position = 4, request.arity[4] + 1
+        pr = NegativeProjection(space, p)
+        sub = _negative_request(request, pr, zeros(Int, 4, 0))
+        layout = TargetList(sub)
+        free = TestSpace(NamedTuple{Tuple(space.names)}(Tuple(space.values)))   # the same targets, all feasible
+        here = filter(t -> haskey(t, :p4) && t.p4 isa Invalid && length(t) > 1,
+                      coverage(NamedTuple[], free; strength, stronger).negative.missing)
+        listed = [from_indices(space, _space_indices(request, parent_row(pr, t, position))) for t in layout]
+        @test issetequal(listed, here) && length(listed) == length(here) && listed != here
+        negative = _negative_targets!(_Classified(request), request)
+        slot = _slot(negative, request, p, position)
+        required, excluded = classify_negative_targets(request)
+        gone = [e.target[pr.kept] for e in excluded if e.target[p] == position && count(!=(0), e.target) > 1]
+        ids = _sub_excluded(negative, slot, pr, layout)
+        @test !isempty(gone) && ids == sort([findfirst(==(t), collect(layout)) for t in gone])
+        st = RequiredTargets(layout, ids)
+        sl = RequiredTargets(sub, [r[pr.kept] for r in required if r[p] == position && count(!=(0), r) > 1])
+        @test st.counts == sl.counts && st.excluded == sl.excluded && _required_bits(st) == _required_bits(sl)
+        @test _ordinary_bound(sub, st).rows == _ordinary_bound(sub, sl).rows
+    end
+end
+
+
+@testitem "invalid: random negative sub-requests whose groups change order, against the oracle (§6.3, §6.7)" setup=[Checker, InvalidSetup] begin
+    using Random: randperm
+    using UnitTestDesign: Request, NegativeProjection, TargetList, RequiredTargets, _Classified, _negative_targets!,
+                          _negative_request, _ordinary_bound, _required_bits, _slot, _sub_excluded,
+                          classify_negative_targets
+    # The shape of the item above, drawn at random (review p5-core 2: the
+    # random groups of test_engines.jl rarely draw it). Around a parameter p
+    # with an Invalid value, two groups G2 = A ∪ {p} and G1 = A ∪ B ∪ {p},
+    # where B holds a parameter between A's last and p: G1 sorts before G2,
+    # but without p G2's members are a prefix of G1's and sort first. Pair
+    # rules, mostly on other parameters, exclude some negative targets, and
+    # sometimes another parameter has an Invalid value or another group
+    # joins. Each design, from IPOG and GND, is judged by the oracle, and
+    # each sub-request's targets, from the excluded ids, are the list path's,
+    # with the same counts and bound.
+    rng = Xoshiro(0x2026_1006_c1)
+    drawn, reordered, with_excluded = Ref(0), Ref(0), Ref(0)
+    while drawn[] < 60
+        n = rand(rng, 4:6)
+        p = rand(rng, 3:n)
+        before = collect(1:(p - 1))
+        cut = rand(rng, 1:(p - 2))
+        A = sort(before[1:cut][randperm(rng, cut)[1:rand(rng, 1:cut)]])
+        pool = [q for q in 1:n if q != p && q > last(A)]
+        B = sort(unique([rand(rng, filter(<(p), pool)); filter(_ -> rand(rng) < 0.4, pool)]))
+        strength = rand(rng, 1:2)
+        G2, G1 = sort([A; p]), sort([A; B; p])
+        length(G2) > strength || continue
+        groups = [G1 => rand(rng, (strength + 1):length(G1)), G2 => rand(rng, (strength + 1):length(G2))]
+        if rand(rng) < 0.3
+            k = rand(rng, (strength + 1):n)
+            push!(groups, sort(randperm(rng, n)[1:k]) => rand(rng, (strength + 1):k))
+        end
+        names = [Symbol(:p, i) for i in 1:n]
+        domains = [Any[1:rand(rng, 2:3)...] for _ in 1:n]
+        push!(domains[p], CheckInvalid(:x))
+        rand(rng) < 0.3 && (q = rand(rng, filter(!=(p), 1:n)); push!(domains[q], CheckInvalid(:y)))
+        rules = []
+        for _ in 1:rand(rng, 1:3)
+            a, b = sort(randperm(rng, n)[1:2])
+            (a == p || b == p) && rand(rng) < 0.7 && continue
+            va, vb = rand(rng, 1:2), rand(rng, 1:2)
+            push!(rules, ((names[a], names[b]), (x, y) -> x == va && y == vb))
+        end
+        cs = CheckSpace(names, domains, rules)
+        space = test_space(cs)
+        stronger = [Tuple(names[g]) => s for (g, s) in groups]
+        drawn[] += 1
+        for engine in (IPOG(), GND())
+            @testset "request $(drawn[]), $engine" begin
+                checked_design(space, cs; engine, strength, stronger)
+            end
+        end
+        request = Request(space; strength, stronger)
+        negative = _negative_targets!(_Classified(request), request)
+        required, _ = classify_negative_targets(request)
+        for q in 1:n, position in (request.arity[q] + 1):length(request.candidates[q])
+            strength > 1 || any(g -> q in g.first, request.groups[2:end]) || continue
+            slot = _slot(negative, request, q, position)
+            pr = NegativeProjection(space, q)
+            sub = _negative_request(request, pr, zeros(Int, n - 1, 0))
+            layout = TargetList(sub)
+            st = RequiredTargets(layout, _sub_excluded(negative, slot, pr, layout))
+            sl = RequiredTargets(sub, [r[pr.kept] for r in required if r[q] == position && count(!=(0), r) > 1])
+            @test st.counts == sl.counts && st.excluded == sl.excluded && _required_bits(st) == _required_bits(sl)
+            @test _ordinary_bound(sub, st).rows == _ordinary_bound(sub, sl).rows
+            # Whether the sub-request's groups come in another order than the parent's.
+            kept = [pr.renumber[filter(!=(q), g)] => s - 1 for (g, s) in request.groups[2:end] if q in g]
+            if [g for (g, _) in kept] != [g for (g, _) in sub.groups[2:end]]
+                reordered[] += 1
+                with_excluded[] += !isempty(st.excluded)
+            end
+        end
+    end
+    @info "Negative sub-requests whose groups change order" drawn = drawn[] reordered = reordered[] with_excluded = with_excluded[]
+    @test reordered[] >= 40 && with_excluded[] >= 15
 end
