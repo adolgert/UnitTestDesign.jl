@@ -56,12 +56,19 @@
 # expensive (unless `--expensive`), those with more than `--max-targets`
 # targets (default 2·10⁶) or more than `--max-cost` (default 4·10⁸) targets
 # times the lower bound (families.py's proxy for IPOG's scan, about ten
-# seconds at 2798ecf), and those with rules whose target bookkeeping, at the
-# 24 bytes per parameter per target of plan §2.6, passes `--max-memory` GiB
-# (default 1; that figure is a floor, and CASA's models at strength 3 peak at
-# about twice it). `--max-seconds S` also leaves out the points whose
-# `estimated_seconds` passes S (default: no such limit). These get a
-# `skipped:` line; `fresh --over` runs exactly them. A first call that takes
+# seconds at 2798ecf), and, on a tree that lists its required targets (every
+# tree before Phase 5), those with rules whose target bookkeeping, at the 24
+# bytes per parameter per target of plan §2.6, passes `--max-memory` GiB
+# (default 1; that figure is a floor, and CASA's models at strength 3 peaked
+# at about twice it). Since Phase 5 a required target keeps a bit and no
+# list, so that estimate no longer holds and the default applies none (CASA
+# at strength 3 then peaks at 0.5–1.3 GiB, review p5-perf); `--max-memory G`
+# applies the old estimate on any tree, so that a comparison across trees
+# can leave out the same points on each. `--max-seconds S` also leaves out
+# the points whose `estimated_seconds` passes S (default: no such limit).
+# These get a `skipped:` line; `fresh --over` runs exactly them (so on a
+# Phase 5 tree, without `--max-memory`, not the points only the old
+# estimate left out). A first call that takes
 # `--ladder-seconds` (default 120) or more also skips the larger points of
 # its ladder for that engine, as run.py does.
 # `--resume` keeps the lines OUT already holds and runs only the rest.
@@ -247,7 +254,16 @@ function has_rules(s)
     return false
 end
 
-const LIMITS = (expensive = false, max_targets = 2e6, max_cost = 4e8, max_memory = 1.0, max_seconds = Inf)
+"""
+Whether the package under test lists its required targets, as every tree
+before Phase 5 did (plan §2.6: 24 bytes per parameter per target with
+rules); from Phase 5 on, classification keeps the excluded ids and
+`_required_list` decodes the required targets only where asked.
+"""
+const LISTS_TARGETS = !isdefined(U, :_required_list)
+
+const LIMITS = (expensive = false, max_targets = 2e6, max_cost = 4e8, max_memory = LISTS_TARGETS ? 1.0 : Inf,
+                max_seconds = Inf)
 
 """
 A point's seconds for today's IPOG, estimated in advance: its targets times
