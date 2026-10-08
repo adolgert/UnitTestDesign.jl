@@ -256,7 +256,7 @@ end
 @testitem "request: the base group's supports are unranked and ranked in `combinations` order (plan §5.6)" setup=[RequestSetup] begin
     using Combinatorics: combinations
     using Random: Xoshiro
-    using UnitTestDesign: _supports, _support!, _support_rank, _each_support, _nbase
+    using UnitTestDesign: _supports, _support!, _support_rank, _each_support
     # Support `s` of the base group, every parameter at strength `t`, is the
     # subset of rank `s - 1` among the `t`-subsets of 1:n in lexicographic
     # order, as `combinations` lists them: unranked (`_support!`), ranked
@@ -267,7 +267,7 @@ end
     for n in 1:12, t in 0:n
         supports = _supports([collect(1:n) => t])
         listed = t == 0 ? Vector{Int}[] : collect(combinations(1:n, t))
-        @test length(supports) == _nbase(supports) == length(listed)
+        @test length(supports) == supports.nbase == length(listed)
         @test collect(supports) == listed
         @test all(s -> _support!(buffer, supports, s) == listed[s], eachindex(listed))
         @test all(s -> _support_rank(supports, listed[s]) == s, eachindex(listed))

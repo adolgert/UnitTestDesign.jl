@@ -418,9 +418,6 @@ end
 @inline _choose(supports::_Supports, m::Int, j::Int) =
     @inbounds supports.binomial[m - j + 2 + (supports.n - supports.t + 2) * j]
 
-"The number of base supports, `C(n, t)`: supports `1:_nbase(supports)` are the base group's."
-_nbase(supports::_Supports) = supports.nbase
-
 """
     _support!(buffer, supports, s) -> buffer
 
