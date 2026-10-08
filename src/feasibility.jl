@@ -150,9 +150,9 @@ _Mapped() = _Mapped(nothing, Int[], Int[])
 # parameter, since each of the others would find its all-unset entry.
 # `witness` is the object's `template` itself, whose constrained places it
 # fills, or, when no parameter is free and the template is empty, n values of
-# its own; and a deletion trial, which asks one question, keeps no record
-# (`unset === nothing`), so that step 2 costs neither any bytes (review
-# p5f-perf 2).
+# its own. A deletion trial, which asks one question, keeps no record
+# (`unset === nothing`): step 2 is held off there and adds it no bytes
+# (review p5f-perf 2).
 mutable struct _Unset
     cached::Int
     const witness::Vector{Int}
