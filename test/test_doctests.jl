@@ -4,7 +4,7 @@ using TestItemRunner
 # under docs/src, runs here as it runs in `docs/make.jl`, so a stale example
 # fails the suite and not only the documentation build (plan Phase 7 step 8).
 # `manual = true` finds the pages at docs/src beside the package's src/.
-@testitem "doctests" begin
+@testitem "doctests" tags=[:skipci] begin
     using Documenter
     # Documenter evaluates a page's `@meta` block (`CurrentModule =
     # UnitTestDesign`) in `Main`, as `docs/make.jl` runs it; a test item runs

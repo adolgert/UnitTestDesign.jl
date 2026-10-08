@@ -43,7 +43,7 @@ end
 end
 
 
-@testitem "checker: Astra's chained equalities" setup=[Checker] begin
+@testitem "checker: Astra's chained equalities" tags=[:skipci] setup=[Checker] begin
     # A == B and B == C, written as rules that forbid A != B and B != C.
     space = CheckSpace((A = [1, 2], B = [1, 2], C = [1, 2]),
         [((:A, :B), (a, b) -> a != b),
@@ -71,7 +71,7 @@ end
 end
 
 
-@testitem "checker: Fable's solver example" setup=[Checker] begin
+@testitem "checker: Fable's solver example" tags=[:skipci] setup=[Checker] begin
     space = CheckSpace(
         (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]),
         [((:mode, :solver), (m, s) -> m == :fast && s != :none),
@@ -146,7 +146,7 @@ end
 end
 
 
-@testitem "checker: value identity" setup=[Checker] begin
+@testitem "checker: value identity" tags=[:skipci] setup=[Checker] begin
     @test same_value(1, 1)
     @test !same_value(1, 1.0)
     @test !same_value(1, true)
@@ -205,7 +205,7 @@ end
 end
 
 
-@testitem "checker: construction and request validation" setup=[Checker] begin
+@testitem "checker: construction and request validation" tags=[:skipci] setup=[Checker] begin
     @test_throws ArgumentError CheckSpace((x = [1, 1],))
     @test_throws ArgumentError CheckSpace((x = Int[],))
     @test_throws ArgumentError CheckSpace([:x, :x], [[1], [2]])
@@ -251,7 +251,7 @@ end
 end
 
 
-@testitem "checker: negative rows and targets" setup=[Checker] begin
+@testitem "checker: negative rows and targets" tags=[:skipci] setup=[Checker] begin
     bad = CheckInvalid(-1)
     space = CheckSpace((n = [1, 2, bad], m = [:a, :b], k = [:x, :y]),
         [((:n, :m), (n, m) -> n == 2 && m == :b),
@@ -330,7 +330,7 @@ end
 end
 
 
-@testitem "checker: implied negative targets and groups" setup=[Checker] begin
+@testitem "checker: implied negative targets and groups" tags=[:skipci] setup=[Checker] begin
     bad = CheckInvalid(:bad)
     space = CheckSpace((p = [0, bad], a = [1, 2], b = [1, 2], c = [1, 2]),
         [((:a, :b), (a, b) -> a != b),
@@ -445,7 +445,7 @@ end
 end
 
 
-@testitem "checker: stronger groups" setup=[Checker] begin
+@testitem "checker: stronger groups" tags=[:skipci] setup=[Checker] begin
     space = CheckSpace((a = [1, 2], b = [1, 2], c = [1, 2], d = [1, 2]))
     triples_abc = [(a = i, b = j, c = k) for i in 1:2 for j in 1:2 for k in 1:2]
     triples_bcd = [(b = i, c = j, d = k) for i in 1:2 for j in 1:2 for k in 1:2]

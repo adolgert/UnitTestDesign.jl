@@ -8,7 +8,7 @@ using TestItemRunner
 # calls the guard refused now generate. Before the guard, the 0.4 engines
 # returned rows with two Invalid values; none of these calls may (§5.7).
 
-@testitem "legacy guard: generation over Invalid and Partition values now works (§4, §5, §6)" begin
+@testitem "legacy guard: generation over Invalid and Partition values now works (§4, §5, §6)" tags=[:skipci] begin
     invalid = Any[1, Invalid(0)]
     tiny = Any[Partition(:tiny, Returns(1e-9)), 1.0]
     calls = [

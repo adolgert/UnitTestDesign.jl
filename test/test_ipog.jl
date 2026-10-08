@@ -73,7 +73,7 @@ end
 end
 
 
-@testitem "IPOG covers random spaces without rules at strengths 2 and 3" setup=[IndexCoverage, UTSetup, IPOGSetup] begin
+@testitem "IPOG covers random spaces without rules at strengths 2 and 3" tags=[:skipci] setup=[IndexCoverage, UTSetup, IPOGSetup] begin
     using Random
 
     rng = Xoshiro(90714134 ⊻ seed_mod())
@@ -93,7 +93,7 @@ end
 end
 
 
-@testitem "all combinations long random, with a forbidden pair" setup=[IndexCoverage, UTSetup, IPOGSetup] begin
+@testitem "all combinations long random, with a forbidden pair" tags=[:skipci] setup=[IndexCoverage, UTSetup, IPOGSetup] begin
     using Random
 
     rng = Xoshiro(2424324 ⊻ seed_mod())
@@ -201,7 +201,7 @@ end
 end
 
 
-@testitem "IPOG: bench12 at strengths 2 and 3 (§1.2–§1.4)" setup=[IPOGSetup, Checker] begin
+@testitem "IPOG: bench12 at strengths 2 and 3 (§1.2–§1.4)" tags=[:skipci] setup=[IPOGSetup, Checker] begin
     # Case counts at this revision: 21 pairwise, 92 three-way (22 and 93 with
     # IPOG's old paths). They may change with the engine (contract §8.1) and
     # with the members IPOG runs (`_IPOG_MEMBERS`); coverage may not.

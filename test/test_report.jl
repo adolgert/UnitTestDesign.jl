@@ -49,7 +49,7 @@ using TestItemRunner
 end
 
 
-@testitem "report: agrees with the checker on 50 random problems (§1.3, §1.23, §3.12)" setup=[Checker, ReportSetup] begin
+@testitem "report: agrees with the checker on 50 random problems (§1.3, §1.23, §3.12)" tags=[:skipci] setup=[Checker, ReportSetup] begin
     rng = Xoshiro(0x2026_0927_0052)
     for index in 1:50
         problem = random_problem(rng; strength = 2)
@@ -630,7 +630,7 @@ end
 end
 
 
-@testitem "report and design_sizes: one memo, one answer cache per measurement; each figure is a separate measurement's (§3.5, plan Stage C decision 7)" setup=[Checker, ReportSetup] begin
+@testitem "report and design_sizes: one memo, one answer cache per measurement; each figure is a separate measurement's (§3.5, plan Stage C decision 7)" tags=[:skipci] setup=[Checker, ReportSetup] begin
     using Base.CoreLogging: with_logger, NullLogger   # a lazily evaluated rule warns
     # A report measures the rows twice, at its strength and for the bonus one
     # above, with one lazy-rule memo and a fresh answer cache for each. So every

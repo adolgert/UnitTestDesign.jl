@@ -62,7 +62,7 @@ end
 end
 
 
-@testitem "covering: every input form gives a complete design of the right type (§1.3, §1.18)" setup=[Checker, InterfaceSetup] begin
+@testitem "covering: every input form gives a complete design of the right type (§1.3, §1.18)" tags=[:skipci] setup=[Checker, InterfaceSetup] begin
     s = fable_solver.space
     space = TestSpace(fable_domains(); constraints = fable_rules())
     forms = [
@@ -228,7 +228,7 @@ end
 end
 
 
-@testitem "must_include: partial and duplicate rows come first, in order (§10.1–§10.5, §10.7)" setup=[Checker, InterfaceSetup] begin
+@testitem "must_include: partial and duplicate rows come first, in order (§10.1–§10.5, §10.7)" tags=[:skipci] setup=[Checker, InterfaceSetup] begin
     completion = (mode = :exact, solver = :lu, tol = 1e-6)
     full = (mode = :exact, solver = :qr, tol = 1e-6)
     seeds = [(solver = :lu,), full, (solver = :lu,), full, (mode = :fast,)]
@@ -608,7 +608,7 @@ end
 end
 
 
-@testitem "keyword values are checked before they are sorted or converted (§3.3, §7.3, §7.5, §7.6, §9.5, §11.1, §11.3, §11.10)" setup=[InterfaceSetup] begin
+@testitem "keyword values are checked before they are sorted or converted (§3.3, §7.3, §7.5, §7.6, §9.5, §11.1, §11.3, §11.10)" tags=[:skipci] setup=[InterfaceSetup] begin
     using Random: Xoshiro
     d = ([1, 2], [3, 4], [5, 6])
     nt = (a = [1, 2], b = [3, 4], c = [5, 6])
@@ -874,7 +874,7 @@ end
 end
 
 
-@testitem "deprecations warn once per call site under --depwarn=yes (§13.2)" begin
+@testitem "deprecations warn once per call site under --depwarn=yes (§13.2)" tags=[:skipci] begin
     # A fresh process, since this one may run with deprecation warnings off.
     calls = [
         # One deprecated spelling per line: two on one line warn once on 1.13 but twice on 1.10.

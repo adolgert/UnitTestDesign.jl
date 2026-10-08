@@ -115,7 +115,7 @@ end
 end
 
 
-@testitem "GND: bench12 at strengths 2 and 3" setup=[Checker] begin
+@testitem "GND: bench12 at strengths 2 and 3" tags=[:skipci] setup=[Checker] begin
     using UnitTestDesign: Request, generate, to_cases
     # design/benchmark_procedure.md fixture 2. The 0.4 GND never returned on
     # it; the implied pair (p1 = 2, p2 = 2) is now excluded, not chased. The

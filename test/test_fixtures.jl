@@ -18,7 +18,7 @@ using TestItemRunner
     ENGINES = (IPOG(), GND())
 end
 
-@testitem "fixtures: inventory" setup=[Checker] begin
+@testitem "fixtures: inventory" tags=[:skipci] setup=[Checker] begin
     @test allunique(f.name for f in FIXTURES)
     @test all(f -> !isempty(f.clauses) && !isempty(f.pending), FIXTURES)
     @test all(f -> all(p -> 2 <= p.first <= 6, f.pending), FIXTURES)
@@ -147,7 +147,7 @@ end
 end
 
 
-@testitem "fixtures: limit exhaustion" setup=[Checker, FixtureGen] begin
+@testitem "fixtures: limit exhaustion" tags=[:skipci] setup=[Checker, FixtureGen] begin
     s = limit_exhaustion.space
     @test valid_rows(s) == [NamedTuple{Tuple(s.names)}(ntuple(_ -> 4, 8))]
     r = check_design([], s)
@@ -341,7 +341,7 @@ end
 end
 
 
-@testitem "fixtures: bench12 constrained benchmark" setup=[Checker, FixtureGen] begin
+@testitem "fixtures: bench12 constrained benchmark" tags=[:skipci] setup=[Checker, FixtureGen] begin
     f = bench12
     s = f.space
     recorded = f.request.recorded

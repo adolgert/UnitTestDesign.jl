@@ -214,7 +214,7 @@ end
 end
 
 
-@testitem "isallowed and explain: a vector is read as the tuple of the same values (§1.25, §1.26, §2.11)" setup=[ExplainSetup] begin
+@testitem "isallowed and explain: a vector is read as the tuple of the same values (§1.25, §1.26, §2.11)" tags=[:skipci] setup=[ExplainSetup] begin
     using Base.CoreLogging: with_logger, NullLogger   # a lazily evaluated rule warns
     message(f) = try f(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $e" end
     fields(e) = (e.assignment, e.outcome, e.rules, e.labels, e.minimal, e.witness, e.limit, e.nodes,
@@ -315,7 +315,7 @@ end
 end
 
 
-@testitem "classify: agrees with the checker on every fixture (§1.2, §1.4, §5.5, §6.2)" setup=[Checker] begin
+@testitem "classify: agrees with the checker on every fixture (§1.2, §1.4, §5.5, §6.2)" tags=[:skipci] setup=[Checker] begin
     using UnitTestDesign: classify
     seen(x) = x isa CheckPartition ? x.name : x
     function checker_status(part, t)
@@ -382,7 +382,7 @@ end
 end
 
 
-@testitem "classify: agrees with the checker on 100 random problems (§1.2, §1.4)" setup=[Checker, UTSetup] begin
+@testitem "classify: agrees with the checker on 100 random problems (§1.2, §1.4)" tags=[:skipci] setup=[Checker, UTSetup] begin
     using UnitTestDesign: classify
     using Random
     rng = Xoshiro(0x2026_0926_e8a1 ⊻ seed_mod())

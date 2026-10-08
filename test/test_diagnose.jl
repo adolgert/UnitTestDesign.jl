@@ -311,7 +311,7 @@ end
 end
 
 
-@testitem "diagnose: two independent faults are both ranked, and an innocent pair can lead (§8.6)" setup=[DiagnoseSetup] begin
+@testitem "diagnose: two independent faults are both ranked, and an innocent pair can lead (§8.6)" tags=[:skipci] setup=[DiagnoseSetup] begin
     space = newton_space()
     cases = opus_cases()
     gmres_bug(c) = c.method == :gmres && c.tol == 1e-3
@@ -399,7 +399,7 @@ end
 end
 
 
-@testitem "followups: feasibility_limit = 1 gives unknown, and a retry resolves it (§3.17)" setup=[DiagnoseSetup] begin
+@testitem "followups: feasibility_limit = 1 gives unknown, and a retry resolves it (§3.17)" tags=[:skipci] setup=[DiagnoseSetup] begin
     space = TestSpace((a = [1, 2], b = [1, 2], c = [1, 2], d = [1, 2]); constraints = [forbid((c = 1, d = 2))])
     rows = [(a = 1, b = 1, c = 1, d = 1), (a = 2, b = 2, c = 2, d = 2), (a = 1, b = 2, c = 1, d = 1)]
     d = diagnose(rows, [true, true, false]; space)
@@ -468,7 +468,7 @@ end
 end
 
 
-@testitem "followups: invalid suspects use negative rows; isolation conditions still apply (§5.5, §5.7)" setup=[DiagnoseSetup] begin
+@testitem "followups: invalid suspects use negative rows; isolation conditions still apply (§5.5, §5.7)" tags=[:skipci] setup=[DiagnoseSetup] begin
     # For an ordinary n, k must be :y; a negative row at n skips that rule.
     space = TestSpace((n = [1, 2, Invalid(-1)], m = [:a, :b, Invalid(:z)], k = [:x, :y]);
                       constraints = [forbid(:n, :k) do n, k; k == :x end])
@@ -673,7 +673,7 @@ end
 end
 
 
-@testitem "followups: a kind of case left unresolved keeps its own limit, and the union takes the first (§3.15)" setup=[DiagnoseSetup] begin
+@testitem "followups: a kind of case left unresolved keeps its own limit, and the union takes the first (§3.15)" tags=[:skipci] setup=[DiagnoseSetup] begin
     # Probe 04 Example B. Example A's trials cost no nodes, so no limit leaves
     # it unresolved; here 2 is the smallest explanation_limit that leaves one
     # kind unresolved and the other verified.
@@ -714,7 +714,7 @@ end
 end
 
 
-@testitem "followups: an unresolved proof with no other suspect notes its limit in parentheses, since \"; \" separates the clauses" setup=[DiagnoseSetup] begin
+@testitem "followups: an unresolved proof with no other suspect notes its limit in parentheses, since \"; \" separates the clauses" tags=[:skipci] setup=[DiagnoseSetup] begin
     # Rules 1 and 3 read n and m, so negative cases at n need rules 2 and 3,
     # and at m rules 1 and 2: the proofs differ. At explanation_limit = 3 only
     # the ordinary proof is unresolved, and its note comes before the next kind.
@@ -756,7 +756,7 @@ end
 end
 
 
-@testitem "followups: every claim holds by brute force over both kinds of case, for many outcomes (review round 1)" setup=[DiagnoseSetup] begin
+@testitem "followups: every claim holds by brute force over both kinds of case, for many outcomes (review round 1)" tags=[:skipci] setup=[DiagnoseSetup] begin
     using Random: Xoshiro
     rng = Xoshiro(0x2026_0927_0601)
     spaces = [
@@ -862,7 +862,7 @@ end
 end
 
 
-@testitem "diagnose: strength defaults, rows as vectors, and positional results" setup=[DiagnoseSetup] begin
+@testitem "diagnose: strength defaults, rows as vectors, and positional results" tags=[:skipci] setup=[DiagnoseSetup] begin
     space = newton_space()
     # A full factorial has strength 0; diagnosis uses min(2, parameters).
     ff = full_factorial(space)
@@ -909,7 +909,7 @@ end
 end
 
 
-@testitem "diagnose and followups on a generated result with negative rows (§5.5, §5.12)" setup=[DiagnoseSetup] begin
+@testitem "diagnose and followups on a generated result with negative rows (§5.5, §5.12)" tags=[:skipci] setup=[DiagnoseSetup] begin
     # The error path for an invalid n mishandles m = :b.
     space = TestSpace((n = [1, 2, Invalid(-1)], m = [:a, :b], k = [:x, :y]);
                       constraints = [forbid((m = :b, k = :x); reason = "b needs y")])

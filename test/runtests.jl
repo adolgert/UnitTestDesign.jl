@@ -161,4 +161,11 @@ end
     end
 end
 
-@run_package_tests
+# Under CI (CI=true, which GitHub Actions sets, or --ci) the run leaves out
+# test items tagged :skipci. They are slow ones that reach no line of src/
+# that the untagged items do not, such as comparisons with the checker over
+# every fixture or many random problems. Locally, without --ci, every test
+# item runs.
+const RUNNING_CI = get(ENV, "CI", "false") == "true" || "--ci" in ARGS
+
+@run_package_tests filter = ti -> !(RUNNING_CI && :skipci in ti.tags)

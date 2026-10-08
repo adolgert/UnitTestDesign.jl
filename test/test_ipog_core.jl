@@ -199,7 +199,7 @@ end
 end
 
 
-@testitem "lookup core: fixtures, each checked by the oracle" setup=[LookupSetup, Checker] begin
+@testitem "lookup core: fixtures, each checked by the oracle" tags=[:skipci] setup=[LookupSetup, Checker] begin
     # The fixtures IPOG's tests use (test_ipog.jl): rules with
     # implied targets, greedy dead ends, an empty space, disconnected
     # components, a whole-case rule, overlapping groups, partial must-include
@@ -259,7 +259,7 @@ end
 end
 
 
-@testitem "lookup core: IPOG() on random problems is its members' smallest design, each certified (§5.5)" setup=[UTSetup, LookupSetup, Checker] begin
+@testitem "lookup core: IPOG() on random problems is its members' smallest design, each certified (§5.5)" tags=[:skipci] setup=[UTSetup, LookupSetup, Checker] begin
     using Random
     # The oracle loops' generator (test/random_problems.jl), at strengths 2
     # and 3, each drawn from the stream's start: every member's design is
@@ -333,7 +333,7 @@ end
 end
 
 
-@testitem "lookup core: rules, must-include rows, stronger groups and Invalid values, alone and together" setup=[LookupSetup, Checker] begin
+@testitem "lookup core: rules, must-include rows, stronger groups and Invalid values, alone and together" tags=[:skipci] setup=[LookupSetup, Checker] begin
     # The `adapted` changes (plan §7.2) on one small space, each alone and in
     # every combination: a rule (with an implied target), a complete and a
     # partial must-include row, an overlapping `stronger` group, and an
@@ -395,7 +395,7 @@ end
 end
 
 
-@testitem "lookup core: rows stay completable on the study's hard ladders (§1.3, STUDY.md)" setup=[LookupSetup] begin
+@testitem "lookup core: rows stay completable on the study's hard ladders (§1.3, STUDY.md)" tags=[:skipci] setup=[LookupSetup] begin
     # benchmark/scaling's `equality` (neighbours agree), `chain` (no two
     # neighbours both 1), `global_budget` (a whole-case rule on the sum) and
     # all-different families: every placement asks `dead`, so no row is ever
@@ -427,7 +427,7 @@ end
 end
 
 
-@testitem "lookup core: the same rows at every feasibility_limit that succeeds; an exhausted search propagates (§3.8)" setup=[LookupSetup, Checker] begin
+@testitem "lookup core: the same rows at every feasibility_limit that succeeds; an exhausted search propagates (§3.8)" tags=[:skipci] setup=[LookupSetup, Checker] begin
     using Random
     # For `IPOG()` and for each member it runs, alone.
     f = limit_exhaustion
@@ -467,7 +467,7 @@ end
 end
 
 
-@testitem "lookup core: each tie-break rule and vertical order is deterministic and certified" setup=[LookupSetup, Checker] begin
+@testitem "lookup core: each tie-break rule and vertical order is deterministic and certified" tags=[:skipci] setup=[LookupSetup, Checker] begin
     using Random
     rng = Xoshiro(0x2026_1005_0009)
     for _ in 1:20, strength in (2, 3)

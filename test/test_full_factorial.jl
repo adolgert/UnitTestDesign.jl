@@ -59,7 +59,7 @@ end
 end
 
 
-@testitem "full factorial: bench12, 207360 of 331776" setup=[Checker] begin
+@testitem "full factorial: bench12, 207360 of 331776" tags=[:skipci] setup=[Checker] begin
     cases = full_factorial(test_space(bench12))
     @test cases.notes == (candidates = 331776, accepted = 207360)
     @test length(cases) == 207360

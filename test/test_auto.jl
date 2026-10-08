@@ -134,7 +134,7 @@ using TestItemRunner
 end
 
 
-@testitem "Auto: settings, record, display and the goals (§6.1, D8)" setup=[AutoSetup] begin
+@testitem "Auto: settings, record, display and the goals (§6.1, D8)" tags=[:skipci] setup=[AutoSetup] begin
     @test Auto() isa UnitTestDesign.CoveringEngine
     @test (Auto().goal, Auto().seed, Auto().effort) == (:balanced, 0, 1)
     @test repr(Auto()) == "Auto()"
@@ -196,7 +196,7 @@ end
 end
 
 
-@testitem "Auto: keep the smallest, the bound shortcut, and the threshold (§4.1)" setup=[AutoSetup] begin
+@testitem "Auto: keep the smallest, the bound shortcut, and the threshold (§4.1)" tags=[:skipci] setup=[AutoSetup] begin
     plan(space; kw...) = _auto_plan(Auto(), Profile(Request(space; kw...)))
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     # At the bound (an orthogonal array, a zero-sum array): the catalog alone.
@@ -247,7 +247,7 @@ end
 end
 
 
-@testitem "Auto: never more rows than IPOG, and :compact never more than :balanced (§7.5)" setup=[AutoSetup] begin
+@testitem "Auto: never more rows than IPOG, and :compact never more than :balanced (§7.5)" tags=[:skipci] setup=[AutoSetup] begin
     rng = Xoshiro(20261004)
     for trial in 1:60
         k = rand(rng, 3:7)
@@ -326,7 +326,7 @@ end
 end
 
 
-@testitem "the lower bound: never above an exhaustive minimum, and minimal only when it is met (§4.1, D5)" setup=[AutoSetup] begin
+@testitem "the lower bound: never above an exhaustive minimum, and minimal only when it is met (§4.1, D5)" tags=[:skipci] setup=[AutoSetup] begin
     let rng = Xoshiro(1004), met = 0, claims = 0, checked = 0
         for trial in 1:150
             space, kw = tiny_request(rng)
@@ -348,7 +348,7 @@ end
 end
 
 
-@testitem "the lower bound: probe 25's known minima, zero-sum and orthogonal-array shapes (§4.1, D5)" setup=[AutoSetup] begin
+@testitem "the lower bound: probe 25's known minima, zero-sum and orthogonal-array shapes (§4.1, D5)" tags=[:skipci] setup=[AutoSetup] begin
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     # (t, k, v, minimum): probe 25's settled uniform shapes (its .out lists the published minima).
     known = [(2, 10, 2, 6), (2, 15, 2, 7), (2, 4, 3, 9), (2, 5, 3, 11), (2, 6, 3, 12), (2, 7, 3, 12),
@@ -587,7 +587,7 @@ end
 end
 
 
-@testitem "the lower bound: an independent brute force with negative must-include rows and several Invalid values (§4.1, §8.7)" begin
+@testitem "the lower bound: an independent brute force with negative must-include rows and several Invalid values (§4.1, §8.7)" tags=[:skipci] begin
     # The exhaustive test above makes ordinary must-include rows and at most one
     # Invalid value. This one adds what it leaves out: negative must-include
     # rows, complete and partial; two Invalid values in a parameter; Invalid

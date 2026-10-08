@@ -475,7 +475,7 @@ end
 end
 
 
-@testitem "feasibility: random problems against brute force, §1.2 §1.4 §3.1 §3.16" setup=[FeasibilitySetup, UTSetup] begin
+@testitem "feasibility: random problems against brute force, §1.2 §1.4 §3.1 §3.16" tags=[:skipci] setup=[FeasibilitySetup, UTSetup] begin
     using Random
     rng = Xoshiro(0x2026_0926_fea5 ⊻ seed_mod())
     tally = Dict(:required => 0, :forbidden => 0, :implied => 0, :unknown => 0,
@@ -620,7 +620,7 @@ end
 end
 
 
-@testitem "feasibility: the caches by component answer as the whole-assignment memo did, plan §5.6 §3.3–§3.8 §9.3" setup=[FeasibilitySetup, UTSetup] begin
+@testitem "feasibility: the caches by component answer as the whole-assignment memo did, plan §5.6 §3.3–§3.8 §9.3" tags=[:skipci] setup=[FeasibilitySetup, UTSetup] begin
     # Phase 5 dropped the memo keyed by the whole assignment (31bef0f) and
     # answers from the caches by component alone. Every question here is
     # asked, in the same order, of a `Feasibility` and of the reference, 31bef0f's

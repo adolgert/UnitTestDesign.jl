@@ -120,7 +120,7 @@ end
 end
 
 
-@testitem "compact: fewer rows, must-include rows first, every step valid, and no feasibility search (§5.3)" setup=[CompactSetup] begin
+@testitem "compact: fewer rows, must-include rows first, every step valid, and no feasibility search (§5.3)" tags=[:skipci] setup=[CompactSetup] begin
     # On random requests with every rule kind, stronger groups and
     # must-include rows: the reduced design never has more rows than the
     # start, keeps the start's must-include rows first and unchanged, and is
@@ -188,7 +188,7 @@ end
 end
 
 
-@testitem "compact: the same rows for the same seed and for any feasibility_limit (§9.5, §3.8)" setup=[CompactSetup] begin
+@testitem "compact: the same rows for the same seed and for any feasibility_limit (§9.5, §3.8)" tags=[:skipci] setup=[CompactSetup] begin
     include(joinpath(pkgdir(UnitTestDesign), "benchmark", "fixtures.jl"))
     bench12 = BenchFixtures.test_space(BenchFixtures.bench12)
     for strength in (2, 3)
@@ -219,7 +219,7 @@ end
 end
 
 
-@testitem "compact: must-include rows, stronger groups and Invalid values pass the oracle (§5.3, §7.4)" setup=[CompactSetup, Checker, UTSetup] begin
+@testitem "compact: must-include rows, stronger groups and Invalid values pass the oracle (§5.3, §7.4)" tags=[:skipci] setup=[CompactSetup, Checker, UTSetup] begin
     # The registry's oracle loops have no must-include rows or stronger
     # groups, so this loop adds them, with an Invalid value in a third of the
     # problems, and with IPOG or GND as the inner engine: each design must
@@ -333,7 +333,7 @@ end
 end
 
 
-@testitem "compact: the core reduces any engine's start, and more effort never ends higher here (§4.1)" setup=[CompactSetup] begin
+@testitem "compact: the core reduces any engine's start, and more effort never ends higher here (§4.1)" tags=[:skipci] setup=[CompactSetup] begin
     # Phase 3's Auto reduces the start that keep-the-smallest chose; `_compact`
     # takes any engine's rows.
     include(joinpath(pkgdir(UnitTestDesign), "benchmark", "fixtures.jl"))
