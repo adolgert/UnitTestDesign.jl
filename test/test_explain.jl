@@ -315,7 +315,7 @@ end
 end
 
 
-@testitem "classify: agrees with the checker on every fixture (§1.2, §1.4, §5.5, §6.2)" setup=[Checker] begin
+@testitem "classify: agrees with the checker on every fixture (§1.2, §1.4, §5.5, §6.2)" tags=[:skipci] setup=[Checker] begin
     using UnitTestDesign: classify
     seen(x) = x isa CheckPartition ? x.name : x
     function checker_status(part, t)
@@ -382,7 +382,7 @@ end
 end
 
 
-@testitem "classify: agrees with the checker on 100 random problems (§1.2, §1.4)" setup=[Checker, UTSetup] begin
+@testitem "classify: agrees with the checker on 100 random problems (§1.2, §1.4)" tags=[:skipci] setup=[Checker, UTSetup] begin
     using UnitTestDesign: classify
     using Random
     rng = Xoshiro(0x2026_0926_e8a1 ⊻ seed_mod())

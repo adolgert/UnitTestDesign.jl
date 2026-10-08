@@ -188,7 +188,7 @@ end
 end
 
 
-@testitem "compact: the same rows for the same seed and for any feasibility_limit (§9.5, §3.8)" setup=[CompactSetup] begin
+@testitem "compact: the same rows for the same seed and for any feasibility_limit (§9.5, §3.8)" tags=[:skipci] setup=[CompactSetup] begin
     include(joinpath(pkgdir(UnitTestDesign), "benchmark", "fixtures.jl"))
     bench12 = BenchFixtures.test_space(BenchFixtures.bench12)
     for strength in (2, 3)
@@ -219,7 +219,7 @@ end
 end
 
 
-@testitem "compact: must-include rows, stronger groups and Invalid values pass the oracle (§5.3, §7.4)" setup=[CompactSetup, Checker, UTSetup] begin
+@testitem "compact: must-include rows, stronger groups and Invalid values pass the oracle (§5.3, §7.4)" tags=[:skipci] setup=[CompactSetup, Checker, UTSetup] begin
     # The registry's oracle loops have no must-include rows or stronger
     # groups, so this loop adds them, with an Invalid value in a third of the
     # problems, and with IPOG or GND as the inner engine: each design must

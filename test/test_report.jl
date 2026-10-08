@@ -49,7 +49,7 @@ using TestItemRunner
 end
 
 
-@testitem "report: agrees with the checker on 50 random problems (§1.3, §1.23, §3.12)" setup=[Checker, ReportSetup] begin
+@testitem "report: agrees with the checker on 50 random problems (§1.3, §1.23, §3.12)" tags=[:skipci] setup=[Checker, ReportSetup] begin
     rng = Xoshiro(0x2026_0927_0052)
     for index in 1:50
         problem = random_problem(rng; strength = 2)

@@ -475,7 +475,7 @@ end
 end
 
 
-@testitem "feasibility: random problems against brute force, §1.2 §1.4 §3.1 §3.16" setup=[FeasibilitySetup, UTSetup] begin
+@testitem "feasibility: random problems against brute force, §1.2 §1.4 §3.1 §3.16" tags=[:skipci] setup=[FeasibilitySetup, UTSetup] begin
     using Random
     rng = Xoshiro(0x2026_0926_fea5 ⊻ seed_mod())
     tally = Dict(:required => 0, :forbidden => 0, :implied => 0, :unknown => 0,

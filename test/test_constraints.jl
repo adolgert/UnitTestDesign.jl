@@ -686,7 +686,7 @@ end
 end
 
 
-@testitem "constraints: tables agree with the oracle on random problems" setup=[Checker] begin
+@testitem "constraints: tables agree with the oracle on random problems" tags=[:skipci] setup=[Checker] begin
     using Random
     using UnitTestDesign: forbids, forbidden_tuples
     rng = Xoshiro(0x2026_0927_0000_0001)

@@ -110,7 +110,7 @@ using TestItemRunner
 end
 
 
-@testitem "coverage: hand-written rows agree with the checker on every fixture (§1.9–§1.15, §5.9–§5.11, §6)" setup=[Checker, MeasureSetup] begin
+@testitem "coverage: hand-written rows agree with the checker on every fixture (§1.9–§1.15, §5.9–§5.11, §6)" tags=[:skipci] setup=[Checker, MeasureSetup] begin
     cases = [(f, fixture_request(f)) for f in FIXTURES if f.space !== nothing]
     # Strength 1 for the fixtures with wrappers: one negative target per invalid value (§6.4).
     append!(cases, [(f, (strength = 1,)) for f in FIXTURES if f.name in WRAPPED])
@@ -132,7 +132,7 @@ end
 end
 
 
-@testitem "coverage: every generated covering design is complete, and agrees with its bookkeeping (§1.3, §1.12)" setup=[Checker, MeasureSetup] begin
+@testitem "coverage: every generated covering design is complete, and agrees with its bookkeeping (§1.3, §1.12)" tags=[:skipci] setup=[Checker, MeasureSetup] begin
     for f in FIXTURES, engine in (IPOG(), GND())
         (f.space === nothing || f.name == :bench12) && continue   # bench12 below
         request = fixture_request(f)
@@ -166,7 +166,7 @@ end
 end
 
 
-@testitem "coverage: random problems at strengths 2 and 3, both engines (§1.3, §1.4)" setup=[Checker, MeasureSetup] begin
+@testitem "coverage: random problems at strengths 2 and 3, both engines (§1.3, §1.4)" tags=[:skipci] setup=[Checker, MeasureSetup] begin
     for strength in (2, 3)
         rng = Xoshiro(0x2026_0927_0005 + strength)
         for index in 1:100

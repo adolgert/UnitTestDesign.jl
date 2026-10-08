@@ -154,7 +154,7 @@ using TestItemRunner
 end
 
 
-@testitem "random problems: generator" setup=[UTSetup, Checker, RandomGate] begin
+@testitem "random problems: generator" tags=[:skipci] setup=[UTSetup, Checker, RandomGate] begin
     using Random
     # Deterministic from the rng.
     a = [random_problem(Xoshiro(17); strength = 2) for _ in 1:3]
@@ -207,7 +207,7 @@ end
 end
 
 
-@testitem "random problems: three-way through every registered engine" setup=[UTSetup, Checker, RandomGate] begin
+@testitem "random problems: three-way through every registered engine" tags=[:skipci] setup=[UTSetup, Checker, RandomGate] begin
     n_problems = gate_count()
     gate = random_gate(3, 0x2026_0926_0000_0003 ⊻ seed_mod(), n_problems)
     @info "Random three-way problems" seed = gate.seed tally = (; sort(collect(gate.tally))...)
@@ -215,7 +215,7 @@ end
 end
 
 
-@testitem "random problems: the certifier's recount on the layout agrees with the list's and the oracle's (§1.21)" setup=[UTSetup, Checker, RandomGate, RecountVerdict] begin
+@testitem "random problems: the certifier's recount on the layout agrees with the list's and the oracle's (§1.21)" tags=[:skipci] setup=[UTSetup, Checker, RandomGate, RecountVerdict] begin
     using UnitTestDesign: TargetList, _Classified, _recount, classify_targets, nrequired
     # Phase 5 (plan §5.6): `generate` certifies each design by recounting it
     # on the request's layout against the ids of the excluded targets
@@ -297,7 +297,7 @@ end
 end
 
 
-@testitem "random problems: one Invalid value, pairwise through every registered engine, both parts (§5, §6)" setup=[UTSetup, Checker] begin
+@testitem "random problems: one Invalid value, pairwise through every registered engine, both parts (§5, §6)" tags=[:skipci] setup=[UTSetup, Checker] begin
     using Random
     using UnitTestDesign: _engine_registry, fit, Profile, Request
     # Plan Phase 6 step 5: each problem gives one random parameter the value

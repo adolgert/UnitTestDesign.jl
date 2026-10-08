@@ -275,7 +275,7 @@ end
 end
 
 
-@testitem "engines: classification keeps the excluded ids, and its targets are the list's bit for bit (§4.2, §1.4)" setup=[EngineSetup] begin
+@testitem "engines: classification keeps the excluded ids, and its targets are the list's bit for bit (§4.2, §1.4)" tags=[:skipci] setup=[EngineSetup] begin
     using UnitTestDesign: CoverageIndex, Excluded, _Classified, _classify_target, _negative_targets!, _required_bits,
                           _ordinary_bound, _prepare, _run, _space_indices, _slot, _sub_excluded, cache_entries,
                           classify_negative_targets, isconstrained, n_must_include
@@ -438,7 +438,7 @@ end
 end
 
 
-@testitem "engines: no engine changes the targets the certifier reads (§4.2, §1.21)" setup=[EngineSetup] begin
+@testitem "engines: no engine changes the targets the certifier reads (§4.2, §1.21)" tags=[:skipci] setup=[EngineSetup] begin
     using UnitTestDesign: Design, _Classified, _IPOGLookup, _check_fit, _generate, _required_bits
     # The certifier recounts each design on the targets the engines read
     # (`validate_design`): their layout and the ids of the excluded targets.

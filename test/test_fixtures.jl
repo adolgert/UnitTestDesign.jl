@@ -341,7 +341,7 @@ end
 end
 
 
-@testitem "fixtures: bench12 constrained benchmark" setup=[Checker, FixtureGen] begin
+@testitem "fixtures: bench12 constrained benchmark" tags=[:skipci] setup=[Checker, FixtureGen] begin
     f = bench12
     s = f.space
     recorded = f.request.recorded

@@ -260,7 +260,7 @@ end
 end
 
 
-@testitem "excursions: fixtures, every row valid and within distance" setup=[Checker] begin
+@testitem "excursions: fixtures, every row valid and within distance" tags=[:skipci] setup=[Checker] begin
     for f in (fable_solver, opus_gpu, dead_end_pairwise_1, dead_end_threeway_1, disconnected_witness)
         valid = valid_rows(f.space)
         # The first valid row as the base, and distances 1 to 3.

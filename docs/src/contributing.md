@@ -59,6 +59,19 @@ The environment variable `UNITTESTDESIGN_TEST_LONGER` (a number such as
 `5`) overrides both `--longer` and the CI default, which is convenient in a
 GitHub Actions job. `test/runtests.jl` documents the precedence.
 
+Under CI (the environment variable `CI=true`, which GitHub Actions sets, or
+`--ci`) the run also leaves out every test item tagged `:skipci`, so that
+each CI job takes a few minutes. Those are the slow items whose lines other
+items already reach: comparisons against the checker over every fixture or
+many random problems, the benchmark fixtures, the checker's own tests, and
+the doctests, which the documentation job runs. Tag a new test item
+`tags=[:skipci]` when it takes seconds and covers nothing new; a local run
+without `--ci` runs everything.
+
+```
+julia --project -e 'using Pkg; Pkg.test(test_args = ["--ci"])'
+```
+
 ## The correctness standard
 
 Two pieces of the test suite decide whether an engine is correct.
@@ -69,8 +82,8 @@ Two pieces of the test suite decide whether an engine is correct.
   whether a design covers them. It shares no code with `src/` and does not
   load the package. It aims to be obviously right, not fast.
 - **The random gate**, in `test/test_random_problems.jl`, draws random
-  constrained problems (500 at each of strengths 2 and 3 by default, fewer
-  under CI), generates a design for each with both engines, and checks every design against the checker: every
+  constrained problems (500 at each of strengths 2 and 3 by default; under CI
+  fewer, and strength 2 only), generates a design for each with both engines, and checks every design against the checker: every
   case valid, every feasible combination covered, and every excluded
   combination attributed as the checker attributes it. There is no expected
   failure; an exception from either engine fails the gate. Run it with

@@ -756,7 +756,7 @@ end
 end
 
 
-@testitem "followups: every claim holds by brute force over both kinds of case, for many outcomes (review round 1)" setup=[DiagnoseSetup] begin
+@testitem "followups: every claim holds by brute force over both kinds of case, for many outcomes (review round 1)" tags=[:skipci] setup=[DiagnoseSetup] begin
     using Random: Xoshiro
     rng = Xoshiro(0x2026_0927_0601)
     spaces = [

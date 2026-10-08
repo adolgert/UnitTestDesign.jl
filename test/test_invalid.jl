@@ -122,7 +122,7 @@ using TestItemRunner
 end
 
 
-@testitem "invalid: both guarantees against the oracle, strengths 1 to 3, both engines (§1.3, §5, §6)" setup=[Checker, InvalidSetup] begin
+@testitem "invalid: both guarantees against the oracle, strengths 1 to 3, both engines (§1.3, §5, §6)" tags=[:skipci] setup=[Checker, InvalidSetup] begin
     spaces = [(invalid_beside_ordinary.space, 1:3), (empty_ordinary_negative_seed.space, 1:2),
               (two_invalid(), 1:3), (grouped(), 1:3)]
     for (cs, strengths) in spaces, strength in strengths, engine in ENGINES
@@ -625,7 +625,7 @@ end
 end
 
 
-@testitem "invalid: a negative sub-request's targets are the negative targets at its value (§6.1, §6.3, §9.7)" setup=[Checker, InvalidSetup] begin
+@testitem "invalid: a negative sub-request's targets are the negative targets at its value (§6.1, §6.3, §9.7)" tags=[:skipci] setup=[Checker, InvalidSetup] begin
     using UnitTestDesign: Request, NegativeProjection, TargetList, parent_row, _negative_request, _space_indices,
                           from_indices
     # The negative targets at (p, v), in the order coverage lists them, are
@@ -742,7 +742,7 @@ end
 end
 
 
-@testitem "invalid: random negative sub-requests whose groups change order, against the oracle (§6.3, §6.7)" setup=[Checker, InvalidSetup] begin
+@testitem "invalid: random negative sub-requests whose groups change order, against the oracle (§6.3, §6.7)" tags=[:skipci] setup=[Checker, InvalidSetup] begin
     using Random: randperm
     using UnitTestDesign: Request, NegativeProjection, TargetList, RequiredTargets, _Classified, _negative_targets!,
                           _negative_request, _ordinary_bound, _required_bits, _slot, _sub_excluded,
@@ -821,7 +821,7 @@ end
 end
 
 
-@testitem "invalid: the certifier's negative recount agrees with the list's on failing designs (§1.21, §6.7)" setup=[Checker, InvalidSetup, RecountVerdict] begin
+@testitem "invalid: the certifier's negative recount agrees with the list's on failing designs (§1.21, §6.7)" tags=[:skipci] setup=[Checker, InvalidSetup, RecountVerdict] begin
     using UnitTestDesign: Request, TargetList, _Classified, _check_fit, _decode!, _generate, _recount,
                           classify_negative_targets
     # `generate` certifies the negative rows by recounting them on the

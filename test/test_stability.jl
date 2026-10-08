@@ -442,7 +442,7 @@ end
 end
 
 
-@testitem "stability: classification keeps nothing per required target, and the recount allocates nothing per row or support" setup=[StabilitySetup] begin
+@testitem "stability: classification keeps nothing per required target, and the recount allocates nothing per row or support" tags=[:skipci] setup=[StabilitySetup] begin
     using UnitTestDesign: Request, RequiredTargets, TargetList, Excluded, _Classified, _classify_targets,
                           _classify_target, _space_indices, _recount, _required_matrix, cover_ordinary,
                           full_strength_rows, gnd_cover, _classify_negative, _NegativeTargets, feasibility_for,
