@@ -134,6 +134,9 @@ resolve 0.5 on their next update.
   example.
 - `Counter`, `generate_tuples`, and `Excursion` removed from the public
   surface.
+- The default engine of `covering`, `all_values`, `all_pairs`,
+  `all_triples` and `design_sizes` is `Auto()`, where 0.4's was IPOG; see
+  "The default engine is `Auto()`" below.
 - TODO (Phase 8): confirm any others, such as the `julia = "1.10"` floor.
 
 ### Deprecations
@@ -156,6 +159,137 @@ them.
   `missing_interactions`, `report`, `design_sizes`, `excursions`, `Invalid`,
   `Partition`/`realize`, `diagnose`, `github_matrix`. Final list and
   one-line descriptions come from the Phase 8 docs.
+
+### New engines, and the lower bound (solver plan, Phase 3)
+
+Added 2026-10-04 by the solver plan's Phase 3
+(`design/20261003_solver_plan.md`, §6). The default engine stayed `IPOG()`
+until the change below.
+
+- `Auto(; goal = :balanced, seed = 0, effort = 1)`, an engine that chooses.
+  `goal = :fast` is IPOG; `:balanced` keeps the smaller of IPOG's design and
+  the catalog's array, and is never larger than IPOG where it builds both
+  (above 100,000 combinations it may build the catalog's array alone, which
+  was never larger on the package's benchmarks, though that is measured,
+  not guaranteed); `:compact` then removes rows with the reducer. The
+  result's `record.ordinary.chose` says what it ran, and
+  `record.ordinary.starts` what each start gave. Its choice may change
+  between releases (contract §9.8).
+- `Construction()`, algebraic covering arrays from a catalog (orthogonal
+  arrays, cover starters, products, the LFSR array and recursions), for
+  spaces whose parameters all have the same number of values or that have
+  `strength + 1` parameters; it seeds IPOG under rules. It refuses other
+  spaces with the reason.
+- `Compact(inner; seed = 0, effort = 1)`, a row reducer around any engine:
+  fewer cases for expensive tests, seeded, budgets in steps.
+- `recommend(space; …)` says what `Auto` would run, why, and how many cases
+  each goal can give where that is known without running; it returns a
+  `Recommendation`.
+- `design_sizes(space; engine = [IPOG(), Auto(goal = :compact)])` compares
+  engines, one row per engine per strength, and shows an engine that
+  doesn't cover a request as that row's status. `DesignSizes` gains an
+  `engines` field, the engines' constructor calls, and each of its rows an
+  `engine` field (`nothing` for an excursion or a full factorial).
+- Every covering result states a proven lower bound beside its count, and
+  says "minimal" when the count meets it: the summary line reads
+  `5 cases (lower bound 4) · …` or `9 cases (minimal) · …`, and `report`
+  prints a `size:` line with the proof. `TestCases` and `Report` gain a
+  `record` field holding the bound, its proof and whether the count meets
+  it, whether the engine is randomized, the engine's configuration (`engine`:
+  each engine's name, constructor call, seed and settings, nested for
+  `Compact`'s inner engine and `Auto`'s candidates), and the stages that ran
+  (`ordinary`: what `Auto` chose, the catalog's array, the reducer's run;
+  `negative`: which engine covered each `Invalid` value's negative rows).
+  The bound, the proof and "minimal" are the package's own, never an
+  engine's. `report`'s seed line names the constructor call that repeats
+  the cases, such as `Compact(GND(seed = 17); seed = 3, effort = 2)`.
+  Contract §8.4 now allows "minimal" when a count equals a proven bound, and
+  §8.7 defines the bound.
+- The error for an `engine` that isn't one names covering engines generally
+  ("a covering engine such as IPOG(), Construction(), Compact(IPOG()) or
+  Auto()"), and an engine that refuses a request suggests `IPOG()` or
+  `Auto()`.
+
+### IPOG's core (solver plan, Phase 4)
+
+Added 2026-10-06 by the solver plan's Phase 4
+(`design/20261003_solver_plan.md`, §5.5).
+
+- `IPOG()` has one engine for every request, in place of 0.4's classic
+  algorithm and the general one 0.5 added for rules, must-include rows and
+  `stronger` groups. It finds the best value for each case by lookup
+  (Kleine and Simos's FIPOG) instead of scanning every combination, and
+  holds one step's combinations at a time.
+- Its speed depends on the rules. Without rules, or with a few, a whole call
+  is about 10 to 95 times faster where the engine it replaced took more than
+  a second (8 parameters of 64 values at strength 2: 1.7 s to 0.045 s;
+  strength 6 on 20 three-valued parameters: 5.6 minutes to 5.7 s). On
+  heavily constrained models it builds four designs and each asks the
+  feasibility search. That made it slower and larger there until the solver
+  plan's Phase 5 (2026-10-07) kept the search's answers by the groups of
+  parameters that rules link, and classification kept only a count for the
+  required combinations. On the benchmark's constrained models (777 points,
+  about 500 timed), a whole call now takes longer than with the engine it
+  replaced at 7 points, all at strength 2 with 3 to 30 rules, by up to 1.6
+  times; before Phase 5 it did at 64 of them (68 of 907 timed points on the
+  whole grid), by up to about three times. The engine alone still takes up
+  to about five times as long where rules link nearly every parameter, the
+  most with rules that read the whole case; classification, which every
+  engine shares, is now cheap enough to hide most of it. Peak memory fell
+  below the engine it replaced on the largest models: 5.0 GiB to 470 MiB on
+  the largest cart model at strength 2 (8.1 GiB before Phase 5), 1,125 to
+  1,040 MiB on a ct-comp model at strength 3 (2.3 GiB before), and CASA's 35
+  models at strength 3 all complete, 34 under 2 GiB, where the engine it
+  replaced needed 0.4 to 10.4 GiB of resident memory on 30 of them, and on
+  the other 5 more than 40 GiB counting compressed memory before it was
+  stopped (the solver plan's quiet re-measurements).
+- Its cases change. It runs four members of the IPOG family, two tie-break
+  rules by two orders of vertical growth, and keeps the design with the
+  fewest cases. Over the package's benchmark grid, against the engine it
+  replaced, that has as many cases or fewer at 96.7% of 1,826 points and 2%
+  fewer in total; at about 3% of the points it has more, usually by one to
+  four cases, by up to about 9%, and by 160 (5.6%) for ten 4-valued
+  parameters at strength 5 (3,030 where the engine it replaced gave
+  2,870). A rule that excludes nothing no longer changes the design. The
+  result's `record.ordinary.member` names the member kept.
+- A call succeeds only when `feasibility_limit` is enough for each design
+  `IPOG()` builds, so a call can need a larger limit than before: of 150
+  random constrained problems, tried at limits that are powers of two, one
+  needed 16 where the engine it replaced needed 4. A larger limit still
+  never changes the cases of a call that succeeded (contract §3.8).
+- `Construction()`'s seeded path and `Auto` start from the same engine, so
+  their designs change with it.
+
+### The default engine is `Auto()` (solver plan, decision D1)
+
+Added 2026-10-06, after the review of Phase 4 (`design/20261003_solver_plan.md`,
+§7.5; `design/20261004_decisions.md`).
+
+- `covering`, `all_values`, `all_pairs`, `all_triples` and `design_sizes`
+  default to `engine = Auto()`, which is `Auto(goal = :balanced)`: where
+  the catalog applies (parameters that all have the same number of values,
+  or `strength + 1` parameters), the smaller of IPOG's design and the
+  catalog's array, IPOG's on a tie; elsewhere IPOG's design. `IPOG()` keeps
+  its name and behaviour, and `Auto(goal = :fast)` runs it; a call that
+  names `engine = IPOG()` gets IPOG's design, as 0.4's default did.
+- On the solver plan's 681 benchmark points, `Auto()` never has more cases
+  than IPOG. It has fewer on 30 of the 85 spaces with equal value counts or
+  `strength + 1` parameters, and on the uniform families 23% to 27% fewer
+  on average; on spaces of mixed value counts it is IPOG's design (0.2%
+  fewer cases on average over 341 points). A warm call took at most about
+  1 ms longer than IPOG alone at any of those points. The first call of the
+  manual's first example, in a fresh process, takes about 0.1 s.
+- Results say what `Auto` chose: the summary line reads `Auto: IPOG()` or
+  `Auto: Construction()` where it read `IPOG`, `report`'s seed line "Auto
+  uses no randomness", `design_sizes`' footer "with Auto", and
+  `record.engine` and `record.ordinary` hold Auto's configuration, each
+  start it ran and the one it kept. `recommend`'s last line says what
+  `covering(…)` would use.
+- Where `Auto` keeps the catalog's array, the cases differ from IPOG's, and
+  an orthogonal array, holding each combination once, covers fewer
+  combinations of the next strength by accident than IPOG's larger design.
+  To keep a design across this change, pass it back as `must_include`
+  (contract §9.10).
 
 ### Fixed
 

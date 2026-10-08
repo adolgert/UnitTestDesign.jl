@@ -4,7 +4,7 @@
 # second index-space boundary (the first is rule_table.jl). An engine sees
 # only integers: parameter `i` has values `1:arity[i]` (engine positions),
 # a partial row is a Vector{Int} with 0 for unset, a design is a matrix
-# with one column per case (the layout coverage_matrix.jl already uses).
+# with one column per case (the layout GND's coverage_matrix.jl uses).
 # Engine positions map to space value indices through `candidates`, so
 # domains with non-contiguous ordinary values need no engine change. The
 # positions after `arity[i]` are the parameter's `Invalid` values, which only
@@ -47,6 +47,11 @@ by the must-include checks, the engine's searches and the final validation,
 and are released with the request. The space retains nothing.
 `memo_size(request)` counts the memoized verdicts.
 
+`candidates` is one object for the request's life (`_with_must_include`
+shares it) and is never changed in place: `dead` converts a row through it
+in the row's search, which keeps a table of it by its identity
+(`_mapped_key!`), so a change would go unseen.
+
 Values are the space's, wrappers included: a [`Partition`](@ref) is an
 ordinary value, which rules and targets see by its name (§4.5), and an
 [`Invalid`](@ref) value is a candidate only of negative rows (§5).
@@ -77,8 +82,7 @@ function Request(space::TestSpace; strength = 2, stronger = [], must_include = [
     n = length(space.names)
     strength = _check_strength(strength, n)
     groups = _groups(space, strength, stronger)
-    feasibility = Feasibility([copy(ordinary_indices(space, i)) for i in 1:n], space.tables;
-                              limit = feasibility_limit)
+    feasibility = Feasibility(_candidates(space, 0, 0), space.tables; limit = feasibility_limit)
     request = _request(space, strength, groups, zeros(Int, n, 0), feasibility, feasibility_limit,
                        explanation_limit)
     return _with_must_include(request, _must_include_matrix(request, must_include))
@@ -120,6 +124,7 @@ function _check_strength(strength, n::Integer)
     return strength
 end
 
+# Instrumentation, not called in src/: benchmark/run.jl reports it, and the tests read all three methods.
 "The lazy-rule verdicts memoized by this request so far (contract §12.19)."
 memo_size(request::Request) = memo_size(request.feasibility)
 
@@ -201,18 +206,7 @@ function _must_include_matrix(request::Request, rows)
     n = length(space.names)
     columns = Vector{Int}[]
     for (r, row) in enumerate(rows)
-        if row isa Tuple || row isa AbstractVector
-            length(row) == n || throw(ArgumentError(
-                "must_include row $r has $(length(row)) values; the space has $n parameters"))
-        elseif !(row isa NamedTuple)
-            throw(ArgumentError("must_include row $r is a $(typeof(row)); use a NamedTuple or a Tuple"))
-        end
-        idx = try
-            case_indices(space, row isa NamedTuple ? row : Tuple(row))
-        catch err
-            err isa ArgumentError || rethrow()
-            throw(ArgumentError("must_include row $r: " * err.msg))   # §10.2 names the row
-        end
+        idx = _row_indices(space, row; what = "must_include row $r", section = "§10.1", complete = false)
         bad = _invalid_parameters(space, idx)
         length(bad) > 1 && throw(ArgumentError(
             "must_include row $r, $(from_indices(space, idx)), has Invalid values for " *
@@ -252,7 +246,18 @@ position at `p`, the negative-row search of `feasibility_for(request.context,
 position is allowed.
 """
 function _feasibility(request::Request, row::AbstractVector{<:Integer})
-    _holds_invalid(request, row) || return request.feasibility
+    # A negative row's search, once built, is found by its kind `(p, v)`
+    # without converting the row; `feasibility_for` builds it, and rejects a
+    # row with two invalid positions.
+    p = 0
+    for i in eachindex(row)
+        row[i] > request.arity[i] || continue
+        p == 0 || return first(feasibility_for(request.context, _space_indices(request, row)))
+        p = i
+    end
+    p == 0 && return request.feasibility
+    found = get(request.context.searches, (p, request.candidates[p][row[p]]), nothing)
+    found === nothing || return first(found)
     return first(feasibility_for(request.context, _space_indices(request, row)))
 end
 
@@ -296,9 +301,15 @@ function _positions(request::Request, idx::AbstractVector{<:Integer})
 end
 
 "Space value indices from engine positions (0 stays 0)."
-function _space_indices(request::Request, positions::AbstractVector{<:Integer})
-    return Int[positions[i] == 0 ? 0 : request.candidates[i][positions[i]]
-               for i in eachindex(request.candidates)]
+_space_indices(request::Request, positions::AbstractVector{<:Integer}) =
+    _space_indices!(zeros(Int, length(request.candidates)), request, positions)
+
+"`_space_indices` written into `idx`, which it returns."
+function _space_indices!(idx::Vector{Int}, request::Request, positions::AbstractVector{<:Integer})
+    for i in eachindex(request.candidates)
+        idx[i] = positions[i] == 0 ? 0 : request.candidates[i][positions[i]]
+    end
+    return idx
 end
 
 """
@@ -310,13 +321,17 @@ to have no valid completion; `false` only with a completion witness; throws
 contract §3.6). This is the predicate that replaces `disallow` at every
 engine site. A partial row with an invalid position is judged under the
 negative-row policy (§5.5); an engine's rows never hold one.
+
+The search of the row's kind answers it through `candidates`, the map from
+engine positions to value indices (`_mapped_completable`, feasibility.jl),
+which converts and checks the row in the search's own buffer, so a question
+the caches answer allocates nothing (plan §5.6).
 """
 function dead(request::Request, partial::AbstractVector{<:Integer})
     f = _feasibility(request, partial)
-    key = _checked_key(f, _space_indices(request, partial))
-    status, _ = _completable(f, key, f.limit)
+    status = _mapped_completable(f, request.candidates, partial)
     status === :unknown && throw(ResourceLimitError(
-        "placing a value: the feasibility search for $(from_indices(request.space, key))",
+        "placing a value: the feasibility search for $(from_indices(request.space, _space_indices(request, partial)))",
         f.limit, :feasibility_limit))
     return status === :infeasible
 end
@@ -336,33 +351,460 @@ function witness(request::Request, partial::AbstractVector{<:Integer})
         "completing the row $(from_indices(request.space, _space_indices(request, partial)))",
         request.feasibility_limit, :feasibility_limit))
     status == :infeasible && error("internal error: asked for a witness of an infeasible row $partial")
-    return _positions(request, w)
+    return _positions(request, w::Vector{Int})
 end
 
 isconstrained(request::Request) = !isempty(request.feasibility.tables)
 
 """
-    _supports(groups) -> Vector{Vector{Int}}
+    _Supports <: AbstractVector{Vector{Int}}
 
-The parameter sets that carry targets (contract §1.8): for each group
-`(G, s)`, each `s`-subset of `G` in `combinations` order, the base group
-first. A subset that two groups share is listed once, where it first
-appears, so that a target arising from two groups is one target. Each
-subset is sorted, since every group's members are. A group at strength 0 (a
-negative sub-request's base group, invalid.jl) has no subsets.
+The parameter sets that carry targets (contract §1.8), in target order
+(§9.7): for each group `(G, s)`, each `s`-subset of `G` in `combinations`
+order, the base group first, a subset that two groups share listed once,
+where it first appears (`_group_supports`). Each is sorted, since every
+group's members are. Plan §5.6: the base group's are computed, not listed.
+The base group is every parameter, `1:n`, at the base strength `t`, so its
+supports are the first `nbase = C(n, t)` of the list, every `t`-subset of
+`1:n` in lexicographic order, and support `s` is the subset of rank `s - 1`
+in the combinatorial number system: `_support!` unranks it and `_support_rank`
+ranks a subset back, with a table of binomial coefficients, `(t + 1)(n - t
++ 2)` entries, in place of `C(n, t)` vectors. A base group at strength 0 (a
+negative sub-request's, invalid.jl) has none. The other groups' subsets come
+after, in `listed`, one after another, each once; a subset of the base
+strength would be a base subset, so it is never listed.
+
+`supports[s]` is a fresh vector, which the caller may keep, for tests and
+cold paths. Loops read a support into a buffer of their own, which nothing
+allocates once it has grown to the size of a support: `_support!` for one
+support; `_each_support` to step through all of them in order, a base
+support from the one before in place; and `_each_base_support` for the base
+supports that hold one parameter and others from a given set, in order, an
+IPOG step's. Code outside this file reads supports through these three,
+or `supports[s]` on a cold path, so how they are stored and numbered is
+known here alone.
 """
-function _supports(groups)
-    out = Vector{Int}[]
-    seen = Set{Vector{Int}}()
-    for (members, s) in groups
-        s == 0 && continue   # a base group at strength 0 has no targets (see `Request`)
-        for subset in combinations(members, s)
-            subset in seen && continue
-            push!(seen, subset)
-            push!(out, subset)
+struct _Supports <: AbstractVector{Vector{Int}}
+    n::Int                       # the base group's parameters, 1:n
+    t::Int                       # the base strength; 0 gives no base supports
+    nbase::Int                   # C(n, t), or 0 when t == 0: supports 1:nbase are the base group's
+    binomial::Vector{Int}        # C(j + d, j) at d + 2 + (n - t + 2) j, for 0 ≤ j ≤ t and -1 ≤ d ≤ n - t
+    listed::Vector{Int}          # the other groups' supports' parameters, one support after another
+    listed_first::Vector{Int}    # support nbase + k is listed[listed_first[k]:(listed_first[k + 1] - 1)]
+end
+
+Base.size(supports::_Supports) = (supports.nbase + length(supports.listed_first) - 1,)
+Base.IndexStyle(::Type{_Supports}) = IndexLinear()
+
+function Base.getindex(supports::_Supports, s::Int)
+    @boundscheck checkbounds(supports, s)
+    return _support!(Int[], supports, s)
+end
+
+"""
+    _binomials(n, t) -> Vector{Int}
+
+`_Supports`' table: `C(j + d, j)` at `d + 2 + (n - t + 2) j` for `0 ≤ j ≤ t`
+and `-1 ≤ d ≤ n - t` (0 at `d = -1`), by Pascal's rule. These are all the
+coefficients ranking and unranking a `t`-subset of `1:n` read, and the
+largest is the last, `C(n, t)`, the number of base supports: an `Int`
+overflow there is an `OverflowError`, as the offsets' would be.
+"""
+function _binomials(n::Int, t::Int)
+    w = n - t + 2
+    table = zeros(Int, w * (t + 1))
+    for j in 0:t, d in 0:(n - t)
+        table[d + 2 + w * j] = j == 0 ? 1 : Base.checked_add(table[d + 1 + w * j], table[d + 2 + w * (j - 1)])
+    end
+    return table
+end
+
+"`C(m, j)` from `supports`' table, for `0 ≤ j ≤ t` and `-1 ≤ m - j ≤ n - t`."
+@inline _choose(supports::_Supports, m::Int, j::Int) =
+    @inbounds supports.binomial[m - j + 2 + (supports.n - supports.t + 2) * j]
+
+"""
+    _support!(buffer, supports, s) -> buffer
+
+Write support `s`'s parameters, ascending, into `buffer`, resized to them,
+and return it. A base support is unranked from `s` (lexicographic order:
+for each place, the first value whose subsets reach past rank `s - 1`, by
+binary search on the table; the last place directly), in O(t log n); a
+listed one is copied. Allocates nothing once `buffer` has grown to the
+support's size.
+"""
+function _support!(buffer::Vector{Int}, supports::_Supports, s::Int)
+    @boundscheck checkbounds(supports, s)
+    s > supports.nbase && return _listed!(buffer, supports, s - supports.nbase)
+    n, t = supports.n, supports.t
+    resize!(buffer, t)
+    r = s - 1   # the rank: the base supports before this one
+    a = 0       # the value at the place before
+    for i in 1:(t - 1)
+        j = t - i + 1   # the places left, this one included
+        # The subsets whose value here is c, past a, number C(n - c, j - 1), so
+        # those with a value here of at most c number C(n - a, j) - C(n - c, j):
+        # the value is the first c at which that passes r.
+        above = _choose(supports, n - a, j) - r
+        lo, hi = a + 1, n - j + 1
+        while lo < hi
+            mid = (lo + hi) >>> 1
+            _choose(supports, n - mid, j) < above ? (hi = mid) : (lo = mid + 1)
+        end
+        r -= _choose(supports, n - a, j) - _choose(supports, n - lo + 1, j)
+        @inbounds buffer[i] = a = lo
+    end
+    t > 0 && @inbounds(buffer[t] = a + r + 1)   # one place left: the value is r past a
+    return buffer
+end
+
+"Copy listed support `k`, `supports[nbase + k]`, into `buffer`."
+function _listed!(buffer::Vector{Int}, supports::_Supports, k::Int)
+    lo, hi = supports.listed_first[k], supports.listed_first[k + 1] - 1
+    resize!(buffer, hi - lo + 1)
+    copyto!(buffer, 1, supports.listed, lo, hi - lo + 1)
+    return buffer
+end
+
+"""
+    _support_rank(supports, members) -> Int
+
+The position `s` of the base support whose parameters are `members`, a
+sorted `t`-subset of `1:n`: its rank in lexicographic order plus one, in
+O(t), the sum over its places of the subsets that agree before the place
+and have a smaller value there.
+"""
+function _support_rank(supports::_Supports, members::AbstractVector{<:Integer})
+    n, t = supports.n, supports.t
+    length(members) == t || error("internal error: $members is not a support of the base group at strength $t")
+    r = 0
+    a = 0
+    for i in 1:t
+        c = Int(members[i])
+        a < c <= n - t + i || error("internal error: $members is not a sorted subset of 1:$n")
+        j = t - i + 1
+        r += _choose(supports, n - a, j) - _choose(supports, n - c + 1, j)
+        a = c
+    end
+    return r + 1
+end
+
+"""
+    _each_support(supports, buffer = Int[])
+
+Every support in order, as `(s, support)`, `support` being `buffer` holding
+support `s`'s parameters: a base support is the next `t`-subset after the
+one before, stepped in place (amortized O(1)), and a listed one is copied.
+So the loop's body must not change `support`, and must copy it to keep it.
+"""
+struct _SupportWalk
+    supports::_Supports
+    buffer::Vector{Int}
+end
+
+_each_support(supports::_Supports, buffer::Vector{Int} = Int[]) = _SupportWalk(supports, buffer)
+
+Base.IteratorSize(::Type{_SupportWalk}) = Base.HasLength()
+Base.length(walk::_SupportWalk) = length(walk.supports)
+Base.eltype(::Type{_SupportWalk}) = Tuple{Int, Vector{Int}}
+
+@inline function Base.iterate(walk::_SupportWalk, s::Int = 0)
+    s == length(walk.supports) && return nothing
+    s += 1
+    return (s, _next_support!(walk.buffer, walk.supports, s)), s
+end
+
+"""
+Support `s` in `buffer`, which holds support `s - 1` (or anything, for the
+first support of a kind). The common step, a base support whose last place
+can grow, is inlined into the walk; the rest is `_carry_support!`.
+"""
+@inline function _next_support!(buffer::Vector{Int}, supports::_Supports, s::Int)
+    if 1 < s <= supports.nbase
+        t = supports.t
+        @inbounds if buffer[t] < supports.n
+            buffer[t] += 1
+            return buffer
         end
     end
-    return out
+    return _carry_support!(buffer, supports, s)
+end
+
+@noinline function _carry_support!(buffer::Vector{Int}, supports::_Supports, s::Int)
+    t = supports.t
+    if s == 1 && supports.nbase > 0
+        resize!(buffer, t)
+        for i in 1:t
+            @inbounds buffer[i] = i
+        end
+    elseif s <= supports.nbase
+        # The next subset in lexicographic order: the last place that can grow
+        # grows, and the places after it follow it.
+        n = supports.n
+        i = t
+        @inbounds while buffer[i] == n - t + i
+            i -= 1
+        end
+        @inbounds buffer[i] += 1
+        for k in (i + 1):t
+            @inbounds buffer[k] = buffer[k - 1] + 1
+        end
+    else
+        _listed!(buffer, supports, s - supports.nbase)
+    end
+    return buffer
+end
+
+"""
+    _BaseWalkBuffers()
+
+What a walk of base supports (`_each_base_support`) writes: the support it
+yields and its odometer. The caller keeps them, so that its walks allocate
+nothing once they have grown to a support.
+"""
+struct _BaseWalkBuffers
+    support::Vector{Int}   # the support yielded, ascending
+    places::Vector{Int}    # the odometer: the places in `earlier` of the support's parameters other than `p`
+end
+
+_BaseWalkBuffers() = _BaseWalkBuffers(Int[], Int[])
+
+"""
+    _each_base_support(supports, p, earlier, buffers = _BaseWalkBuffers())
+
+The base supports that hold parameter `p` and `t - 1` of the parameters
+`earlier` (ascending, without `p`), as `(s, support)` in increasing `s`,
+`support` being `buffers.support` holding support `s`'s parameters,
+ascending: every `t`-subset of `earlier` and `p` that holds `p`, `C(k, t -
+1)` of them for `k` parameters in `earlier`, and none at base strength 0.
+An IPOG step reads its base supports so (`_begin_step!`), `earlier` being
+the parameters before its own in the order. A `p` outside `1:n` is an
+internal error. So is an `earlier` that is not ascending within `1:n`, or
+that holds `p`, when `t ≥ 2`; at `t = 0` there is no support and at `t = 1`
+the support is `p` alone, so `earlier` isn't read or checked.
+
+Why in that order: the positions number the base supports in lexicographic
+order (`_Supports`), and inserting `p` into two sorted subsets keeps their
+order (where they first differ, at values `a < b`, `p` lands at the same
+place in both, or between `a` and `b`). So an odometer over the `(t -
+1)`-subsets of `earlier`, in lexicographic order, gives the supports in
+order of position, each without unranking (plan §5.6): its parameters are
+the subset with `p` inserted, and its position the sum over its places
+(`_base_support!`), in O(t). Nothing allocates once the buffers have grown
+to a support. As with `_each_support`, the loop's body must not change
+`support` or `earlier`, and must copy `support` to keep it; the state is the
+last position.
+"""
+struct _BaseSupportWalk
+    supports::_Supports
+    p::Int
+    earlier::Vector{Int}
+    buffers::_BaseWalkBuffers
+end
+
+_each_base_support(supports::_Supports, p::Int, earlier::Vector{Int}, buffers::_BaseWalkBuffers = _BaseWalkBuffers()) =
+    _BaseSupportWalk(supports, p, earlier, buffers)
+
+Base.IteratorSize(::Type{_BaseSupportWalk}) = Base.SizeUnknown()
+Base.eltype(::Type{_BaseSupportWalk}) = Tuple{Int, Vector{Int}}
+
+# Inlined, as `_SupportWalk`'s, so that the tuple each step returns, which
+# holds the buffer, is not allocated.
+@inline function Base.iterate(walk::_BaseSupportWalk)
+    _start_walk!(walk) || return nothing
+    s = _base_support!(walk)
+    return (s, walk.buffers.support), s
+end
+
+@inline function Base.iterate(walk::_BaseSupportWalk, s::Int)
+    supports, p, earlier = walk.supports, walk.p, walk.earlier
+    support, places = walk.buffers.support, walk.buffers.places
+    u = length(places)
+    # The common step: the odometer's last place moves on without passing p,
+    # so one parameter of the support changes, at its place f, and the
+    # position changes by that place's term (`_base_support!`).
+    if u > 0
+        i = places[u]
+        if i < length(earlier)
+            b, c = earlier[i], earlier[i + 1]
+            if (b < p) == (c < p)
+                f = b < p ? u : u + 1
+                n, j = supports.n, u + 2 - f
+                places[u] = i + 1
+                support[f] = c
+                s += _choose(supports, n - b, j) - _choose(supports, n - c, j)
+                return (s, support), s
+            end
+        end
+    end
+    s = _carry_walk!(walk)
+    s == 0 && return nothing
+    return (s, support), s
+end
+
+"The walk's next support from its odometer, its position, or 0 after the last."
+@noinline function _carry_walk!(walk::_BaseSupportWalk)
+    _next_places!(walk.buffers.places, length(walk.earlier)) || return 0
+    return _base_support!(walk)
+end
+
+"Check `walk`'s parameter and set, and set its odometer at the first subset: `false` if there is none."
+function _start_walk!(walk::_BaseSupportWalk)
+    supports, p, earlier = walk.supports, walk.p, walk.earlier
+    n, u = supports.n, supports.t - 1   # u: the support's parameters other than p
+    1 <= p <= n || error("internal error: parameter $p is not one of 1:$n")
+    supports.nbase == 0 && return false
+    if u > 0
+        a = 0
+        for q in earlier
+            a < q <= n && q != p || error("internal error: $earlier is not an ascending subset of 1:$n without $p")
+            a = q
+        end
+        length(earlier) < u && return false
+    end
+    resize!(walk.buffers.support, u + 1)
+    places = resize!(walk.buffers.places, u)
+    for i in 1:u
+        places[i] = i
+    end
+    return true
+end
+
+"""
+The support at `walk`'s odometer, `p` and `earlier[places]`, written into
+`buffers.support`, ascending, and its position: `C(n, t)` less the subsets
+after it in lexicographic order, which are, for each place `i` and its
+parameter `c`, those that agree with it before `i` and hold a larger
+parameter at `i`, `C(n - c, t - i + 1)`. A sorted subset has `i ≤ c ≤ n - t
++ i`, so each is in the table (`_choose`).
+"""
+@inline function _base_support!(walk::_BaseSupportWalk)
+    supports, p, earlier = walk.supports, walk.p, walk.earlier
+    support, places = walk.buffers.support, walk.buffers.places
+    n, t = supports.n, supports.t
+    s = supports.nbase
+    i = 1   # the support's next place
+    for k in eachindex(places)
+        c = earlier[places[k]]
+        if i == k && p < c   # p comes before c and is not yet placed
+            support[i] = p
+            s -= _choose(supports, n - p, t - i + 1)
+            i += 1
+        end
+        support[i] = c
+        s -= _choose(supports, n - c, t - i + 1)
+        i += 1
+    end
+    if i == t   # p after the others
+        support[t] = p
+        s -= _choose(supports, n - p, 1)
+    end
+    return s
+end
+
+"""
+    _group_supports(groups) -> (supports::_Supports, shares)
+    _supports(groups) -> supports
+
+The parameter sets that carry targets (contract §1.8), as `_Supports`: for
+each group `(G, s)`, each `s`-subset of `G` in `combinations` order, the base
+group first, which is every parameter and whose subsets are computed, not
+listed. A subset that two groups share is one support, where it first
+appears, so that a target arising from two groups is one target. The other
+groups' subsets are listed: one of a group at the base strength is a base
+subset, found by its rank; one of a group at a strength that an earlier
+group shares, and inside that group's members, was listed there; any other
+is listed now. So no subset is looked up in a dictionary. `shares[g]` lists
+the positions in `supports` of group `g`'s subsets, so that a measurement
+gives each group its share of the counts (§1.15) without listing the
+subsets again; the base group's is the range `1:nbase`.
+"""
+function _group_supports(groups)
+    base, t = first(groups)
+    n = length(base)
+    base == 1:n || error("internal error: the base group is not every parameter, in order")
+    binomial = t > 0 ? _binomials(n, t) : Int[]
+    supports = _Supports(n, t, t > 0 ? last(binomial) : 0, binomial, Int[], [1])
+    shares = Union{UnitRange{Int}, Vector{Int}}[1:supports.nbase]
+    inside = falses(n, length(groups))   # whether parameter p is a member of group g
+    for (g, (members, _)) in enumerate(groups), p in members
+        inside[p, g] = true
+    end
+    subset = Int[]   # one subset, reused
+    places = Int[]   # its members' places in the group
+    for g in 2:length(groups)
+        members, s = groups[g]
+        share = Int[]
+        if s > 0
+            resize!(places, s)
+            places .= 1:s
+            resize!(subset, s)
+            while true
+                for i in 1:s
+                    subset[i] = members[places[i]]
+                end
+                push!(share, _support_position(supports, groups, shares, inside, g, subset))
+                _next_places!(places, length(members)) || break
+            end
+        end
+        push!(shares, share)
+    end
+    return supports, shares
+end
+
+_supports(groups) = first(_group_supports(groups))
+
+"""
+The position of `subset`, a sorted subset of group `g`'s members, among
+`supports`: a base subset's rank, the position an earlier group of its
+strength listed it at, or a new listed support's.
+"""
+function _support_position(supports::_Supports, groups, shares, inside::BitMatrix, g::Int, subset::Vector{Int})
+    s = length(subset)
+    s == supports.t && return _support_rank(supports, subset)
+    for h in 2:(g - 1)
+        members, strength = groups[h]
+        strength == s && all(p -> inside[p, h], subset) || continue
+        # The first group that holds the subset listed it, at its place among
+        # that group's subsets in `combinations` order.
+        return shares[h][_subset_rank(members, subset) + 1]
+    end
+    append!(supports.listed, subset)
+    push!(supports.listed_first, length(supports.listed) + 1)
+    return length(supports)
+end
+
+"""
+The rank of `subset` among the `length(subset)`-subsets of `members` (both
+sorted) in `combinations` order, with `Base.binomial`: only for subsets two
+groups share, so not on a hot path.
+"""
+function _subset_rank(members::Vector{Int}, subset::Vector{Int})
+    m, s = length(members), length(subset)
+    r = 0
+    a = 0
+    for i in 1:s
+        c = searchsortedfirst(members, subset[i])
+        j = s - i + 1
+        r += binomial(m - a, j) - binomial(m - c + 1, j)
+        a = c
+    end
+    return r
+end
+
+"The next `length(places)`-subset of `1:m` in lexicographic order, in place; `false` after the last."
+function _next_places!(places::Vector{Int}, m::Int)
+    k = length(places)
+    i = k
+    while i >= 1 && places[i] == m - k + i
+        i -= 1
+    end
+    i == 0 && return false
+    places[i] += 1
+    for j in (i + 1):k
+        places[j] = places[j - 1] + 1
+    end
+    return true
 end
 
 """
@@ -370,25 +812,41 @@ end
 
 Every target of the request as a partial row in engine positions, computed
 on demand rather than stored: for each support (`_supports`), each
-assignment of engine positions, the first parameter varying fastest. The
+assignment of engine positions, the first parameter varying fastest, which
+is `_decode!` of the codes 0, 1, 2, … with the ordinary arity as radix. The
 order is fixed by the space and the request (contract §9.7). `offsets[k]`
 counts the targets before support `k`; the last entry is the total, checked
-against `Int` overflow.
+against `Int` overflow. Each index gives a fresh vector, which the caller
+may keep.
 
-An unconstrained request requires every target, so `classify_targets`
-returns this list without building it, and `validate_design` recounts it one
-support at a time (plan Phase 3 review, round 1, item 4).
+It is the request's layout of targets: target `offsets[s] + code + 1` is
+code `code` on support `s`, and that number is its id. Classification walks
+it support by support and code by code (`_classify_targets`), the targets
+(`RequiredTargets`), the coverage index and the certifier's recount
+(`validate_design`) read it, and neither classification nor the certifier
+keeps a list of targets. GND and full-strength generation decode the
+required targets from their codes during a call (`_required_matrix`,
+`_required_list`). An unconstrained request requires every target, so its
+targets are this list itself, which classification never materializes (plan
+Phase 3 review, round 1, item 4).
+
+The supports are `_Supports`: the base group's are computed from their
+position, not listed (plan §5.6), so the layout keeps 8 bytes a support, its
+offset, beside a table that doesn't grow with the supports and the other
+groups' supports. The offsets stay stored: `ncombinations` and `isrequired`
+read them once per call, in the engines' and the certifier's inner loops,
+where computing one would cost O(t).
 """
 struct TargetList <: AbstractVector{Vector{Int}}
     arity::Vector{Int}
-    supports::Vector{Vector{Int}}
+    supports::_Supports
     offsets::Vector{Int}
 end
 
 function TargetList(request::Request)
     supports = _supports(request.groups)
     offsets = zeros(Int, length(supports) + 1)
-    for (k, support) in enumerate(supports)
+    for (k, support) in _each_support(supports)
         block = 1
         for p in support
             block = Base.checked_mul(block, request.arity[p])
@@ -404,16 +862,10 @@ Base.IndexStyle(::Type{TargetList}) = IndexLinear()
 function Base.getindex(list::TargetList, i::Int)
     @boundscheck checkbounds(list, i)
     k = searchsortedlast(list.offsets, i - 1)
-    r = i - 1 - list.offsets[k]
-    row = zeros(Int, length(list.arity))
-    for p in list.supports[k]
-        a = list.arity[p]
-        row[p] = r % a + 1
-        r ÷= a
-    end
-    return row
+    return _decode!(zeros(Int, length(list.arity)), i - 1 - list.offsets[k], list.supports[k], list.arity)
 end
 
+# Production iterates `TargetList` directly; this stays as a convenience for the tests.
 """
     targets(request) -> Vector{Vector{Int}}
 
@@ -445,71 +897,389 @@ struct Excluded
 end
 
 """
-    classify_targets(request) -> (required, excluded)
+    classify_targets(request, list = TargetList(request)) -> (required, excluded)
 
-Classify every target (contract §1.4): `required` is the list of targets an
-engine must cover, `excluded` the `Excluded` records. An `:unknown` target
-is a `ResourceLimitError`: generation never returns an uncertified design
-(§3.6). An unconstrained request classifies nothing and requires
-everything: `required` is then the `TargetList` itself, never materialized,
-and `validate_design` recounts it one support at a time. A constrained
-request returns a `Vector` of the required targets, in target order.
+Every target classified (contract §1.4), as lists, for tests and benchmark
+scripts: `required`, the targets an engine must cover, and `excluded`, the
+`Excluded` records, each in target order, every target of `list` in one of
+the two. An unconstrained request classifies nothing and requires
+everything: `required` is then `list` itself, never materialized. A
+constrained request returns a `Vector` of the required targets, each a
+fresh full-width row of engine positions. An `:unknown` target is a
+`ResourceLimitError` (§3.6).
+
+Generation keeps no such list: `_Classified` calls `_classify_targets`,
+which this calls, and keeps its `RequiredTargets`, so both ask the same
+questions in the same order and agree target for target.
 """
-function classify_targets(request::Request)
-    all_targets = TargetList(request)
-    isconstrained(request) || return all_targets, Excluded[]
+function classify_targets(request::Request, list::TargetList = TargetList(request))
+    isconstrained(request) || return list, Excluded[]
+    targets, excluded = _classify_targets(request, list)
+    return _required_list(targets), excluded
+end
+
+"""
+    _classify_targets(request, layout::TargetList) -> (targets::RequiredTargets, excluded)
+
+Classify every target of `layout`, the request's `TargetList` (contract
+§1.4): `targets`, what an engine must cover (`RequiredTargets`), and
+`excluded`, the `Excluded` record of each target no valid row holds, in
+target order. The walk is the layout's order, support by support and code by
+code, so the feasibility questions come in target order, as they always have
+(their caches' effort, and so every `Excluded` explanation and node count,
+depend on it). Each target is decoded into one reused row (`_decode!`) and
+its space value indices into another, so the walk keeps and allocates
+nothing per target beyond the feasibility question (`_classify_target`); a
+required target leaves no trace but its count. What is kept is the excluded
+targets' ids, `offsets[s] + code + 1`, ascending, from which the targets
+count each support and build their bits (`RequiredTargets`).
+
+An unconstrained request asks nothing: every target is required, and the
+targets are `layout` itself. An `:unknown` target is a `ResourceLimitError`
+naming it (§3.6).
+"""
+function _classify_targets(request::Request, layout::TargetList)
+    isconstrained(request) || return RequiredTargets(request, layout), Excluded[]
     f = request.feasibility
     active = collect(eachindex(f.tables))
-    required = Vector{Int}[]
     excluded = Excluded[]
-    for t in all_targets
-        e = _classify_target(request, f, active, t, _space_indices(request, t), "classifying target")
-        e === nothing ? push!(required, t) : push!(excluded, e)
+    ids = Int[]
+    target = zeros(Int, length(layout.arity))   # one target in engine positions, reused
+    idx = zeros(Int, length(layout.arity))      # the same target as space value indices
+    for (s, support) in _each_support(layout.supports)
+        for code in 0:(ncombinations(layout, s) - 1)
+            _decode!(target, code, support, layout.arity)
+            for p in support
+                idx[p] = request.candidates[p][target[p]]
+            end
+            e = _classify_target(request, f, active, target, idx, "classifying target")
+            e === nothing && continue
+            push!(excluded, e)
+            push!(ids, layout.offsets[s] + code + 1)
+        end
+        for p in support
+            target[p] = idx[p] = 0
+        end
     end
-    return required, excluded
+    return RequiredTargets(layout, ids), excluded
 end
 
 """
     _classify_target(request, f, active, target, idx, what) -> Union{Nothing, Excluded}
 
 Classify one target (contract §1.4) with the search `f`, whose table `k` is
-the space's rule `active[k]`: `nothing` when some valid row of `f`'s kind
-contains it (it is required), otherwise its `Excluded` record, with `target`
-(engine positions) and its rules in the space's numbering. `idx` is the
-target as space value indices. An unknown answer throws `ResourceLimitError`,
-naming the target after `what` (§3.6). Ordinary targets (`classify_targets`)
-and negative targets (invalid.jl) are classified here.
+the space's rule `active[k]`, through `IndexClassification`: `nothing` when
+some valid row of `f`'s kind contains it (it is required), otherwise its
+`Excluded` record, with `target` (engine positions) and its rules in the
+space's numbering. `idx` is the target as space value indices. An unknown
+answer throws `ResourceLimitError`, naming the target after `what` (§3.6).
+Ordinary targets (`_classify_targets`) and negative targets (invalid.jl) are
+classified here. Neither `target` nor `idx` is kept: the record copies
+`target`, and the search copies `idx` (`explain_partial`), so a caller may
+pass buffers it reuses. A required target's witness is not copied
+(`explain_partial`'s `witness = false`), since nothing keeps it: the answer,
+its rules and its cost are the same.
 """
 function _classify_target(request::Request, f::Feasibility, active::Vector{Int},
                           target::AbstractVector{<:Integer}, idx::AbstractVector{<:Integer}, what)
-    e = explain_partial(f, idx; explanation_limit = request.explanation_limit)
-    if e.outcome == :unknown
-        throw(ResourceLimitError("$what $(from_indices(request.space, idx))",
-                                 request.feasibility_limit, :feasibility_limit))
-    elseif e.outcome == :allowed || e.outcome == :completable
-        return nothing
-    elseif e.outcome == :forbidden
-        return Excluded(collect(Int, target), :forbidden, active[e.rules], :not_applicable, nothing)
-    end
-    return Excluded(collect(Int, target), :implied, active[e.rules], e.minimal,
-                    _limit_pair(e.limit, request.feasibility_limit, request.explanation_limit))
+    c = IndexClassification(explain_partial(f, idx; explanation_limit = request.explanation_limit,
+                                            witness = false))
+    c.status === :unknown && throw(ResourceLimitError("$what $(from_indices(request.space, idx))",
+                                                      request.feasibility_limit, :feasibility_limit))
+    c.status === :required && return nothing
+    return Excluded(collect(Int, target), c.status, active[c.rules], c.minimal,
+                    _limit_pair(c.limit, request.feasibility_limit, request.explanation_limit))
 end
+
+"""
+    RequiredTargets(layout::TargetList, excluded::Vector{Int})
+    RequiredTargets(request, layout::TargetList)
+    RequiredTargets(request, required::Vector{Vector{Int}})
+
+The targets an engine must cover, as the engine protocol asks for them (plan
+§4.2, `CoveringEngine`). For each support `s` of the request, the parameter
+sets that carry targets (`supports`, in target order), each combination of
+engine positions has a code, the mixed-radix code `_code(row, supports(t)[s],
+request.arity)` that orders the targets in `TargetList` (contract §9.7). The
+codes on support `s` are `0:ncombinations(t, s) - 1`, `_decode!` turns one
+back into a row, and `isrequired(t, s, code)` says whether it is a required
+target; `nrequired(t, s)` counts them. All four answer in constant time and
+allocate nothing, `isrequired` once its bits are built (below).
+
+`layout` is the request's `TargetList`: its arity, supports and offsets,
+the immutable description of where each combination's bit and count go,
+its id `offsets[s] + code + 1`. Classification walks it and keeps it here
+(`_Classified`), and the coverage index and the certifier read it, so none
+of them builds it again. No target is listed. What classification keeps is
+`excluded`, the ids of the combinations that are not required, ascending:
+every other combination of the layout is a required target.
+
+- From classification, `RequiredTargets(layout, excluded)`, with the ids of
+  the targets it excluded (`_classify_targets`; a negative sub-request's,
+  `cover_negative`): a support's count is its combinations less its
+  excluded ones, and the bits are built the first time `isrequired` or the
+  coverage index asks (`_required_bits`), every combination but the
+  excluded ones, so the lower bound without must-include rows never pays
+  for them. The ids cost eight bytes per excluded target, beside the
+  `Excluded` record contract §1.4 keeps for each.
+- Unconstrained, `RequiredTargets(request, layout)`: every target is
+  required, `list` is the layout itself, nothing is counted or excluded,
+  `isrequired` is always `true`, and the bits, all set, are built only for
+  the coverage index.
+- From a list, `RequiredTargets(request, required)`, in any order, for tests
+  and benchmark scripts: the request's `TargetList` is built, each target's
+  bit is marked and counted in one pass, and the other combinations' ids
+  are kept as excluded. Misuse is an internal error.
+
+Once built, the bits never change, and every reader shares them: two
+engines that run on one `RequiredTargets` (`Auto`'s starts, `design_sizes`'
+engines) build them once. The build is not locked: the package runs nothing
+concurrently inside a call, and a `RequiredTargets` lives in one call.
+Engines read the four functions above; GND's coverage matrix and
+`full_strength_rows`, which need the required targets as rows, decode them
+from their codes in target order (`_required_matrix`, `_required_list`).
+The certifier reads the layout and `excluded`, never the bits, which
+engines and the coverage index hold by reference (`_recount`).
+"""
+mutable struct RequiredTargets{L <: Union{Nothing, TargetList}}
+    const list::L                      # the layout itself when every target is required; `nothing` otherwise
+    const layout::TargetList
+    const counts::Vector{Int}          # the required targets on each support; empty when every target is required
+    const excluded::Vector{Int}        # the ids, offsets[s] + code + 1, of the combinations not required, ascending
+    bits::Union{Nothing, BitVector}    # bit id set for a required target; `nothing` until first asked for
+end
+
+# Every target of a TargetList is required, so there is nothing to mark or count.
+function RequiredTargets(request::Request, layout::TargetList)
+    layout.arity == request.arity || error("internal error: a TargetList of another request")
+    return RequiredTargets(layout, layout, Int[], Int[], nothing)
+end
+
+function RequiredTargets(layout::TargetList, excluded::Vector{Int})
+    counts = [ncombinations(layout, s) for s in eachindex(layout.supports)]
+    s = 1
+    for (k, id) in enumerate(excluded)
+        1 <= id <= length(layout) && (k == 1 || id > excluded[k - 1]) ||
+            error("internal error: excluded target id $id is not on the layout, or out of target order")
+        while layout.offsets[s + 1] < id
+            s += 1
+        end
+        counts[s] -= 1
+    end
+    return RequiredTargets(nothing, layout, counts, excluded, nothing)
+end
+
+function RequiredTargets(request::Request, required::Vector{Vector{Int}})
+    every = TargetList(request)
+    sups = every.supports
+    # A base support is found by its rank (`_Supports`); the listed ones, the
+    # other groups', by a dictionary of their own.
+    listed = Dict(sups[k] => k for k in (sups.nbase + 1):length(sups))
+    counts = zeros(Int, length(sups))
+    bits = falses(length(every))
+    support = Int[]   # one target's support, reused
+    for t in required
+        _target_support!(support, t, every.arity, "required")
+        k = sups.t > 0 && length(support) == sups.t ? _support_rank(sups, support) : get(listed, support, 0)
+        k == 0 && error("internal error: required target $t is on no support of the request")
+        b = every.offsets[k] + _code(t, support, every.arity) + 1
+        bits[b] && error("internal error: required target $t is listed twice")
+        bits[b] = true
+        counts[k] += 1
+    end
+    return RequiredTargets(nothing, every, counts, findall(!, bits), bits)
+end
+
+"Write into `support` the parameters target `t` sets, checking it is a full-width row of engine positions."
+function _target_support!(support::Vector{Int}, t::AbstractVector{<:Integer}, arity::Vector{Int}, what::String)
+    length(t) == length(arity) || error("internal error: $what target $t is not a full-width row")
+    empty!(support)
+    for i in eachindex(t)
+        t[i] == 0 && continue
+        1 <= t[i] <= arity[i] || error("internal error: $what target $t is not in engine positions")
+        push!(support, i)
+    end
+    return support
+end
+
+"""
+    _target_ids(layout, targets, what) -> Vector{Int}
+
+The ids on `layout` (`offsets[s] + code + 1`) of `targets`, full-width rows
+of engine positions in any order, ascending. A target's support, the
+parameters it sets, is found by its rank among the base supports
+(`_support_rank`), or among the listed ones by a dictionary of them built
+once; its code is `_code`. A target on no support of the layout, outside the
+arity, or given twice is an internal error naming it after `what`. For a
+negative sub-request's excluded targets (`_sub_excluded`), so not on a hot
+path.
+"""
+function _target_ids(layout::TargetList, targets, what::String)
+    sups = layout.supports
+    listed = Dict(sups[k] => k for k in (sups.nbase + 1):length(sups))
+    ids = Int[]
+    support = Int[]   # one target's support, reused
+    for t in targets
+        _target_support!(support, t, layout.arity, what)
+        s = sups.t > 0 && length(support) == sups.t ? _support_rank(sups, support) : get(listed, support, 0)
+        s == 0 && error("internal error: $what target $t is on no support of the request")
+        push!(ids, layout.offsets[s] + _code(t, support, layout.arity) + 1)
+    end
+    sort!(ids)
+    allunique(ids) || error("internal error: a $what target is given twice")
+    return ids
+end
+
+"The number of combinations on support `s` of `list`."
+ncombinations(list::TargetList, s::Integer) = list.offsets[s + 1] - list.offsets[s]
+
+"""
+The parameter sets that carry targets, in target order; `s` in the other
+functions indexes them. Not to be changed. They are `_Supports`, computed
+rather than listed: `supports(t)[s]` is a fresh vector, and an inner loop
+reads them into a buffer of its own (`_each_support`, `_support!`).
+"""
+supports(t::RequiredTargets) = t.layout.supports
+
+"The number of combinations on support `s`: its codes are `0:ncombinations(t, s) - 1`."
+ncombinations(t::RequiredTargets, s::Integer) = ncombinations(t.layout, s)
+
+"Whether the combination whose code is `code` on support `s` is a required target."
+@inline function isrequired(t::RequiredTargets{TargetList}, s::Integer, code::Integer)
+    @boundscheck 0 <= code < ncombinations(t, s) || throw(BoundsError(t, (s, code)))
+    return true
+end
+
+@inline function isrequired(t::RequiredTargets, s::Integer, code::Integer)
+    @boundscheck 0 <= code < ncombinations(t, s) || throw(BoundsError(t, (s, code)))
+    return @inbounds _required_bits(t)[t.layout.offsets[s] + code + 1]
+end
+
+"""
+    _required_bits(targets) -> BitVector
+
+The required bit of every combination, by id `offsets[s] + code + 1`: built
+the first time it is asked for, every combination but the excluded ones (all
+of them for a `TargetList`), and then kept and shared, never changed
+(`RequiredTargets`). The coverage index holds these bits, not a copy.
+"""
+@inline function _required_bits(t::RequiredTargets)
+    bits = t.bits
+    bits === nothing || return bits
+    return _build_required_bits!(t)
+end
+
+@noinline function _build_required_bits!(t::RequiredTargets)
+    bits = trues(last(t.layout.offsets))
+    for id in t.excluded
+        bits[id] = false
+    end
+    t.bits = bits
+    return bits
+end
+
+"The number of required targets on support `s`, or on every support."
+nrequired(t::RequiredTargets{TargetList}, s::Integer) = ncombinations(t, s)
+nrequired(t::RequiredTargets, s::Integer) = t.counts[s]
+nrequired(t::RequiredTargets) = length(t.layout) - length(t.excluded)
+
+"""
+    _required_list(targets) -> Vector{Vector{Int}}
+    _required_matrix(targets) -> Matrix{Int}
+
+Every required target, in target order, decoded from its code: as fresh
+full-width rows of engine positions, `0` off the target's support, which
+`classify_targets` returns and `full_strength_rows` sorts; or as the columns
+of one matrix, parameters × targets, from which GND builds its coverage
+matrix (`_Greedy`). Read through `isrequired`, so the bits are built if no
+one has asked yet.
+"""
+function _required_list(t::RequiredTargets)
+    layout = t.layout
+    list = Vector{Vector{Int}}(undef, nrequired(t))
+    j = 0
+    for (s, support) in _each_support(layout.supports), code in 0:(ncombinations(layout, s) - 1)
+        isrequired(t, s, code) || continue
+        list[j += 1] = _decode!(zeros(Int, length(layout.arity)), code, support, layout.arity)
+    end
+    j == length(list) || error("internal error: $j required targets, counted $(length(list))")
+    return list
+end
+
+function _required_matrix(t::RequiredTargets)
+    layout = t.layout
+    matrix = zeros(Int, length(layout.arity), nrequired(t))
+    j = 0
+    for (s, support) in _each_support(layout.supports), code in 0:(ncombinations(layout, s) - 1)
+        isrequired(t, s, code) || continue
+        _decode!(view(matrix, :, j += 1), code, support, layout.arity)
+    end
+    j == size(matrix, 2) || error("internal error: $j required targets, counted $(size(matrix, 2))")
+    return matrix
+end
+
+"""
+    _NegativeTargets
+
+A request's negative targets, classified (contract §6.1–§6.5, §6.7) with no
+required one listed. They are numbered 1, 2, … in target order (§9.7), the
+order of the walk that `coverage` makes (`_walk_support!`): for each support
+of `layout`, the request's `TargetList`, each parameter `p` of it with
+`Invalid` values and each of those values, every assignment of ordinary
+values to the rest of the support, the first parameter fastest.
+
+- `layout`: the request's `TargetList`, whose supports the walk goes over.
+- `required`: how many negative targets are required.
+- `excluded`: the `Excluded` record of each excluded one, in target order,
+  its `target` holding the invalid position (§1.4, §6.7); and `ids`, their
+  numbers, ascending, which the certifier reads (`_recount`).
+- For each invalid value, in parameter order and then domain order (`slot`):
+  `count`, the number of its targets other than `(p = v)` alone, which are
+  its negative sub-request's targets, though not always in the same order
+  (`_negative_request`); `excluded_at`, the positions in `excluded` of its
+  excluded ones other than `(p = v)` alone, in target order, from which
+  negative generation finds their ids on the sub-request's layout
+  (`_sub_excluded`); and `alone`, whether the target `(p = v)` alone, a
+  target only at strength 1, is `:required`, `:excluded` or `:none`.
+
+`classify_negative_targets` lists the same targets for tests and scripts.
+"""
+struct _NegativeTargets
+    layout::TargetList
+    required::Int
+    excluded::Vector{Excluded}
+    ids::Vector{Int}
+    first::Vector{Int}                 # parameter p's first invalid value's slot; its values follow
+    count::Vector{Int}
+    excluded_at::Vector{Vector{Int}}
+    alone::Vector{Symbol}
+end
+
+"The slot, in `_NegativeTargets`, of the invalid value at engine position `position` of parameter `p`."
+_slot(negative::_NegativeTargets, request::Request, p::Int, position::Int) =
+    negative.first[p] + position - request.arity[p] - 1
 
 """
     Design
 
 What `generate(engine, request)` returns: `matrix` (parameters × cases,
 engine positions, complete), `strategy` (`:covering`, `:excursion`,
-`:full_factorial`), `engine::Symbol`, `seed` (GND's seed or `nothing`),
-`required::Int` and `covered::Int` (ordinary targets, for covering designs),
-`excluded::Vector{Excluded}` (ordinary), `n_must_include::Int`, `notes`
-(strategy specific: an excursion's dropped rows, a full factorial's candidate
-and accepted counts) as a `NamedTuple`, and the negative bookkeeping, kept
+`:full_factorial`), `engine::Symbol`, `seed` (a randomized engine's seed or
+`nothing`), `required::Int` and `covered::Int` (ordinary targets, for
+covering designs), `excluded::Vector{Excluded}` (ordinary),
+`n_must_include::Int`, `notes` (strategy specific: an excursion's dropped
+rows, a full factorial's candidate and accepted counts) as a `NamedTuple`,
+and the negative bookkeeping, kept
 apart from the ordinary (contract §1.19, §5.10): `negative_required::Int`
 and `negative_covered::Int` (negative targets, §6) and
 `negative_excluded::Vector{Excluded}`, whose targets hold the invalid
-position. The nine-argument constructor leaves the negative bookkeeping
-empty.
+position; and `record`, what the result records of how it was made, as
+[`TestCases`](@ref)'s `record` documents it: whether the engine is randomized,
+a covering design's lower bound with its proof and whether the rows meet it
+(`_bound_record`), the engine's configuration, and the stages that ran
+(`_covering_record`). The nine-argument constructor leaves the negative
+bookkeeping empty, and both short forms record no bound and no engine
+(`_NO_BOUND`), as for an excursion or a full factorial.
 """
 struct Design
     matrix::Matrix{Int}
@@ -524,33 +1294,24 @@ struct Design
     negative_required::Int
     negative_covered::Int
     negative_excluded::Vector{Excluded}
+    record::NamedTuple
 end
+
+"The record of a design that has no lower bound and no engine: an excursion or a full factorial, which use no randomness."
+const _NO_BOUND = (randomized = false, lower_bound = nothing, minimal = false, proof = "", engine = nothing,
+                   ordinary = nothing, negative = nothing)
 
 Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes) =
     Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,
-           0, 0, Excluded[])
+           0, 0, Excluded[], _NO_BOUND)
+
+Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,
+       negative_required, negative_covered, negative_excluded) =
+    Design(matrix, strategy, engine, seed, required, covered, excluded, n_must_include, notes,
+           negative_required, negative_covered, negative_excluded, _NO_BOUND)
 
 """
-    covers(matrix, target) -> Bool
-
-Whether some column of `matrix` contains the partial row `target`.
-"""
-function covers(matrix::AbstractMatrix{<:Integer}, target::AbstractVector{<:Integer})
-    for j in axes(matrix, 2)
-        ok = true
-        for i in eachindex(target)
-            if target[i] != 0 && matrix[i, j] != target[i]
-                ok = false
-                break
-            end
-        end
-        ok && return true
-    end
-    return false
-end
-
-"""
-    validate_design(request, matrix, required; strategy, negative = []) -> Int
+    validate_design(request, matrix, targets; strategy, negative = []) -> Int
 
 Final validation (plan Phase 3 step 6, contract §1.21), in index space:
 every row is complete and within its candidates, every row passes its
@@ -559,14 +1320,25 @@ is consulted, lazy ones through the request's memo, §12.19): every rule for
 an ordinary row (§5.4), the rules that omit `p` for a negative row with its
 invalid value at `p` (§5.5), and no row holds two invalid values (§5.7).
 Must-include rows come first in the given order, and for a covering design
-every required ordinary target is covered by an ordinary row, and every
-required negative target in `negative` by a negative row, each recounted
-from the rows (§5.9). Returns the number of required ordinary targets
-covered. A failure is an `ErrorException` beginning "internal error",
-naming the row or target. Values are never looked up; only `to_cases`
-converts rows to values.
+every required ordinary target in `targets` is covered by an ordinary row,
+and every required negative target in `negative` by a negative row, each
+recounted from the rows (§5.9, `_recount`), which also checks that no row
+holds a target classification excluded (§1.4). Returns the number of
+required ordinary targets covered. A failure is an `ErrorException` beginning
+"internal error", naming the row or target. Values are never looked up; only
+`to_cases` converts rows to values.
+
+`targets` is generation's: classification's `RequiredTargets`, recounted on
+the request's layout against the ids of the excluded targets; and so is
+`negative`, the `_NegativeTargets`, recounted in the negative targets' order
+on the same layout, whenever it is given, even with no negative target
+required (`_recounts`). Tests and scripts may pass a `TargetList`, every target
+required, and lists of required targets as `classify_targets` and
+`classify_negative_targets` return them; a list is recounted target by
+target, the same count and first uncovered target by other arithmetic,
+though a list of required targets can't say which rows hold an excluded one.
 """
-function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, required;
+function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, targets;
                          strategy::Symbol = :covering, negative = Vector{Int}[])
     n = length(request.arity)
     size(matrix, 1) == n || error("internal error: design has $(size(matrix, 1)) rows for $n parameters")
@@ -608,16 +1380,210 @@ function validate_design(request::Request, matrix::AbstractMatrix{<:Integer}, re
     # Only ordinary rows cover ordinary targets, and only negative rows cover
     # negative targets (§5.9).
     ordinary = any(negative_rows) ? matrix[:, .!negative_rows] : matrix
-    covered = _recount(request, ordinary, required)
-    isempty(negative) || _recount(request, matrix[:, negative_rows], negative)
+    covered = _recount(request, ordinary, targets)
+    _recounts(negative) && _recount(request, matrix[:, negative_rows], negative)
     return covered
 end
+
+"""
+Whether `validate_design` recounts the negative targets `negative`: always
+when classification supplied them, even with none required. The recount
+also checks that no negative row holds a target classification excluded
+(§1.4), so the required count, classification's own output, can't decide
+whether classification is checked: were every negative target wrongly
+excluded, a negative row holding one would pass unchecked (the
+maintainer's review, R3). A list, from tests and scripts, holds only
+required targets and can't name a held excluded one, so an empty list
+leaves nothing to recount.
+"""
+_recounts(negative) = !isempty(negative)
+_recounts(::_NegativeTargets) = true
 
 _uncovered(request::Request, t) = error(
     "internal error: required target $(from_indices(request.space, _space_indices(request, t))) is not covered")
 
-# The rows' projections onto each target's parameters, built once per
-# parameter set, so the check is linear in targets plus rows.
+"""
+The recounts' error for an excluded target `t` that a row of `matrix` holds.
+The rows were checked valid before, so classification was wrong to exclude
+it (contract §1.4): no valid row of its kind holds an excluded target.
+"""
+@noinline function _held(request::Request, matrix::AbstractMatrix{<:Integer}, t::Vector{Int})
+    j = findfirst(j -> all(i -> t[i] == 0 || matrix[i, j] == t[i], eachindex(t)), axes(matrix, 2))
+    named(row) = from_indices(request.space, _space_indices(request, row))
+    error("internal error: excluded target $(named(t)) is held by the row $(named(matrix[:, something(j)])); " *
+          "classification found no valid row that holds it (contract §1.4)")
+end
+
+"""
+Check that the first `n` marks of `seen` are set, chunk by chunk
+(`findnext`), for a block of codes on `support` that holds no excluded
+target: otherwise the recounts' internal error for the first code that is
+unset, decoded as a target, with `fixed = p => v` set in it for a negative
+block (`0` for none). The marks past `n` are other blocks', so a gap there
+means nothing.
+"""
+function _every_code(request::Request, seen::BitVector, n::Int, support::Vector{Int}, arity::Vector{Int}, fixed)
+    missed = findnext(!, seen, 1)
+    (missed === nothing || missed > n) && return nothing
+    target = _decode!(zeros(Int, length(arity)), missed - 1, support, arity)
+    fixed isa Pair && (target[fixed.first] = fixed.second)
+    _uncovered(request, target)
+end
+
+"""
+    _recount(request, matrix, targets::RequiredTargets) -> Int
+
+The certifier's recount (contract §1.21): the number of required targets
+that the rows, the columns of `matrix`, hold, or an internal error naming
+the first target, in target order, that is required and held by no row, or
+excluded and held by one. For each support of the layout, in order, it marks
+the code (`_code`) of each row's combination on the support, then walks the
+support's codes: a code no row holds must be the id of a target
+classification excluded, and an excluded one no row may hold, since every
+row was checked valid before and no valid row holds an excluded target
+(§1.4). So it checks classification's exclusions against the rows as well
+as their coverage, for one bit read per excluded target. A support with no
+excluded target needs every code marked, which its marks' chunks show
+without a walk (`_every_code`).
+
+It trusts two things, both classification's. The layout, `targets.layout`,
+is the request's `TargetList`: its supports are every set of parameters that
+carries targets (contract §1.8, `_supports`; the base group's computed in
+order, the others' listed, `_Supports`, which classification walked the same
+way), and code `code` on support `s` is the target `_decode!` makes of it,
+so a row holds that target exactly when its code on `s` is `code`, the rows'
+entries having been checked within the ordinary arity. `targets.excluded` is
+the ids of the targets classification excluded, each with its `Excluded`
+record (§1.4); it walked this layout and put each target in exactly one
+class, so the required targets are the layout's combinations less those ids,
+as an unconstrained request's are all of them. The recount reads nothing
+else: not the required bits, which engines and the coverage index hold by
+reference, and no engine's index or buffers. Engines share the layout and
+never change it (the engine protocol; test_engines.jl checks each leaves it,
+and the counts and bits, as they were). Its buffers are a bit per
+combination of the largest support, one support's parameters
+(`_each_support`) and, on failure, the target it names.
+"""
+function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, targets::RequiredTargets)
+    layout, excluded = targets.layout, targets.excluded
+    layout.arity == request.arity || error("internal error: the targets are not the request's")
+    seen = falses(maximum(s -> ncombinations(layout, s), eachindex(layout.supports); init = 0))
+    next = 1   # the first excluded id not yet reached
+    covered = 0
+    for (s, support) in _each_support(layout.supports)
+        n = ncombinations(layout, s)
+        fill!(view(seen, 1:n), false)
+        for j in axes(matrix, 2)
+            seen[_code(view(matrix, :, j), support, layout.arity) + 1] = true
+        end
+        if next > length(excluded) || excluded[next] > layout.offsets[s] + n
+            # No excluded target here: every code must be marked, which the
+            # marks' chunks show at once (review p5-perf 6).
+            _every_code(request, seen, n, support, layout.arity, 0)
+            covered += n
+            continue
+        end
+        for code in 0:(n - 1)
+            if next <= length(excluded) && excluded[next] == layout.offsets[s] + code + 1
+                # Excluded: no row need hold it, and no valid row can.
+                seen[code + 1] && _held(request, matrix, _decode!(zeros(Int, length(layout.arity)), code, support,
+                                                                  layout.arity))
+                next += 1
+            elseif seen[code + 1]
+                covered += 1
+            else
+                _uncovered(request, _decode!(zeros(Int, length(layout.arity)), code, support, layout.arity))
+            end
+        end
+    end
+    next == length(excluded) + 1 || error("internal error: the excluded ids are not the layout's, in target order")
+    return covered
+end
+
+"""
+    _recount(request, matrix, negative::_NegativeTargets) -> Int
+
+The certifier's recount of the negative targets (contract §1.21, §6, §5.9):
+the number of required negative targets that the negative rows, the columns
+of `matrix`, hold, or an internal error naming the first negative target, in
+target order, that is required and held by no row, or excluded and held by
+one. The negative targets are numbered 1, 2, … in the order of §9.7
+(`_NegativeTargets`): for each support of the layout, each parameter `p` of
+it and each of `p`'s invalid values `v`, in engine positions after its
+ordinary ones, the block of every assignment of ordinary values to the rest
+of the support, by code on the rest. For each block it marks the code of
+each row that holds `v` at `p`, then walks the block's codes: a code no row
+holds must be the number of a target classification excluded, and an
+excluded one no row may hold, as in the ordinary recount, and a block with
+no excluded target is checked by its marks' chunks.
+
+It trusts what the ordinary recount trusts, the layout, whose supports the
+negative targets lie on as well, and `negative.ids`, the numbers of the
+negative targets classification excluded, each with its `Excluded` record
+(§1.4, §6.7), every other negative target being required; and checks the
+count of required ones against classification's. Each negative row holds
+exactly one invalid value and ordinary values elsewhere, checked before, so
+its code on a block's rest is on the block. Its buffers are a bit per
+combination of the largest support and the rest of one support.
+"""
+function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, negative::_NegativeTargets)
+    layout, ids, arity = negative.layout, negative.ids, request.arity
+    layout.arity == arity || error("internal error: the negative targets are not the request's")
+    seen = falses(maximum(s -> ncombinations(layout, s), eachindex(layout.supports); init = 0))
+    rest = Int[]   # the support but p
+    number = 0     # the targets met so far
+    next = 1       # the first excluded number not yet reached
+    covered = 0
+    for (_, support) in _each_support(layout.supports), p in support, v in (arity[p] + 1):length(request.candidates[p])
+        empty!(rest)
+        n = 1
+        for q in support
+            q == p && continue
+            push!(rest, q)
+            n *= arity[q]
+        end
+        fill!(view(seen, 1:n), false)
+        for j in axes(matrix, 2)
+            matrix[p, j] == v && (seen[_code(view(matrix, :, j), rest, arity) + 1] = true)
+        end
+        if next > length(ids) || ids[next] > number + n
+            _every_code(request, seen, n, rest, arity, p => v)   # no excluded target in the block
+            number += n
+            covered += n
+            continue
+        end
+        for code in 0:(n - 1)
+            number += 1
+            if next <= length(ids) && ids[next] == number
+                # Excluded: no row need hold it, and no valid negative row can.
+                if seen[code + 1]
+                    target = _decode!(zeros(Int, length(arity)), code, rest, arity)
+                    target[p] = v
+                    _held(request, matrix, target)
+                end
+                next += 1
+            elseif seen[code + 1]
+                covered += 1
+            else
+                target = _decode!(zeros(Int, length(arity)), code, rest, arity)
+                target[p] = v
+                _uncovered(request, target)
+            end
+        end
+    end
+    next == length(ids) + 1 && covered == negative.required ||
+        error("internal error: the negative targets' excluded numbers and count are not the request's")
+    return covered
+end
+
+# Every target of a TargetList is required.
+_recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList) =
+    _recount(request, matrix, RequiredTargets(request, required))
+
+# A list of full-width targets, from tests and scripts (`classify_targets`,
+# `classify_negative_targets`): the rows' projections onto each target's
+# parameters, built once per parameter set, so the check is linear in
+# targets plus rows. Names the first uncovered target in the list's order.
 function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required)
     covered = 0
     projections = Dict{Vector{Int}, Set{Vector{Int}}}()
@@ -628,29 +1594,6 @@ function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required)
         covered += 1
     end
     return covered
-end
-
-# Every target of an unconstrained request is required. For each support, a
-# row's projection onto it, whose entries were checked against the arity
-# above, has the code `TargetList` gives that target: its position within the
-# support's block, first parameter fastest. The support is covered exactly
-# when every code appears. The same certification as the list, with no list.
-function _recount(request::Request, matrix::AbstractMatrix{<:Integer}, required::TargetList)
-    arity = required.arity
-    for (k, support) in enumerate(required.supports)
-        seen = falses(required.offsets[k + 1] - required.offsets[k])
-        for j in axes(matrix, 2)
-            code, stride = 0, 1
-            for p in support
-                code += (matrix[p, j] - 1) * stride
-                stride *= arity[p]
-            end
-            seen[code + 1] = true
-        end
-        missed = findfirst(!, seen)
-        missed === nothing || _uncovered(request, required[required.offsets[k] + missed])
-    end
-    return length(required)
 end
 
 """

@@ -56,11 +56,27 @@ all_pairs
 all_triples
 excursions
 full_factorial
-IPOG
-GND
 TestCases
 Exclusion
 ResourceLimitError
+```
+
+### Engines
+
+The covering functions take an `engine`. The default, [`Auto`](@ref)`()`,
+chooses among the others by the space and the `goal`, and
+[`recommend`](@ref) says what it would choose before generating;
+[`IPOG`](@ref)`()` alone is `Auto(goal = :fast)`. The
+[Engines](man/engines.md) page compares them.
+
+```@docs
+IPOG
+Auto
+Construction
+Compact
+GND
+recommend
+Recommendation
 ```
 
 ## Analysis
@@ -109,6 +125,7 @@ These types are not exported; their fields are part of the results above.
 Diagnosis
 Suspect
 Followup
+FollowupProof
 ```
 
 ## Deprecated

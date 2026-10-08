@@ -8,6 +8,31 @@ This page lists every removed and deprecated spelling, with its replacement
 and a before-and-after example. The "after" code runs when the manual is
 built.
 
+The default engine was [`IPOG`](@ref) in 0.4 and is
+[`Auto`](@ref)`()` in 0.5. `Auto()` keeps the smaller of IPOG's design and
+an algebraic array from a catalog ([`Construction`](@ref)) where the catalog
+applies, which is mostly where every parameter has the same number of
+values, and gives IPOG's design elsewhere. On the package's benchmark
+spaces it never has more cases than IPOG, and on 30 of 85 spaces of equal
+value counts or of `strength + 1` parameters it has fewer. A call that names
+`engine = IPOG()` gets IPOG's design, as the 0.4 default did. IPOG's own
+cases change too: 0.5's IPOG finds each case's values by lookup and keeps
+the smallest of four designs ([IPOG](../man/ipog.md)). Over the package's
+benchmark grid, 1,826 spaces and strengths, it has as many cases as the
+IPOG it replaced or fewer at 96.7% of them, and 2% fewer in total, but more
+at about 3%: usually one to four more, up to about 9% more, and 160 more
+(5.6%) for ten parameters of four values at strength 5. So no engine
+repeats 0.4's cases exactly; to keep them, save them and pass them back as
+`must_include`, which keeps every saved case
+([Commit a design as data](../howto/commit_design.md)). 0.5 also adds
+[`Compact`](@ref), which removes rows from any engine's design. What a
+result shows and keeps changes too: its summary line names the engine and,
+for `Auto`, what it chose (`Auto: IPOG()`), it and
+[`report`](@ref) show a lower bound beside the count, [`TestCases`](@ref)
+and [`Report`](@ref) gain a `record` field, with the bound, the engine's
+configuration and the stages that ran, and [`DesignSizes`](@ref) gains
+`engines` and an `engine` on each row; see [Engines](../man/engines.md).
+
 ## Compat bounds
 
 Under Julia's semantic versioning a minor release before 1.0 is breaking. A

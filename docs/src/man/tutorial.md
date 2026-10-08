@@ -1,10 +1,7 @@
 # Tutorial
 
-This tutorial builds a test in five levels, and each level adds one idea:
-a one-line call, named parameters, constraints, must-include cases and
-strength, and inspection. A worked example at the end puts them together.
-Every block on this page runs when the documentation is built, and the output
-under it is what it printed.
+This tutorial builds a test in five levels, and each level adds one idea.
+A worked example at the end puts them together.
 
 ## Level 0: one line
 
@@ -21,9 +18,10 @@ The three lists have 3 × 2 × 2 = 12 combinations. The six cases hold every
 *pair* of values: each value of the first argument appears beside each value
 of the second, each value of the first beside each value of the third, and each
 value of the second beside each value of the third. The summary line says what
-was asked (strength 2, which means pairs), which engine built it (IPOG, the
-default), and how large the full product is. The columns are named `p1`, `p2`,
-`p3` because the arguments have no names yet.
+was asked (strength 2, which means pairs), which engine built it (the
+default, `Auto`, and what it chose: here the catalog's array,
+`Construction()`), and how large the full product is. The columns are
+named `p1`, `p2`, `p3` because the arguments have no names yet.
 
 `cases` is a vector of tuples, so a test loops over it:
 
@@ -45,7 +43,7 @@ nothing # hide
 Pairs matter because many bugs need two things at once: an `if` on one option
 inside a branch on another. The saving grows with the number of parameters.
 Four parameters of three values each have 81 combinations, and every pair of
-their values fits in 10 cases:
+their values fits in 9 cases:
 
 ```@example tutorial
 all_pairs([1, 2, 3], ["low", "mid", "high"], [1.0, 3.7, 4.9], [:greedy, :relax, :optim])
@@ -305,13 +303,17 @@ excursions(space; from = (mode = :exact, solver = :lu, tol = 1e-6), distance = 1
 ```
 
 !!! note "Choosing an engine"
-    [`IPOG`](@ref), the default, builds cases one parameter at a time and uses
-    no randomness. [`GND`](@ref) builds each case from random candidates
-    drawn from a fixed seed, so it too gives the same cases on every run, and
-    `GND(seed = 7)` gives a different design with the same guarantee. GND is
-    slower, and in the package's benchmarks it gave a shorter design only at
-    high strength. Both cover every feasible combination; neither promises a
-    minimum number of cases. See [Engines](engines.md).
+    [`Auto`](@ref)`()`, the default, builds cases with [`IPOG`](@ref), one
+    parameter at a time, and also builds the catalog's algebraic array where
+    every parameter has the same number of values, keeping whichever design
+    is smaller; neither uses randomness, and `engine = IPOG()` builds IPOG's
+    design alone. `Auto(goal = :compact)` then removes rows with a reducer,
+    for tests that are expensive to run. [`GND`](@ref) builds
+    each case from random candidates drawn from a fixed seed, so it too gives
+    the same cases on every run, and `GND(seed = 7)` gives a different design
+    with the same guarantee. Every engine covers every feasible combination;
+    none promises a minimum number of cases, but each result states a lower
+    bound beside its count. See [Engines](engines.md).
 
 ```@example tutorial
 all_pairs(space; engine = GND(seed = 7))
@@ -417,7 +419,7 @@ combinations that appear only in failing cases. Here a bug fails every case
 with `method = :newton` on a sparse matrix:
 
 ```@example tutorial
-suite = all_pairs((n = [10, 100, 1000], method = [:newton, :bicg, :gmres],
+suite = all_pairs((n = [10, 100, 1000, 10000], method = [:newton, :bicg, :gmres],
                    tol = [1e-3, 1e-6], sparse = [false, true]))
 passed = [!(c.method == :newton && c.sparse) for c in suite]
 diagnose(suite, passed)
@@ -442,10 +444,10 @@ coverage(cases)
 iscomplete(coverage(cases))
 ```
 
-[`report`](@ref) is the full account: the guarantee, measured from the rows;
-each excluded combination with the rules that exclude it; the triples the
-pairwise design covers as a bonus; how much the first cases cover, for a suite
-that runs only some of them; and the seed.
+[`report`](@ref) is the full account: the guarantee, its coverage figures
+measured from the rows; each excluded combination with the rules that exclude
+it; the triples the pairwise design covers as a bonus; how much the first
+cases cover, for a suite that runs only some of them; and the seed.
 
 ```@example tutorial
 report(cases)

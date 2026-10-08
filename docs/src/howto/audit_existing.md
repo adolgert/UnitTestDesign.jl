@@ -92,7 +92,7 @@ triples[1:length(pairs)] == pairs
 
 The first 8 rows are the pairwise suite, in its order, so the existing
 tests and the new pairwise rows stay where they were, and the triples add
-12 more.
+11 more.
 
 ## Pitfall: values must match the domain exactly
 

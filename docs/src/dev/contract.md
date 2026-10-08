@@ -140,7 +140,19 @@ rows.
 `:full_factorial`), strength (0 for a strategy that has none), `stronger`
 groups, engine name and seed, the number of must-include rows, the excluded
 targets with attribution and explanation status, and covered-target counts,
-with ordinary and negative bookkeeping kept separate.
+with ordinary and negative bookkeeping kept separate. Its `record` says
+whether the engine is randomized and gives a covering design's lower bound
+with its proof and whether the rows meet it (§8.7); these are generation's
+own, and no engine sets them. It gives the engine's configuration, the
+whole tree of it: each engine's name, constructor call, seed and settings,
+an engine that another wraps or chooses among nested in it, so that the
+call repeats the rows (§9.5, §9.11) unless an engine in it drew from a
+caller's generator (§9.6). And it gives the stages that ran, each with its
+engine's call, its rows and what that engine reports: the ordinary rows'
+(`Auto`'s starts and its choice, a catalog array, the row reducer's run, the
+member of the IPOG family that made IPOG's rows) and,
+for each `Invalid` value, its negative rows', which say which engine covered
+them.
 
 **1.20** A generated `TestCases` contains no target whose status is unknown
 (§3.6).
@@ -297,12 +309,20 @@ that query, including components with no assigned parameter, draws on the
 same budget. An answer found in the run-local cache costs no nodes. There is
 no run-wide total.
 
-**3.5** Cache keys include the assignment and the active rule set. Search
-caches are local to one call. An exhausted search is never cached as
-infeasible. A lazily evaluated rule's memo (§12.19) is part of the operation
-context too: a generation request, or one `explain` or `classify` call. The
-operation's searches and its final validation share it, and it is released
-with the operation. A `TestSpace` retains nothing from any operation.
+**3.5** Cache keys include the active rule set and the assignment's values
+at the parameters of one connected component (§3.4): an answer is cached
+for each component a search solves, and a query's answer is put together
+from its components'. Search caches are local to one call. An exhausted
+search is never cached as infeasible. A lazily evaluated rule's memo
+(§12.19) is part of the operation context too: one generation request, or
+one call to `explain`, `classify`, `coverage`, `missing_interactions`,
+`report` or `followups`. `design_sizes` keeps one memo for all its
+measurements; each design it generates is a separate generation request
+with its own. The operation's searches and its final validation share it,
+and it is released with the operation. With several engines `design_sizes`
+classifies each strength's targets once, in the first of those requests,
+and the others read that classification, which depends only on the
+request. A `TestSpace` retains nothing from any operation.
 
 **3.6** Generation resolves every target classification, the whole-space
 feasibility check, every must-include completion, and every placement decision.
@@ -318,8 +338,11 @@ does not carry a usable design.
 **3.8** To retry, call again with a larger limit, for example
 `all_pairs(space; feasibility_limit = 10_000_000)`. Raising the limit never
 changes a resolved answer; it can only resolve unknown ones. Two successful
-generation calls that differ only in `feasibility_limit` return identical
-results.
+generation calls that differ only in `feasibility_limit` return the same
+rows in the same order, the same `required`, `covered`, `negative_required`
+and `negative_covered` counts, and exclude the same targets with the same
+status. An implied exclusion's explanation may differ: which sufficient rule
+set it names, its `minimal`, and its `limit` depend on both limits (§3.14).
 
 **3.9** Entry points that search accept `feasibility_limit`: `covering` and its
 fixed-strength forms, `excursions`, `explain`, `coverage`,
@@ -350,7 +373,12 @@ accepts it.
 **3.14** The deletion search starts from the full applicable rule set, which is
 proven to exclude the target, and tries removing one rule at a time, in rule
 order. A rule is removed only when the target is proven infeasible without
-it. A trial that ends unknown keeps the rule.
+it. A trial that ends unknown keeps the rule. Each trial is a search bounded
+by `feasibility_limit` and by what remains of `explanation_limit`, whichever
+is smaller, so either limit can stop it. An unresolved explanation's
+`limit` names the keyword that stopped it: `explanation_limit` when that
+budget stopped a trial or left one untried, and otherwise
+`feasibility_limit`.
 
 **3.15** Proven infeasibility stays proven. Classifying a target as infeasible
 never depends on the explanation search. When `explanation_limit` runs out,
@@ -368,7 +396,10 @@ for a suspect with one, the negative rows at that value. The isolation
 conditions (no other suspect) apply to every kind, including rules that
 name the invalid parameter. A suspect is `inseparable` only when every kind
 is proven to hold no isolating row, and `unknown` when no kind yields one
-and some kind's search reaches the limit.
+and some kind's search reaches the limit. An `inseparable` follow-up gives
+one proof per kind of row searched; each proof's minimality is judged
+within its kind (§3.16), and the union of the proofs is sufficient but need
+not be minimal.
 
 ## 4. Partitions
 
@@ -556,15 +587,35 @@ fewest possible.
 **8.3** `design_sizes` reports the rows each engine produced. They are not
 lower bounds.
 
-**8.4** Documentation, docstrings, and printed output must not describe a case
-count as minimal, optimal, or fewest.
+**8.4** A case count may be called minimal in two cases, and each names its
+proof: it equals a proven lower bound on the rows of every valid design for
+the request (§8.7); or a search has shown that no smaller valid design
+exists. This release implements only the first. Otherwise documentation,
+docstrings, and printed output must not describe a case count as minimal,
+optimal, or fewest.
 
 **8.5** An implied-exclusion explanation is a sufficient rule set. It is
 labeled inclusion-minimal only under §3.16. No clause promises a
 minimum-size rule set.
 
 **8.6** `diagnose` returns hypotheses, not proofs. `followups` prefers small
-changes from a failing case, with no minimum-distance guarantee.
+changes from a failing case, with no minimum-distance guarantee. `diagnose`
+takes the cases and outcomes as observed. A case that breaks a rule, or
+holds more than one `Invalid` value, is ranked like any other. A failing
+case that broke the rules can leave a suspect that no valid case holds,
+which `followups` reports as `inseparable` with no other suspects.
+
+**8.7** Every covering result records a lower bound on the rows of any valid
+design for its request, and the proof of it in words; `show` prints it
+beside the count when it is above 0, and says "minimal" instead when the
+count equals it. The
+bound is the largest, over the parameter sets that carry targets, of the
+must-include rows plus the required combinations of that set they cannot
+hold, each of which needs a row of its own; and, for each `Invalid` value,
+the same bound on its negative rows, added. A row holds one combination of
+each set, a must-include row is a row of every such design (§10.5), and
+ordinary and negative rows cover only their own targets (§5.9), so no valid
+design has fewer rows. A design below its bound is an internal error.
 
 ## 9. Determinism
 
@@ -579,12 +630,15 @@ same request.
 **9.3** No result may depend on hash iteration order, object addresses, thread
 scheduling, the global random number generator, or the clock.
 
-**9.4** IPOG uses no randomness.
+**9.4** IPOG uses no randomness: it runs a fixed list of deterministic
+members of the IPOG family and keeps the design with the fewest rows, the
+first of equals. Neither do `Construction` and `Auto` with `goal = :fast` or
+`:balanced`, which record no seed.
 
 **9.5** `GND(; seed = 0, candidates = 50, rng = nothing)` seeds a fresh
 generator from `seed` at the start of every call, so repeated calls with the
 same engine agree. The seed is recorded in the result and printed by
-`report`. `seed` is an integer of at least 0 and `candidates` a positive
+`report`, with the engine's constructor call, which repeats the rows. `seed` is an integer of at least 0 and `candidates` a positive
 integer, each within `Int`; another value is an `ArgumentError` naming the
 keyword.
 
@@ -597,6 +651,8 @@ hashing.
 
 **9.8** Determinism across package versions is not promised. Any release may
 change rows, their order, or their count while keeping every guarantee.
+`Auto`'s choice of engine, and the catalog's choice of array, may change
+between versions too; the result records what was chosen.
 
 **9.9** Stability under edits is not promised. Changing a name, a value, value
 order, a rule, or rule order may change every generated row.
@@ -605,6 +661,24 @@ order, a rule, or rule order may change every generated row.
 result as `must_include` keeps every one of its rows, in order, and adds rows
 only for targets those rows leave uncovered. Rows the edited space no longer
 allows are errors under §10.
+
+**9.11** `Compact(inner; seed = 0, effort = 1)` and `Auto(goal = :compact,
+seed = 0, effort = 1)` are randomized: each seeds a fresh generator from
+`seed` at the start of every call, records the seed, and `report` prints it,
+as GND does (§9.5). Their budgets count steps and combinations read, never
+seconds, so a machine's speed or load never changes the rows: the same
+inputs and seed give the same rows in every run and process, as §9.1
+promises for the same package and Julia versions.
+`seed` is an integer of at least 0 and `effort` a positive integer; another
+value is an `ArgumentError` naming the keyword.
+
+**9.12** `Auto` decides from the request alone. Which engines it runs
+depends only on the request, never on a limit, the clock, or which other
+packages are loaded; where it runs two, it keeps the design with fewer rows,
+and those designs are themselves functions of the request (§9.1), so the
+choice is too. It never decides from a search's node count or how far a
+search got. When one of the engines it runs throws `ResourceLimitError`,
+the call throws (§3.6).
 
 ## 10. Must-include rows
 
@@ -747,7 +821,12 @@ assigned, and only with ordinary values. Partitions are passed by name.
 
 **12.16** An exception thrown by a predicate is rethrown as an error naming the
 rule's label and argument values, with the original exception as its cause.
-An exception never means forbidden or allowed.
+An exception never means forbidden or allowed. A tabulated rule's predicate
+runs when the space is built (§12.18), so its exception surfaces there. A
+lazily evaluated rule's predicate, including every whole-case rule, runs
+during searches and row checks, so its exception surfaces from whichever
+call evaluated it: a generation, `isallowed`, `explain`, `coverage`,
+`missing_interactions`, `report`, `design_sizes` or `followups`.
 
 **12.17** Predicates must be deterministic and free of observable side effects.
 They may be called more than once. Apart from tabulation (§12.18), call order
@@ -763,10 +842,13 @@ order.
 **12.19** A rule whose scope product exceeds `tabulation_limit` (a `TestSpace`
 keyword, default `10^5` evaluations) is evaluated lazily with a memo. The
 package warns once per rule and suggests a narrower scope. A lazy rule's memo
-belongs to the operation context (§3.5): a generation request, or one
-`explain` or `classify` call. It is keyed by value indices, shared by all of
-that operation's feasibility searches, deletion trials, and final
-validation, and released with the operation. Within an operation it holds
+belongs to the operation context (§3.5): one generation request, or one call
+to `explain`, `classify`, `coverage`, `missing_interactions`, `report` or
+`followups`. `design_sizes` keeps one memo for all its measurements; each
+design it generates is a separate generation request with its own. The memo
+is keyed by value indices, shared by all of that operation's feasibility
+searches, deletion trials, and final validation, and released with the
+operation. Within an operation it holds
 at most one entry per combination of the scope's ordinary values (the full
 product of the ordinary domains for a whole-case rule), so a predicate is
 evaluated at most once per combination per operation. A `TestSpace` retains
@@ -828,7 +910,8 @@ matches both `1` and `1.0`. Only patterns compare by identity (§12.4).
 | `Invalid`, `hasinvalid` | type, function | new | §5, §6. |
 | `Partition`, `realize` | type, function | new | §4. |
 | `ResourceLimitError` | exception | new | §3.7. |
-| `IPOG()` | engine | kept | Default engine. |
+| `Auto(; goal = :balanced, seed = 0, effort = 1)` | engine | new | Default engine of `covering`, `all_values`, `all_pairs`, `all_triples` and `design_sizes`. No randomness at `:fast` and `:balanced` (§9.4); decides from the request alone (§9.12). |
+| `IPOG()` | engine | kept | 0.4's default engine; `Auto(goal = :fast)` runs it. Its cases change in 0.5 (§9.4, §9.8). |
 | `GND(; seed = 0, candidates = 50, rng = nothing)` | engine | changed | Fixed default seed (§9.5). |
 | `GND(M = ...)` | keyword | deprecated | Alias for `candidates`. |
 

@@ -250,7 +250,9 @@ end
     @test completable(f, [0, 0, 0, 0, 1]) == (:infeasible, nothing)
     @test calls[] == before
     @test f.stats.last_nodes == 0
-    @test haskey(f.memo, [0, 0, 0, 0, 1]) && f.memo[[0, 0, 0, 0, 1]] === nothing
+    # The one component spans every parameter, so its keys are whole assignments.
+    @test f.witness_cache[1][[0, 0, 0, 0, 1]] === nothing
+    @test f.witness_cache[1][[0, 0, 0, 0, 2]] == [3, 3, 2, 2, 2]
 
     # (e = 1,) is implied by rules 2 and 3; rule 1 is not needed.
     e = explain_partial(f, [0, 0, 0, 0, 1])
@@ -272,7 +274,6 @@ end
     @test completable(f, target) == (:unknown, nothing)
     @test f.stats.last_nodes == 1
     # §3.2, §3.5: the exhausted search is stored nowhere.
-    @test !haskey(f.memo, target)
     @test all(isempty, f.witness_cache)
     @test completable(f, target) == (:unknown, nothing)
     @test_throws ResourceLimitError dead(f, target)
@@ -494,7 +495,7 @@ end
                 tally[whole ? :whole : :lazy] += 1
                 lazy = function (key)
                     all(>(0), key) || error("rule called with an unset parameter")  # §1.6
-                    return key in forbidden
+                    return Tuple(key) in forbidden
                 end
                 push!(tables, RuleTable(scope, lazy))
             else
@@ -545,10 +546,15 @@ end
 
             # A small limit may be unknown, but a resolved answer is right,
             # and nothing unknown is remembered (§3.2, §3.5).
+            stored = [copy(cache) for cache in small.witness_cache]
             s, sw = completable(small, target)
             tally[:unknown] += s == :unknown
             if s == :unknown
-                @test !haskey(small.memo, target)
+                # A component solved before the budget ran out may be stored;
+                # the one that ran out is not, so no infeasible entry is new.
+                for (c, cache) in enumerate(small.witness_cache), (sub, cw) in cache
+                    haskey(stored[c], sub) || @test cw !== nothing
+                end
                 @test first(completable(small, target; limit = 10^6)) == (truth ? :feasible : :infeasible)
             else
                 @test s == (truth ? :feasible : :infeasible)
@@ -558,6 +564,294 @@ end
     end
     # The problems exercised every branch.
     @test all(>(0), values(tally))
+end
+
+
+@testitem "feasibility: explain_partial without the witness asks and answers the same, plan §5.6" setup=[FeasibilitySetup, UTSetup] begin
+    # Classification keeps no witness, so it asks `explain_partial` with
+    # `witness = false` (`_classify_target`), which copies no full-width row
+    # for an `:allowed` or `:completable` answer (p5-memo's judgment call J5).
+    # Every question here is asked, in the same order, of two objects over the
+    # same tables, one with the witness and one without: every field but the
+    # witness must be the same, the witness `nothing`, and the two objects'
+    # statistics and caches the same after each question, so the change moves
+    # no answer, record, node or rule check.
+    using Random
+    using UnitTestDesign: cache_entries
+    rng = Xoshiro(0x2026_1006_5e1f ⊻ seed_mod())
+    tally = Dict(k => 0 for k in (:allowed, :completable, :forbidden, :infeasible, :unknown, :lazy, :whole))
+    stats(f) = (s = f.stats; (s.queries, s.memo_hits, s.total_nodes, s.last_nodes, s.evaluations, cache_entries(f)))
+    for problem in 1:100
+        n = rand(rng, 3:6)
+        arity = rand(rng, 2:3, n)
+        cands = [collect(1:a) for a in arity]
+        tables = RuleTable[]
+        for _ in 1:rand(rng, 1:4)
+            whole = rand(rng) < 0.1
+            scope = whole ? collect(1:n) : randperm(rng, n)[1:rand(rng, 1:min(3, n))]
+            share = whole ? rand(rng, (0.3, 0.6, 0.9)) : rand(rng, (0.2, 0.4, 0.6))
+            tuples = Iterators.product((1:arity[p] for p in scope)...)
+            forbidden = Set{NTuple{length(scope), Int}}(t for t in tuples if rand(rng) < share)
+            if whole || rand(rng) < 0.3
+                tally[whole ? :whole : :lazy] += 1
+                push!(tables, RuleTable(scope, key -> Tuple(key) in forbidden))
+            else
+                push!(tables, RuleTable(scope, forbidden))
+            end
+        end
+        limit = rand(rng, (1, 2, 5, 10^6))
+        with, without = Feasibility(cands, tables; limit), Feasibility(cands, tables; limit)
+        questions = small_targets(cands)
+        append!(questions, [[rand(rng, 0:a) for a in arity] for _ in 1:10])
+        append!(questions, [[rand(rng, 1:a) for a in arity] for _ in 1:5])   # complete rows
+        for key in questions
+            explanation_limit = rand(rng, (1, 3, 10^6))
+            a = explain_partial(with, key; explanation_limit)
+            b = explain_partial(without, key; explanation_limit, witness = false)
+            @test verdict(b) == Base.setindex(verdict(a), nothing, 4)   # all but the witness, the fourth field
+            @test (a.nodes, a.evaluations) == (b.nodes, b.evaluations)
+            @test b.witness === nothing
+            @test (a.witness !== nothing) == (a.outcome in (:allowed, :completable))
+            @test stats(with) == stats(without)
+            tally[a.outcome] += 1
+        end
+    end
+    @test all(>(0), values(tally))
+end
+
+
+@testitem "feasibility: the caches by component answer as the whole-assignment memo did, plan §5.6 §3.3–§3.8 §9.3" setup=[FeasibilitySetup, UTSetup] begin
+    # Phase 5 dropped the memo keyed by the whole assignment (31bef0f) and
+    # answers from the caches by component alone. Every question here is
+    # asked, in the same order, of a `Feasibility` and of the reference, 31bef0f's
+    # code on caches of its own (test/feasibility_reference.jl): the status,
+    # the witness and the nodes must be the same for every question at every
+    # limit (§3.3, §3.4, §3.8, §9.3), and the component caches must hold the
+    # same entries after each. Only the rule checks may differ: a question the
+    # whole-assignment memo answered checked no rule, and now it makes its
+    # direct check (`_violates`) again; every other question checks the same.
+    #
+    # The reference can't check `memo_hits`, which counted its memo's hits.
+    # So every question is also asked of a twin, the same search with step 2
+    # of the fast path held off (plan §12.3 item 8), as a deletion trial's is:
+    # built from its parent by `_Feasibility`, over every rule, it keeps no
+    # record of all-unset answers. Step 2 must change nothing: the twin's
+    # status, witness, `SearchStats` counters, every one, and caches must be
+    # the object's after each question (review p5f-evidence 1).
+    using Random
+    using UnitTestDesign: _completable, _checked_key, _witness, _deletion_search, _space_indices,
+        _feasibility, _Feasibility, Request, SearchStats, cache_entries
+    include(joinpath(@__DIR__, "feasibility_reference.jl"))
+    rng = Xoshiro(0x2026_1006_c0de ⊻ seed_mod())
+    tally = Dict(k => 0 for k in (:none, :some, :all, :repeat, :hit, :feasible, :infeasible, :unknown,
+                                  :cached_infeasible, :dead, :dead_throws, :completable, :negative,
+                                  :lazy, :whole, :components, :trial, :trial_unresolved, :unset))
+
+    "The rule checks of the direct check: assigned tables in order, up to the first that forbids."
+    function direct_checks(f, key)
+        checks = 0
+        for (k, t) in enumerate(f.tables)
+            assigned(t, key) || continue
+            checks += 1
+            forbids(f, k, key) && break
+        end
+        return checks
+    end
+
+    "A partial assignment over the candidates: no parameter, some, or all assigned."
+    function question(rng, cands, tally)
+        n = length(cands)
+        kind = rand(rng, (:none, :some, :some, :some, :all))
+        tally[kind] += 1
+        key = zeros(Int, n)
+        kind === :none && return key
+        for p in (kind === :all ? (1:n) : randperm(rng, n)[1:rand(rng, 1:n)])
+            key[p] = rand(rng, cands[p])
+        end
+        return key
+    end
+
+    "Every counter of `f`'s `SearchStats`."
+    counters(f) = [getfield(f.stats, k) for k in fieldnames(SearchStats)]
+
+    "Ask `key` of `f` through one of its entry points, of the reference and of `twin`; compare."
+    function ask!(f, twin, ref, key, tally, rng)
+        limit = rand(rng, (1, 2, 3, 8, 50, f.limit))
+        how = rand(rng, (:internal, :internal, :dead, :completable))
+        how === :dead && (limit = f.limit)   # `dead` asks with the object's limit
+        checks, hits, ref_checks = f.stats.evaluations, ref.memo_hits, ref.evaluations
+        answered = f.stats.memo_hits
+        # Every constrained component's all-unset answer is cached, so only
+        # the components the question assigns are looked up (plan §12.3 item 8).
+        f.unset.cached == length(f.constrained) > 0 && (tally[:unset] += 1)
+        expected, ew = reference_completable(ref, key, limit)
+        ew = ew === nothing ? nothing : copy(ew)
+        if how === :internal
+            status = _completable(f, _checked_key(f, key), limit)
+            w = status === :feasible ? _witness(f) : nothing
+        elseif how === :completable
+            tally[:completable] += 1
+            status, w = completable(f, key; limit)
+        else
+            tally[:dead] += 1
+            if expected === :unknown
+                tally[:dead_throws] += 1
+                @test_throws ResourceLimitError dead(f, key)
+                status, w = :unknown, nothing
+            else
+                status = dead(f, key) ? :infeasible : :feasible
+                w = expected === :feasible ? _witness(f) : nothing   # assembled, though `dead` needs none
+            end
+        end
+        @test status == expected
+        @test w == ew
+        @test (f.stats.last_nodes, f.stats.total_nodes, f.stats.queries) ==
+              (ref.last_nodes, ref.total_nodes, ref.queries)
+        @test f.witness_cache == ref.witness_cache
+        if ref.memo_hits > hits
+            tally[:hit] += 1
+            @test ref.evaluations == ref_checks
+            @test f.stats.evaluations - checks == direct_checks(f, key)
+        else
+            @test f.stats.evaluations - checks == ref.evaluations - ref_checks
+        end
+        tally[expected] += 1
+        # A cached infeasible component settled it (the direct check found nothing).
+        expected === :infeasible && f.stats.memo_hits > answered && (tally[:cached_infeasible] += 1)
+        # The twin, step 2 held off, at the same limit: every entry point
+        # above asks `_completable` so.
+        again = _completable(twin, _checked_key(twin, key), limit)
+        @test again == status
+        @test (again === :feasible ? _witness(twin) : nothing) == w
+        @test counters(twin) == counters(f)
+        @test twin.witness_cache == f.witness_cache
+        return expected
+    end
+
+    for problem in 1:300
+        n = rand(rng, 3:9)
+        arity = rand(rng, 2:3, n)
+        cands = [collect(1:a) for a in arity]
+        tables = RuleTable[]
+        for _ in 1:rand(rng, 1:5)
+            whole = rand(rng) < 0.1
+            scope = whole ? collect(1:n) : randperm(rng, n)[1:rand(rng, 1:min(3, n))]
+            share = whole ? rand(rng, (0.3, 0.6, 0.9)) : rand(rng, (0.2, 0.4, 0.6))
+            tuples = Iterators.product((1:arity[p] for p in scope)...)
+            forbidden = Set{NTuple{length(scope), Int}}(t for t in tuples if rand(rng) < share)
+            if whole || rand(rng) < 0.3
+                tally[whole ? :whole : :lazy] += 1
+                push!(tables, RuleTable(scope, key -> Tuple(key) in forbidden))
+            else
+                push!(tables, RuleTable(scope, forbidden))
+            end
+        end
+        if rand(rng) < 0.2   # a negative row's search (§5.5)
+            p = rand(rng, 1:n)
+            cands[p] = [arity[p] + 1]
+            tables = filter(t -> !(p in t.scope), tables)
+            tally[:negative] += 1
+        end
+        f = Feasibility(cands, tables; limit = rand(rng, (2, 5, 30, 1_000_000)))
+        tally[:components] += count(c -> !isempty(f.component_tables[c]), eachindex(f.components)) > 1
+        ref = ReferenceCaches(f)
+        twin = _Feasibility(f.candidates, f.tables, f.limit, f.rule_memo, f)
+        @test twin.unset === nothing && f.unset !== nothing
+        asked = Vector{Int}[]
+        infeasible = Vector{Int}[]
+        for _ in 1:40
+            repeat = !isempty(asked) && rand(rng) < 0.3
+            repeat && (tally[:repeat] += 1)
+            key = repeat ? rand(rng, asked) : question(rng, cands, tally)
+            push!(asked, key)
+            ask!(f, twin, ref, key, tally, rng) === :infeasible && push!(infeasible, key)
+        end
+        @test cache_entries(f) == sum(length, ref.witness_cache)
+        # The deletion search's trials are fresh objects, one question each.
+        for key in unique(infeasible)[1:min(3, end)]
+            explanation_limit = rand(rng, (1, 3, 10, 1_000_000))
+            got = _deletion_search(f, copy(key), explanation_limit)
+            want = reference_deletion_search(f, key, explanation_limit)
+            @test got == want
+            tally[:trial] += 1
+            tally[:trial_unresolved] += got[2] === :unresolved
+        end
+    end
+
+    # A request's `dead`, ordinary and negative rows, on the same questions.
+    domains = (a = [1, 2, 3, Invalid(0)], b = [:x, :y, Invalid(:bad)], c = [true, false], d = 1:3, e = [:p, :q])
+    space = TestSpace(domains; constraints = [forbid((a = 1, b = :y)), forbid((b, d) -> b == :x && d == 3, :b, :d),
+                                              forbid(row -> row.a == 2 && row.e == :q && row.c)])
+    request = Request(space; strength = 2, feasibility_limit = 3)
+    refs = IdDict{Any, Any}()
+    for _ in 1:400
+        row = [rand(rng) < 0.5 ? 0 : rand(rng, 1:length(request.candidates[i])) for i in 1:5]
+        count(i -> row[i] > request.arity[i], 1:5) > 1 && continue
+        f = _feasibility(request, row)
+        ref = get!(() -> ReferenceCaches(f), refs, f)
+        expected, _ = reference_completable(ref, _space_indices(request, row), f.limit)
+        if expected === :unknown
+            @test_throws ResourceLimitError dead(request, row)
+        else
+            @test dead(request, row) == (expected === :infeasible)
+        end
+        @test f.stats.last_nodes == ref.last_nodes && f.witness_cache == ref.witness_cache
+    end
+    @test length(refs) == 3   # ordinary rows, and negative rows at a and at b
+
+    # The problems exercised every kind of question.
+    @info "Questions compared with the whole-assignment memo's" tally[:none] tally[:some] tally[:all] tally[:repeat] tally[:unset]
+    @test all(>(0), values(tally))
+end
+
+
+@testitem "feasibility: one scoped rule keeps a few cache entries, however many parameters (probe 06, plan §5.6)" begin
+    using UnitTestDesign: Request, _Classified, classify_targets, generate, cache_entries
+    # Probe 06: n two-valued parameters and one scoped rule that excludes
+    # nothing. Before Phase 5 the whole-assignment memo kept one full-width
+    # entry per target (32,512 entries, 67 MiB at n = 128). Now every target's
+    # question looks up the one constrained component, {p1, p2}, by its
+    # sub-assignment: (0, 0), (1, 0), (2, 0), (0, 1) and (0, 2) are searched
+    # once each, and the targets on (p1, p2) are fully assigned, so the direct
+    # check decides them and nothing is stored.
+    for n in (8, 32, 128)
+        names = [Symbol(:p, i) for i in 1:n]
+        space = TestSpace((names[i] => Any[1, 2] for i in 1:n)...; constraints = [forbid((a, b) -> false, :p1, :p2)])
+        request = Request(space; strength = 2)
+        required, excluded = classify_targets(request)
+        @test length(required) == 2n * (n - 1) && isempty(excluded)
+        f = request.feasibility
+        @test cache_entries(f) == 5
+        @test sort(collect(keys(f.witness_cache[1]))) == [[0, 0], [0, 1], [0, 2], [1, 0], [2, 0]]
+        # A pointer per component; the free parameters share one empty cache.
+        @test Base.summarysize(f.witness_cache) < 2048 + 16n
+        # What a request and its classification retain, plan §5.6's quantity
+        # (review p5-evidence 7): about 0.18 MB at n = 128 since Phase 5, the
+        # layout and the search's structure; 31bef0f retained 106 MB.
+        if n == 128
+            fresh = Request(space; strength = 2)
+            @test Base.summarysize((fresh, _Classified(fresh))) < 2^20
+        end
+        # IPOG asks of rows that assign p1 and p2 together, which the direct
+        # check decides, or of these five.
+        if n <= 32
+            generate(IPOG(), request)
+            @test cache_entries(f) == 5
+        end
+    end
+    # A whole-case rule makes one component of every parameter, so each
+    # target's sub-assignment is the whole assignment: one entry per target,
+    # where the whole-assignment memo also kept one per target beside it.
+    names = [Symbol(:p, i) for i in 1:8]
+    space = TestSpace((names[i] => Any[1, 2] for i in 1:8)...; constraints = [forbid(case -> false)])
+    request = Request(space; strength = 2)
+    required, excluded = classify_targets(request)
+    @test length(required) == 112 && isempty(excluded)
+    @test cache_entries(request.feasibility) == 112
+    @test all(k -> length(k) == 8, keys(request.feasibility.witness_cache[1]))
+    # The rule excludes nothing, so IPOG's rows are those without it.
+    plain = TestSpace((names[i] => Any[1, 2] for i in 1:8)...)
+    @test generate(IPOG(), Request(space)).matrix == generate(IPOG(), Request(plain)).matrix
 end
 
 
@@ -656,8 +950,68 @@ end
 end
 
 
+@testitem "feasibility: a request's row is checked and asked through its map of positions (the review's R2)" setup=[FeasibilitySetup] begin
+    using Random
+    using UnitTestDesign: Request, _mapped_completable, _mapped_key!, _completable, _checked_key, _witness,
+        _feasibility, _space_indices, _Feasibility, from_indices
+    # `dead(request, partial)` hands the search of the row's kind the row in
+    # engine positions and the request's map from positions to value
+    # indices, `candidates`. The search writes the key and checks it as
+    # `_checked_key` checks an assignment, through a table of the map it
+    # makes once (`_map!`); the request no longer writes the search's key.
+    space = TestSpace((a = [1, 2, 3, Invalid(0)], b = [:x, Invalid(:bad), :y, :z], c = [true, false], d = 1:3);
+                      constraints = [forbid((a = 1, b = :y)), forbid((c, d) -> c && d == 3, :c, :d)])
+    request = Request(space; strength = 2)
+    map = request.candidates
+    @test map == [[1, 2, 3, 4], [1, 3, 4, 2], [1, 2], [1, 2, 3]]   # b's Invalid is value index 2, position 4
+    # The same key, answer and witness as the value indices checked by
+    # `_checked_key`, on random rows of every kind.
+    rng = Xoshiro(0x2026_1007_0002)
+    searches = Set{Any}()
+    for _ in 1:600
+        row = [rand(rng) < 0.5 ? 0 : rand(rng, 1:length(map[i])) for i in 1:4]
+        count(i -> row[i] > request.arity[i], 1:4) > 1 && continue
+        f = _feasibility(request, row)
+        push!(searches, f)
+        idx = _space_indices(request, row)
+        @test _mapped_key!(f, map, row) == idx && f.mapped.map === map
+        status = _mapped_completable(f, map, row)
+        w = status === :feasible ? copy(_witness(f)) : nothing
+        @test _completable(f, _checked_key(f, idx), f.limit) === status
+        @test w === nothing || w == _witness(f)
+        @test dead(request, row) == (status === :infeasible)
+    end
+    @test length(searches) == 3   # ordinary rows, and negative rows at a and at b
+    # A row that doesn't fit the search is an `ArgumentError`, as for `_checked_key`.
+    f = request.feasibility
+    negative = _feasibility(request, [4, 0, 0, 0])
+    @test negative !== f
+    @test_throws "not among its candidates" _mapped_completable(f, map, [4, 0, 0, 0])         # a = Invalid(0)
+    @test_throws "not among its candidates" _mapped_completable(f, map, [0, 4, 0, 0])         # b = Invalid(:bad)
+    @test_throws "not among its candidates" _mapped_completable(negative, map, [1, 0, 0, 0])  # a = 1
+    @test_throws "not among its candidates" _mapped_completable(negative, map, [4, 4, 0, 0])
+    @test_throws "outside its 4 mapped value indices" _mapped_completable(f, map, [5, 0, 0, 0])
+    @test_throws "outside its 2 mapped value indices" _mapped_completable(f, map, [0, 0, -1, 0])
+    @test_throws "one entry per parameter" _mapped_completable(f, map, [1, 0, 0])
+    @test_throws "one list of value indices per parameter" _mapped_completable(f, map[1:3], [1, 0, 0, 0])
+    # The table is whole after each error, and a map of the same content is another map.
+    @test _mapped_completable(f, map, [1, 2, 0, 0]) === :infeasible && f.mapped.map === map   # (a = 1, b = :y)
+    other = deepcopy(map)
+    @test _mapped_completable(f, other, [1, 2, 0, 0]) === :infeasible && f.mapped.map === other
+    @test _mapped_completable(negative, map, [4, 3, 1, 3]) === :infeasible   # (c, d) = (true, 3)
+    # A deletion trial shares its parent's table: the same candidates.
+    @test _Feasibility(f.candidates, f.tables[1:1], f.limit, f.rule_memo[1:1], f).mapped === f.mapped
+    # The request's `ResourceLimitError` names the row in values, as before.
+    tight = Request(TestSpace((a = 1:3, b = 1:3, c = 1:3); constraints = [forbid((a, b) -> a == b, :a, :b),
+                    forbid((b, c) -> b == c, :b, :c), forbid((a, c) -> a == c, :a, :c)]); feasibility_limit = 1)
+    err = try dead(tight, [1, 0, 0]); nothing catch e; e end
+    @test err isa ResourceLimitError &&
+          err.what == "placing a value: the feasibility search for $(from_indices(tight.space, [1, 0, 0]))"
+end
+
+
 @testitem "feasibility: the lazy-rule memo is the operation's, shared by its trials (§3.5, §12.19)" setup=[FeasibilitySetup] begin
-    using UnitTestDesign: memo_size, rule_memos
+    using UnitTestDesign: memo_size, rule_memos, RuleMemo
     # A lazy three-parameter rule and a tabulated one, as in Fable's solver:
     # (y = 2, z = 1) is implied, so its explanation runs deletion trials.
     calls = Ref(0)
@@ -668,7 +1022,7 @@ end
     tables = [lazy, table([1, 3], (2, 1))]
     cands = [[1, 2], [1, 2, 3], [1, 2]]
     f = Feasibility(cands, tables)
-    @test f.rule_memo[1] isa Dict{NTuple{3, Int}, Bool} && f.rule_memo[2] === nothing
+    @test f.rule_memo[1] isa RuleMemo && length(f.rule_memo[1].key) == 3 && f.rule_memo[2] === nothing
     @test memo_size(f) == 0
     e = explain_partial(f, [0, 2, 1])
     @test (e.outcome, e.rules, e.minimal) == (:infeasible, [1, 2], :verified)
@@ -687,7 +1041,7 @@ end
     # ... but they must fit the tables.
     @test_throws ArgumentError Feasibility(cands, tables; memos = [nothing, nothing])
     @test_throws ArgumentError Feasibility(cands, tables; memos = rule_memos(tables[[1]]))
-    @test_throws ArgumentError Feasibility(cands, tables; memos = [Dict{NTuple{2, Int}, Bool}(), nothing])
+    @test_throws ArgumentError Feasibility(cands, tables; memos = [RuleMemo(2), nothing])
     # A fresh object starts empty, and the table itself keeps nothing.
     @test memo_size(Feasibility(cands, tables)) == 0
     @test !hasfield(UnitTestDesign._LazyRule{3}, :memo)
@@ -697,4 +1051,54 @@ end
     @test_throws ErrorException forbids(h, 1, [2])
     @test memo_size(h) == 0
     @test !forbids(h, 1, [1]) && memo_size(h) == 1
+end
+
+
+@testitem "feasibility: a deletion trial is built from its parent as a fresh search would be (review p5-perf 3)" setup=[FeasibilitySetup] begin
+    using Random
+    using UnitTestDesign: _Feasibility
+    # `_deletion_search` builds each trial with `_Feasibility` from its
+    # parent's candidates, tables and memos, checking nothing again and
+    # reusing the parent's vector for a parameter alone in its component in
+    # both, where it built a whole `Feasibility` (its candidates copied,
+    # every list allocated). The trial must be the search `Feasibility` would
+    # build over the same rules: the same components in the same order, the
+    # same tables per component and per parameter, the same constrained list
+    # and template. The equivalence test above checks its answers, rules,
+    # nodes and rule checks against 31bef0f's deletion search.
+    rng = Xoshiro(0x2026_1006_7a)
+    shared = Ref(0)
+    for _ in 1:200
+        n = rand(rng, 1:9)
+        cands = [collect(1:rand(rng, 1:3)) for _ in 1:n]
+        tables = RuleTable[]
+        for _ in 1:rand(rng, 0:6)
+            scope = randperm(rng, n)[1:rand(rng, 1:min(n, 3))]
+            push!(tables, tabulate(scope, length.(cands), (xs...) -> rand(rng) < 0.3))
+        end
+        rand(rng) < 0.2 && push!(tables, tabulate(1:n, length.(cands), (xs...) -> false))   # whole-case
+        f = Feasibility(cands, tables)
+        for keep in (filter(_ -> rand(rng) < 0.6, collect(eachindex(tables))), collect(2:length(tables)))
+            trial = _Feasibility(f.candidates, f.tables[keep], f.limit, f.rule_memo[keep], f)
+            fresh = Feasibility(f.candidates, f.tables[keep]; limit = f.limit, memos = f.rule_memo[keep])
+            @test trial.candidates === f.candidates
+            @test (trial.components, trial.component_of, trial.component_tables, trial.param_tables,
+                   trial.constrained, trial.template) ==
+                  (fresh.components, fresh.component_of, fresh.component_tables, fresh.param_tables,
+                   fresh.constrained, fresh.template)
+            # A trial asks one question, so it keeps no record of all-unset
+            # answers (step 2 held off); any other search keeps one in its
+            # template, or in n values of its own when no parameter is free
+            # (review p5f-perf 2).
+            @test trial.unset === nothing
+            @test fresh.unset.cached == 0 && length(fresh.unset.witness) == n &&
+                  (isempty(fresh.template) || fresh.unset.witness === fresh.template)
+            for members in trial.components
+                length(members) == 1 && length(f.components[f.component_of[only(members)]]) == 1 || continue
+                @test members === f.components[f.component_of[only(members)]]
+                shared[] += 1
+            end
+        end
+    end
+    @test shared[] > 100
 end

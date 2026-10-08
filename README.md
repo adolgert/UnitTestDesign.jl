@@ -48,13 +48,13 @@ julia> space = TestSpace(
            ]);
 
 julia> cases = all_pairs(space)
-5 cases · strength 2 · IPOG · 3 parameters · 12 combinations
+5 cases (lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations
 excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
- 1  :exact  :qr     1.0e-6
- 2  :exact  :lu     1.0e-6
- 3  :exact  :none   1.0e-6
- 4  :fast   :none   0.001
+ 1  :fast   :none   0.001
+ 2  :exact  :none   1.0e-6
+ 3  :exact  :lu     1.0e-6
+ 4  :exact  :qr     1.0e-6
  5  :fast   :none   1.0e-6
 
 julia> explain(space, (solver = :lu, tol = 1e-3))
@@ -86,7 +86,7 @@ end
 
 The saving grows with the number of parameters: four parameters of three
 values each have 81 combinations, and `all_pairs` covers every pair of their
-values in 10 cases.
+values in 9 cases.
 
 ## What it promises
 
@@ -103,13 +103,17 @@ values in 10 cases.
   percentage. Nothing is called covered, excluded or complete that was not
   decided.
 - The same call, under the same package and Julia versions, gives the same
-  cases. `IPOG`, the default engine, uses no randomness; `GND` draws from a
+  cases. `Auto()`, the default engine, uses no randomness; `GND` draws from a
   fixed default seed. To keep a list of cases across releases and edits,
   commit it, or pass it back as `must_include`.
 
-The designs are compact, with no promise of a minimum number of cases;
-`design_sizes` shows how many cases each strategy gives before you choose one.
-The full statement is the [contract](docs/src/dev/contract.md).
+The designs are compact, with no promise of a minimum number of cases. Each
+result states a proven lower bound beside its count, and says "minimal" when
+the count meets it. The default engine, `Auto()`, chooses for your space
+between IPOG's design and an algebraic array from a catalog, `recommend` says
+what it would choose, and `design_sizes` shows how many cases each strategy
+gives before you choose one. The full statement is the
+[contract](docs/src/dev/contract.md).
 
 * [Documentation](https://adolgert.github.io/UnitTestDesign.jl/stable), with a
   [tutorial](docs/src/man/tutorial.md) that builds up the example above

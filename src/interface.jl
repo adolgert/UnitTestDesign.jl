@@ -66,14 +66,12 @@ end
 
 ## Keywords
 
-_is_row(x) = x isa Union{Tuple, NamedTuple, AbstractVector}
-
 """
     _must_include_rows(must_include, space, positional) -> Vector
 
 The rows to hand the `Request`, which validates them (contract §10.1–§10.4),
 as a `Vector`. This is the one place the caller's `must_include` is read: it
-is materialized once with `collect`, so an iterator that can be read only
+is materialized once by `_row_list`, so an iterator that can be read only
 once, such as an `Iterators.Stateful`, gives all its rows, and every check
 here and in the `Request` reads that collection. A `TestCases` gives its
 rows; its parameter names must all belong to the space, and a subset gives
@@ -100,19 +98,8 @@ function _must_include_rows(must_include, space::TestSpace, positional::Bool)
         return must_include.positional ?
             [NamedTuple{Tuple(given)}(row) for row in must_include] : collect(must_include)
     end
-    must_include isa NamedTuple && throw(ArgumentError(
-        "must_include is a list of rows; wrap a single row in a vector: " *
-        "must_include = [$(repr(must_include))]"))
-    rows = applicable(iterate, must_include) ? collect(must_include) : nothing
-    rows isa AbstractVector || throw(ArgumentError(
-        "must_include is a list of rows, such as a vector of NamedTuples or tuples; " *
-        "got $(repr(must_include)) (contract §10.1)"))
-    if !isempty(rows) && !any(_is_row, rows)
-        single = must_include isa Union{Tuple, AbstractVector} ? must_include : Tuple(rows)
-        throw(ArgumentError(
-            "must_include is a list of rows; wrap a single row in a vector: " *
-            "must_include = [$(repr(single))]"))
-    end
+    rows = _row_list(must_include; what = "must_include is a list of rows", section = "§10.1",
+                     as_tuple = true, fix = row -> "must_include = [$(repr(row))]")
     if positional
         for (r, row) in enumerate(rows)
             row isa NamedTuple && throw(ArgumentError(
@@ -211,36 +198,27 @@ function _check_distance(keyword, distance)
 end
 
 """
-    _from_row(from, space, positional) -> Union{Nothing, NamedTuple, Tuple}
+    _from_row(from, space, positional)
 
-The caller's `from` as a row of values, its shape checked (contract §7.6): a
-`NamedTuple` (named calls), or a tuple or vector of values in parameter
-order with one value per parameter. A vector is read as values, never as
-the engine positions `generate_excursion` also accepts. Names and values are
-checked by `excursion_base`, whose errors name `from`.
+The caller's `from`, for `excursion_base` to read with `_row_indices`
+(contract §7.6), after the two rules that are the public call's own: a
+positional call takes the base as a tuple or vector of values, never a
+`NamedTuple`; and a vector is values, never the engine positions
+`excursion_base` also accepts, so it is passed on as a `Tuple`.
 """
 function _from_row(from, space::TestSpace, positional::Bool)
-    from === nothing && return nothing
-    n = length(space.names)
-    if from isa NamedTuple
-        positional && throw(ArgumentError(
-            "`from` is a NamedTuple; a positional call takes the base as a tuple or vector of " *
-            "values in argument order, one for each of $(join(space.names, ", ")) (contract §7.6)"))
-        return from
-    elseif from isa Union{Tuple, AbstractVector}
-        length(from) == n || throw(ArgumentError(
-            "`from` has $(length(from)) values; the space has $n parameters, " *
-            "$(join(space.names, ", ")), and the base is a complete row (contract §7.6)"))
-        return Tuple(from)
-    end
-    throw(ArgumentError(
-        "`from` is the base row: a complete NamedTuple, or a tuple of values in parameter " *
-        "order; got a $(typeof(from)) (contract §7.6)"))
+    positional && from isa NamedTuple && throw(ArgumentError(
+        "`from` is a NamedTuple; a positional call takes the base as a tuple or vector of " *
+        "values in argument order, one for each of $(join(space.names, ", ")) (contract §7.6)"))
+    return from isa AbstractVector ? Tuple(from) : from
 end
 
+# Any covering engine (`CoveringEngine`, plan §4.2). The message names the
+# engines a caller can name, as the manual's Engines page lists them.
 function _check_engine(engine)
-    engine isa Union{IPOG, GND} || throw(ArgumentError(
-        "`engine` is IPOG() or GND(); got $(repr(engine))"))
+    engine isa CoveringEngine || throw(ArgumentError(
+        "`engine` is a covering engine such as IPOG(), Construction(), Compact(IPOG()) or Auto(); " *
+        "got $(repr(engine))"))
     return engine
 end
 
@@ -257,7 +235,7 @@ for messages and for `Base.depwarn`'s call site. `strength`, `stronger` and
 `stronger` groups, no must-include rows.
 """
 function _covering(fname::Symbol, input::Tuple; strength = nothing, stronger = nothing,
-                   must_include = nothing, engine = IPOG(), constraints = nothing,
+                   must_include = nothing, engine = Auto(), constraints = nothing,
                    feasibility_limit = 1_000_000, explanation_limit = 1_000_000, n_way = nothing,
                    seeds = nothing, wayness = nothing)
     # `nothing` marks an omitted keyword, so an explicit `strength = 2` beside
@@ -285,7 +263,7 @@ Use when you want every combination of values of every `strength` parameters
 (pairs at strength 2, triples at 3) to appear in at least one case, with as few
 cases as the engine finds.
 
-    covering(space; strength = 2, stronger = [], must_include = [], engine = IPOG(),
+    covering(space; strength = 2, stronger = [], must_include = [], engine = Auto(),
              feasibility_limit = 1_000_000, explanation_limit = 1_000_000)
     covering(domains::NamedTuple; constraints = [], kwargs...)
     covering(name => domain, ...; constraints = [], kwargs...)
@@ -348,9 +326,17 @@ result counts the two kinds of targets separately (§5.10).
   with one `Invalid` value is a negative row, judged and completed under the
   negative policy, with ordinary values elsewhere; a partial row without one
   is completed as an ordinary row; a row with two is an error (§5.7, §7.9).
-- `engine = IPOG()`: [`IPOG`](@ref) or [`GND`](@ref). Both are deterministic
-  for the same inputs (§9.1). Neither guarantees a particular number of
-  cases, and neither is always smaller than the other (§8.1).
+- `engine = Auto()`: the covering engine. [`Auto`](@ref)`()`, the default,
+  keeps the smaller of IPOG's design and the catalog's array
+  ([`Construction`](@ref)) where the catalog applies, and gives IPOG's
+  design elsewhere; [`recommend`](@ref) says what it would run.
+  [`IPOG`](@ref)`()` alone is fast and covers any request;
+  `Auto(goal = :compact)` then removes rows with the row reducer
+  ([`Compact`](@ref)); [`GND`](@ref) is a seeded greedy search. Every engine is
+  deterministic for the same inputs (§9.1). None guarantees a particular
+  number of cases, and none is always smaller than another (§8.1); the
+  result records a lower bound beside its count, and says "minimal" when the
+  count meets it (§8.4).
 - `feasibility_limit = 1_000_000`: the node budget of each search that
   decides whether a combination, a partial must-include row or a placement
   has a valid completion (§3.3, §3.4). Generation resolves every one of them
@@ -358,19 +344,23 @@ result counts the two kinds of targets separately (§5.10).
   [`ResourceLimitError`](@ref) naming `feasibility_limit`, and no design is
   returned with an undecided combination (§1.20, §3.6, §3.7). Raise it when
   generation cannot finish, as in `all_pairs(space; feasibility_limit =
-  10_000_000)`; a larger value never changes a result that already
-  succeeded (§3.8).
+  10_000_000)`; a larger value never changes the rows of a result that
+  already succeeded, though an implied exclusion's explanation may differ
+  (§3.8).
 - `explanation_limit = 1_000_000`: the node budget of the search that finds
   which rules cause each implied exclusion, starting from a set of rules
-  already proven to exclude it (§3.13, §3.14). Running out never throws and
-  never changes the cases: the design is complete and certified as usual,
-  and the exclusion keeps its proven set of rules with
-  `minimal = :unresolved` and `limit = :explanation_limit => N`, which `show`
-  counts as "with an unresolved explanation" (§3.15, §3.16). Raise it only
-  when you want each implied exclusion's rules verified inclusion-minimal,
-  so that none of them can be dropped; only the attribution becomes more
-  precise. It also bounds the explanation in the error for a partial
-  must-include row with no valid completion.
+  already proven to exclude it (§3.13, §3.14). Each trial of that search is
+  also bounded by `feasibility_limit`. Running out never throws and never
+  changes the cases: the design is complete and certified as usual, and the
+  exclusion keeps its proven set of rules with `minimal = :unresolved`,
+  which `show` counts as "with an unresolved explanation" (§3.15, §3.16).
+  Its `limit` is `:explanation_limit => N` when this budget stopped a trial
+  or left one untried, and `:feasibility_limit => N` when a trial reached
+  the feasibility limit instead (§3.14). Raise it only when you want each
+  implied exclusion's rules verified inclusion-minimal, so that none of them
+  can be dropped; only the attribution becomes more precise. It also bounds
+  the explanation in the error for a partial must-include row with no valid
+  completion.
 
 The 0.4 keywords `n_way` (now `strength`), `seeds` (now `must_include`) and
 `wayness` (now `stronger`, translated from its `Dict` of positions) are
@@ -394,7 +384,7 @@ See also [`all_values`](@ref), [`all_pairs`](@ref), [`all_triples`](@ref),
 [`excursions`](@ref), [`full_factorial`](@ref).
 """
 function covering(input...; strength = nothing, stronger = nothing, must_include = nothing,
-                  engine = IPOG(), constraints = nothing, feasibility_limit = 1_000_000,
+                  engine = Auto(), constraints = nothing, feasibility_limit = 1_000_000,
                   explanation_limit = 1_000_000, n_way = nothing, seeds = nothing, wayness = nothing)
     return _covering(:covering, input; strength, stronger, must_include, engine, constraints,
                      feasibility_limit, explanation_limit, n_way, seeds, wayness)
@@ -424,7 +414,7 @@ of `covering` except `strength`.
 all_values([1, 2, 3], ["a", "b"], [true, false])   # 3 tuples
 ```
 """
-function all_values(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
+function all_values(input...; stronger = nothing, must_include = nothing, engine = Auto(),
                     constraints = nothing, feasibility_limit = 1_000_000,
                     explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                     seeds = nothing, wayness = nothing)
@@ -453,7 +443,7 @@ all_pairs((mode = [:fast, :exact], solver = [:none, :lu, :qr]);
 all_pairs(space; must_include = existing_cases)
 ```
 """
-function all_pairs(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
+function all_pairs(input...; stronger = nothing, must_include = nothing, engine = Auto(),
                    constraints = nothing, feasibility_limit = 1_000_000,
                    explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                    seeds = nothing, wayness = nothing)
@@ -480,7 +470,7 @@ of `covering` except `strength`.
 all_triples([1, 2], [3, 4], [5, 6], [7, 8])
 ```
 """
-function all_triples(input...; stronger = nothing, must_include = nothing, engine = IPOG(),
+function all_triples(input...; stronger = nothing, must_include = nothing, engine = Auto(),
                      constraints = nothing, feasibility_limit = 1_000_000,
                      explanation_limit = 1_000_000, strength = nothing, n_way = nothing,
                      seeds = nothing, wayness = nothing)

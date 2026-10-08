@@ -140,6 +140,9 @@ end
     "The number of distinct `n_way`-tuples of nonzero values in `rows`."
     coverage_by_tuple(rows, n_way) = sum(length, values(tuples_in_trials(rows, n_way)); init = 0)
 
+    "The number of `n_way` combinations of values `1:arity[i]`: an unconstrained space's targets."
+    combination_count(arity, n_way) = sum(s -> prod(arity[s]), combinations(1:length(arity), n_way); init = 0)
+
     """
     `(start, finish)` for a design `matrix` (parameters × cases): `start` is
     the number of `n_way` combinations of values `1:arity[i]`, and `finish`

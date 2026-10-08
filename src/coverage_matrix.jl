@@ -1,7 +1,5 @@
-# These functions represent combinations that are covered and uncovered.
-# It is a data structure to facilitate greedy approaches to combination coverage.
-using Combinatorics: combinations
-import Base: eltype
+# GND's coverage matrix (greedy_tuples.jl): the combinations that are covered
+# and uncovered, as columns of a matrix, and the scores GND reads from it.
 
 ###############################################################
 # MatrixCoverage
@@ -32,80 +30,10 @@ end
 
 
 """
-The element type of the MatrixCoverage class is determined
-by the element type of the arity because an element large
-enough to hold the arity is what defines the minimum possible
-element type.
-"""
-eltype(mc::MatrixCoverage) = eltype(mc.arity)
-
-
-"""
-all_combinations_matrix(arity, n_way)
-
-Create matrix coverage that includes all n-way combinations
-of parameters which can take `arity` values, where `arity`
-is a vector of integers to represent the number of possible
-values for each parameter, in order.
-"""
-function all_combinations_matrix(arity, n_way)
-    allc = all_combinations(arity, n_way)
-    # Every combination is nonzero.
-    @assert sum(sum(allc, dims = 1) == 0) == 0
-    remain = size(allc, 2)
-    MatrixCoverage(allc, remain, arity)
-end
-
-
-"""
-    one_parameter_combinations(arity, n_way)
-
-Generates all combinations that are nonzero for the last parameter.
-This is for in-parameter-order generation, where we need
-only those tuples that end with this column being nonzero.
-
-The construction method is to leave out the given parameter
-and construct all `n_way` - 1 tuples. Then copy and paste that
-once for each possible value of the given parameter.
-"""
-function one_parameter_combinations_matrix(arity, n_way)
-    comb = one_parameter_combinations(arity, n_way)
-    MatrixCoverage(comb, size(comb, 2), arity)
-end
-
-
-"""
 How many tuples have not been covered yet.
 """
 function remaining_uncovered(mc::MatrixCoverage)
     mc.remain
-end
-
-
-"""
-The number of parameters for this design.
-"""
-function parameter_cnt(mc::MatrixCoverage)
-    length(mc.arity)
-end
-
-
-function combination_histogram(allc, arity)
-    height = maximum(arity)
-    hist = zeros(Int, height, length(arity))
-    for colh_idx in axes(allc, 2)
-        for rowh_idx in 1:height
-            if allc[rowh_idx, colh_idx] > 0
-                hist[allc[rowh_idx, colh_idx], rowh_idx] += 1
-            end
-        end
-    end
-    hist
-end
-
-
-function most_to_cover(allc, col_cnt)
-   argmax(vec(sum(allc[:, 1:col_cnt] .!= 0, dims = 2)))
 end
 
 
@@ -136,15 +64,6 @@ function coverage_by_value(mc, param_idx)
         hist[mc.allc[param_idx, col_idx] + 1] += 1
     end
     hist[2:end]
-end
-
-
-function most_common_value(allc, col_cnt, arity, param_idx)
-    hist = zeros(Int, arity[param_idx] + 1)
-    for col_idx in 1:col_cnt
-        hist[allc[param_idx, col_idx] + 1] += 1
-    end
-    argmax(hist[2:end])
 end
 
 
@@ -199,120 +118,6 @@ function most_matches_existing(mc::MatrixCoverage, existing, param_idx)
 end
 
 """
-The logic of tuple comparison is oddly complicated.
-We're going to write this out the first round in order to know
-what our tools are.
-
-If you take a case and a tuple to cover, then there are
-five states for any pair of values:
-               case tuple
-    ignores    0    0
-    skips      a    0
-    misses     0    b
-    matches    a == b
-    mismatch   a != b
-
-It's always one of those five. In this language,
-
-covers = all(matches | irrelevant)
-"""
-
-ignores(a, b) = a == 0 && b == 0
-skips(a, b) = a != 0 && b == 0
-misses(a, b) = a == 0 && b != 0
-matches(a, b) = a != 0 && b != 0 && a == b
-mismatch(a, b) = a != 0 && b != 0 && a != b
-
-"""
-Example matches.
-      crossed      incomplete cover
-case  [0 1 0 2]    [1 0 0 3]  [1 1 0 2]
-tuple [1 0 3 0]    [1 1 0 3]  [1 0 0 2]
-"""
-function case_compatible_with_tuple(case, tuple)
-    !any(mismatch(a, b) for (a, b) in zip(case, tuple))
-end
-
-
-"""
-Example matches.
-      incomplete cover
-case  [1 0 0 3]  [1 1 0 2]
-tuple [1 1 0 3]  [1 0 0 2]
-"""
-function case_partial_cover(case, tuple)
-    (sum(matches(a, b) for (a, b) in zip(case, tuple)) > 0 &&
-     !any(mismatch(a, b) for (a, b) in zip(case, tuple)))
-end
-
-
-"""
-Example matches.
-case  [1 1 0 2]
-tuple [1 0 0 2]
-"""
-function case_covers_tuple(case, tuple)
-    all(matches(a, b) || skips(a, b) || ignores(a, b) for (a, b) in zip(case, tuple))
-end
-
-
-"""
-Given an entry in the test set that has missing values, which are
-zeros, find any matches that could be created by setting those
-missing values. Return a new version of the entry.
-"""
-function matches_from_missing(mc::MatrixCoverage, entry, missing_param, matcher = case_compatible_with_tuple)
-    param_cnt = parameter_cnt(mc)
-    hist = zeros(eltype(mc), mc.arity[missing_param])
-    for tuple_idx in 1:mc.remain
-        if mc.allc[missing_param, tuple_idx] != 0
-            # case_covers_tuple - variation.
-            if matcher(entry, mc.allc[:, tuple_idx])
-                hist[mc.allc[missing_param, tuple_idx]] += 1
-            end
-        end  # No matches unless the particular column is nonzero.
-    end
-    hist
-end
-
-
-"""
-    first_match_for_parameter(mc::MatrixCoverage, param_idx)
-
-Find the first uncovered tuple for a particular parameter value.
-"""
-function first_match_for_parameter(mc::MatrixCoverage, param_idx)
-    for col_idx in 1:mc.remain
-        if mc.allc[param_idx, col_idx] != 0
-            return mc.allc[:, col_idx]
-        end  # else keep looking
-    end
-    return zeros(eltype(mc), length(mc.arity))
-end
-
-
-"""
-    fill_consistent_matches(mc::MatrixCoverage, entry)
-
-Given an entry that's partially decided, fill in every covering tuple
-that matches the existing values, in any order.
-"""
-function fill_consistent_matches(mc::MatrixCoverage, entry, matcher = case_compatible_with_tuple)
-    param_cnt = parameter_cnt(mc)
-    for col_idx in 1:mc.remain
-        if matcher(entry, mc.allc[:, col_idx])
-            for copy_idx in 1:param_cnt
-                if mc.allc[copy_idx, col_idx] != 0
-                    entry[copy_idx] = mc.allc[copy_idx, col_idx]
-                end
-            end
-        end
-    end
-    entry
-end
-
-
-"""
     add_coverage!(allc, entry)
 
 The coverage matrix, `allc`, has `row_cnt` entries that are considered
@@ -322,26 +127,33 @@ covered, this moves those to the end. It returns a new `row_cnt` which is
 the number of initial uncovered rows.
 """
 function add_coverage!(mc::MatrixCoverage, entry)
-    param_cnt = length(entry)
-
-    covers = zeros(Int, mc.remain)
-    cover_cnt = 0
-    # Find matches before reordering them to the end.
-    for col_idx in 1:mc.remain
-        if case_covers_tuple(entry, mc.allc[:, col_idx])
-            cover_cnt += 1
-            covers[cover_cnt] = col_idx
+    allc = mc.allc
+    # This tests the first `length(entry)` rows, so the matrix may have rows
+    # past the entry's, unread.
+    n = length(entry)
+    checkbounds(entry, 1:n)
+    checkbounds(allc, 1:n, 1:mc.remain)
+    # Swap each covered tuple with the last uncovered one, in place, working
+    # from the end. A swap moves only columns at or after the current one, so
+    # each column is tested as it was on entry, and the swaps are the ones the
+    # two-pass form made (find every covered column, then swap from the last
+    # one down; 2798ecf), which leaves the columns in the same order without
+    # a list of the covered ones (plan §5.2).
+    for col_idx in mc.remain:-1:1
+        # Every value of the tuple is in the entry.
+        covered = true
+        @inbounds for i in 1:n
+            b = allc[i, col_idx]
+            if b != 0 && entry[i] != b
+                covered = false
+                break
+            end
         end
-    end
-    # Given the matches, we can swap them to the end of the matrix.
-    # Work from the end in case a match is near row_cnt.
-    for cover_idx in cover_cnt:-1:1
-        if mc.remain > 1
-            save = mc.allc[:, mc.remain]
-            mc.allc[:, mc.remain] = mc.allc[:, covers[cover_idx]]
-            mc.allc[:, covers[cover_idx]] = save
-            mc.remain -= 1
-        else
+        if covered
+            last = mc.remain
+            for i in axes(allc, 1)
+                allc[i, col_idx], allc[i, last] = allc[i, last], allc[i, col_idx]
+            end
             mc.remain -= 1
         end
     end
@@ -380,67 +192,4 @@ function match_score(mc::MatrixCoverage, entry)
         end
     end
     cover_cnt
-end
-
-
-"""
-    remove_combinations!(mc::MatrixCoverage, dead)
-
-Delete every tuple for which `dead(tuple)` is true, where the tuple is a
-vector of value positions with `0` for unset parameters. This reduces the
-total number of tuples in the coverage matrix. It doesn't move them to
-covered tuples. It deletes them.
-"""
-function remove_combinations!(mc::MatrixCoverage, dead)
-    allow_cnt = 0
-    allowed = zeros(Int, size(mc.allc, 2))
-    for i in 1:size(mc.allc, 2)
-        if !dead(mc.allc[:, i])
-            allow_cnt += 1
-            allowed[allow_cnt] = i
-        # else dead, so dropped
-        end
-    end
-    mc.allc = mc.allc[:, allowed[1:allow_cnt]]
-    mc.remain = allow_cnt
-end
-
-
-"""
-Builds a coverage set where subsets of variables have different wayness.
-
-The all-pairs algorithm is 2-way. All-triples is 3-way. This function
-takes a `base_wayness`, which would be 2 or 3 for those examples.
-Then it takes a dictionary that specifies higher wayness for subsets
-of parameters.
-
-The wayness is a dictionary from an integer, the wayness, to a set
-of lists of indices that should have that wayness together. The `base_wayness`
-is the `n_way` for the rest of the variables. A group at the base wayness
-adds nothing (contract §11.7); a lower one is an error (§11.6). The
-dictionary is not modified (§11.9).
-"""
-function multi_way_coverage(arity, wayness, base_wayness)
-    orders = sort(collect(keys(wayness)), rev = true)
-    all(>=(base_wayness), orders) || throw(ArgumentError(
-        "a wayness below the base wayness $base_wayness: $(minimum(orders))"))
-    all(<=(length(arity)), orders) || throw(ArgumentError(
-        "a wayness above the number of parameters $(length(arity)): $(maximum(orders))"))
-
-    param_cnt = length(arity)
-    order_combos = Vector{Matrix{eltype(arity)}}(undef, 0)
-    for order in orders
-        order == base_wayness && continue  # the base group covers these
-        # The parameter set is a list of parameter indices.
-        for param_set in wayness[order]
-            param_set = collect(param_set)
-            high_combos = all_combinations(arity[param_set], order)
-            widened = zeros(eltype(arity), param_cnt, size(high_combos, 2))
-            widened[param_set, :] = high_combos
-            push!(order_combos, widened)
-        end
-        # We could remove duplicates of higher orders.
-    end
-    push!(order_combos, all_combinations(arity, base_wayness))
-    return reduce(hcat, order_combos)
 end

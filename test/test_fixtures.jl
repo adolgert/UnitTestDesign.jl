@@ -256,7 +256,7 @@ end
     @test twice.ordinary.feasible == r.ordinary.feasible
     @test f.legacy.wayness() == Dict(3 => [[1, 2, 3], [2, 3, 4]])
     @test f.legacy.wayness() !== f.legacy.wayness()
-    # Phase 3 — ipog_multi_way and GND cover all 35 targets and leave the
+    # Phase 3 — IPOG and GND cover all 35 targets and leave the
     # caller's groups unmutated
     for engine in ENGINES, stronger in (f.request.stronger, f.request.stronger_twice)
         given = deepcopy(stronger)

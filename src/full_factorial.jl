@@ -30,33 +30,6 @@ function _advance!(row::Vector{Int}, arity::AbstractVector{<:Integer})
     return false
 end
 
-"""
-    full_factorial_rows(arity) -> iterator
-
-Every row of the product of `1:arity[i]`, as a fresh `Vector{Int}` of engine
-positions, the last parameter varying fastest (the 0.4 order). Lazy: rows
-are made one at a time.
-"""
-full_factorial_rows(arity::AbstractVector{<:Integer}) = FullFactorialRows(collect(Int, arity))
-
-"The iterator of `full_factorial_rows`; its state is the current row."
-struct FullFactorialRows
-    arity::Vector{Int}
-end
-
-Base.IteratorSize(::Type{FullFactorialRows}) = Base.SizeUnknown()
-Base.eltype(::Type{FullFactorialRows}) = Vector{Int}
-
-function Base.iterate(rows::FullFactorialRows, state = nothing)
-    if state === nothing
-        any(<(1), rows.arity) && return nothing
-        state = ones(Int, length(rows.arity))
-    else
-        _advance!(state, rows.arity) || return nothing
-    end
-    return copy(state), state
-end
-
 # Append to `kept` each candidate row that no rule forbids and that is not in
 # `seen`; return how many candidates no rule forbids. One row buffer is
 # stepped in place, so a rejected candidate is never stored.

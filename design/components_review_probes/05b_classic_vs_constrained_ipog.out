@@ -1,0 +1,13 @@
+arity                       t  classic  multi    same matrix  same row set  generate==classic
+[2, 3, 2]                   2  6        6        false        false         true
+[2, 3, 2, 4, 7, 2]          2  28       28       false        false         true
+[3, 3, 3, 3, 3, 3]          2  15       14       false        false         true
+[4, 4, 4, 4, 4, 4, 4, 4, 4, 4]2  28       30       false        false         true
+[5, 4, 3, 3, 2, 2, 2]       2  20       20       false        false         true
+[3, 3, 3, 3, 3, 3, 3, 3]    3  58       57       false        false         true
+[4, 4, 3, 3, 2, 2, 2, 2]    3  57       56       false        false         true
+[4, 4, 4, 4, 4, 4, 4, 4, 4, 4]3  143      146      false        false         true
+[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]4  51       49       false        false         true
+[3, 3, 3, 3, 3, 3, 3, 3, 3, 3]4  231      236      false        false         true
+
+12 x 4 values, strength 3: classic 158 rows in 0.033 s, 142.3 MiB; multi 159 rows in 0.035 s, 165.1 MiB

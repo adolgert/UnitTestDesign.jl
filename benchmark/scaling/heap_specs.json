@@ -1,0 +1,46 @@
+[
+  {
+    "id": "heap-hint-reuse-ipog-n512-v2-t2",
+    "ladder": "heap-hint-reuse",
+    "n": 512,
+    "v": 2,
+    "family": "none",
+    "usage": "reuse",
+    "solver": "ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "heap-hint-reuse-ipog-n1024-v2-t2",
+    "ladder": "heap-hint-reuse",
+    "n": 1024,
+    "v": 2,
+    "family": "none",
+    "usage": "reuse",
+    "solver": "ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "heap-hint-report-ipog-n64-v2-t2",
+    "ladder": "heap-hint-report",
+    "n": 64,
+    "v": 2,
+    "family": "none",
+    "usage": "report",
+    "solver": "ipog",
+    "strength": 2,
+    "runs": 3
+  },
+  {
+    "id": "heap-hint-report-ipog-n128-v2-t2",
+    "ladder": "heap-hint-report",
+    "n": 128,
+    "v": 2,
+    "family": "none",
+    "usage": "report",
+    "solver": "ipog",
+    "strength": 2,
+    "runs": 3
+  }
+]

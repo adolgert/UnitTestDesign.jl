@@ -33,12 +33,12 @@ repeats it (§4.10):
 julia> space = TestSpace((tol = [Partition(:tiny, rng -> 1e-9 * rand(rng)), 1e-3], method = [:lu, :qr]));
 
 julia> cases = all_pairs(space)
-4 cases · strength 2 · IPOG · 2 parameters · 4 combinations, 4 valid
+4 cases (minimal) · strength 2 · Auto: Construction() · 2 parameters · 4 combinations, 4 valid
     tol               method
  1  Partition(:tiny)  :lu
- 2  Partition(:tiny)  :qr
+ 2  0.001             :qr
  3  0.001             :lu
- 4  0.001             :qr
+ 4  Partition(:tiny)  :qr
 
 julia> realize(cases; rng = Xoshiro(1)) == realize(cases; rng = Xoshiro(1))
 true

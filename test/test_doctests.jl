@@ -16,7 +16,8 @@ end
 
 # Every exported name has a docstring that opens with the situation it
 # serves (plan Phase 7 step 5), and no docstring describes a case count as
-# minimal, optimal or fewest (contract §8.4).
+# minimal, optimal or fewest (contract §8.4): only a result may call its own
+# count minimal, when the count equals its proven lower bound (§8.7).
 @testitem "exported docstrings" begin
     meta = Base.Docs.meta(UnitTestDesign)
     undocumented, no_situation, size_claims = Symbol[], Symbol[], Symbol[]

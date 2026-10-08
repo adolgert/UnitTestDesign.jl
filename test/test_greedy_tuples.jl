@@ -165,7 +165,7 @@ end
 
 
 @testitem "GND: the progress guarantee covers a target no candidate reaches" setup=[Checker] begin
-    using UnitTestDesign: Request, generate, to_cases, classify_targets, gnd_cover
+    using UnitTestDesign: Request, RequiredTargets, generate, to_cases, classify_targets, gnd_cover
     # (a = 1, b = 1) is feasible only in the row of all 1s: every c must be 1
     # when a = 1 and b = 1. The must-include rows, a design for the space
     # where (a = 1, b = 1) is forbidden outright, cover every other pair, so
@@ -184,7 +184,8 @@ end
     request = Request(rare; must_include = seeds)
     required, _ = classify_targets(request)
     @test length(required) == 4 * 66
-    runs = [gnd_cover(GND(; seed, candidates = 1), request, required) for seed in 0:19]
+    targets = RequiredTargets(request, required)
+    runs = [gnd_cover(GND(; seed, candidates = 1), request, targets) for seed in 0:19]
     @test all(size(matrix, 2) == length(seeds) + 1 for (matrix, _) in runs)
     @test all(matrix[:, end] == ones(Int, 12) for (matrix, _) in runs)
     @test all(taken <= 1 for (_, taken) in runs)
@@ -203,19 +204,16 @@ end
 
 
 @testitem "GND design size is competitive" setup=[IndexCoverage] begin
-    using Random
     using UnitTestDesign: Request, generate
     # Before the scoring fix in most_matches_existing, GND chose most values
-    # at random and needed 36-38 cases here, compared with 28 for IPOG.
+    # at random and needed 36-38 cases here, compared with 28 for IPOG's old
+    # paths (30 for the lookup core that replaced them in Phase 4).
     arity = fill(4, 10)
     space = TestSpace((Symbol(:p, i) => 1:4 for i in 1:10)...)
     for seed in 1:3
-        cases = UnitTestDesign.n_way_coverage(arity, 2, 50, Xoshiro(seed))
-        @test length(cases) <= 32
-        @test coverage_by_tuple(cases, 2) == UnitTestDesign.total_combinations(arity, 2)
         design = generate(GND(; seed), Request(space))
         @test size(design.matrix, 2) <= 32
-        @test design.covered == UnitTestDesign.total_combinations(arity, 2)
+        @test design.covered == combination_count(arity, 2)
     end
 end
 
@@ -230,7 +228,7 @@ end
         request = Request(space; strength = k)
         design = generate(GND(; seed), request)
         @test complete(check_design(to_cases(request, design.matrix), checker; strength = k))
-        @test design.required == UnitTestDesign.total_combinations(length.(domains), k)
+        @test design.required == combination_count(length.(domains), k)
     end
     # The 0.4 n_way_coverage_multi test: 3-way within (1, 3, 4, 5), pairwise elsewhere.
     arity = [2, 3, 4, 2, 2, 3]
@@ -243,7 +241,7 @@ end
     @test complete(check_design(to_cases(request, design.matrix), checker; strength = 2, stronger))
     rows = [design.matrix[:, j] for j in axes(design.matrix, 2)]
     @test coverage_by_tuple([r[[1, 3, 4, 5]] for r in rows], 3) ==
-          UnitTestDesign.total_combinations(arity[[1, 3, 4, 5]], 3)
+          combination_count(arity[[1, 3, 4, 5]], 3)
 end
 
 
@@ -316,17 +314,4 @@ end
     @test Base.JLOptions().depwarn == 2 || GND(M = 3).candidates == 3
     design = generate(GND(candidates = 3), request)
     @test design.covered == design.required
-end
-
-
-@testitem "n_way_coverage" setup=[IndexCoverage, UTSetup] begin
-    using Random
-    # The unconstrained form the nonfunctional benchmark scripts call.
-    rng = Xoshiro(9234724 ⊻ seed_mod())
-    arity = [2, 3, 2, 3]
-    for n_way in (2, 3)
-        cover = UnitTestDesign.n_way_coverage(arity, n_way, 50, rng)
-        @test coverage_by_tuple(cover, n_way) == UnitTestDesign.total_combinations(arity, n_way)
-    end
-    @test length(UnitTestDesign.n_way_coverage(fill(4, 9), 2, 50, rng)) in 16:40
 end

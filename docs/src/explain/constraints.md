@@ -233,6 +233,17 @@ catch err
 end
 ```
 
+The macros reject any other form that binds or assigns a name or runs
+statements: an assignment outside a `let` binding, `for`, `while`, `try`,
+`global`, `local`, a quoted expression, or a macro call. They also reject a
+subtype test written with `<:` or `>:`, which are syntax, not calls; the
+call form, `(<:)(T, $AbstractFloat)`, is read like any other call. Each is
+an `ArgumentError` when the macro expands, and the message points to the
+function form. For a rule the macros cannot express, write
+[`forbid(f, names...)`](@ref forbid) or `require(f, names...)`, whose
+function is ordinary Julia code that receives the listed parameters' values
+(§12.6).
+
 ## What rules cost
 
 A scoped rule, written in any form but the whole-case one, is *tabulated*
@@ -244,14 +255,20 @@ known in advance, a predicate that throws fails when the space is built
 rather than deep inside generation, and the searches only look up tables.
 A rule whose scope has more than `tabulation_limit` combinations (a
 `TestSpace` keyword, default ``10^5``) is evaluated lazily instead, and the
-package warns and suggests a narrower scope (§12.19).
+package warns and suggests a narrower scope (§12.19). A lazy rule,
+including every whole-case rule (below), runs its predicate only when a
+search or a row check reaches it, so a predicate that throws fails in
+whichever call reached it, such as a generation, `isallowed`, `explain`,
+`coverage`, `report` or `followups` (§12.16).
 
 A whole-case rule is always lazy (§12.20). Its predicate runs on complete
 cases as the searches reach them, and each answer is remembered until that
-one call returns, whether it is a generation, an `explain`, or a
-measurement such as `coverage`; the space keeps nothing (§12.19). The cost
-is in the searches: a whole-case rule reads every parameter, so it joins them
-all into one search, and deciding whether a combination is feasible may
+one call returns: a generation, an `explain`, a `coverage`, a `report` or a
+`followups` call. `design_sizes` keeps one memo for all its measurements;
+each design it generates is a separate generation with its own. The space
+keeps nothing (§12.19). The cost is in the searches: a
+whole-case rule reads every parameter, so it joins them all into one
+search, and deciding whether a combination is feasible may
 explore up to the product of the unassigned domains, bounded by
 `feasibility_limit` (§12.21). In the package's benchmark, adding one
 whole-case rule that forbids nothing roughly doubled the time of a

@@ -328,7 +328,7 @@ pairs, 6 feasible triples in each group, so 35 feasible and 5 forbidden
 (the pair and two triples per group). Listing a group twice changes nothing
 (§11.8). `legacy.wayness()` returns a fresh 0.4 `wayness` Dict, because 0.4
 mutates the one it is given (§11.9). Contract §1.8, §11.3–§11.9. Engine
-tests: Phase 3 (ipog_multi_way and GND), Phase 4 (stronger keyword).
+tests: Phase 3 (IPOG and GND), Phase 4 (stronger keyword).
 """
 const overlapping_groups = Fixture(:overlapping_groups, [:a, :b, :c, :d],
     [[1, 2], [1, 2], [1, 2], [1, 2]],
@@ -338,7 +338,7 @@ const overlapping_groups = Fixture(:overlapping_groups, [:a, :b, :c, :d],
                stronger_twice = [(:a, :b, :c) => 3, (:b, :c, :d) => 3, (:c, :b, :a) => 3]),
     wayness = () -> Dict(3 => [[1, 2, 3], [2, 3, 4]]),
     clauses = ["1.8", "11.3", "11.4", "11.6", "11.7", "11.8", "11.9"],
-    pending = [3 => "IPOG (ipog_multi_way) and GND cover all 35 feasible targets and leave wayness unmutated",
+    pending = [3 => "IPOG and GND cover all 35 feasible targets and leave wayness unmutated",
                4 => "covering(space; stronger) covers the union; the caller's stronger vector is unchanged"])
 
 

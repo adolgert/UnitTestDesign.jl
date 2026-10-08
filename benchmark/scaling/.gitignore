@@ -1,0 +1,6 @@
+__pycache__/
+results/smoke/
+results/adapter-smoke/
+results/20261003-m2/
+results/*/*/
+cache/

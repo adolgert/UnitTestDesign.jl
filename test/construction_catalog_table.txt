@@ -1,0 +1,308 @@
+# The reference catalog's choice for 974 uniform shapes, as printed in
+# design/20261003_solver_plan_constructions/catalog_table.out (the plan's §5.4; made 2026-10-04 by
+# catalog_table.jl there, which built and checked every array). Each line is a run of
+# column counts with one choice: columns, rows, the best known size over the run (Colbourn's
+# tables, November 2024), rows over the best known, and the construction.
+# test/test_catalog.jl checks that _catalog_entry makes the same choice, with the same rows,
+# for every column count, and builds and checks every array.
+
+== strength 2, 2 symbols
+  columns   catalog  best known     over   construction
+  3               4           4       0%   Kleitman-Spencer
+  4               5           5       0%   Kleitman-Spencer
+  5-10            6           6       0%   Kleitman-Spencer
+  11-15           7           7       0%   Kleitman-Spencer
+  16-35           8           8       0%   Kleitman-Spencer
+  36-56           9           9       0%   Kleitman-Spencer
+  57-60          10          10       0%   Kleitman-Spencer
+
+== strength 2, 3 symbols
+  columns   catalog  best known     over   construction
+  3               9           9       0%   zero-sum
+  4               9           9       0%   Bush
+  5              11          11       0%   distinct starter on 5 columns
+  6-7            12          12       0%   CMMSSY Figure 6b
+  8-9            13          13       0%   CMMSSY Figure 6c
+  10-20          15       14-15    0%-7%   CMMSSY Figure 5
+  21-25          18       16-17   6%-12%   partitioned product: CMMSSY Figure 6b x orthogonal array
+  26-33          19       17-18   6%-12%   partitioned product: orthogonal array x CMMSSY Figure 6c
+  34-60          21       18-20   5%-17%   partitioned product: orthogonal array x CMMSSY Figure 5
+
+== strength 2, 4 symbols
+  columns   catalog  best known     over   construction
+  3              16          16       0%   zero-sum
+  4-5            16          16       0%   Bush
+  6              19          19       0%   CMMSSY Figure 7a
+  7              21          21       0%   CMMSSY Figure 7b
+  8              23          22       5%   CMMSSY Figure 7c
+  9              24          22       9%   Lobb starter, 9 columns, 2 fixed
+  10-24          28       24-28   0%-17%   partitioned product: orthogonal array x orthogonal array
+  25-29          31       29-30    3%-7%   partitioned product: orthogonal array x CMMSSY Figure 7a
+  30-34          33       30-31   6%-10%   partitioned product: orthogonal array x CMMSSY Figure 7b
+  35             34          31      10%   partitioned product: CMMSSY Figure 7a x CMMSSY Figure 7a
+  36-38          35          32       9%   partitioned product: CMMSSY Figure 7c x orthogonal array
+  39-41          36          32      12%   partitioned product: CMMSSY Figure 7a x CMMSSY Figure 7b
+  42-48          38          32      19%   partitioned product: CMMSSY Figure 7b x CMMSSY Figure 7b
+  49-54          40       33-35  14%-21%   partitioned product: CMMSSY Figure 7c x CMMSSY Figure 7b
+  55-60          40       35-36  11%-14%   partitioned product: orthogonal array x orthogonal array x orthogonal array
+
+== strength 2, 5 symbols
+  columns   catalog  best known     over   construction
+  3              25          25       0%   zero-sum
+  4-6            25          25       0%   Bush
+  7              29          29       0%   distinct starter on 7 columns
+  8              33          33       0%   distinct starter on 8 columns
+  9-10           36       35-36    0%-3%   Lobb starter, 10 columns, 2 fixed
+  11             45          37      22%   distinct starter on 11 columns
+  12-35          45       38-45   0%-18%   partitioned product: orthogonal array x orthogonal array
+  36-41          49       46-49    0%-7%   partitioned product: orthogonal array x distinct starter on 7 columns
+  42-47          53       49-51    4%-8%   partitioned product: orthogonal array x distinct starter on 8 columns
+  48             53          53       0%   partitioned product: distinct starter on 7 columns x distinct starter on 7 columns
+  49-53          57       53-54    6%-8%   partitioned product: orthogonal array x distinct starter on 9 columns
+  54-55          57       54-55    4%-6%   partitioned product: distinct starter on 7 columns x distinct starter on 8 columns
+  56-59          61          56       9%   partitioned product: orthogonal array x distinct starter on 10 columns
+  60             61          56       9%   partitioned product: distinct starter on 7 columns x distinct starter on 9 columns
+
+== strength 2, 6 symbols
+  columns   catalog  best known     over   construction
+  3              36          36       0%   zero-sum
+  4              45          37      22%   product of 2 and 3 symbols
+  5-9            46       39-46   0%-18%   distinct starter on 9 columns
+  10             51          48       6%   distinct starter on 10 columns
+  11             56          51      10%   distinct starter on 11 columns
+  12             61          53      15%   distinct starter on 12 columns
+  13             66          55      20%   distinct starter on 13 columns
+  14-15          76          57      33%   tripling from 5 columns
+  16-18          76          57      33%   tripling from 6 columns
+  19-21          76       59-63  21%-29%   tripling from 7 columns
+  22-24          76       63-66  15%-21%   tripling from 8 columns
+  25-27          76       67-68  12%-13%   tripling from 9 columns
+  28-30          81       68-69  17%-19%   tripling from 10 columns
+  31-60          86       70-76  13%-23%   partitioned product: distinct starter on 9 columns x distinct starter on 9 columns
+
+== strength 2, 7 symbols
+  columns   catalog  best known     over   construction
+  3              49          49       0%   zero-sum
+  4-8            49          49       0%   Bush
+  9-10           61       59-61    0%-3%   distinct starter on 10 columns
+  11             67          65       3%   distinct starter on 11 columns
+  12-13          72          71       1%   Lobb starter, 13 columns, 2 fixed
+  14             77          76       1%   Lobb starter, 14 columns, 2 fixed
+  15             82          79       4%   Lobb starter, 15 columns, 2 fixed
+  16-17          83          82       1%   Lobb starter, 17 columns, 3 fixed
+  18-60          91       85-91    0%-7%   partitioned product: orthogonal array x orthogonal array
+
+== strength 2, 8 symbols
+  columns   catalog  best known     over   construction
+  3              64          64       0%   zero-sum
+  4-9            64          64       0%   Bush
+  10-11          78       76-78    0%-3%   Meagher-Stevens starter, 11 columns
+  12             85          84       1%   distinct starter on 12 columns
+  13             85          84       1%   Lobb starter, 13 columns, 2 fixed
+  14-15          97          96       1%   Lobb starter, 15 columns, 2 fixed
+  16            104         102       2%   Lobb starter, 16 columns, 2 fixed
+  17-18         105         104       1%   Lobb starter, 18 columns, 3 fixed
+  19            110         107       3%   Lobb starter, 19 columns, 3 fixed
+  20            115         108       6%   Lobb starter, 20 columns, 3 fixed
+  21-60         120     112-120    0%-7%   partitioned product: orthogonal array x orthogonal array
+
+== strength 2, 9 symbols
+  columns   catalog  best known     over   construction
+  3              81          81       0%   zero-sum
+  4-10           81          81       0%   Bush
+  11-13         105     102-105    0%-3%   distinct starter on 13 columns
+  14            113         112       1%   distinct starter on 14 columns
+  15-16         120         118       2%   Lobb starter, 16 columns, 2 fixed
+  17            127         125       2%   Lobb starter, 17 columns, 2 fixed
+  18-19         129         126       2%   Lobb starter, 19 columns, 3 fixed
+  20            135         126       7%   Lobb starter, 20 columns, 3 fixed
+  21            144         126      14%   Lobb starter, 21 columns, 3 fixed
+  22            150         126      19%   Lobb starter, 22 columns, 3 fixed
+  23-60         153     142-153    0%-8%   partitioned product: orthogonal array x orthogonal array
+
+== strength 2, 10 symbols
+  columns   catalog  best known     over   construction
+  3             100         100       0%   zero-sum
+  4-12          119     100-116   3%-19%   Bush at 11, fused
+  13            120         120       0%   projection at 11
+  14            127         127       0%   distinct starter on 14 columns
+  15            136         136       0%   Meagher-Stevens starter, 15 columns
+  16            145         145       0%   distinct starter on 16 columns
+  17-18         152     149-150    1%-2%   Lobb starter, 18 columns, 2 fixed
+  19-20         155         155       0%   Lobb starter, 20 columns, 3 fixed
+  21            165         162       2%   Lobb starter, 21 columns, 3 fixed
+  22            172         166       4%   Lobb starter, 22 columns, 3 fixed
+  23            179         171       5%   Lobb starter, 23 columns, 3 fixed
+  24-25         181         178       2%   Lobb starter, 25 columns, 4 fixed
+  26            187         185       1%   Lobb starter, 26 columns, 4 fixed
+  27            193         190       2%   Lobb starter, 27 columns, 4 fixed
+  28-30         209         190      10%   tripling from 10 columns
+  31-33         209         191       9%   tripling from 11 columns
+  34-36         209         191       9%   tripling from 12 columns
+  37-39         210     198-199       6%   tripling from 13 columns
+  40-42         217         200       8%   tripling from 14 columns
+  43-45         226         200      13%   tripling from 15 columns
+  46-60         229     200-202  13%-15%   Lemma 3.5 (r = 1) at 11, fused
+
+== strength 2, 11 symbols
+  columns   catalog  best known     over   construction
+  3             121         121       0%   zero-sum
+  4-12          121         121       0%   Bush
+  13-16         161     153-161    0%-5%   Lobb starter, 16 columns
+  17            171         171       0%   Meagher-Stevens starter, 17 columns
+  18-19         179     177-178       1%   Lobb starter, 19 columns, 2 fixed
+  20            188         186       1%   Lobb starter, 20 columns, 2 fixed
+  21-22         194         192       1%   Lobb starter, 22 columns, 3 fixed
+  23            202         200       1%   Lobb starter, 23 columns, 3 fixed
+  24-25         206     203-204       1%   Lobb starter, 25 columns, 4 fixed
+  26            213         211       1%   Lobb starter, 26 columns, 4 fixed
+  27            220         218       1%   Lobb starter, 27 columns, 4 fixed
+  28-60         231     221-231    0%-5%   partitioned product: orthogonal array x orthogonal array
+
+== strength 2, 12 symbols
+  columns   catalog  best known     over   construction
+  3             144         144       0%   zero-sum
+  4             144         144       0%   product of 3 and 4 symbols
+  5-14          167     144-165   1%-16%   Bush at 13, fused
+  15            168         168       0%   projection at 13
+  16-17         188         188       0%   Lobb starter, 17 columns
+  18            199         199       0%   Lobb starter, 18 columns
+  19            210         210       0%   Lobb starter, 19 columns
+  20            221         221       0%   distinct starter on 20 columns
+  21-22         228         227       0%   Lobb starter, 22 columns, 2 fixed
+  23-24         234         232       1%   Lobb starter, 24 columns, 3 fixed
+  25            243         242       0%   Lobb starter, 25 columns, 3 fixed
+  26-27         247         245       1%   Lobb starter, 27 columns, 4 fixed
+  28            255         254       0%   Lobb starter, 28 columns, 4 fixed
+  29            263         262       0%   Lobb starter, 29 columns, 4 fixed
+  30-32         269         269       0%   Lobb starter, 32 columns, 5 fixed
+  33            299         276       8%   tripling from 11 columns
+  34-36         299         276       8%   tripling from 12 columns
+  37-39         299         276       8%   tripling from 13 columns
+  40-42         299         276       8%   tripling from 14 columns
+  43-45         300         276       9%   tripling from 15 columns
+  46-48         320         276      16%   tripling from 16 columns
+  49-51         320     276-288  11%-16%   tripling from 17 columns
+  52-60         323         288      12%   Lemma 3.5 (r = 1) at 13, fused
+
+== strength 3, 2 symbols
+  columns   catalog  best known     over   construction
+  4               8           8       0%   zero-sum
+  5              10          10       0%   Chateauneuf-Kreher Figure 4
+  6-11           12          12       0%   Hadamard 12
+  12-14          16       15-16    0%-7%   LFSR array, 2 copies
+  15-16          18          17       6%   Roux doubling from 8 columns
+  17-18          18          18       0%   Roux doubling from 9 columns
+  19-20          18          18       0%   Roux doubling from 10 columns
+  21-22          19          19       0%   Roux doubling from 11 columns
+  23-24          23       20-21  10%-15%   Roux doubling from 12 columns
+  25-26          23       21-22   5%-10%   Roux doubling from 13 columns
+  27-28          23          23       0%   Roux doubling from 14 columns
+  29-30          25          23       9%   Roux doubling from 15 columns
+  31-32          26          24       8%   Roux doubling from 16 columns
+  33-34          26          24       8%   Roux doubling from 17 columns
+  35-36          26          24       8%   Roux doubling from 18 columns
+  37-38          26          24       8%   Roux doubling from 19 columns
+  39-40          26          25       4%   Roux doubling from 20 columns
+  41-42          27          25       8%   Roux doubling from 21 columns
+  43-44          27          25       8%   Roux doubling from 22 columns
+  45-46          31          26      19%   Roux doubling from 23 columns
+  47-48          31          27      15%   Roux doubling from 24 columns
+  49-50          31       27-28  11%-15%   Roux doubling from 25 columns
+  51-52          31          28      11%   Roux doubling from 26 columns
+  53-54          31          29       7%   Roux doubling from 27 columns
+  55-56          31       29-30    3%-7%   Roux doubling from 28 columns
+  57-58          33       30-31   6%-10%   Roux doubling from 29 columns
+  59-60          33          31       6%   Roux doubling from 30 columns
+
+== strength 3, 3 symbols
+  columns   catalog  best known     over   construction
+  4              27          27       0%   zero-sum
+  5-6            33          33       0%   group array
+  7-8            45       39-42   7%-15%   Chateauneuf-Kreher Figure 7
+  9              51          45      13%   Chateauneuf-Kreher Figure 8
+  10-13          53          45      18%   LFSR
+  14-26          69       45-72  -4%-53%   LFSR array, 2 copies
+  27-39          87       75-89  -2%-16%   LFSR array, 3 copies
+  40             99          89      11%   doubling from 20 columns
+  41-42         105          93      13%   doubling from 21 columns
+  43-44         105          93      13%   doubling from 22 columns
+  45-46         105          93      13%   doubling from 23 columns
+  47-48         105       95-97   8%-11%   doubling from 24 columns
+  49-50         105      99-102    3%-6%   doubling from 25 columns
+  51-52         107         102       5%   doubling from 26 columns
+  53-54         117         103      14%   multiplying by 3 from 18 columns
+  55-57         117         103      14%   multiplying by 3 from 19 columns
+  58-60         117     103-104  12%-14%   multiplying by 3 from 20 columns
+
+== strength 3, 4 symbols
+  columns   catalog  best known     over   construction
+  4              64          64       0%   zero-sum
+  5              64          64       0%   Bush
+  6              64          64       0%   Bush, even q
+  7-8            88          88       0%   group array
+  9-10          112         100      12%   doubling from 5 columns
+  11-12         121     110-120   1%-10%   doubling from 6 columns
+  13-21         127     124-127    0%-2%   LFSR
+  22-24         169     136-152  11%-24%   multiplying by 4 from 6 columns
+  25-42         184     152-191  -4%-21%   LFSR array, 2 copies
+  43-60         232     191-235  -1%-21%   LFSR array, 3 copies
+
+== strength 3, 5 symbols
+  columns   catalog  best known     over   construction
+  4             125         125       0%   zero-sum
+  5-6           125         125       0%   Bush
+  7-10          185     170-185    0%-9%   Chateauneuf-Kreher Figure 5
+  11-12         225         225       0%   doubling from 6 columns
+  13-31         249     245-249    0%-2%   LFSR
+  32-60         385     349-404  -5%-10%   LFSR array, 2 copies
+
+== strength 3, 6 symbols
+  columns   catalog  best known     over   construction
+  4             216         216       0%   zero-sum
+  5             246         240       2%   ordered design
+  6             276         258       7%   ordered design
+  7-8           341     290-301  13%-18%   Bush at 7, fused
+  9-10          476     361-380  25%-32%   doubling from 5 columns
+  11-12         506     420-463   9%-20%   doubling from 6 columns
+  13-14         571     490-498  15%-17%   doubling from 7 columns
+  15-16         571     506-510  12%-13%   doubling from 8 columns
+  17-30         683     549-624   9%-24%   LFSR at 7, fused
+
+== strength 3, 7 symbols
+  columns   catalog  best known     over   construction
+  4             343         343       0%   zero-sum
+  5-8           343         343       0%   Bush
+  9             510         472       8%   Bush at 8, fused
+  10            510         479       6%   Bush, even q at 8, fused
+  11-12         637         637       0%   doubling from 6 columns
+  13-14         637         637       0%   doubling from 7 columns
+  15-16         637         637       0%   doubling from 8 columns
+  17-30         685         679       1%   LFSR
+
+== strength 3, 8 symbols
+  columns   catalog  best known     over   construction
+  4             512         512       0%   zero-sum
+  5-9           512         512       0%   Bush
+  10            512         512       0%   Bush, even q
+  11-12         960         960       0%   doubling from 6 columns
+  13-14         960         960       0%   doubling from 7 columns
+  15-16         960         960       0%   doubling from 8 columns
+  17-18         960         960       0%   doubling from 9 columns
+  19-30        1023        1016       1%   LFSR
+
+== strength 3, 10 symbols
+  columns   catalog  best known     over   construction
+  4            1000        1000       0%   zero-sum
+  5            1090        1050       4%   ordered design
+  6            1180        1100       7%   ordered design
+  7-10         1225        1215       1%   ordered design
+  11-12        1329   1292-1299    2%-3%   Bush at 11, fused
+  13-14        2191   1858-1885  16%-18%   Bush at 13, fused 3 times
+  15-16        2296        2223       3%   doubling from 8 columns
+  17-18        2296        2232       3%   doubling from 9 columns
+  19-20        2296        2250       2%   doubling from 10 columns
+  21-22        2400   2334-2335       3%   doubling from 11 columns
+  23-24        2400        2343       2%   doubling from 12 columns
+  25-30        2659   2557-2584    3%-4%   LFSR at 11, fused
+

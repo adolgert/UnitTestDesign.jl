@@ -77,7 +77,8 @@ bookkeeping, kept apart from the ordinary (§5.10, §6): `negative_required`
 and `negative_covered` (negative target counts, zero without
 [`Invalid`](@ref) values and for non-covering strategies) and
 `negative_excluded` (the negative targets no valid negative row can hold,
-as `Exclusion`s in the order `coverage` lists them):
+as `Exclusion`s in the order `coverage` lists them); and `record`, below.
+`notes` holds:
 
 - an excursion's `base`, the base row, of the result's row type `T`;
   `distance`, after clamping to the parameter count; `dropped`, the number
@@ -93,25 +94,103 @@ as `Exclusion`s in the order `coverage` lists them):
 `strength` is 0 when the strategy has no strength (excursions and full
 factorials); measurement of such a result needs an explicit strength.
 
+# The record
+
+`record` is a `NamedTuple` of plain data on how the cases were made (plan
+§4.1, §4.2, §6.1). Its first fields are the package's own, computed and
+checked by generation, never reported by an engine:
+
+- `randomized`: whether the engine drew random numbers, so that `seed`
+  repeats the cases (§9.5).
+- `lower_bound`: for a covering design, a proven lower bound on the cases of
+  any design for the same request, and `proof`, why, as "the 3 × 3 = 9
+  combinations of a and b need a case each": every case holds one
+  combination of each set of parameters, so one set's required combinations
+  need as many cases; the must-include rows are cases of every such design;
+  and the negative rows of each [`Invalid`](@ref) value are bounded in the
+  same way and added. `minimal` is `true` when the cases number exactly
+  `lower_bound`: then no design for the request has fewer, and this is the
+  one case in which the package calls a count minimal (contract §8.4).
+  `nothing`, `false` and `""` for an excursion or a full factorial.
+- `engine`: the engine's configuration, the whole tree of it: `name`;
+  `call`, its constructor call, which with the same request repeats the
+  cases unless an engine in it drew from a caller's `rng`; `seed`;
+  `randomized`; and `settings`, its other settings, where an engine it wraps
+  (`inner` of [`Compact`](@ref)) or chooses among (`candidates` of
+  [`Auto`](@ref)) is a configuration of the same form. For
+  `Compact(GND(seed = 17); seed = 3, effort = 2)`:
+
+  ```
+  (name = :Compact, call = "Compact(GND(seed = 17); seed = 3, effort = 2)", seed = 3, randomized = true,
+   settings = (inner = (name = :GND, call = "GND(seed = 17)", seed = 17, randomized = true,
+                        settings = (candidates = 50,)),
+               effort = 2))
+  ```
+
+Then the stages that ran, each a `NamedTuple` whose `engine` is the call of
+the engine that ran and `rows` the rows it made, followed by what that
+engine reports:
+
+- `ordinary`: the ordinary design's stage. [`Auto`](@ref) reports `chose`,
+  the engine call that made the ordinary cases, such as `"Construction()"`
+  or `"Compact(IPOG())"`; `starts`, the stage of each start it ran; `kept`,
+  the index of the one kept among them; and with `goal = :compact`
+  `reducer`. A catalog array ([`Construction`](@ref)) reports `catalog`,
+  with the construction's `name`, `family`, `source`, `rows`, the array's
+  `lower_bound`, whether the design is an `orthogonal` array (every
+  combination of `strength` parameters exactly once, so never with
+  `Invalid` values, whose negative rows repeat ordinary combinations), and
+  whether the array only `seeded` the design under rules. The row reducer
+  ([`Compact`](@ref)) reports `start`, the stage of its inner engine, and
+  `reducer`, with the rows it started from and ended with, its bound, its
+  steps and budgets, and why it stopped. [`IPOG`](@ref) reports `member`,
+  the member of the IPOG family whose design it kept, `(tiebreak,
+  vertical)`, or `(tiebreak = :none, vertical = :none)` at full strength,
+  where the design is every valid row and no member runs (the manual's IPOG
+  page says what the members are). [`GND`](@ref) reports nothing more. For
+  `Auto()` on eight parameters of seven values:
+
+  ```
+  (engine = "Auto()", rows = 49, chose = "Construction()",
+   starts = [(engine = "Construction()", rows = 49, catalog = (name = "Bush", family = "Bush orthogonal array", …))],
+   kept = 1)
+  ```
+
+- `negative`: for each [`Invalid`](@ref) value, in parameter and domain
+  order, `(parameter, value, rows, stage)`: the parameter's name, the value
+  as its `repr`, the cases that hold it, and the stage that covered its
+  negative targets, a request one strength lower on the other parameters,
+  whose `engine` says which engine ran: the same one, or IPOG where the
+  engine has nothing for that request, as `Construction` at strength 1.
+  `stage` is `nothing` where the value needs no such request (strength 1,
+  with no `stronger` group holding the parameter), and `negative` is empty
+  without `Invalid` values.
+
+An excursion and a full factorial have no engine: `engine`, `ordinary` and
+`negative` are `nothing`.
+
 # Display
 
 `show` prints a summary line, the excluded targets' counts, and the rows as
 a table (§1.22):
 
 ```
-5 cases · strength 2 · IPOG · 3 parameters · 12 combinations
+5 cases (lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations
 excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
     mode    solver  tol
- 1  :exact  :qr     1.0e-6
- 2  :exact  :lu     1.0e-6
- 3  :exact  :none   1.0e-6
- 4  :fast   :none   0.001
+ 1  :fast   :none   0.001
+ 2  :exact  :none   1.0e-6
+ 3  :exact  :lu     1.0e-6
+ 4  :exact  :qr     1.0e-6
  5  :fast   :none   1.0e-6
 ```
 
-The summary names the strategy (the strength, any `stronger` groups and the
-engine, with GND's seed; an excursion's distance, base and dropped rows; a
-full factorial), the parameter count and the size of the full product. It
+The summary gives the count, with a covering design's recorded lower bound
+beside it, as "(lower bound 4)", or "(minimal)" when the count equals it;
+then the strategy (the strength, any `stronger` groups and the engine, with
+a randomized engine's seed and what `Auto` chose; an excursion's distance,
+base and dropped rows; a full factorial), the parameter count and the size
+of the full product. It
 adds the number of valid rows only when generation already knows it: for a
 full factorial, and for a covering design at strength equal to the parameter
 count, where the required targets are the valid rows. Values print with
@@ -125,15 +204,15 @@ marked with `!` after its row number. For
 constraints = [@forbid(n == 2 && m == :b), @forbid(m == :a && k == :y)]))`:
 
 ```
-6 cases · strength 2 · IPOG · 3 parameters · 12 combinations · 4 negative targets
+6 cases (lower bound 5) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations · 4 negative targets
 excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)
      n           m   k
- 1   1           :b  :x
- 2   2           :a  :x
- 3   1           :a  :x
- 4   1           :b  :y
- 5!  Invalid(1)  :b  :y
- 6!  Invalid(1)  :a  :x
+ 1   1           :a  :x
+ 2   1           :b  :y
+ 3   2           :a  :x
+ 4   1           :b  :x
+ 5!  Invalid(1)  :a  :x
+ 6!  Invalid(1)  :b  :y
 ```
 
 In a REPL (an `IOContext` with
@@ -183,13 +262,14 @@ struct TestCases{T} <: AbstractVector{T}
     negative_required::Int
     negative_covered::Int
     negative_excluded::Vector{Exclusion}
+    record::NamedTuple
 end
 
-# The form without negative bookkeeping: none recorded.
+# The form without negative bookkeeping or a record: none recorded.
 TestCases{T}(cases, space, strategy, strength, stronger, engine, seed, n_must_include, required, covered,
              excluded, positional, notes) where {T} =
     TestCases{T}(cases, space, strategy, strength, stronger, engine, seed, n_must_include, required,
-                 covered, excluded, positional, notes, 0, 0, Exclusion[])
+                 covered, excluded, positional, notes, 0, 0, Exclusion[], _NO_BOUND)
 
 Base.size(tc::TestCases) = size(tc.cases)
 Base.getindex(tc::TestCases, i::Int) = tc.cases[i]
@@ -219,7 +299,7 @@ end
 # TestCases(request, design; positional = false)
 #
 # Build the public result from an engine's `Design`. Rows come from
-# `to_cases`; positional results drop the names (§1.18). Exclusions are
+# `_cases`; positional results drop the names (§1.18). Exclusions are
 # translated into names and labels, and an excursion's `base` and
 # `never_appear` from engine positions into values. `strength` is the
 # request's for a covering design and 0 for the strategies that have none.
@@ -228,8 +308,7 @@ end
 function TestCases(request::Request, design::Design; positional::Bool = false)
     space = request.space
     T = row_type(space, positional)
-    named = to_cases(request, design.matrix)
-    cases = positional ? T[Tuple(values(c)) for c in named] : T[c for c in named]
+    cases = _cases(T, (space.values...,), request.candidates, design.matrix)
     stronger = Pair{Tuple{Vararg{Symbol}}, Int}[
         Tuple(space.names[g]) => s for (g, s) in request.groups[2:end]]
     excluded = Exclusion[_exclusion(request, e) for e in design.excluded]
@@ -240,7 +319,27 @@ function TestCases(request::Request, design::Design; positional::Bool = false)
     return TestCases{T}(cases, space, design.strategy, strength, stronger, design.engine,
                         design.seed, design.n_must_include, design.required, design.covered,
                         excluded, positional, notes, design.negative_required, design.negative_covered,
-                        negative_excluded)
+                        negative_excluded, design.record)
+end
+
+"""
+    _cases(T, domains, candidates, matrix) -> Vector{T}
+
+The columns of `matrix`, engine positions, as rows of type `T` (a
+`row_type`): parameter `i` of column `j` has the value
+`domains[i][candidates[i][matrix[i, j]]]`, wrappers kept, as `to_cases`
+gives it. `domains` is the space's domains as a tuple, so this is the one
+function barrier of a result's rows: compiled for the domains' types, it
+reads each value with its domain's type (`_pick`) and builds each row as
+`T`.
+"""
+function _cases(::Type{T}, domains::Tuple{Vararg{AbstractVector, N}}, candidates::Vector{Vector{Int}},
+                matrix::Matrix{Int}) where {T, N}
+    cases = Vector{T}(undef, size(matrix, 2))
+    for j in axes(matrix, 2)
+        cases[j] = T(_pick(domains, ntuple(i -> candidates[i][matrix[i, j]], Val(N))))
+    end
+    return cases
 end
 
 "An engine's `Excluded` record in the caller's vocabulary: the target's values, the rules' labels."
@@ -322,9 +421,36 @@ function _valid_count(tc::TestCases)
     return nothing
 end
 
+"""
+    _engine_phrase(tc) -> String
+
+How the summary line names the engine, from the configuration the result
+recorded (`record.engine`) and, for `Auto`, what it ran (its stage's
+`chose`): "IPOG", "GND seed 3", "Compact(GND(seed = 17)) seed 3", "Auto:
+Construction()" or "Auto: Compact(Construction()) seed 0" (`_engine_phrase`
+of a configuration). A result made without a record, which no engine of the
+package returns, shows the name it keeps.
+"""
 function _engine_phrase(tc::TestCases)
-    tc.engine === :GND || return string(tc.engine)
-    return tc.seed === nothing ? "GND, caller's rng" : "GND seed $(tc.seed)"
+    config = get(tc.record, :engine, nothing)
+    config isa NamedTuple || return string(tc.engine)
+    stage = get(tc.record, :ordinary, nothing)
+    return _engine_phrase(config, stage isa NamedTuple ? get(stage, :chose, nothing) : nothing)
+end
+
+"""
+    _size_note(tc) -> Union{Nothing, String}
+
+What the summary line says of a covering design's size beside its count
+(plan §6.1, D5): "minimal" when the rows equal the recorded lower bound, the
+one case in which a count is called minimal (contract §8.4), and otherwise
+"lower bound 9". Nothing for a design with no bound, or a bound of 0, where
+no case is needed.
+"""
+function _size_note(tc::TestCases)
+    bound = get(tc.record, :lower_bound, nothing)
+    (bound === nothing || bound == 0) && return nothing
+    return tc.record.minimal ? "minimal" : "lower bound $bound"
 end
 
 _shown(io::IO, x) = sprint(show, x; context = IOContext(io, :typeinfo => Any))
@@ -355,7 +481,11 @@ base shows its first `base_entries` values.
 """
 function _summary_parts(io::IO, tc::TestCases; base_entries::Integer = length(tc.space.names))
     size_text = _plural(length(tc), "case")
-    tc.n_must_include > 0 && (size_text *= " ($(tc.n_must_include) must-include)")
+    notes = String[]
+    tc.n_must_include > 0 && push!(notes, "$(tc.n_must_include) must-include")
+    bound = _size_note(tc)
+    bound === nothing || push!(notes, bound)
+    isempty(notes) || (size_text *= " (" * join(notes, ", ") * ")")
     parts = [size_text]
     if tc.strategy === :covering
         strength = "strength $(tc.strength)"

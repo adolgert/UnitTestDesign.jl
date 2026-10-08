@@ -233,6 +233,245 @@ end
 end
 
 
+@testitem "request: the supports, each listed once, and each group's share of them (§1.8, §1.15)" setup=[RequestSetup] begin
+    using UnitTestDesign: _group_supports, _supports
+    # A subset two groups share is one support, where it first appears; each
+    # group's share lists it all the same.
+    groups = [[1, 2, 3, 4] => 2, [1, 2, 3] => 3, [1, 2, 3, 4] => 3]
+    supports, shares = _group_supports(groups)
+    @test supports == [[1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4], [1, 2, 3], [1, 2, 4], [1, 3, 4], [2, 3, 4]]
+    @test shares == [1:6, [7], 7:10]
+    @test _supports(groups) == supports
+    # A base group at strength 0, as a negative sub-request's, has no share.
+    @test _group_supports([[1, 2, 3] => 0, [1, 2] => 1, [2, 3] => 2]) == ([[1], [2], [2, 3]], [Int[], [1, 2], [3]])
+    # The base group's supports are computed, not listed: only the other groups' are.
+    @test supports.nbase == 6 && supports.listed == [1, 2, 3, 1, 2, 4, 1, 3, 4, 2, 3, 4]
+    # A group at the base strength adds no support (`_groups` drops one, §11.7): its subsets are base subsets.
+    @test _group_supports([[1, 2, 3, 4] => 2, [2, 3, 4] => 2]) == (supports[1:6], [1:6, [4, 5, 6]])
+    # Groups whose base group is not every parameter in order are an internal error.
+    @test_throws ErrorException _group_supports([[2, 1] => 1])
+end
+
+
+@testitem "request: the base group's supports are unranked and ranked in `combinations` order (plan §5.6)" setup=[RequestSetup] begin
+    using Combinatorics: combinations
+    using Random: Xoshiro
+    using UnitTestDesign: _supports, _support!, _support_rank, _each_support
+    # Support `s` of the base group, every parameter at strength `t`, is the
+    # subset of rank `s - 1` among the `t`-subsets of 1:n in lexicographic
+    # order, as `combinations` lists them: unranked (`_support!`), ranked
+    # back (`_support_rank`), stepped through in order (`_each_support`), and
+    # read whole (`getindex`, `collect`), on every (n, t) up to n = 12 and
+    # at strength 0, which has none.
+    buffer = Int[]
+    for n in 1:12, t in 0:n
+        supports = _supports([collect(1:n) => t])
+        listed = t == 0 ? Vector{Int}[] : collect(combinations(1:n, t))
+        @test length(supports) == supports.nbase == length(listed)
+        @test collect(supports) == listed
+        @test all(s -> _support!(buffer, supports, s) == listed[s], eachindex(listed))
+        @test all(s -> _support_rank(supports, listed[s]) == s, eachindex(listed))
+        @test [copy(support) for (_, support) in _each_support(supports)] == listed
+        @test [s for (s, _) in _each_support(supports)] == eachindex(listed)
+    end
+    # Wide cases, against the definition of the rank with BigInt binomials:
+    # the subsets before c are, for each place, those that agree before it
+    # and hold a smaller value there.
+    function brute_rank(c, n)
+        t = length(c)
+        r = big(0)
+        for i in 1:t, v in ((i == 1 ? 0 : c[i - 1]) + 1):(c[i] - 1)
+            r += binomial(big(n - v), t - i)
+        end
+        return r
+    end
+    rng = Xoshiro(0x2026_1006_5099)
+    for (n, t) in ((100, 3), (1_000, 2), (1_000, 4), (4_096, 2), (4_096, 3), (250, 6), (60, 30), (64, 63), (30, 1))
+        supports = _supports([collect(1:n) => t])
+        @test length(supports) == binomial(big(n), t)
+        for s in vcat([1, 2, length(supports) - 1, length(supports)], rand(rng, 1:length(supports), 100))
+            c = supports[s]
+            @test length(c) == t && issorted(c; lt = <=) && 1 <= first(c) && last(c) <= n
+            @test brute_rank(c, n) == s - 1
+            @test _support_rank(supports, c) == s
+            # The step to the next subset, in place, is the next position's.
+            if s < length(supports)
+                walk = _each_support(supports, copy(c))
+                @test last(iterate(walk, s)[1]) == supports[s + 1]
+            end
+        end
+    end
+    # Past Int, the number of base supports is an OverflowError, as the offsets' was.
+    @test_throws OverflowError _supports([collect(1:200) => 100])
+end
+
+
+@testitem "request: the layout's walk of the base supports that hold a parameter and others from a set, in order (plan §5.6)" setup=[RequestSetup] begin
+    using Combinatorics: combinations
+    using Random: Xoshiro, randperm
+    using UnitTestDesign: TargetList, _Classified, _request, _supports, _support!, _support_rank,
+                          _each_base_support, _BaseWalkBuffers, _lookup_steps, ipog_order
+    # `_each_base_support(supports, p, earlier)` gives each base support that
+    # holds p and t - 1 of the parameters `earlier`, with its position, in
+    # increasing position, as IPOG's step at p reads them (`_begin_step!`).
+    # Against the definition: each (t - 1)-subset of `earlier` with p,
+    # positioned by ranking (`_support_rank`) and read back by unranking
+    # (`_support!`). On every step of random parameter orders, IPOG's among
+    # them, on random layouts with `stronger` groups at base strengths 1 to
+    # 4, and a negative sub-request's at base strength 0, which has none; at
+    # IPOG's order the walk gives exactly the step's base supports
+    # (`_lookup_steps`). Then on wide base groups with random sets. One pair
+    # of buffers serves every walk.
+    buffers = _BaseWalkBuffers()
+    buffer = Int[]
+    "The walk at `p` against the definition; returns its positions."
+    function check(sups, p, earlier)
+        got = [(s, copy(support)) for (s, support) in _each_base_support(sups, p, earlier, buffers)]
+        t = sups.t
+        expected = t == 0 || length(earlier) < t - 1 ? Tuple{Int, Vector{Int}}[] :
+                   sort!([(_support_rank(sups, c), c) for c in (sort!([p; subset]) for subset in combinations(earlier, t - 1))])
+        @test got == expected
+        @test issorted(first.(got); lt = <=)
+        @test all(((s, c),) -> _support!(buffer, sups, s) == c, got)
+        @test length(got) == (t == 0 ? 0 : binomial(length(earlier), t - 1))
+        return first.(got)
+    end
+    rng = Xoshiro(0x2026_1007_1a70)
+    tally = Dict(:t0 => 0, :t1 => 0, :t2 => 0, :t3 => 0, :t4 => 0, :listed => 0, :steps => 0)
+    for _ in 1:80
+        n = rand(rng, 2:9)
+        strength = rand(rng, 1:min(4, n))
+        stronger = Pair{Vector{Int}, Int}[]
+        for _ in 1:(strength < n ? rand(rng, 0:3) : 0)
+            k = rand(rng, (strength + 1):n)
+            push!(stronger, sort!(randperm(rng, n)[1:k]) => rand(rng, (strength + 1):k))
+        end
+        space = TestSpace([Symbol(:p, i) for i in 1:n], [1:rand(rng, 1:3) for _ in 1:n], Constraint[], 10^5)
+        requests = [Request(space; strength, stronger)]
+        if strength == 1 && !isempty(stronger)
+            # A negative sub-request's shape: base strength 0, so every support is listed.
+            r = requests[1]
+            push!(requests, _request(space, 0, [collect(1:n) => 0; r.groups[2:end]], zeros(Int, n, 0), r.feasibility,
+                                     10^6, 10^6))
+        end
+        for request in requests
+            sups = TargetList(request).supports
+            order = ipog_order(request.arity, request.groups)
+            steps = _lookup_steps(_Classified(request).targets, request.arity, order)
+            for (k, p) in enumerate(order)
+                ids = check(sups, p, sort(order[1:(k - 1)]))
+                @test ids == filter(<=(sups.nbase), steps.supports[steps.first[p]:(steps.first[p + 1] - 1)])
+                tally[:steps] += 1
+            end
+            for _ in 1:2
+                shuffled = randperm(rng, n)
+                for (k, p) in enumerate(shuffled)
+                    check(sups, p, sort(shuffled[1:(k - 1)]))
+                end
+            end
+            tally[Symbol(:t, request.strength)] += 1
+            tally[:listed] += length(sups) > sups.nbase
+        end
+    end
+    @test all(>(0), values(tally))
+    # Wide base groups, random parameters and sets, the first and last
+    # parameters among them; and every other parameter as the set.
+    for (n, t, size) in ((1_000, 2, 999), (1_000, 2, 40), (200, 3, 60), (60, 4, 30), (4_096, 3, 25), (30, 1, 29))
+        sups = _supports([collect(1:n) => t])
+        for _ in 1:20
+            p = rand(rng, (1, n, rand(rng, 1:n)))
+            others = setdiff(1:n, p)
+            earlier = sort!(size >= n - 1 ? others : others[randperm(rng, n - 1)[1:size]])
+            check(sups, p, earlier)
+        end
+    end
+    # A set that isn't ascending within 1:n, or that holds p, is an internal
+    # error, but not at t = 1, which doesn't read it; p must be a parameter.
+    sups = _supports([collect(1:6) => 3])
+    for bad in ([2, 1], [1, 1], [0, 2], [1, 7], [1, 4])
+        @test_throws ErrorException collect(_each_base_support(sups, 4, bad))
+    end
+    @test_throws ErrorException collect(_each_base_support(sups, 7, [1, 2]))
+    @test [s for (s, _) in _each_base_support(_supports([collect(1:6) => 1]), 4, [2, 1])] == [4]
+end
+
+
+@testitem "request: the layout's supports and offsets are the listed layout's, in order (plan §5.6, §9.7)" setup=[RequestSetup] begin
+    using Combinatorics: combinations
+    using Random: Xoshiro, randperm
+    using UnitTestDesign: TargetList, NegativeProjection, _negative_request, _group_supports, _supports,
+                          _support!, _each_support
+    # The supports as 31bef0f listed them, written out: each group's subsets
+    # in `combinations` order, the base group first, each subset once, where
+    # it first appears, with each group's share of positions; and the offsets
+    # from them. The layout must give every support in the same order, every
+    # offset and every share, on random requests with overlapping `stronger`
+    # groups (several at one strength, one inside another, one listed twice),
+    # their negative sub-requests (base strength 0, and 1), and full strength.
+    function listed_supports(groups)
+        supports, position, shares = Vector{Int}[], Dict{Vector{Int}, Int}(), Vector{Int}[]
+        for (members, s) in groups
+            share = Int[]
+            s > 0 && for subset in combinations(members, s)
+                push!(share, get!(() -> (push!(supports, subset); length(supports)), position, subset))
+            end
+            push!(shares, share)
+        end
+        return supports, shares
+    end
+    function listed_offsets(arity, supports)
+        offsets = [0]
+        for support in supports
+            push!(offsets, last(offsets) + prod(arity[support]; init = 1))
+        end
+        return offsets
+    end
+    "The layout of `request` against the listed one; returns the number of supports listed after the base group's."
+    function check(request)
+        layout = TargetList(request)
+        supports, shares = listed_supports(request.groups)
+        @test collect(layout.supports) == supports
+        @test [copy(support) for (_, support) in _each_support(layout.supports)] == supports
+        buffer = Int[]
+        @test all(s -> _support!(buffer, layout.supports, s) == supports[s], eachindex(supports))
+        @test layout.offsets == listed_offsets(request.arity, supports)
+        @test last(_group_supports(request.groups)) == shares
+        return length(layout.supports) - layout.supports.nbase
+    end
+    rng = Xoshiro(0x2026_1006_1157)
+    tally = Dict(:listed => 0, :shared => 0, :zero => 0, :one => 0, :sub => 0, :full => 0)
+    for _ in 1:150
+        n = rand(rng, 3:9)
+        space = TestSpace([Symbol(:p, i) for i in 1:n], [Any[1:rand(rng, 1:3)...; rand(rng) < 0.3 ? [Invalid(0)] : []]
+                                                         for _ in 1:n], Constraint[], 10^5)
+        strength = rand(rng, 1:n)
+        stronger = Pair{Vector{Int}, Int}[]
+        if strength < n
+            # Groups at one strength overlap often; one may hold another, or repeat.
+            s = rand(rng, (strength + 1):n)
+            for _ in 1:rand(rng, 0:5)
+                k = rand(rng, s:n)
+                push!(stronger, sort!(randperm(rng, n)[1:k]) => rand(rng) < 0.7 ? s : rand(rng, (strength + 1):k))
+            end
+            rand(rng) < 0.3 && !isempty(stronger) && push!(stronger, first(stronger))
+        end
+        request = Request(space; strength, stronger)
+        listed = check(request)
+        tally[:listed] += listed > 0
+        tally[:shared] += sum(binomial(length(g), s) for (g, s) in request.groups[2:end]; init = 0) > listed
+        tally[:full] += strength == n
+        for q in 1:n
+            isempty(space.invalid[q]) && continue
+            strength > 1 || any(g -> q in g.first, request.groups[2:end]) || continue
+            sub = _negative_request(request, NegativeProjection(space, q), zeros(Int, n - 1, 0))
+            tally[sub.strength == 0 ? :zero : sub.strength == 1 ? :one : :sub] += 1
+            check(sub)
+        end
+    end
+    @test all(>(0), values(tally))
+end
+
+
 @testitem "request: dead and witness on Fable's space (plan Phase 3 step 1)" setup=[RequestSetup] begin
     request = Request(solver_space())
     @test isconstrained(request)
@@ -387,6 +626,92 @@ end
     @test_throws ErrorException validate_design(request, short, required)
     # Only required targets are checked: excluded ones may stay uncovered.
     @test validate_design(Request(solver_space()), good, required) == 11
+end
+
+
+@testsnippet RecountVerdict begin
+    using UnitTestDesign: from_indices, _space_indices
+
+    """
+    The layout recount's verdict on the rows `m` (columns, engine positions),
+    written out from lists: the message for the first target of `walked`,
+    every target in target order, that is excluded (in `gone`) and held by a
+    row, or required and held by none, or `nothing`. The recount checks the
+    exclusions against the rows as well as their coverage (contract §1.4,
+    §1.21); the list recount, from the required targets alone, can't.
+    """
+    function layout_verdict(request, m, walked, gone)
+        named(t) = from_indices(request.space, _space_indices(request, t))
+        holds(t, j) = all(i -> t[i] == 0 || t[i] == m[i, j], eachindex(t))
+        for t in walked
+            j = findfirst(j -> holds(t, j), axes(m, 2))
+            if t in gone
+                j === nothing || return "internal error: excluded target $(named(t)) is held by the row " *
+                                        "$(named(m[:, j])); classification found no valid row that holds it " *
+                                        "(contract §1.4)"
+            elseif j === nothing
+                return "internal error: required target $(named(t)) is not covered"
+            end
+        end
+        return nothing
+    end
+end
+
+
+@testitem "request: the recount counts on the layout, names the first uncovered target, and rejects a held excluded one (§1.21)" setup=[RequestSetup, RecountVerdict] begin
+    using UnitTestDesign: TargetList, _Classified, _recount, nrequired
+    # Phase 5 (plan §5.6): `generate` certifies a design by recounting it on
+    # the request's layout against the ids of the targets classification
+    # excluded (`_recount`), with no list of required targets. It counts what
+    # the list recount counts, 31bef0f's certification of the classified
+    # list, which stays for tests and scripts, and a failure names the first
+    # target in target order that is required and held by no row or, since
+    # review p5-core 5, excluded and held by one: every row has been checked
+    # valid by then, and no valid row holds an excluded target (§1.4), so
+    # that means classification was wrong. Where no row holds an excluded
+    # target, the failure is the list recount's. Rows of every kind are given
+    # to `_recount` itself, which `validate_design` calls after it has
+    # checked each row, so a changed value can break a rule here.
+    request = Request(solver_space(); must_include = [(solver = :lu,)])
+    layout_targets = _Classified(request).targets
+    required, excluded = classify_targets(request)
+    walked, gone = collect(TargetList(request)), Set(e.target for e in excluded)
+    good = [2 1 1 2 2; 2 1 1 1 3; 2 1 2 2 2]
+    @test validate_design(request, good, layout_targets) == validate_design(request, good, required) ==
+          nrequired(layout_targets) == 11
+    msg(m, t) = message(() -> _recount(request, m, t))
+    designs = [good[:, setdiff(axes(good, 2), j)] for j in axes(good, 2)]                 # a row dropped
+    for j in axes(good, 2), i in axes(good, 1), v in 1:request.arity[i]                   # a value changed
+        v == good[i, j] && continue
+        changed = copy(good)
+        changed[i, j] = v
+        push!(designs, changed)
+    end
+    uncovered, held = Ref(0), Ref(0)
+    for m in designs
+        ours, listed = msg(m, layout_targets), msg(m, required)
+        @test ours == layout_verdict(request, m, walked, gone)
+        if ours === nothing
+            @test _recount(request, m, layout_targets) == _recount(request, m, required) == 11
+        elseif startswith(ours, "internal error: excluded target")
+            held[] += 1
+        else
+            @test ours == listed
+            uncovered[] += 1
+        end
+    end
+    @test uncovered[] >= 5 && held[] >= 5
+    @test msg(good[:, 1:4], layout_targets) == "internal error: required target (mode = :exact, solver = :qr) is not covered"
+    # Each excluded target, held by a row added to the design or alone, is
+    # named, unless a required target before it in target order is uncovered.
+    @test length(gone) == 5
+    for t in gone
+        row = [x == 0 ? 1 : x for x in t]
+        for m in (hcat(good, row), reshape(row, :, 1), hcat(good[:, 1:4], row))
+            @test msg(m, layout_targets) == layout_verdict(request, m, walked, gone) !== nothing
+        end
+        @test startswith(msg(hcat(good, row), layout_targets), "internal error: excluded target")
+    end
 end
 
 

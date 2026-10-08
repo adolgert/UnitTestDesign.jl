@@ -91,19 +91,20 @@ end
     @test r.guarantee == "5 cases cover all 11 feasible pairs of a 12-combination space " *
                          "(3 pairs forbidden, 2 impossible under the constraints)"
     @test shown(r) == join([r.guarantee; "excluded:"; SOLVER_EXCLUDED;
+        "size: 5 cases; lower bound 4: the 4 feasible combinations of mode and solver need a case each";
         "bonus: 5 of 5 feasible triples covered";
         "prefix curve:";
         "  first 1 of 5 cover 27% (3 of 11)";
-        "  first 2 of 5 cover 45% (5 of 11)";
-        "  first 3 of 5 cover 63% (7 of 11)";
+        "  first 2 of 5 cover 54% (6 of 11)";
+        "  first 3 of 5 cover 72% (8 of 11)";
         "  first 4 of 5 cover 90% (10 of 11)";
         "  first 5 of 5 cover 100% (11 of 11)";
-        "seed: none (IPOG uses no randomness)"], "\n")
+        "seed: none (Auto uses no randomness)"], "\n")
     @test sprint(show, r) == r.guarantee
-    @test (r.strategy, r.engine, r.seed, r.n_must_include, r.strength) == (:covering, :IPOG, nothing, 0, 2)
+    @test (r.strategy, r.engine, r.seed, r.n_must_include, r.strength) == (:covering, :Auto, nothing, 0, 2)
     @test same_exclusions(r.excluded, cases.excluded) && isempty(r.recorded)
     @test r.excluded == r.coverage.ordinary.excluded
-    @test [x.covered for x in r.prefix] == [3, 5, 7, 10, 11]
+    @test [x.covered for x in r.prefix] == [3, 6, 8, 10, 11]
 
     # GND names its seed; must-include rows are counted; stronger groups are named.
     g = report(all_pairs(space; engine = GND(seed = 3)))
@@ -323,7 +324,7 @@ end
                       negative = (covered = 0, feasible = 0, unknown = 0), applicable = true, reason = "")
     @test x.prefix[end] == (cases = 5, covered = 11, feasible = 11, unknown = 0)
     @test x.prefix_negative[end] == (cases = 5, covered = 0, feasible = 0, unknown = 0)
-    @test (x.strategy, x.engine, x.seed, x.n_must_include) == (:covering, :IPOG, nothing, 0)
+    @test (x.strategy, x.engine, x.seed, x.n_must_include) == (:covering, :Auto, nothing, 0)
     @test plain(reports[3]).coverage.stronger == [(names = [:mode, :solver, :tol], strength = 3)]
     # With Invalid values the negative prefix curve and bonus are plain data too.
     xi = plain(reports[6])
@@ -352,7 +353,8 @@ end
     @test d.total == 12 && d.valid == 5 && !d.has_invalid && d.rows[2] == (strategy = "covering(1)",
         kind = :covering, level = 1, status = :ok, message = "", cases = 3, share = 0.6,
         pairs = (covered = 8, feasible = 11, unknown = 0), triples = (covered = 3, feasible = 5, unknown = 0),
-        negative_cases = 0, negative_pairs = none, negative_triples = none)
+        negative_cases = 0, negative_pairs = none, negative_triples = none, engine = "Auto()")
+    @test d.engines == ["Auto()"]
     # Above `limit` the valid count is unknown; above typemax(Int) the total is a string of digits.
     wide = plain(design_sizes(fill(1:10, 5)...; strengths = Int[], distances = Int[], limit = 10))
     @test wide.total === 100_000 && wide.valid === nothing && plain_tree(wide)
@@ -371,23 +373,23 @@ end
     t = design_sizes(fable_domains()...)
     @test [r.strategy for r in t.rows] ==
           ["full_factorial", "covering(1)", "covering(2)", "covering(3)", "excursions(1)", "excursions(2)"]
-    @test [r.cases for r in t.rows] == [81, 3, 10, 31, 9, 33]
-    @test (t.total, t.valid, t.engine) == (81, 81, :IPOG)
+    @test [r.cases for r in t.rows] == [81, 3, 9, 27, 9, 33]
+    @test (t.total, t.valid, t.engine) == (81, 81, :Auto)
     @test all(r -> r.status == :ok, t.rows)
     @test [r.pairs.covered for r in t.rows] == [54, 18, 54, 54, 30, 54]
-    @test [r.triples.covered for r in t.rows] == [108, 12, 39, 108, 28, 76]
+    @test [r.triples.covered for r in t.rows] == [108, 12, 36, 108, 28, 76]
     @test all(r -> (r.pairs.feasible, r.triples.feasible) == (54, 108), t.rows)
     @test shown(t) == join([
         "strategy        cases   share  pairs  triples",
         "full_factorial     81  100.0%  54/54  108/108  valid 81 of 81",
         "covering(1)         3    3.7%  18/54   12/108",
-        "covering(2)        10   12.3%  54/54   39/108",
-        "covering(3)        31   38.3%  54/54  108/108",
+        "covering(2)         9   11.1%  54/54   36/108",
+        "covering(3)        27   33.3%  54/54  108/108",
         "excursions(1)       9   11.1%  30/54   28/108",
         "excursions(2)      33   40.7%  54/54   76/108",
-        "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
+        "case counts are the rows each strategy produced with Auto, not lower bounds"], "\n")
     # The same through a NamedTuple and a TestSpace; the counts come from running the strategies.
-    @test [r.cases for r in design_sizes(TestSpace(fable_domains()...)).rows] == [81, 3, 10, 31, 9, 33]
+    @test [r.cases for r in design_sizes(TestSpace(fable_domains()...)).rows] == [81, 3, 9, 27, 9, 33]
     @test design_sizes(fable_domains()...).rows[3].cases == length(all_pairs(fable_domains()...))
 
     s = design_sizes(solver_space())
@@ -404,7 +406,7 @@ end
         "covering(3)         5  100.0%  11/11      5/5",
         "excursions(1)       2   40.0%   5/11      2/5",
         "excursions(2)       3   60.0%   7/11      3/5",
-        "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
+        "case counts are the rows each strategy produced with Auto, not lower bounds"], "\n")
     # The checker agrees on each design's pairs.
     for (row, cases) in zip(s.rows[2:4], (all_values(solver_space()), all_pairs(solver_space()),
                                           all_triples(solver_space())))
@@ -472,12 +474,14 @@ end
     cases = all_pairs(space)
     r = report(cases)
     @test split(shown(r), "\n")[2:end] == [
+        "size: 3 cases, minimal: the 1 combination of a and b needs a case; and 2 negative cases, bounded in " *
+        "the same way for each Invalid value",
         "bonus coverage not applicable: strength 3 exceeds the number of parameters, 2",
         "prefix curve:",
         "  first 1 of 3 cover 100% of ordinary pairs (1 of 1); negative 0 of 2",
         "  first 2 of 3 cover 100% of ordinary pairs (1 of 1); negative 1 of 2",
         "  first 3 of 3 cover 100% of ordinary pairs (1 of 1); negative 2 of 2",
-        "seed: none (IPOG uses no randomness)"]
+        "seed: none (Auto uses no randomness)"]
     @test [p.covered for p in r.prefix] == [1, 1, 1]
     @test [p.covered for p in r.prefix_negative] == [0, 1, 2]
     @test all(p -> p.feasible == 2 && p.unknown == 0, r.prefix_negative)
@@ -491,11 +495,11 @@ end
         "bonus: 4 of 4 feasible triples covered; negative: 2 of 3",
         "prefix curve:",
         "  first 2 of 6 cover 66% of ordinary pairs (6 of 9); negative 0 of 4",
-        "  first 3 of 6 cover 77% of ordinary pairs (7 of 9); negative 0 of 4",
+        "  first 3 of 6 cover 88% of ordinary pairs (8 of 9); negative 0 of 4",
         "  first 4 of 6 cover 100% of ordinary pairs (9 of 9); negative 0 of 4",
         "  first 5 of 6 cover 100% of ordinary pairs (9 of 9); negative 2 of 4",
         "  first 6 of 6 cover 100% of ordinary pairs (9 of 9); negative 4 of 4",
-        "seed: none (IPOG uses no randomness)"]
+        "seed: none (Auto uses no randomness)"]
     @test r.bonus.negative == (covered = 2, feasible = 3, unknown = 0)
 
     # Every figure against the oracle, prefix by prefix, on spaces with one and
@@ -539,7 +543,7 @@ end
         "bonus: 0 of 0 feasible triples covered; negative: 6 of at least 6, 90 unresolved",
         "prefix curve:",
         "  first 1 of 1: no ordinary pair is feasible; negative 4 of at least 4",
-        "seed: none (IPOG uses no randomness)"]
+        "seed: none (Auto uses no randomness)"]
     @test occursin("\n  first 1 of 1: no ordinary pair is feasible; negative 4 of 4\n", shown(report(cases)))
 end
 
@@ -563,7 +567,7 @@ end
         "excursions(2)   4 + 2   85.7%  9/9 + 3/4  4/4 + 2/3",
         "cells with + read ordinary + negative: rows without and with an Invalid value, and the targets " *
             "each kind covers",
-        "case counts are the rows each strategy produced with IPOG, not lower bounds"], "\n")
+        "case counts are the rows each strategy produced with Auto, not lower bounds"], "\n")
     # Each figure is the oracle's measure of the design the strategy produces.
     designs = [full_factorial(space), all_values(space), all_pairs(space), all_triples(space),
                excursions(space; distance = 1), excursions(space; distance = 2)]
@@ -623,4 +627,141 @@ end
     @test sprint(show, design_sizes((a = [1, 2], b = [:x]); strengths = 1:1, distances = 1:0)) ==
           "DesignSizes: 2 strategies for 2 parameters"
     @test sprint(show, report(all_pairs(1:3, 1:6))) == "18 cases cover all 18 feasible pairs of an 18-combination space"
+end
+
+
+@testitem "report and design_sizes: one memo, one answer cache per measurement; each figure is a separate measurement's (§3.5, plan Stage C decision 7)" setup=[Checker, ReportSetup] begin
+    using Base.CoreLogging: with_logger, NullLogger   # a lazily evaluated rule warns
+    # A report measures the rows twice, at its strength and for the bonus one
+    # above, with one lazy-rule memo and a fresh answer cache for each. So every
+    # figure is that of a `coverage` call, which has a memo of its own, under
+    # any limit (probe 03b). Its answer caches must stay apart: in the space of
+    # two components below, a bonus that shared the first measurement's answer
+    # caches would find other component witnesses cached, and at
+    # feasibility_limit = 4 would leave 14 triples unresolved, not 10.
+    same_part(a, b) = (a.covered, a.feasible, a.rows, a.duplicates) == (b.covered, b.feasible, b.rows, b.duplicates) &&
+        isequal(a.missing, b.missing) && isequal(a.unknown, b.unknown) && same_exclusions(a.excluded, b.excluded) &&
+        a.groups == b.groups && isequal(a.rejected, b.rejected)
+    counts(part) = (covered = part.covered, feasible = part.feasible, unknown = length(part.unknown))
+    function agrees(cases, limits)
+        r = report(cases; limits...)
+        base = coverage(cases; limits...)
+        ok = same_part(r.coverage.ordinary, base.ordinary) && same_part(r.coverage.negative, base.negative) &&
+             r.coverage.limits == base.limits && same_exclusions(r.excluded, [base.ordinary.excluded; base.negative.excluded])
+        if r.bonus.applicable
+            above = coverage(collect(cases), cases.space; strength = r.strength + 1, limits...)
+            ok &= (r.bonus.covered, r.bonus.feasible, r.bonus.unknown) == values(counts(above.ordinary)) &&
+                  r.bonus.negative == counts(above.negative)
+        end
+        return ok
+    end
+    tight = [(feasibility_limit = 1, explanation_limit = 1), (feasibility_limit = 2,), (feasibility_limit = 3,),
+             (feasibility_limit = 4,), (feasibility_limit = 5,), (explanation_limit = 1,), NamedTuple()]
+    two = NamedTuple{Tuple(Symbol(c, i) for c in (:a, :b) for i in 1:4)}(Tuple(1:2 for _ in 1:8))
+    two_rules = [forbid((a1 = 1, a2 = 1)), forbid((a3 = 1, a4 = 1)), forbid((a2 = 2, a3 = 2)),
+                 forbid((b1 = 1, b2 = 1)), forbid((b3 = 1, b4 = 1)), forbid((b2 = 2, b3 = 2))]
+    negative = (n = [1, Invalid(0)], x1 = 1:4, x2 = 1:4, x3 = 1:4, x4 = 1:4)
+    negative_rules = [forbid(n -> n == 1, :n), forbid((a, b, c, d) -> !(a == b == c == d == 4), :x1, :x2, :x3, :x4)]
+    rng = Xoshiro(0x2026_0930_0003)
+    problems = [random_problem(rng; strength = 2).space for _ in 1:12]
+    # Each space with its rules tabulated, then with every rule lazy.
+    both(make) = [with_logger(() -> make(limit), NullLogger()) for limit in (10^5, 1)]
+    randoms = reduce(vcat, [both(t -> test_space(cs; tabulation_limit = t)) for cs in problems])
+    special = [both(t -> TestSpace(two; constraints = two_rules, tabulation_limit = t));
+               both(t -> TestSpace(negative; constraints = negative_rules, tabulation_limit = t))]
+    # limit_exhaustion (test "report under limits") only at feasibility_limit
+    # 1 to 5: at the default it takes seconds.
+    exhaustion = both(t -> test_space(limit_exhaustion; tabulation_limit = t))
+    corpus = [[space => tight for space in [randoms; special]]; [space => tight[1:5] for space in exhaustion]]
+    for (space, limit_list) in corpus, strength in 1:min(2, length(space.names))
+        cases = try
+            covering(space; strength)
+        catch err
+            err isa ResourceLimitError || rethrow()
+            continue
+        end
+        for limits in limit_list
+            ok = agrees(cases, limits)
+            ok || @error "report's figures differ from separate measurements" space strength limits
+            @test ok
+        end
+    end
+    # The space of two components is the one where a shared answer cache
+    # shows (14 unresolved triples with one), on the ten cases IPOG gave there
+    # until its lookup core (plan §5.5, Phase 4), kept as data: passed back as
+    # must-include rows, which cover every pair, they are the whole design.
+    ten = [(2, 2, 1, 2, 1, 2, 1, 2), (1, 2, 1, 2, 2, 1, 2, 1), (2, 1, 2, 1, 2, 1, 1, 2), (2, 1, 1, 2, 1, 2, 1, 2),
+           (2, 1, 2, 2, 1, 2, 1, 2), (2, 1, 2, 1, 1, 2, 1, 2), (1, 2, 1, 2, 1, 2, 1, 2), (1, 2, 1, 2, 2, 2, 1, 2),
+           (2, 1, 2, 1, 2, 1, 2, 1), (1, 2, 1, 2, 2, 1, 2, 2)]
+    pinned = covering(TestSpace(two; constraints = two_rules); strength = 2, must_include = ten)
+    @test length(pinned) == 10
+    r = report(pinned; feasibility_limit = 4)
+    @test r.bonus.unknown == 10
+
+    # design_sizes keeps one memo for the call; each figure is that of
+    # `coverage(design; strength = s)` with its own.
+    for space in special, limits in tight
+        t = design_sizes(space; limits...)
+        designs = Any[() -> full_factorial(space; limits...);
+                      [() -> covering(space; strength = s, limits...) for s in 1:min(3, length(space.names))];
+                      [() -> excursions(space; distance = d, limits...) for d in 1:2]]
+        for (row, make) in zip(t.rows, designs)
+            row.status === :ok || continue
+            design = make()
+            for (s, ordinary, negative) in ((2, row.pairs, row.negative_pairs), (3, row.triples, row.negative_triples))
+                s <= length(space.names) || continue
+                c = coverage(design; strength = s, limits...)
+                @test (ordinary, negative) == (counts(c.ordinary), counts(c.negative))
+            end
+        end
+    end
+end
+
+
+@testitem "report and design_sizes: a lazy predicate runs at most once per assignment for all the call's measurements (§3.5, §12.19)" begin
+    # One whole-case rule over three binary parameters: eight complete
+    # assignments. Probe 03a saw report evaluate it 12 to 16 times, and
+    # design_sizes 91 times more than its generations do alone.
+    seen = NTuple{3, Int}[]
+    probe(forbidden) = TestSpace((a = [0, 1], b = [0, 1], c = [0, 1]);
+        constraints = [forbid(case -> (push!(seen, Tuple(case)); forbidden(case)); reason = "counted")])
+    calls(f) = (empty!(seen); f(); copy(seen))
+    for forbidden in (case -> false, case -> case.a == 1 && case.b == 1)
+        space = probe(forbidden)
+        for design in (all_pairs(space), excursions(space; distance = 1))
+            logged = calls(() -> report(design))
+            @test !isempty(logged) && allunique(logged)
+        end
+        # design_sizes' generations are requests, each with its own memo; its
+        # measurements share one.
+        alone = length(calls(() -> full_factorial(space)))
+        for s in 1:3
+            alone += length(calls(() -> covering(space; strength = s)))
+        end
+        for d in 1:2
+            alone += length(calls(() -> isallowed(space, (a = 0, b = 0, c = 0))))
+            alone += length(calls(() -> excursions(space; distance = d)))
+        end
+        @test length(calls(() -> design_sizes(space))) - alone <= 8
+    end
+end
+
+
+@testitem "report: the bonus counts without listing its targets (plan Stage C step 4)" begin
+    using UnitTestDesign: rule_memos, _prepare_rows, _bonus
+    # 30 parameters of 5 values, no rules: the bonus has 291,894 missing
+    # triples (287,305 on the rows of IPOG's old paths, before Phase 4's
+    # lookup core, which the figures below were measured on). Before Stage C
+    # it listed them, and allocated about 1.0 GB here (Julia 1.13); counting
+    # allocates about 0.22 GB, and a count that listed every target again
+    # would allocate about 0.5 GB.
+    space = TestSpace(NamedTuple{Tuple(Symbol("x$i") for i in 1:30)}(Tuple(1:5 for _ in 1:30)))
+    cases = all_pairs(space; engine = IPOG())
+    memos = rule_memos(space.tables)
+    prepared = _prepare_rows(space, memos, collect(cases))
+    bonus() = _bonus(prepared, space, 2; memos, feasibility_limit = 1_000_000)
+    b = bonus()
+    @test (b.covered, b.feasible, b.unknown) == (215_606, 507_500, 0)
+    @test b.feasible - b.covered == 291_894
+    @test @allocated(bonus()) < 400_000_000
 end

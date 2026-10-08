@@ -52,8 +52,10 @@ space = TestSpace((
 cases = all_pairs(space)
 ```
 
-The summary line says what you asked for: 13 cases at strength 2 over 4
-parameters, whose full product has 81 combinations. Every pair of values of
+The summary line says what you asked for: 12 cases at strength 2 over 4
+parameters, whose full product has 81 combinations, from the default engine,
+`Auto`, which here kept the catalog's array, seeded under the rules
+(`Construction()`), over IPOG's 13 cases. Every pair of values of
 every two options appears in at least one case, among the pairs some valid
 case can hold.
 

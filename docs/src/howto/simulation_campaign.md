@@ -36,7 +36,7 @@ design_sizes(space)
 
 Each row is one design: how many runs it takes, its share of the 432 valid
 runs, and how many of the feasible pairs and triples it holds. Pairs take
-13 runs; triples take 43. The counts are the rows the engine produced for
+13 runs; triples take 41. The counts are the rows the engine produced for
 this space, not lower bounds, and another engine may give a different
 count.
 
@@ -57,7 +57,7 @@ every feasible triple within the group, 146 combinations in all. The
 
 ## 4. Make the design reproducible
 
-The default engine, [`IPOG`](@ref), uses no randomness, so the same space
+The default engine, [`Auto`](@ref)`()`, uses no randomness, so the same space
 gives the same cases. [`GND`](@ref) draws candidate rows at random; give it
 a seed, and the same seed gives the same cases, and `report` prints it:
 

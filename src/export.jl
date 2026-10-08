@@ -91,7 +91,7 @@ when the job needs its exact text.
 julia> cases = all_pairs((os = ["ubuntu-latest", "macos-latest"], solver = [:lu, :qr], threads = [1, 4]));
 
 julia> github_matrix(cases)
-{"include":[{"os":"ubuntu-latest","solver":"lu","threads":1},{"os":"ubuntu-latest","solver":"qr","threads":4},{"os":"macos-latest","solver":"lu","threads":4},{"os":"macos-latest","solver":"qr","threads":1}]}
+{"include":[{"os":"ubuntu-latest","solver":"lu","threads":1},{"os":"macos-latest","solver":"qr","threads":1},{"os":"macos-latest","solver":"lu","threads":4},{"os":"ubuntu-latest","solver":"qr","threads":4}]}
 ```
 """
 github_matrix(cases; io::IO = stdout) = github_matrix(io, cases)

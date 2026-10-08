@@ -15,6 +15,34 @@ using TestItemRunner
 end
 
 
+@testitem "checker: the oracle never mentions the package outside comments" begin
+    # checker.jl shares a module with fixture_model.jl, which imports the
+    # package, so the oracle's independence is a convention; this holds it.
+    # The parser drops comments, so every name, string and docstring left in
+    # the parsed file counts as a mention.
+    function mentions(text)
+        found = String[]
+        function visit(x)
+            if x isa Expr
+                foreach(visit, x.args)
+            elseif x isa QuoteNode
+                visit(x.value)
+            elseif (x isa Symbol || x isa AbstractString) && occursin("UnitTestDesign", string(x))
+                push!(found, string(x))
+            end
+        end
+        visit(Meta.parseall(text))
+        return found
+    end
+    @test isempty(mentions(read(joinpath(@__DIR__, "checker.jl"), String)))
+    # The check itself: comments pass; a name or a string fails.
+    @test isempty(mentions("# UnitTestDesign\n#= UnitTestDesign =#\nx = 1"))
+    @test mentions("using UnitTestDesign: TestSpace") == ["UnitTestDesign"]
+    @test mentions("f(x) = UnitTestDesign.f(x)") == ["UnitTestDesign"]
+    @test mentions("\"\"\"Unlike UnitTestDesign.\"\"\"\nf(x) = x") == ["Unlike UnitTestDesign."]
+end
+
+
 @testitem "checker: Astra's chained equalities" setup=[Checker] begin
     # A == B and B == C, written as rules that forbid A != B and B != C.
     space = CheckSpace((A = [1, 2], B = [1, 2], C = [1, 2]),
