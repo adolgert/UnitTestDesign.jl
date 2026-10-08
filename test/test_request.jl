@@ -306,6 +306,96 @@ end
 end
 
 
+@testitem "request: the layout's walk of the base supports that hold a parameter and others from a set, in order (plan §5.6)" setup=[RequestSetup] begin
+    using Combinatorics: combinations
+    using Random: Xoshiro, randperm
+    using UnitTestDesign: TargetList, _Classified, _request, _supports, _support!, _support_rank,
+                          _each_base_support, _BaseWalkBuffers, _lookup_steps, ipog_order
+    # `_each_base_support(supports, p, earlier)` gives each base support that
+    # holds p and t - 1 of the parameters `earlier`, with its position, in
+    # increasing position, as IPOG's step at p reads them (`_begin_step!`).
+    # Against the definition: each (t - 1)-subset of `earlier` with p,
+    # positioned by ranking (`_support_rank`) and read back by unranking
+    # (`_support!`). On every step of random parameter orders, IPOG's among
+    # them, on random layouts with `stronger` groups at base strengths 1 to
+    # 4, and a negative sub-request's at base strength 0, which has none; at
+    # IPOG's order the walk gives exactly the step's base supports
+    # (`_lookup_steps`). Then on wide base groups with random sets. One pair
+    # of buffers serves every walk.
+    buffers = _BaseWalkBuffers()
+    buffer = Int[]
+    "The walk at `p` against the definition; returns its positions."
+    function check(sups, p, earlier)
+        got = [(s, copy(support)) for (s, support) in _each_base_support(sups, p, earlier, buffers)]
+        t = sups.t
+        expected = t == 0 || length(earlier) < t - 1 ? Tuple{Int, Vector{Int}}[] :
+                   sort!([(_support_rank(sups, c), c) for c in (sort!([p; subset]) for subset in combinations(earlier, t - 1))])
+        @test got == expected
+        @test issorted(first.(got); lt = <=)
+        @test all(((s, c),) -> _support!(buffer, sups, s) == c, got)
+        @test length(got) == (t == 0 ? 0 : binomial(length(earlier), t - 1))
+        return first.(got)
+    end
+    rng = Xoshiro(0x2026_1007_1a70)
+    tally = Dict(:t0 => 0, :t1 => 0, :t2 => 0, :t3 => 0, :t4 => 0, :listed => 0, :steps => 0)
+    for _ in 1:80
+        n = rand(rng, 2:9)
+        strength = rand(rng, 1:min(4, n))
+        stronger = Pair{Vector{Int}, Int}[]
+        for _ in 1:(strength < n ? rand(rng, 0:3) : 0)
+            k = rand(rng, (strength + 1):n)
+            push!(stronger, sort!(randperm(rng, n)[1:k]) => rand(rng, (strength + 1):k))
+        end
+        space = TestSpace([Symbol(:p, i) for i in 1:n], [1:rand(rng, 1:3) for _ in 1:n], Constraint[], 10^5)
+        requests = [Request(space; strength, stronger)]
+        if strength == 1 && !isempty(stronger)
+            # A negative sub-request's shape: base strength 0, so every support is listed.
+            r = requests[1]
+            push!(requests, _request(space, 0, [collect(1:n) => 0; r.groups[2:end]], zeros(Int, n, 0), r.feasibility,
+                                     10^6, 10^6))
+        end
+        for request in requests
+            sups = TargetList(request).supports
+            order = ipog_order(request.arity, request.groups)
+            steps = _lookup_steps(_Classified(request).targets, request.arity, order)
+            for (k, p) in enumerate(order)
+                ids = check(sups, p, sort(order[1:(k - 1)]))
+                @test ids == filter(<=(sups.nbase), steps.supports[steps.first[p]:(steps.first[p + 1] - 1)])
+                tally[:steps] += 1
+            end
+            for _ in 1:2
+                shuffled = randperm(rng, n)
+                for (k, p) in enumerate(shuffled)
+                    check(sups, p, sort(shuffled[1:(k - 1)]))
+                end
+            end
+            tally[Symbol(:t, request.strength)] += 1
+            tally[:listed] += length(sups) > sups.nbase
+        end
+    end
+    @test all(>(0), values(tally))
+    # Wide base groups, random parameters and sets, the first and last
+    # parameters among them; and every other parameter as the set.
+    for (n, t, size) in ((1_000, 2, 999), (1_000, 2, 40), (200, 3, 60), (60, 4, 30), (4_096, 3, 25), (30, 1, 29))
+        sups = _supports([collect(1:n) => t])
+        for _ in 1:20
+            p = rand(rng, (1, n, rand(rng, 1:n)))
+            others = setdiff(1:n, p)
+            earlier = sort!(size >= n - 1 ? others : others[randperm(rng, n - 1)[1:size]])
+            check(sups, p, earlier)
+        end
+    end
+    # A set that isn't ascending within 1:n, or that holds p, is an internal
+    # error, but not at t = 1, which doesn't read it; p must be a parameter.
+    sups = _supports([collect(1:6) => 3])
+    for bad in ([2, 1], [1, 1], [0, 2], [1, 7], [1, 4])
+        @test_throws ErrorException collect(_each_base_support(sups, 4, bad))
+    end
+    @test_throws ErrorException collect(_each_base_support(sups, 7, [1, 2]))
+    @test [s for (s, _) in _each_base_support(_supports([collect(1:6) => 1]), 4, [2, 1])] == [4]
+end
+
+
 @testitem "request: the layout's supports and offsets are the listed layout's, in order (plan §5.6, §9.7)" setup=[RequestSetup] begin
     using Combinatorics: combinations
     using Random: Xoshiro, randperm

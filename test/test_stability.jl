@@ -348,14 +348,17 @@ end
 
 @testitem "stability: a support is read in place, and IPOG's map of a step without unranking (plan §5.6)" setup=[StabilitySetup] begin
     using UnitTestDesign: Request, TargetList, Profile, _Classified, _support!, _support_rank, _each_support,
-                          _lookup_steps, _LookupRun, _begin_step!, _prepare
+                          _each_base_support, _BaseWalkBuffers, _supports, _lookup_steps, _LookupRun, _begin_step!,
+                          _prepare
     # Phase 5 (plan §5.6): the base group's supports are computed, not listed
     # (`_Supports`). Reading one into a buffer that has room for it, by its
     # position (unranked) or after the one before it (a walk), and ranking one
     # back infer and allocate nothing, for a base support and a listed one;
-    # so does IPOG's map of a step, which reads the step's base supports with
-    # an odometer and its listed ones by position, here with overlapping
-    # `stronger` groups at two strengths.
+    # so does the layout's walk of the base supports that hold one parameter
+    # and others from a set (`_each_base_support`), at base strengths 0 to 4,
+    # once its buffers have grown; and so does IPOG's map of a step, which
+    # reads the step's base supports from that walk and its others by
+    # position, here with overlapping `stronger` groups at two strengths.
     measured(f, x) = (f(x); @allocated f(x))   # one argument: see the targets-interface item
     names = [Symbol(:p, i) for i in 1:12]
     request = Request(TestSpace(names, [1:3 for _ in 1:12], Constraint[], 10^5); strength = 2,
@@ -379,6 +382,24 @@ end
     end
     @test walk_sum((sups, buffer)) == sum(s * sum(sups[s]) for s in eachindex(sups))
     @test measured(walk_sum, (sups, buffer)) == 0
+    buffers = _BaseWalkBuffers()
+    walk = _each_base_support(sups, 7, [1, 2, 5, 9, 12], buffers)
+    @test (@inferred Nothing iterate(walk)) == ((6, [1, 7]), 6)
+    @test (@inferred Nothing iterate(walk, 6)) == ((16, [2, 7]), 16)
+    "The base supports at one step through the layout's walk, weighted by their positions."
+    function base_sum(x)
+        total = 0
+        for (s, support) in _each_base_support(x[1], x[2], x[3], x[4])
+            total += s * sum(support)
+        end
+        return total
+    end
+    for (layout, p, earlier) in ((sups, 7, [1, 2, 5, 9, 12]), (_supports([collect(1:12) => 4]), 6, [1, 2, 3, 5, 8, 10, 11]),
+                                 (_supports([collect(1:12) => 1]), 3, [1, 2]), (_supports([collect(1:4) => 0, [1, 2] => 1]), 2, [1]))
+        expected = sum((s * sum(layout[s]) for s in 1:layout.nbase if p in layout[s] && layout[s] ⊆ [earlier; p]); init = 0)
+        @test base_sum((layout, p, earlier, buffers)) == expected
+        @test measured(base_sum, (layout, p, earlier, buffers)) == 0
+    end
     # IPOG's map, every step in order, then each again with its buffers sized.
     targets = _Classified(request).targets
     steps = _lookup_steps(targets, request.arity, _prepare(IPOG(), Profile(request)).order)

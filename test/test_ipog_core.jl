@@ -96,16 +96,16 @@ end
 end
 
 
-@testitem "lookup core: a step's map reads its base supports with an odometer, as their positions give them (plan §5.6)" setup=[LookupSetup] begin
+@testitem "lookup core: a step's map reads its base supports from the layout's walk, as their positions give them (plan §5.6)" setup=[LookupSetup] begin
     using Random: Xoshiro, randperm
-    using UnitTestDesign: _LookupRun, _begin_step!, supports
-    # `_begin_step!` reads a step's base supports without unranking them:
-    # the step's parameter beside each (t - 1)-subset of the parameters before
-    # it in the order, in lexicographic order, before the listed supports. So
-    # the map must hold, for each of the step's supports, the support's other
-    # parameters in support order, as its position gives them
-    # (`supports(targets)[s]`), on random requests with `stronger` groups,
-    # which IPOG's order puts first, at strengths 1 to 4, a negative
+    using UnitTestDesign: _LookupRun, _LookupSteps, _begin_step!, supports
+    # `_begin_step!` reads a step's base supports without unranking them,
+    # from the layout's walk of the supports that hold the step's parameter
+    # and parameters before it (`_each_base_support`), and any other support
+    # by its position. So the map must hold, for each of the step's supports,
+    # the support's other parameters in support order, as its position gives
+    # them (`supports(targets)[s]`), on random requests with `stronger`
+    # groups, which IPOG's order puts first, at strengths 1 to 4, a negative
     # sub-request's 0 among them, also when the steps are made out of order.
     rng = Xoshiro(0x2026_1006_57e9)
     tally = Dict(:steps => 0, :listed => 0, :shuffled => 0, :zero => 0)
@@ -145,6 +145,21 @@ end
         end
     end
     @test all(>(0), values(tally))
+    # A support the walk gives that the step doesn't list is an internal
+    # error: here the last step's list without its first support, and a step
+    # whose list is empty.
+    request = Request(positional([2, 3, 2, 2, 3]); strength = 3)
+    targets = _Classified(request).targets
+    steps = _lookup_steps(targets, request.arity, ipog_order(request.arity, request.groups))
+    p = last(steps.order)
+    lo = steps.first[p]
+    for drop in (lo:lo, lo:(steps.first[p + 1] - 1))
+        k = length(drop)
+        short = _LookupSteps(steps.order, steps.arity, [f > lo ? f - k : f for f in steps.first],
+                             deleteat!(copy(steps.supports), drop))
+        run = _LookupRun(short, Returns(false), request.must_include, :lowest, :support)
+        @test_throws ErrorException _begin_step!(run, short, targets, p)
+    end
 end
 
 
