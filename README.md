@@ -13,9 +13,7 @@ cases covering the rest.
 pkg> add UnitTestDesign
 ```
 
-That installs 0.5 once 0.5 is registered. Until then, install the release
-branch with `pkg> add https://github.com/adolgert/UnitTestDesign.jl#release/0.5`.
-It needs Julia 1.10 or later.
+That installs 0.5, which needs Julia 1.10 or later.
 
 ## When to use it
 
