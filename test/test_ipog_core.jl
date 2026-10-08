@@ -98,7 +98,7 @@ end
 
 @testitem "lookup core: a step's map reads its base supports from the layout's walk, as their positions give them (plan §5.6)" setup=[LookupSetup] begin
     using Random: Xoshiro, randperm
-    using UnitTestDesign: _LookupRun, _LookupSteps, _begin_step!, supports
+    using UnitTestDesign: _LookupRun, _LookupSteps, _begin_step!, _each_base_support, supports
     # `_begin_step!` reads a step's base supports without unranking them,
     # from the layout's walk of the supports that hold the step's parameter
     # and parameters before it (`_each_base_support`), and any other support
@@ -107,8 +107,13 @@ end
     # them (`supports(targets)[s]`), on random requests with `stronger`
     # groups, which IPOG's order puts first, at strengths 1 to 4, a negative
     # sub-request's 0 among them, also when the steps are made out of order.
+    # A map read wholly by position is the same map, only slower, so the
+    # walk's part is checked too (review p5f-layout 1): the set the step hands
+    # the walk (`run.before`, from `_before!`) is the parameters before `p`
+    # in the order, and over it the walk gives exactly the step's base
+    # supports, which the step therefore takes from the walk.
     rng = Xoshiro(0x2026_1006_57e9)
-    tally = Dict(:steps => 0, :listed => 0, :shuffled => 0, :zero => 0)
+    tally = Dict(:steps => 0, :listed => 0, :shuffled => 0, :zero => 0, :walked => 0)
     for _ in 1:80
         n = rand(rng, 2:9)
         strength = rand(rng, 1:min(4, n))
@@ -137,6 +142,10 @@ end
                 @test run.sidx[1:run.m] == steps.supports[lo:hi]
                 @test all(j -> run.params[run.pfirst[j]:(run.pfirst[j + 1] - 1)] ==
                                filter(!=(p), supports(targets)[run.sidx[j]]), 1:run.m)
+                base = filter(<=(supports(targets).nbase), run.sidx[1:run.m])
+                @test run.before == sort(steps.order[1:(run.rank[p] - 1)])
+                @test [s for (s, _) in _each_base_support(supports(targets), p, run.before)] == base
+                tally[:walked] += request.strength >= 2 && !isempty(base)
                 tally[:steps] += 1
                 tally[:listed] += any(>(supports(targets).nbase), run.sidx[1:run.m])
                 tally[:shuffled] += shuffled
