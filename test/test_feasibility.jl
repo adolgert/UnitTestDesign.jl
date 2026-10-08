@@ -630,9 +630,17 @@ end
     # same entries after each. Only the rule checks may differ: a question the
     # whole-assignment memo answered checked no rule, and now it makes its
     # direct check (`_violates`) again; every other question checks the same.
+    #
+    # The reference can't check `memo_hits`, which counted its memo's hits.
+    # So every question is also asked of a twin, the same search with step 2
+    # of the fast path held off (plan §12.3 item 8), as a deletion trial's is:
+    # built from its parent by `_Feasibility`, over every rule, it keeps no
+    # record of all-unset answers. Step 2 must change nothing: the twin's
+    # status, witness, `SearchStats` counters, every one, and caches must be
+    # the object's after each question (review p5f-evidence 1).
     using Random
     using UnitTestDesign: _completable, _checked_key, _witness, _deletion_search, _space_indices,
-        _feasibility, Request, cache_entries
+        _feasibility, _Feasibility, Request, SearchStats, cache_entries
     include(joinpath(@__DIR__, "feasibility_reference.jl"))
     rng = Xoshiro(0x2026_1006_c0de ⊻ seed_mod())
     tally = Dict(k => 0 for k in (:none, :some, :all, :repeat, :hit, :feasible, :infeasible, :unknown,
@@ -663,8 +671,11 @@ end
         return key
     end
 
-    "Ask `key` of `f` through one of its entry points and of the reference; compare."
-    function ask!(f, ref, key, tally, rng)
+    "Every counter of `f`'s `SearchStats`."
+    counters(f) = [getfield(f.stats, k) for k in fieldnames(SearchStats)]
+
+    "Ask `key` of `f` through one of its entry points, of the reference and of `twin`; compare."
+    function ask!(f, twin, ref, key, tally, rng)
         limit = rand(rng, (1, 2, 3, 8, 50, f.limit))
         how = rand(rng, (:internal, :internal, :dead, :completable))
         how === :dead && (limit = f.limit)   # `dead` asks with the object's limit
@@ -707,6 +718,13 @@ end
         tally[expected] += 1
         # A cached infeasible component settled it (the direct check found nothing).
         expected === :infeasible && f.stats.memo_hits > answered && (tally[:cached_infeasible] += 1)
+        # The twin, step 2 held off, at the same limit: every entry point
+        # above asks `_completable` so.
+        again = _completable(twin, _checked_key(twin, key), limit)
+        @test again == status
+        @test (again === :feasible ? _witness(twin) : nothing) == w
+        @test counters(twin) == counters(f)
+        @test twin.witness_cache == f.witness_cache
         return expected
     end
 
@@ -737,6 +755,8 @@ end
         f = Feasibility(cands, tables; limit = rand(rng, (2, 5, 30, 1_000_000)))
         tally[:components] += count(c -> !isempty(f.component_tables[c]), eachindex(f.components)) > 1
         ref = ReferenceCaches(f)
+        twin = _Feasibility(f.candidates, f.tables, f.limit, f.rule_memo, f)
+        @test twin.unset === nothing && f.unset !== nothing
         asked = Vector{Int}[]
         infeasible = Vector{Int}[]
         for _ in 1:40
@@ -744,7 +764,7 @@ end
             repeat && (tally[:repeat] += 1)
             key = repeat ? rand(rng, asked) : question(rng, cands, tally)
             push!(asked, key)
-            ask!(f, ref, key, tally, rng) === :infeasible && push!(infeasible, key)
+            ask!(f, twin, ref, key, tally, rng) === :infeasible && push!(infeasible, key)
         end
         @test cache_entries(f) == sum(length, ref.witness_cache)
         # The deletion search's trials are fresh objects, one question each.
