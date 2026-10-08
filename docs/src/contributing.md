@@ -61,12 +61,12 @@ GitHub Actions job. `test/runtests.jl` documents the precedence.
 
 Under CI (the environment variable `CI=true`, which GitHub Actions sets, or
 `--ci`) the run also leaves out every test item tagged `:skipci`, so that
-each CI job takes a few minutes. Those are the slow items whose lines other
-items already reach: comparisons against the checker over every fixture or
-many random problems, the benchmark fixtures, the checker's own tests, and
-the doctests, which the documentation job runs. Tag a new test item
-`tags=[:skipci]` when it takes seconds and covers nothing new; a local run
-without `--ci` runs everything.
+each CI job takes a few minutes. Those are slow items that reach no line of
+`src/` that the untagged items do not: comparisons against the checker over
+every fixture or many random problems, the benchmark fixtures, the checker's
+own tests, the doctests (which the documentation job runs), and some slower
+unit tests. Tag a new test item `tags=[:skipci]` when it takes seconds and
+covers no new line; a local run without `--ci` runs everything.
 
 ```
 julia --project -e 'using Pkg; Pkg.test(test_args = ["--ci"])'
