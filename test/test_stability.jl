@@ -57,6 +57,21 @@ using TestItemRunner
         Allocs.clear()
         return bytes
     end
+
+    """
+    IPOG's map of every step of `x = (run, steps, targets)`, in order: one
+    pass, as a run makes them. At its first step `_before!` empties the set
+    of earlier parameters (the last pass left it full), and at each step
+    after it inserts the parameters added since.
+    """
+    function every_step(x)
+        run, steps, targets = x
+        for p in steps.order
+            steps.first[p] == steps.first[p + 1] && continue
+            UnitTestDesign._begin_step!(run, steps, targets, p)
+        end
+        return run.m
+    end
 end
 
 
@@ -167,6 +182,13 @@ end
     @test allocated(dead, request, row) == 0
     @test allocated(_completable, f, key, 100) == 0
     @test _completable(f, key, 100) === :feasible && _witness(f) == [2, 1, 1, 1, 1, 3]
+    # A miss on that path, (d = 2,) new to {c, d}, also allocates only the
+    # entry it stores (review p5f-perf 8).
+    sizehint!(f.witness_cache[2], 64)
+    miss = [0, 0, 0, 2, 0, 0]
+    before = cache_entries(f)
+    @test (@allocated dead(f, miss)) <= 2 * two
+    @test cache_entries(f) == before + 1 && f.unset.cached == length(f.constrained)
     # A whole-case rule makes one component of every parameter: its keys are
     # whole assignments, and a hit still allocates nothing.
     whole = Request(TestSpace((a = 1:3, b = 1:3, c = 1:3); constraints = [forbid(r -> r.a == 1 && r.b == 2 && r.c == 3)]);
@@ -395,6 +417,7 @@ end
         return total
     end
     for (layout, p, earlier) in ((sups, 7, [1, 2, 5, 9, 12]), (_supports([collect(1:12) => 4]), 6, [1, 2, 3, 5, 8, 10, 11]),
+                                 (_supports([collect(1:10) => 3]), 5, [1, 3, 4, 7, 9]),
                                  (_supports([collect(1:12) => 1]), 3, [1, 2]), (_supports([collect(1:4) => 0, [1, 2] => 1]), 2, [1]))
         expected = sum((s * sum(layout[s]) for s in 1:layout.nbase if p in layout[s] && layout[s] ⊆ [earlier; p]); init = 0)
         @test base_sum((layout, p, earlier, buffers)) == expected
@@ -409,6 +432,11 @@ end
         _begin_step!(run, steps, targets, p)
         @test measured(x -> _begin_step!(x[1], x[2], x[3], x[4]), (run, steps, targets, p)) == 0
     end
+    # Each call above makes a step's map a second time, when `_before!` has
+    # nothing to insert. A whole pass of the steps in order, through a
+    # function barrier, inserts at every step (review p5f-perf 8).
+    @test run.nbefore == 11
+    @test measured(every_step, (run, steps, targets)) == 0
 end
 
 
@@ -1012,6 +1040,10 @@ end
         _vertical!(prun, true)
     end
     @test odometer[] > 0
+    # A whole pass of the steps in order, as a run makes them, with its rows
+    # and rules: `_before!` inserts at every step (review p5f-perf 8).
+    @test prun.nrows > 0 && prun.nbefore == 11
+    @test measured(every_step, (prun, psteps, pt)) == 0
     # A whole run asks for its rows (grown as they are added, then copied
     # once), its largest step's map (grown as the steps grow), and its
     # per-step buffers: at most 8 times the rows' bytes, 4 times the map's,
