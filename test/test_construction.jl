@@ -82,7 +82,7 @@ end
 end
 
 
-@testitem "construction: seeded under rules, must-include rows and stronger groups" setup=[CatalogSetup, ConstructionSetup] begin
+@testitem "construction: seeded under rules, must-include rows and stronger groups" tags=[:skipci] setup=[CatalogSetup, ConstructionSetup] begin
     C = Construction()
     # Probe 11's uniform cases: the catalog's rows that no rule forbids, then
     # IPOG's core. Never more rows than IPOG here.

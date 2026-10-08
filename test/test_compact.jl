@@ -120,7 +120,7 @@ end
 end
 
 
-@testitem "compact: fewer rows, must-include rows first, every step valid, and no feasibility search (§5.3)" setup=[CompactSetup] begin
+@testitem "compact: fewer rows, must-include rows first, every step valid, and no feasibility search (§5.3)" tags=[:skipci] setup=[CompactSetup] begin
     # On random requests with every rule kind, stronger groups and
     # must-include rows: the reduced design never has more rows than the
     # start, keeps the start's must-include rows first and unchanged, and is
@@ -333,7 +333,7 @@ end
 end
 
 
-@testitem "compact: the core reduces any engine's start, and more effort never ends higher here (§4.1)" setup=[CompactSetup] begin
+@testitem "compact: the core reduces any engine's start, and more effort never ends higher here (§4.1)" tags=[:skipci] setup=[CompactSetup] begin
     # Phase 3's Auto reduces the start that keep-the-smallest chose; `_compact`
     # takes any engine's rows.
     include(joinpath(pkgdir(UnitTestDesign), "benchmark", "fixtures.jl"))

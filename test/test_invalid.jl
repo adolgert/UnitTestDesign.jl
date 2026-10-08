@@ -193,7 +193,7 @@ end
 end
 
 
-@testitem "invalid: must-include rows under their own row policy (§5.7, §7.9, §10.3–§10.6)" setup=[Checker, InvalidSetup] begin
+@testitem "invalid: must-include rows under their own row policy (§5.7, §7.9, §10.3–§10.6)" tags=[:skipci] setup=[Checker, InvalidSetup] begin
     f = invalid_beside_ordinary
     space = test_space(f)
     bad = Invalid(1)

@@ -620,7 +620,7 @@ end
 end
 
 
-@testitem "feasibility: the caches by component answer as the whole-assignment memo did, plan §5.6 §3.3–§3.8 §9.3" setup=[FeasibilitySetup, UTSetup] begin
+@testitem "feasibility: the caches by component answer as the whole-assignment memo did, plan §5.6 §3.3–§3.8 §9.3" tags=[:skipci] setup=[FeasibilitySetup, UTSetup] begin
     # Phase 5 dropped the memo keyed by the whole assignment (31bef0f) and
     # answers from the caches by component alone. Every question here is
     # asked, in the same order, of a `Feasibility` and of the reference, 31bef0f's

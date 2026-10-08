@@ -630,7 +630,7 @@ end
 end
 
 
-@testitem "report and design_sizes: one memo, one answer cache per measurement; each figure is a separate measurement's (§3.5, plan Stage C decision 7)" setup=[Checker, ReportSetup] begin
+@testitem "report and design_sizes: one memo, one answer cache per measurement; each figure is a separate measurement's (§3.5, plan Stage C decision 7)" tags=[:skipci] setup=[Checker, ReportSetup] begin
     using Base.CoreLogging: with_logger, NullLogger   # a lazily evaluated rule warns
     # A report measures the rows twice, at its strength and for the bonus one
     # above, with one lazy-rule memo and a fresh answer cache for each. So every

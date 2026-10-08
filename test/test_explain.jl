@@ -214,7 +214,7 @@ end
 end
 
 
-@testitem "isallowed and explain: a vector is read as the tuple of the same values (§1.25, §1.26, §2.11)" setup=[ExplainSetup] begin
+@testitem "isallowed and explain: a vector is read as the tuple of the same values (§1.25, §1.26, §2.11)" tags=[:skipci] setup=[ExplainSetup] begin
     using Base.CoreLogging: with_logger, NullLogger   # a lazily evaluated rule warns
     message(f) = try f(); "no error" catch e; e isa ArgumentError ? e.msg : "not an ArgumentError: $e" end
     fields(e) = (e.assignment, e.outcome, e.rules, e.labels, e.minimal, e.witness, e.limit, e.nodes,

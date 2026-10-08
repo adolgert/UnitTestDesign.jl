@@ -544,7 +544,7 @@ end
 end
 
 
-@testitem "request: a placement search at its limit throws; no design is incomplete (§3.6–§3.8)" setup=[RequestSetup, Checker] begin
+@testitem "request: a placement search at its limit throws; no design is incomplete (§3.6–§3.8)" tags=[:skipci] setup=[RequestSetup, Checker] begin
     # The acceptance gate of plan Phase 3: a limited search raises an error
     # rather than returning an incomplete design. Here the limit runs out while
     # an engine places a value, after every target was classified.

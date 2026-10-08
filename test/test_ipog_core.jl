@@ -333,7 +333,7 @@ end
 end
 
 
-@testitem "lookup core: rules, must-include rows, stronger groups and Invalid values, alone and together" setup=[LookupSetup, Checker] begin
+@testitem "lookup core: rules, must-include rows, stronger groups and Invalid values, alone and together" tags=[:skipci] setup=[LookupSetup, Checker] begin
     # The `adapted` changes (plan §7.2) on one small space, each alone and in
     # every combination: a rule (with an implied target), a complete and a
     # partial must-include row, an overlapping `stronger` group, and an

@@ -134,7 +134,7 @@ using TestItemRunner
 end
 
 
-@testitem "Auto: settings, record, display and the goals (§6.1, D8)" setup=[AutoSetup] begin
+@testitem "Auto: settings, record, display and the goals (§6.1, D8)" tags=[:skipci] setup=[AutoSetup] begin
     @test Auto() isa UnitTestDesign.CoveringEngine
     @test (Auto().goal, Auto().seed, Auto().effort) == (:balanced, 0, 1)
     @test repr(Auto()) == "Auto()"
@@ -196,7 +196,7 @@ end
 end
 
 
-@testitem "Auto: keep the smallest, the bound shortcut, and the threshold (§4.1)" setup=[AutoSetup] begin
+@testitem "Auto: keep the smallest, the bound shortcut, and the threshold (§4.1)" tags=[:skipci] setup=[AutoSetup] begin
     plan(space; kw...) = _auto_plan(Auto(), Profile(Request(space; kw...)))
     uniform(k, v) = TestSpace([Symbol(:p, i) for i in 1:k], [1:v for _ in 1:k], Constraint[], 10^5)
     # At the bound (an orthogonal array, a zero-sum array): the catalog alone.

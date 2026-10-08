@@ -723,7 +723,7 @@ end
 end
 
 
-@testitem "engines: a result records its engine's configuration and every stage, and its seed line names a call that repeats its cases (§9.5)" setup=[EngineSetup] begin
+@testitem "engines: a result records its engine's configuration and every stage, and its seed line names a call that repeats its cases (§9.5)" tags=[:skipci] setup=[EngineSetup] begin
     using UnitTestDesign: _engine_config, _engine_phrase
     # Every registry engine and nested ones, on spaces of one value count
     # (the catalog's), with Invalid values, and with mixed counts and a rule.

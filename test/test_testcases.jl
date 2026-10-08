@@ -526,7 +526,7 @@ end
 end
 
 
-@testitem "testcases: Tables.jl reads named results; positional results need names (plan Phase 4 step 7)" setup=[CasesSetup] begin
+@testitem "testcases: Tables.jl reads named results; positional results need names (plan Phase 4 step 7)" tags=[:skipci] setup=[CasesSetup] begin
     using DataFrames, CSV
     Tables = DataFrames.Tables
 

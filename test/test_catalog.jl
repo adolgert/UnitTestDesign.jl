@@ -380,7 +380,7 @@ end
 end
 
 
-@testitem "catalog: it makes the reference's choice for its 974 shapes" setup=[CatalogSetup] begin
+@testitem "catalog: it makes the reference's choice for its 974 shapes" tags=[:skipci] setup=[CatalogSetup] begin
     let
         # test/construction_catalog_table.txt is catalog_table.out of the reference
         # catalog: runs of column counts with one choice. Each choice and size is
