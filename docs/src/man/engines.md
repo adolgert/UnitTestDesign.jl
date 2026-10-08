@@ -409,8 +409,8 @@ call that is too large; a design that can't be certified is not returned:
   classification is nearly the whole call, and most of it is explaining the
   3,281 combinations that the rules exclude only together: the search for
   the rules behind each, which `explanation_limit` bounds (with a limit of 1,
-  which leaves those explanations unresolved, classification took 0.3
-  seconds where it took 2.4). Where rules link many parameters into one
+  which leaves those explanations unresolved, classification took 0.2
+  seconds where it took 2.1). Where rules link many parameters into one
   search, that search sets the time. A rule that reads the whole case is
   checked only on complete cases, which makes its search far longer than a
   scoped rule's ([what rules cost](../explain/constraints.md#What-rules-cost)).
