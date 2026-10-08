@@ -2,81 +2,126 @@
 
 ## Overview
 
-There is an in-parameter-order general (IPOG) algorithm that is published,
-and I've extended it to be more user-friendly. I'll describe both
-here.
+There is a published in-parameter-order general (IPOG) algorithm, and this
+package extends it to handle what real tests need: rules, must-include
+cases, and stronger coverage for some parameters. This page describes the
+algorithm, the way the package finds the best value for a case quickly, and
+the extensions. [Engines](engines.md) compares IPOG with the package's other
+engines.
 
 ## The covering problem
 
-A combinatorial covering set is a way to select combinations of values for
-testing. We assume that there are `param_cnt` items to select. These could
-be parameter values to send to a function. They could be configuration values
-for a large simulation. They could be combinations of hardware to test together.
-We can represent a selected test case as an array of integers,
-`[2, 4, 3, 2]`, which represents the second selection of the first item,
-the first selection of the second item, and so on. A test set is a list of
-test cases.
+A covering design is a way to select combinations of values for testing.
+Suppose there are several parameters to choose. They could be the arguments
+of a function, the options of a large simulation, or pieces of hardware to
+test together. Inside the engine, a case is an array of integers such as
+`[2, 1, 3, 2]`, which picks the second value of the first parameter, the
+first value of the second parameter, and so on. A design is a list of cases.
 
-We say that a test set has n-way covering when we can choose any `n` parameters
-and choose any possible combination of values of those parameters, and find them in some
-test case of the test set. We can think of the n-way combinations as their
-own data structure, a covering set, where we might represent it as an array
-that uses 0 to indicate paramters that aren't in the cover.
-```@julia
+A design has strength ``t`` when, for any ``t`` parameters and any values
+of those parameters, some case in the design holds all of them. We can list
+the ``t``-way combinations as their own data structure, using 0 for the
+parameters a combination leaves out. For pairs over four parameters:
+
+```julia
 [[1, 1, 0, 0],
  [2, 1, 0, 0],
  [1, 2, 0, 0],
- [0, 1, 1, 0]
+ [0, 1, 1, 0],
  ...
 ]
 ```
-A test set covers these tuples if every set of non-zero values in the covering
-set can be found in some test case of the test set.
+
+A design covers these combinations if the nonzero values of every one of
+them appear together in some case. A set of ``t`` parameters is a
+*support*; each support has one combination for each choice of its values.
 
 ## IPOG
 
-Previous algorithms constructed a single, complete set of parameter values,
-called a test case, one at a time. This algorithm starts with a few
-parameters, finds a covering set for them, and then uses this as the
-basis to add a parameter at a time.
+Earlier algorithms built one complete case at a time. IPOG instead starts
+with a few parameters, covers them completely, and then adds one parameter
+at a time, extending the cases it already has.
 
-There are a few sources for this work, which I annotate here.
+There are a few sources for this work, annotated here.
 
  * Lei, Yu, Raghu Kacker, D. Richard Kuhn, Vadim Okun, and James Lawrence. 2008. “IPOG/IPOG-D: Efficient Test Generation for Multi-Way Combinatorial Testing.” Software Testing, Verification & Reliability 18 (3): 125–48. - This is the most direct description.
 
- * Forbes, Michael, Jim Lawrence, Yu Lei, Raghu N. Kacker, and D. Richard Kuhn. 2008. “Refining the In-Parameter-Order Strategy for Constructing Covering Arrays.” Journal of Research of the National Institute of Standards and Technology 113 (5): 287–97. - This updates the algorithm to be more efficient and includes details not explained elsewhere.
+ * Forbes, Michael, Jim Lawrence, Yu Lei, Raghu N. Kacker, and D. Richard Kuhn. 2008. “Refining the In-Parameter-Order Strategy for Constructing Covering Arrays.” Journal of Research of the National Institute of Standards and Technology 113 (5): 287–97. - This updates the algorithm to be more efficient and includes details not explained elsewhere, such as what to do with the blanks a case still has.
+
+ * Kleine, Kristoffer, and Dimitris E. Simos. 2018. “An Efficient Design and Implementation of the In-Parameter-Order Algorithm.” Mathematics in Computer Science 12 (1): 51–67. - FIPOG, the layout of the coverage map that lets each case's best value be found by lookup, which this package follows.
+
+ * Wagner, Michael, Kristoffer Kleine, Dimitris E. Simos, Rick Kuhn, and Raghu Kacker. 2020. “CAGEN: A Fast Combinatorial Test Generation Tool with Support for Constraints and Higher-Index Arrays.” IEEE International Conference on Software Testing, Verification and Validation Workshops (ICSTW), 191–200. - The tool built on FIPOG, which keeps the map only for the parameter being added.
 
  * Tai, Kuo-Chung, and Yu Lei. 2002. “A Test Generation Strategy for Pairwise Testing.” IEEE Transactions on Software Engineering 28 (1). - The original paper is interesting because it thinks more theoretically about the problem.
 
  * Kuhn, D. Richard, Raghu N. Kacker, and Yu Lei. 2013. Introduction to Combinatorial Testing. CRC Press. This book includes an algorithm description, but it may mix up one of the loops.
 
-A sketch of the algorithm.
+A sketch of the algorithm:
 
 1. Given:
-   
-   * `arity` - which is the number of values for each parameter.
-   * `n_way` - which is the coverage level (2, 3,...)
 
-2. Sort the parameters by non-increasing arity. Record this ordering so you can reorder it at the end.
+   * the number of values of each parameter, which the algorithm calls its
+     arity;
+   * the strength ``t`` (2, 3, ...).
 
-3. Construct an `n_way` full-factorial combination of the first `n_way`
-   parameters. This is a correct covering for `n_way` parameters.
+2. Choose the order in which to add the parameters: by decreasing number of
+   values. The cases keep the parameters in their own order; only the order
+   of adding them changes.
 
-4. Add an `n_way+1` value to each test case of those already found. This is called "widening," and we will describe it in more detail below.
+3. Start with no cases. The first parameters only make combinations to
+   place, which is how the full factorial of the first ``t`` parameters
+   arises.
 
-5. For all coverage tuples that include the `n_way+1` parameter, loop over the tuples and, first, search for a place to put them in the existing test cases. If there is no spot to put them, then add them as a last test case. They will have missing values, which you mark as missing.
+4. Add the next parameter to each case found so far. This is called
+   *horizontal growth*, or widening, and is described below.
 
-6. Repeat for each parameter until done.
+5. Every combination whose last parameter, in the order of step 2, is the
+   one being added and which no case holds yet goes into the first case
+   where it fits. If there is none, a new case holds just that combination,
+   with the other parameters marked missing. This is *vertical growth*.
 
-7. Fill missing values and reorder parameters before returning test cases.
+6. Repeat for each remaining parameter.
 
-The widening step first constructs a list of all covers that include the last parameter. Then it loops over the existing test cases, which have missing values for this new parameter, and it looks for any place it can insert values in order to increase coverage. If an insertion won't increase coverage, it is left blank because a later parameter might use this spot. We denote blanks with 0.
+7. Fill the missing values.
 
-The lengthening step, to add test cases, doesn't loop over test cases to add. It loops over the coverage. It's much more efficient this way. For each cover, it looks to see if there was a place to insert that cover in existing test cases, and then it adds it to the end, using 0 to denote missing values.
+Horizontal growth loops over the existing cases, which have no value yet for
+the new parameter, and gives each the value that covers the most new
+combinations. If no value would add coverage, the entry stays blank, because
+a later step might use that spot. Blanks are written as 0.
 
-The papers go into ways to make this all faster. I'd like to point out a detail I haven't seen discussed, which is that there are several ways to match cases to covers.
+Vertical growth, which adds cases, does not loop over cases. It loops over
+the uncovered combinations, which is much more efficient. For each
+combination it looks for a case where the combination fits, and otherwise
+appends a new case, using 0 for missing values. The final fill gives each
+blank the value of its parameter that the design has used least.
 
-Let's assume that a test case is represented as a vector `[1, 0, 2, 0, 4]`, where 0 means it has a missing value, not yet decided. Vectors aren't likely the best data structure, but we can use it to discuss the algorithm anyway. Then a cover might be `[0, 1, 0, 0, 0, 4]`. We need to decide, at different steps, whether to insert a cover into a test case. If we look at any single parameter, there are five different comparisons possible.
+## Finding the best value by lookup
+
+The step that costs the most is horizontal growth: for each case and each
+value of the new parameter, how many uncovered combinations would the case
+then hold? A direct implementation scans every uncovered combination of the
+step for every case. Kleine and Simos's FIPOG replaces the scan with a
+lookup, and the package does the same.
+
+While parameter ``p`` is added, the engine keeps a map of the step's
+combinations only: those of the supports whose last parameter is ``p``. Each
+support's combinations form a block, numbered with ``p`` as the least
+significant digit, so the combinations that one case would make with each
+value of ``p`` are adjacent entries. For a case, the engine computes the
+start of that run once per support, from the case's other values, and adds
+up the uncovered entries of each run, one per value of ``p``. A support whose
+combinations are all covered is skipped. When the step ends, its map is
+discarded, as CAgen does, so the engine holds one step's combinations at a
+time.
+
+A case may still have blanks on the other parameters of a support. Such a
+support scores nothing for that case: the blank's potential is ignored in
+horizontal growth and used in vertical growth, as Forbes et al. recommend.
+The engines this one replaced instead counted a combination when the case
+agreed with it on at least one value, one of several ways to say that a
+combination matches a partial case. Here are the five possibilities for one
+parameter of a case `a` and a combination `b`:
+
 ```julia
 ignores(a, b) = a == 0 && b == 0
 skips(a, b) = a != 0 && b == 0
@@ -84,22 +129,108 @@ misses(a, b) = a == 0 && b != 0
 matches(a, b) = a != 0 && b != 0 && a == b
 mismatch(a, b) = a != 0 && b != 0 && a != b
 ```
-We could call a cover a match when there are no mismatches. This includes cases where the cover's nonzeros and the case's nonzeros don't overlap. We could call a cover a match when at least one nonzero matches. There are a few versions of this.
 
-According to projective geometry principles, I have no clue about projective geometry principles. I made a bunch of matching functions and ran the algorithm with different versions until it suddenly made much smaller test sets. Those test sets agree with ones that are published.
+Ignoring the blanks, so that only supports the case sets in full score, is
+both FIPOG's choice and the one that made smaller designs over the
+package's benchmark spaces.
 
-## Expanding IPOG
+Vertical growth splits the candidate cases by their value of ``p``: a
+combination with value ``v`` can go only to a case that has ``v`` or a blank
+there, which FIPOG reports gave a sixfold speed-up with 60 values. Only
+cases with a blank among the parameters added so far are candidates. Before
+the combinations of a support are placed, the cases that vertical growth has
+changed so far mark what they now hold on that support, so that no
+combination is placed twice (Forbes et al.: "it is important to capture the
+unintended coverage").
 
-We almost never want a set of test cases from the IPO algorithm. We want test cases that we can use for a particular function or to generate test data for a program, and those have limitations.
+## A family of designs, and keeping the smallest
 
-* The test generator has to exclude parameter combinations. Some combinations of parameter values are uninteresting. It could be that we don't think there is risk associated with those values or that we aren't testing exception cases at the moment.
-* The test generator has to include certain test cases. If I know a few test cases are interesting, I want to start with these, and they should count against the overall coverage. We're assuming the thing we're testing is relatively slow.
-* The test generator has to let me increase coverage on certain parameters. If I'm generating a configuration file with these test cases, it could have forty parameters, of which I think ten are the most risky. I don't want 4-way coverage on the whole thing because that's a huge test set, but I do want 4-way coverage of those ten parameter values.
+Wherever two values cover the same number of new combinations, horizontal
+growth has to choose one, and vertical growth has to place the uncovered
+combinations in some order. Each choice of these rules gives another member
+of the IPOG family, and their designs differ by a few percent either way,
+sometimes much more, with no member best everywhere. The package's engine
+has two tie-break rules, the lowest value and a value that rotates with the
+case, and two orders of vertical growth, support by support and value by
+value. `IPOG()` runs all four combinations on the same steps and keeps the
+design with the fewest cases, the first of equals. It stops at a design no
+design can beat: as many cases as its must-include rows, or as one set of
+parameters has combinations to cover. The result's record says which
+member made the cases, in `record.ordinary.member`:
 
-I haven't found papers on how to add these features to IPOG, so I added some algorithms.
+```jldoctest; setup = :(using UnitTestDesign)
+julia> all_pairs((a = 1:3, b = 1:3, c = 1:2, d = 1:2); engine = IPOG()).record.ordinary
+(engine = "IPOG()", rows = 9, member = (tiebreak = :rotate, vertical = :support))
+```
 
-For excluding parameter combinations, you pass in a function that tests whethere the given arguments are allowed. The algorithm internally runs this function on every covering tuple and every test case to see whether the given value should be chosen. That's kind of it.
+Over the package's benchmark spaces, the four together have no more cases
+than the engines this one replaced on 96.7% of them, and 2% fewer cases in
+total, but more on about 3%, by up to about 9%; any one member alone has
+more than they did on a fifth to nearly a third of them.
 
-For adding seed cases, we have to add them, in this algorithm, parameter by parameter. The algorithm makes the seeds the first test cases and fills them in as it goes. For the first step, to create all n-way combinations of parameters, the algorithm only adds combinations that don't already exist in the test cases.
+## Extending IPOG
 
-It's tricky with IPOG to increase coverage only for certain sets of parameters. I haven't tested this against different methods, but I made a method that runs. I run IPOG multiple times, once for each coverage set. Every time I run IPOG, I treat the existing test cases as seeds for the next run. Those seeds might have lots of zero values, but they get filled in as it goes.
+A bare covering design is rarely what a test needs. Real tests add three
+requirements.
+
+* **Rules.** Some combinations of values are not valid inputs, and the
+  design must not contain them.
+* **Must-include cases.** Some cases are interesting in their own right, such
+  as the happy paths or the cases a specification requires. They should come
+  first and count toward coverage, since the thing under test is assumed to
+  be slow.
+* **Stronger coverage for some parameters.** A configuration file might have
+  forty parameters, of which ten carry most of the risk. Four-way coverage
+  of all forty would be a huge design, but four-way coverage of those ten,
+  with pairs for the rest, may be affordable.
+
+I haven't found papers on adding these to IPOG, so the package extends it
+as follows. The same engine handles every request, with or without them.
+
+**Rules.** Before generating, every combination is classified: a
+combination is required only when some valid case contains it, and the
+others are reported as excluded ([Constraints](../explain/constraints.md)).
+The map of each step marks only the required combinations. Then, at each of
+the three steps that set values (horizontal growth, placing a combination
+during vertical growth, and the final fill), the engine sets a value only
+when the partial case can still be completed into a valid case. A new case
+starts from one required combination, which is completable by definition,
+and every later assignment keeps it completable. So the algorithm never
+reaches a dead end, and the final fill always finds a value. Deciding
+whether a partial case can be completed is a backtracking search over the
+rules, bounded by `feasibility_limit`. The engine depends on the rules only
+through those answers, so a rule that excludes nothing leaves the design as
+it was without it.
+
+**Must-include cases.** The `must_include` cases become the first cases of
+the design, in the order given. Their values are never changed; the missing
+values of a partial must-include case are filled like any others. Before
+each parameter is added, the combinations the must-include cases already
+hold are marked covered, so the algorithm adds only what they leave out.
+
+**Stronger groups.** A request with `stronger` groups, such as
+`stronger = [(:a, :b, :c, :d) => 3]`, asks for the union of the base
+combinations and each group's combinations. The engine adds the parameters
+of the stronger groups first, highest strength first, then the rest by
+decreasing number of values. Each required combination is assigned to the
+step that adds its last parameter in that order, and one pass of horizontal
+and vertical growth covers all of them. Because the combinations of every
+group are covered in the same pass, the values chosen for one group are
+visible to the next, and a rule that spans two groups is respected.
+
+## Determinism
+
+IPOG uses no randomness. Its rules break every tie by a fixed order, it
+reads the combinations in order, and it keeps the first of the members with
+the fewest cases, so the same request gives the same cases in every run and
+every process, for the same package version and the same Julia version
+(contract §9.1). A larger `feasibility_limit` never changes the cases of a
+call that succeeded, since the engine decides only from the searches'
+answers. Each design `IPOG()` builds asks its own searches, and the call
+succeeds only when the limit is enough for every one of them, so a call can
+need a larger limit than a single design would: of 150 random problems with
+rules, tried at limits that are powers of two, one needed 16 where the
+engines before needed 4. The cases may change between package versions
+(§9.8), as they did when this engine replaced the two before it, the
+classic algorithm and a general one for rules, must-include cases and
+stronger groups.

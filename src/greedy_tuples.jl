@@ -1,4 +1,25 @@
-using Combinatorics: combinations
+# GND, the greedy non-deterministic engine (plan Phase 3 step 3).
+#
+# Each round draws `candidates` candidate rows and keeps the one that covers
+# the most uncovered required targets. A candidate is built one parameter at
+# a time: the first parameter is the one with the most uncovered targets, the
+# rest follow in a random order, and each takes the value that matches the
+# most uncovered targets among the values that keep the row completable
+# (`dead(request, row)` is false). By induction every candidate is a
+# complete valid row: the empty row is completable (the space has a valid
+# row whenever a target is required), and a completable partial row always
+# has at least one value that keeps it completable.
+#
+# Progress guarantee. If the best candidate of a round covers nothing new,
+# the round builds its row from the first uncovered target instead: the
+# target is feasible (it is required), so it is a completable partial row,
+# and the same fill completes it into a valid row that covers it. Every round
+# therefore covers at least one target, and the loop ends after at most as
+# many rounds as there are required targets. There is no attempt cap and no
+# "could not construct" error. A feasibility search that reaches its limit
+# throws `ResourceLimitError` from `dead`; no target is ever dropped
+# (contract §3.6).
+
 using Random
 
 """
@@ -40,282 +61,181 @@ function argmin_rand(rng, v)
 end
 
 
-function n_way_coverage(arity, n_way, M, rng)
-    param_cnt = length(arity)
-    allc = all_combinations_matrix(arity, n_way)
-    maximum_match_score = combination_number(param_cnt, n_way)
-    param_cnt = length(arity)
-
-    # Array of arrays.
-    coverage = Array{Array{Int64,1},1}()
-
-    trials = zeros(Int, M, param_cnt)
-    trial_scores = zeros(Int, M)
-    params = zeros(Int, param_cnt)
-    entry = zeros(Int, param_cnt)
-    
-    loop_idx = 1
-    while remaining_uncovered(allc) > 0
-        params[:] = 1:param_cnt
-        param_coverage = coverage_by_parameter(allc)
-        params[1] = argmin_rand(rng, -param_coverage)
-        params[params[1]] = 1
-        for trial_idx in 1:M
-            params[2:end] = shuffle(rng, params[2:end])
-            entry[:] .= 0
-            candidate_params = coverage_by_value(allc, params[1])
-            entry[params[1]] = argmin_rand(rng, -candidate_params)
-            for p_idx in 2:param_cnt
-                candidate_values = most_matches_existing(
-                        allc, entry, params[p_idx]
-                        )
-                entry[params[p_idx]] = argmin_rand(rng, -candidate_values)
-            end
-            score = match_score(allc, entry)
-            trial_scores[trial_idx] = score
-            trials[trial_idx, :] = entry
-        end
-        chosen_idx = argmin_rand(rng, -trial_scores)
-        maximum_score = trial_scores[chosen_idx]
-        if maximum_score > 0
-            chosen_trial = trials[chosen_idx, :]
-            remain = add_coverage!(allc, chosen_trial)
-            push!(coverage, chosen_trial)
-        end  # nothing was covered, but this can happen
-        loop_idx += 1
-    end
-    coverage
-end
-
-
-
-function n_way_coverage_init(arity, n_way, seed, M, rng)
-    param_cnt = length(arity)
-    allc = all_combinations_matrix(arity, n_way)
-    # Every combination is nonzero.
-    maximum_match_score = combination_number(param_cnt, n_way)
-    param_cnt = length(arity)
-
-    # Array of arrays.
-    coverage = Array{Array{Int64,1},1}()
-
-    for seed_idx in axes(seed, 2)
-        push!(coverage, seed[:, seed_idx])
-        remain = add_coverage!(allc, seed[:, seed_idx])
-    end
-
-    trials = zeros(Int, M, param_cnt)
-    trial_scores = zeros(Int, M)
-    params = zeros(Int, param_cnt)
-    entry = zeros(Int, param_cnt)
-    
-    exhausted_by_filter = false
-    loop_idx = 1
-    while remaining_uncovered(allc) > 0 || exhausted_by_filter
-        params[:] = 1:param_cnt
-        param_coverage = coverage_by_parameter(allc)
-        params[1] = argmin_rand(rng, -param_coverage)
-        params[params[1]] = 1
-        for trial_idx in 1:M
-            params[2:end] = shuffle(rng, params[2:end])
-            entry[:] .= 0
-            candidate_params = coverage_by_value(allc, params[1])
-            entry[params[1]] = argmin_rand(rng, -candidate_params)
-            for p_idx in 2:param_cnt
-                candidate_values = most_matches_existing(allc, entry, params[p_idx])
-                entry[params[p_idx]] = argmin_rand(rng, -candidate_values)
-            end
-            score = match_score(allc, entry)
-            trial_scores[trial_idx] = score
-            trials[trial_idx, :] = entry
-        end
-        chosen_idx = argmin_rand(rng, -trial_scores)
-        maximum_score = trial_scores[chosen_idx]
-        if maximum_score > 0
-            chosen_trial = trials[chosen_idx, :]
-            remain = add_coverage!(allc, chosen_trial)
-            push!(coverage, chosen_trial)
-        else
-            exhausted_by_filter = true
-        end
-        loop_idx += 1
-    end
-    coverage
-end
-
-
-function arguments_to_arity(arguments)
-    [length(x) for x in arguments]
-end
-
-
-function indices_to_arguments(arguments, indices)
-    Tuple(arguments[i[1]][i[2]] for i in zip(1:length(indices), indices))
-end
-
 """
-    allowed_argmax(rng, entry, param_idx, scores, disallow)
+    allowed_argmax(rng, entry, param_idx, scores, isdead)
 
 Choose the highest-scoring value for `param_idx`, breaking ties at random,
-among the values that `disallow` permits given the values already set in
-`entry`. Returns 0 if `disallow` rejects every value.
+among the values that keep `entry` completable: `isdead(entry)` is false
+with the value set. `isdead === nothing` means every value is allowed (an
+unconstrained parameter). `entry` must be completable on entry, so some
+value is allowed; finding none is an internal error. `entry[param_idx]` is
+left unset (`0`).
 """
-function allowed_argmax(rng, entry, param_idx, scores, disallow)
+function allowed_argmax(rng, entry, param_idx, scores, isdead)
     masked = -scores
-    for value in eachindex(scores)
-        entry[param_idx] = value
-        if disallow(entry)
-            masked[value] = typemax(eltype(masked))
+    if isdead !== nothing
+        blocked = typemax(eltype(masked))
+        for value in eachindex(scores)
+            entry[param_idx] = value
+            if isdead(entry)
+                masked[value] = blocked
+            end
         end
+        entry[param_idx] = 0
+        any(<(blocked), masked) || error(
+            "internal error: no value of parameter $param_idx keeps the row $entry completable")
     end
-    entry[param_idx] = 0
-    all(masked .== typemax(eltype(masked))) ? 0 : argmin_rand(rng, masked)
+    return argmin_rand(rng, masked)
 end
 
 
 """
-    n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
+    _Greedy(request, targets::RequiredTargets)
 
-Greedy coverage generator that includes a filter for tuples
-to exclude from consideration.
-
-# Arguments
-
-- `arity`: An array of the number of values for each parameter, in order.
-- `n_way`: Integer coverage level > 0.
-- `disallow`: A function that returns `true` for values to avoid.
-- `seed`: A 2d array of initial values with parameters along the column.
-- `M`: The number of tries to get a good test case.
-- `rng`: A random number generator.
+The state one GND call shares: the coverage matrix of uncovered required
+targets, the `dead` predicate (`nothing` when unconstrained), and which
+parameters need it (those in some rule's scope; a parameter no rule reads
+cannot make a completable row dead). The matrix's columns are the required
+targets in target order, decoded from their codes (`_required_matrix`).
 """
-function n_way_coverage_filter(arity, n_way, disallow, seed, M, rng)
-    param_cnt = length(arity)
-    allc = all_combinations_matrix(arity, n_way)
-    # Every combination is nonzero.
-    @assert sum(sum(allc.allc, dims = 2) == 0) == 0
-    before_disallow = size(allc.allc, 1)
-    remove_combinations!(allc, disallow)
-    maximum_match_score = combination_number(param_cnt, n_way)
-    param_cnt = length(arity)
+struct _Greedy{F}
+    mc::MatrixCoverage{Int}
+    isdead::F
+    checked::Vector{Bool}
+end
 
-    # Array of arrays.
-    coverage = Array{Array{Int64,1},1}()
-
-    for seed_idx in axes(seed, 2)
-        push!(coverage, seed[:, seed_idx])
-        remain = add_coverage!(allc, seed[:, seed_idx])
+function _Greedy(request::Request, targets::RequiredTargets)
+    n = length(request.arity)
+    allc = _required_matrix(targets)
+    mc = MatrixCoverage(allc, size(allc, 2), copy(request.arity))
+    if isconstrained(request)
+        checked = [!isempty(request.feasibility.param_tables[i]) for i in 1:n]
+        return _Greedy(mc, partial -> dead(request, partial), checked)
+    else
+        return _Greedy(mc, nothing, fill(false, n))
     end
+end
 
-    trials = zeros(Int, M, param_cnt)
-    trial_scores = zeros(Int, M)
-    params = zeros(Int, param_cnt)
-    entry = zeros(Int, param_cnt)
+_check(g::_Greedy, p) = g.checked[p] ? g.isdead : nothing
 
-    loop_idx = 1
-    while remaining_uncovered(allc) > 0
-        params[:] = 1:param_cnt
-        param_coverage = coverage_by_parameter(allc)
-        params[1] = argmin_rand(rng, -param_coverage)
-        params[params[1]] = 1
-        trial_cnt = 0
-        attempt_cnt = 0
-        while trial_cnt < M
-            attempt_cnt += 1
-            if attempt_cnt > 100 * M && trial_cnt == 0
-                error("Could not construct a test case that the disallow function " *
-                      "permits after $(attempt_cnt - 1) attempts.")
-            elseif attempt_cnt > 100 * M
-                break
-            end
-            params[2:end] = shuffle(rng, params[2:end])
-            entry[:] .= 0
-            candidate_params = coverage_by_value(allc, params[1])
-            entry[params[1]] = allowed_argmax(rng, entry, params[1], candidate_params, disallow)
-            for p_idx in 2:param_cnt
-                entry[params[p_idx - 1]] == 0 && break
-                candidate_values = most_matches_existing(allc, entry, params[p_idx])
-                entry[params[p_idx]] = allowed_argmax(rng, entry, params[p_idx], candidate_values, disallow)
-            end
-            if all(entry .!= 0) && !disallow(entry)
-                trial_cnt += 1
-                score = match_score(allc, entry)
-                trial_scores[trial_cnt] = score
-                trials[trial_cnt, :] = entry
-            end
-        end
-        chosen_idx = argmin_rand(rng, -trial_scores[1:trial_cnt])
-        chosen_trial = trials[chosen_idx, :]
-        maximum_score = trial_scores[chosen_idx]
-        if 0 < maximum_score
-            remain = add_coverage!(allc, chosen_trial)
-            push!(coverage, chosen_trial)
-        # else Failure to cover can happen for a bad draw in the shuffle.
-        end
-        loop_idx += 1
+"Assign each unset parameter of `entry`, in `order`, its best allowed value."
+function _fill!(rng, g::_Greedy, entry, order)
+    for p in order
+        entry[p] == 0 || continue
+        scores = most_matches_existing(g.mc, entry, p)
+        entry[p] = allowed_argmax(rng, entry, p, scores, _check(g, p))
     end
-    coverage
+    return entry
+end
+
+"One candidate row: `order[1]` by its most common uncovered value, the rest greedily."
+function _candidate!(rng, g::_Greedy, entry, order)
+    fill!(entry, 0)
+    first = order[1]
+    entry[first] = allowed_argmax(rng, entry, first, coverage_by_value(g.mc, first), _check(g, first))
+    return _fill!(rng, g, entry, @view order[2:end])
+end
+
+"Complete a partial row in place, greedily, with its unset parameters in random order."
+function _complete!(rng, g::_Greedy, entry)
+    order = shuffle!(rng, findall(==(0), entry))
+    return _fill!(rng, g, entry, order)
+end
+
+"""
+    _greedy_rounds!(rows, rng, g, candidates) -> Int
+
+Add rows until every target in `g.mc` is covered. Returns the number of
+rounds whose row came from the progress guarantee (the first uncovered
+target, completed) because no candidate covered anything.
+"""
+function _greedy_rounds!(rows, rng, g::_Greedy, candidates::Int)
+    mc = g.mc
+    n = length(mc.arity)
+    trials = zeros(Int, n, candidates)
+    scores = zeros(Int, candidates)
+    order = collect(1:n)
+    entry = zeros(Int, n)
+    progress = 0
+    while remaining_uncovered(mc) > 0
+        order .= 1:n
+        first = argmin_rand(rng, -coverage_by_parameter(mc))
+        order[1], order[first] = first, 1
+        for trial in 1:candidates
+            shuffle!(rng, @view order[2:end])
+            _candidate!(rng, g, entry, order)
+            scores[trial] = match_score(mc, entry)
+            trials[:, trial] .= entry
+        end
+        best = argmin_rand(rng, -scores)
+        if scores[best] > 0
+            row = trials[:, best]
+        else
+            row = _complete!(rng, g, mc.allc[:, 1])
+            progress += 1
+        end
+        before = remaining_uncovered(mc)
+        add_coverage!(mc, row)
+        remaining_uncovered(mc) < before || error(
+            "internal error: GND row $row covers no required target")
+        push!(rows, row)
+    end
+    return progress
 end
 
 
+"""
+    gnd_cover(engine::GND, request, targets::RequiredTargets) -> (matrix, progress)
 
-function n_way_coverage_multi(allc, disallow, seed, M, rng)
-    param_cnt = parameter_cnt(allc)
-    remove_combinations!(allc, disallow)
-
-    # Array of arrays.
-    coverage = Array{Array{Int64,1},1}()
-
-    for seed_idx in axes(seed, 2)
-        push!(coverage, seed[:, seed_idx])
-        add_coverage!(allc, seed[:, seed_idx])
+The GND design for the required targets, must-include rows first, and the
+number of rows built by the progress guarantee. Partial must-include rows are
+completed greedily, in place, keeping their assigned values (contract §7.10,
+§10.5). At strength equal to the parameter count every required target is a
+complete row, so the rows are the required targets the must-include rows
+leave uncovered, in target order (§7.8).
+"""
+function gnd_cover(engine::GND, request::Request, targets::RequiredTargets)
+    rng = engine_rng(engine)
+    n = length(request.arity)
+    g = _Greedy(request, targets)
+    rows = Vector{Int}[]
+    for s in axes(request.must_include, 2)
+        row = request.must_include[:, s]
+        any(==(0), row) && _complete!(rng, g, row)
+        push!(rows, row)
+        add_coverage!(g.mc, row)
     end
-
-    trials = zeros(Int, M, param_cnt)
-    trial_scores = zeros(Int, M)
-    params = zeros(Int, param_cnt)
-    entry = zeros(Int, param_cnt)
-    
-    loop_idx = 1
-    while remaining_uncovered(allc) > 0
-        params[:] = 1:param_cnt
-        param_coverage = coverage_by_parameter(allc)
-        params[1] = argmin_rand(rng, -param_coverage)
-        params[params[1]] = 1
-        trial_cnt = 0
-        attempt_cnt = 0
-        while trial_cnt < M
-            attempt_cnt += 1
-            if attempt_cnt > 100 * M && trial_cnt == 0
-                error("Could not construct a test case that the disallow function " *
-                      "permits after $(attempt_cnt - 1) attempts.")
-            elseif attempt_cnt > 100 * M
-                break
-            end
-            params[2:end] = shuffle(rng, params[2:end])
-            entry[:] .= 0
-            candidate_params = coverage_by_value(allc, params[1])
-            entry[params[1]] = allowed_argmax(rng, entry, params[1], candidate_params, disallow)
-            for p_idx in 2:param_cnt
-                entry[params[p_idx - 1]] == 0 && break
-                candidate_values = most_matches_existing(allc, entry, params[p_idx])
-                entry[params[p_idx]] = allowed_argmax(rng, entry, params[p_idx], candidate_values, disallow)
-            end
-            if all(entry .!= 0) && !disallow(entry)
-                trial_cnt += 1
-                score = match_score(allc, entry)
-                trial_scores[trial_cnt] = score
-                trials[trial_cnt, :] = entry
-            end
+    progress = 0
+    if request.strength == n
+        # The coverage matrix's columns move as rows cover them; the targets don't.
+        seen = Set(rows)
+        for t in _required_list(targets)
+            t in seen || push!(rows, t)
         end
-        chosen_idx = argmin_rand(rng, -trial_scores[1:trial_cnt])
-        chosen_trial = trials[chosen_idx, :]
-        maximum_score = trial_scores[chosen_idx]
-        if 0 < maximum_score
-            add_coverage!(allc, chosen_trial)
-            push!(coverage, chosen_trial)
-        # else Failure to cover can happen for a bad draw in the shuffle.
-        end
-        loop_idx += 1
+    else
+        progress = _greedy_rounds!(rows, rng, g, engine.candidates)
     end
-    coverage
+    matrix = isempty(rows) ? zeros(Int, n, 0) : reduce(hcat, rows)
+    return matrix, progress
 end
+
+
+"""
+    cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) -> Matrix{Int}
+
+GND's rows for `request` (contract §1.3): the must-include rows first and
+unchanged (§10.5), then rows until every required target (`targets`) is
+covered (`gnd_cover`). `generate` classifies the targets, calls this, and
+validates the result (§1.21). The request's must-include rows are ordinary.
+"""
+cover_ordinary(engine::GND, request::Request, targets::RequiredTargets) =
+    first(gnd_cover(engine, request, targets))
+
+# The record: randomized; the seed is `engine.seed`, or `nothing` when the
+# engine was given an `rng` (§9.5, §9.6); and `candidates`, which its rows
+# depend on too, so that a result's configuration (`record.engine`) and the
+# call its seed line names, "GND(seed = 3, candidates = 20)", keep them.
+engine_record(engine::GND) = EngineRecord(:GND, engine.seed, Pair{Symbol, Any}[:candidates => engine.candidates];
+                                          randomized = true)
+
+fit(::GND, ::Profile) = Fit(:native, "GND covers any request")

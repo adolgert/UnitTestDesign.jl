@@ -1,0 +1,6 @@
+[
+  {"id":"function-ordinary","ladder":"function-ordinary","n":4,"v":2,"family":"scoped","usage":"reuse","solver":"example_function","strength":2,"runs":1},
+  {"id":"function-invalid","ladder":"function-invalid","n":4,"v":2,"family":"invalid","usage":"reuse","solver":"example_function","strength":2,"runs":1},
+  {"id":"engine-core","ladder":"engine-core","n":4,"v":2,"family":"scoped","usage":"core","solver":"example_engine","strength":2,"runs":1},
+  {"id":"engine-upgrade","ladder":"engine-upgrade","n":4,"v":2,"family":"none","usage":"upgrade","solver":"example_engine","strength":2,"runs":1}
+]

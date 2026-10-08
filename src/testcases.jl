@@ -1,0 +1,688 @@
+# The public result type (plan Phase 4 step 1, contract §1.18–§1.24).
+#
+# A TestCases is a vector of rows plus the bookkeeping generation already
+# knows. It never performs a search (§1.22): everything here is copied from
+# the Request and the Design.
+
+"""
+Use when you want to know why a design holds no case with some combination: an
+`Exclusion` names a target no valid case can hold and the rules that exclude it.
+
+    Exclusion
+
+One target a design did not need to cover, in the user's vocabulary
+(contract §1.4): `target` (a partial `NamedTuple`), `status` (`:forbidden`
+or `:implied`), `rules` (constraint positions in the space), `labels` (their
+display labels), `minimal` (`:verified`, `:unresolved`, `:not_applicable`),
+and `limit` (`keyword => value` when a limit cut the explanation short,
+else `nothing`).
+
+It prints as one line naming the target and its rules:
+
+```
+(mode = :exact, tol = 0.001): forbidden by rule 2 (exact mode needs a tight tolerance)
+(solver = :lu, tol = 0.001): impossible because rules 1 and 2 combine (rule 1: …; rule 2: …)
+```
+
+An unresolved explanation adds the limit that left it unresolved, such as
+"(explanation unresolved: explanation_limit = 1 reached)"; its rules are
+still sufficient to exclude the target (§3.15).
+"""
+struct Exclusion
+    target::NamedTuple
+    status::Symbol
+    rules::Vector{Int}
+    labels::Vector{String}
+    minimal::Symbol
+    limit::Union{Nothing, Pair{Symbol, Int}}
+end
+
+"""
+Use when you work with what a generator returned: a read-only vector of cases
+that also records the request, the engine and seed, and the combinations the
+rules excluded.
+
+    TestCases{T} <: AbstractVector{T}
+
+The cases a generation call returns. `T` is a `NamedTuple` type for named
+spaces and a `Tuple` type for positional calls (§1.18). Each field's type
+comes from the parameter's values, not from the domain's element type: the
+one concrete type they share, or else the `Union` of their concrete types
+(§2.4). So `[1, 2, 3]` and `Any[1, 2]` give an `Int` field, `Any[1, 1.0]` a
+`Union{Int64, Float64}` field, `[nothing, :x]` a `Union{Nothing, Symbol}`
+field, and `[1, Invalid(1)]` a `Union{Int64, Invalid{Int64}}` field. No
+value is converted to fit its field: `1` stays an `Int` and `1.0` a
+`Float64`. Rows are immutable.
+
+# A vector of rows
+
+A `TestCases` is a read-only `AbstractVector{T}`: `length`, `cases[i]`,
+`first`, `last`, `eachindex` and iteration work as for any vector, and
+`for (mode, solver, tol) in cases` destructures each row. `collect(cases)`
+and `copy(cases)` are plain, mutable `Vector{T}`s, and so is a slice such as
+`cases[1:2]` or `cases[[1, 3]]`; the bookkeeping stays with the original.
+`==` compares rows, as for any vector, so `cases == collect(cases)`.
+
+# Fields
+
+All recorded at generation and never recomputed (§1.19, §1.22):
+`cases`, `space`, `strategy` (`:covering`, `:excursion`, `:full_factorial`),
+`strength` (the covering strength, see below), `stronger` (as
+`names => strength` pairs, base group excluded),
+`engine::Symbol`, `seed`, `n_must_include`, `required` and `covered`
+(ordinary target counts; zero for non-covering strategies), `excluded`
+(ordinary [`Exclusion`](@ref)s, in target order, §9.7), `positional::Bool`,
+`notes`, which is strategy specific (§7.3, §7.7), and the negative
+bookkeeping, kept apart from the ordinary (§5.10, §6): `negative_required`
+and `negative_covered` (negative target counts, zero without
+[`Invalid`](@ref) values and for non-covering strategies) and
+`negative_excluded` (the negative targets no valid negative row can hold,
+as `Exclusion`s in the order `coverage` lists them); and `record`, below.
+`notes` holds:
+
+- an excursion's `base`, the base row, of the result's row type `T`;
+  `distance`, after clamping to the parameter count; `dropped`, the number
+  of rows within the distance that broke a rule; and `never_appear`, the
+  values that appear in no returned row, as a `Vector{Pair{Symbol, Any}}`
+  of `name => value` in parameter and domain order (`:p2 => 3` for a
+  positional result);
+- a full factorial's `candidates` (the ordinary product plus the rows with
+  one `Invalid` value, §7.3) and `accepted` (the valid rows, ordinary and
+  negative);
+- nothing for a covering design.
+
+`strength` is 0 when the strategy has no strength (excursions and full
+factorials); measurement of such a result needs an explicit strength.
+
+# The record
+
+`record` is a `NamedTuple` of plain data on how the cases were made (plan
+§4.1, §4.2, §6.1). Its first fields are the package's own, computed and
+checked by generation, never reported by an engine:
+
+- `randomized`: whether the engine drew random numbers, so that `seed`
+  repeats the cases (§9.5).
+- `lower_bound`: for a covering design, a proven lower bound on the cases of
+  any design for the same request, and `proof`, why, as "the 3 × 3 = 9
+  combinations of a and b need a case each": every case holds one
+  combination of each set of parameters, so one set's required combinations
+  need as many cases; the must-include rows are cases of every such design;
+  and the negative rows of each [`Invalid`](@ref) value are bounded in the
+  same way and added. `minimal` is `true` when the cases number exactly
+  `lower_bound`: then no design for the request has fewer, and this is the
+  one case in which the package calls a count minimal (contract §8.4).
+  `nothing`, `false` and `""` for an excursion or a full factorial.
+- `engine`: the engine's configuration, the whole tree of it: `name`;
+  `call`, its constructor call, which with the same request repeats the
+  cases unless an engine in it drew from a caller's `rng`; `seed`;
+  `randomized`; and `settings`, its other settings, where an engine it wraps
+  (`inner` of [`Compact`](@ref)) or chooses among (`candidates` of
+  [`Auto`](@ref)) is a configuration of the same form. For
+  `Compact(GND(seed = 17); seed = 3, effort = 2)`:
+
+  ```
+  (name = :Compact, call = "Compact(GND(seed = 17); seed = 3, effort = 2)", seed = 3, randomized = true,
+   settings = (inner = (name = :GND, call = "GND(seed = 17)", seed = 17, randomized = true,
+                        settings = (candidates = 50,)),
+               effort = 2))
+  ```
+
+Then the stages that ran, each a `NamedTuple` whose `engine` is the call of
+the engine that ran and `rows` the rows it made, followed by what that
+engine reports:
+
+- `ordinary`: the ordinary design's stage. [`Auto`](@ref) reports `chose`,
+  the engine call that made the ordinary cases, such as `"Construction()"`
+  or `"Compact(IPOG())"`; `starts`, the stage of each start it ran; `kept`,
+  the index of the one kept among them; and with `goal = :compact`
+  `reducer`. A catalog array ([`Construction`](@ref)) reports `catalog`,
+  with the construction's `name`, `family`, `source`, `rows`, the array's
+  `lower_bound`, whether the design is an `orthogonal` array (every
+  combination of `strength` parameters exactly once, so never with
+  `Invalid` values, whose negative rows repeat ordinary combinations), and
+  whether the array only `seeded` the design under rules. The row reducer
+  ([`Compact`](@ref)) reports `start`, the stage of its inner engine, and
+  `reducer`, with the rows it started from and ended with, its bound, its
+  steps and budgets, and why it stopped. [`IPOG`](@ref) reports `member`,
+  the member of the IPOG family whose design it kept, `(tiebreak,
+  vertical)`, or `(tiebreak = :none, vertical = :none)` at full strength,
+  where the design is every valid row and no member runs (the manual's IPOG
+  page says what the members are). [`GND`](@ref) reports nothing more. For
+  `Auto()` on eight parameters of seven values:
+
+  ```
+  (engine = "Auto()", rows = 49, chose = "Construction()",
+   starts = [(engine = "Construction()", rows = 49, catalog = (name = "Bush", family = "Bush orthogonal array", …))],
+   kept = 1)
+  ```
+
+- `negative`: for each [`Invalid`](@ref) value, in parameter and domain
+  order, `(parameter, value, rows, stage)`: the parameter's name, the value
+  as its `repr`, the cases that hold it, and the stage that covered its
+  negative targets, a request one strength lower on the other parameters,
+  whose `engine` says which engine ran: the same one, or IPOG where the
+  engine has nothing for that request, as `Construction` at strength 1.
+  `stage` is `nothing` where the value needs no such request (strength 1,
+  with no `stronger` group holding the parameter), and `negative` is empty
+  without `Invalid` values.
+
+An excursion and a full factorial have no engine: `engine`, `ordinary` and
+`negative` are `nothing`.
+
+# Display
+
+`show` prints a summary line, the excluded targets' counts, and the rows as
+a table (§1.22):
+
+```
+5 cases (lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
+    mode    solver  tol
+ 1  :fast   :none   0.001
+ 2  :exact  :none   1.0e-6
+ 3  :exact  :lu     1.0e-6
+ 4  :exact  :qr     1.0e-6
+ 5  :fast   :none   1.0e-6
+```
+
+The summary gives the count, with a covering design's recorded lower bound
+beside it, as "(lower bound 4)", or "(minimal)" when the count equals it;
+then the strategy (the strength, any `stronger` groups and the engine, with
+a randomized engine's seed and what `Auto` chose; an excursion's distance,
+base and dropped rows; a full factorial), the parameter count and the size
+of the full product. It
+adds the number of valid rows only when generation already knows it: for a
+full factorial, and for a covering design at strength equal to the parameter
+count, where the required targets are the valid rows. Values print with
+`show`, so `:fast` and `"fast"` differ.
+
+With [`Invalid`](@ref) values, a covering design's summary ends with its
+count of negative targets, the excluded line counts negative exclusions
+after "negative:", and a negative row, one holding an `Invalid` value, is
+marked with `!` after its row number. For
+`all_pairs(TestSpace((n = [1, 2, Invalid(1)], m = [:a, :b], k = [:x, :y]);
+constraints = [@forbid(n == 2 && m == :b), @forbid(m == :a && k == :y)]))`:
+
+```
+6 cases (lower bound 5) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations · 4 negative targets
+excluded: 2 pairs forbidden, 1 impossible under the constraints; see report(cases)
+     n           m   k
+ 1   1           :a  :x
+ 2   1           :b  :y
+ 3   2           :a  :x
+ 4   1           :b  :x
+ 5!  Invalid(1)  :a  :x
+ 6!  Invalid(1)  :b  :y
+```
+
+In a REPL (an `IOContext` with
+`:limit => true`), long results keep their first 10 and last 5 rows and wide
+cells and columns are cut to the display size, as a `DataFrame` does;
+otherwise every row prints in full. Inside a container, a `TestCases`
+prints as its summary line. Display performs no search, rule evaluation or
+coverage count; verification and bonus coverage belong to `report` and
+`coverage` (§1.23).
+
+# Tables
+
+A `TestCases` of named rows is a vector of `NamedTuple`s, which Tables.jl
+reads as a row table: `DataFrame(cases)` has one column per parameter, with
+the field types above, and `CSV.write(path, cases)` writes a header of
+parameter names and one line per case. CSV is text: a `Symbol` is written
+as its name and reads back as a string (`:fast` becomes `"fast"`), and `1`
+and `1.0` in a `Union{Int64, Float64}` column are written as `1` and `1.0`.
+CSV.jl refuses a `nothing` value; write `CSV.write(path, cases; transform =
+(column, value) -> something(value, missing))` to write it as an empty
+field, which reads back as `missing`.
+
+A positional result is a vector of `Tuple`s, which Tables.jl does not
+recognize as a table (`Tables.istable(cases)` is `false`): `DataFrame(cases)`
+still builds, with columns named `1`, `2`, `3`, and `CSV.write` fails. Name
+the columns yourself:
+
+```julia
+DataFrame(cases, parameters(cases.space))          # columns p1, p2, p3
+CSV.write(path, NamedTuple{Tuple(parameters(cases.space))}.(cases))
+```
+"""
+struct TestCases{T} <: AbstractVector{T}
+    cases::Vector{T}
+    space::TestSpace
+    strategy::Symbol
+    strength::Int
+    stronger::Vector{Pair{Tuple{Vararg{Symbol}}, Int}}
+    engine::Symbol
+    seed::Union{Nothing, Int}
+    n_must_include::Int
+    required::Int
+    covered::Int
+    excluded::Vector{Exclusion}
+    positional::Bool
+    notes::NamedTuple
+    negative_required::Int
+    negative_covered::Int
+    negative_excluded::Vector{Exclusion}
+    record::NamedTuple
+end
+
+# The form without negative bookkeeping or a record: none recorded.
+TestCases{T}(cases, space, strategy, strength, stronger, engine, seed, n_must_include, required, covered,
+             excluded, positional, notes) where {T} =
+    TestCases{T}(cases, space, strategy, strength, stronger, engine, seed, n_must_include, required,
+                 covered, excluded, positional, notes, 0, 0, Exclusion[], _NO_BOUND)
+
+Base.size(tc::TestCases) = size(tc.cases)
+Base.getindex(tc::TestCases, i::Int) = tc.cases[i]
+Base.IndexStyle(::Type{<:TestCases}) = IndexLinear()
+Base.collect(tc::TestCases) = copy(tc.cases)
+
+"""
+    field_type(domain) -> Type
+
+The type of a result field whose values are `domain`: the `Union` of the
+values' concrete types, which is that type itself when they share one
+(contract §2.4). It is computed from the values, so `Any[1, 2]` gives
+`Int64`, and every value already has the field's type: storing it converts
+nothing.
+"""
+function field_type(domain)
+    isconcretetype(eltype(domain)) && return eltype(domain)   # every value has that type
+    return Union{unique(typeof(v) for v in domain)...}
+end
+
+"The element type for rows of `space`: a NamedTuple type, or a Tuple type when positional."
+function row_type(space::TestSpace, positional::Bool)
+    types = Tuple{(field_type(v) for v in space.values)...}
+    return positional ? types : NamedTuple{Tuple(space.names), types}
+end
+
+# TestCases(request, design; positional = false)
+#
+# Build the public result from an engine's `Design`. Rows come from
+# `_cases`; positional results drop the names (§1.18). Exclusions are
+# translated into names and labels, and an excursion's `base` and
+# `never_appear` from engine positions into values. `strength` is the
+# request's for a covering design and 0 for the strategies that have none.
+# (A comment, not a docstring, so that the public `TestCases` docstring is
+# the only one the reference shows.)
+function TestCases(request::Request, design::Design; positional::Bool = false)
+    space = request.space
+    T = row_type(space, positional)
+    cases = _cases(T, (space.values...,), request.candidates, design.matrix)
+    stronger = Pair{Tuple{Vararg{Symbol}}, Int}[
+        Tuple(space.names[g]) => s for (g, s) in request.groups[2:end]]
+    excluded = Exclusion[_exclusion(request, e) for e in design.excluded]
+    negative_excluded = Exclusion[_exclusion(request, e) for e in design.negative_excluded]
+    strength = design.strategy === :covering ? request.strength : 0
+    notes = design.strategy === :excursion ? _excursion_notes(request, design.notes, T, positional) :
+                                             design.notes
+    return TestCases{T}(cases, space, design.strategy, strength, stronger, design.engine,
+                        design.seed, design.n_must_include, design.required, design.covered,
+                        excluded, positional, notes, design.negative_required, design.negative_covered,
+                        negative_excluded, design.record)
+end
+
+"""
+    _cases(T, domains, candidates, matrix) -> Vector{T}
+
+The columns of `matrix`, engine positions, as rows of type `T` (a
+`row_type`): parameter `i` of column `j` has the value
+`domains[i][candidates[i][matrix[i, j]]]`, wrappers kept, as `to_cases`
+gives it. `domains` is the space's domains as a tuple, so this is the one
+function barrier of a result's rows: compiled for the domains' types, it
+reads each value with its domain's type (`_pick`) and builds each row as
+`T`.
+"""
+function _cases(::Type{T}, domains::Tuple{Vararg{AbstractVector, N}}, candidates::Vector{Vector{Int}},
+                matrix::Matrix{Int}) where {T, N}
+    cases = Vector{T}(undef, size(matrix, 2))
+    for j in axes(matrix, 2)
+        cases[j] = T(_pick(domains, ntuple(i -> candidates[i][matrix[i, j]], Val(N))))
+    end
+    return cases
+end
+
+"An engine's `Excluded` record in the caller's vocabulary: the target's values, the rules' labels."
+function _exclusion(request::Request, e::Excluded)
+    space = request.space
+    return Exclusion(from_indices(space, _space_indices(request, e.target)), e.status, e.rules,
+                     [rule_label(space, k) for k in e.rules], e.minimal, e.limit)
+end
+
+"""
+    _excursion_notes(request, notes, T, positional) -> NamedTuple
+
+An excursion design's notes in the caller's vocabulary, through the same
+`candidates` mapping as `to_cases`: `base` becomes a row of type `T`, and
+`never_appear`, `(parameter, position)` pairs, becomes `name => value`
+pairs. `dropped` and `distance` are counts and stay as they are.
+"""
+function _excursion_notes(request::Request, notes::NamedTuple, T::Type, positional::Bool)
+    space = request.space
+    row = from_indices(space, _space_indices(request, notes.base))
+    base = convert(T, positional ? Tuple(row) : row)
+    never_appear = Pair{Symbol, Any}[space.names[i] => space.values[i][request.candidates[i][k]]
+                                     for (i, k) in notes.never_appear]
+    return merge(notes, (base = base, never_appear = never_appear))
+end
+
+
+## Display (plan Phase 4 step 6; contract §1.22, §1.23)
+#
+# Everything printed below was recorded at generation: the counts come from
+# the result's fields, the product from the domains' lengths, and the valid
+# count only from a strategy that already has it. Nothing here calls
+# `explain`, `classify`, `isallowed` or a feasibility search, and nothing
+# reads `space.tables` (§1.22); test_testcases.jl checks that a lazy rule is
+# never evaluated.
+
+function Base.show(io::IO, e::Exclusion)
+    show(IOContext(io, :typeinfo => Any), e.target)
+    print(io, ": ")
+    rules, labels = e.rules, e.labels
+    if e.status === :forbidden
+        print(io, "forbidden")
+        if length(rules) == 1
+            print(io, " by ", _rule_phrase(only(rules), only(labels)))
+        elseif !isempty(rules)
+            print(io, " by ", _rule_numbers(rules), " ", _rule_details(rules, labels))
+        end
+    elseif e.status === :implied
+        if length(rules) == 1
+            print(io, "impossible because of ", _rule_phrase(only(rules), only(labels)))
+        else
+            print(io, "impossible because ", _rule_numbers(rules), " combine ", _rule_details(rules, labels))
+        end
+    else
+        print(io, e.status)
+    end
+    if e.minimal === :unresolved
+        print(io, " (explanation unresolved")
+        e.limit === nothing || print(io, ": ", e.limit.first, " = ", _grouped(e.limit.second), " reached")
+        print(io, ")")
+    end
+    return nothing
+end
+
+"""
+    _valid_count(cases::TestCases) -> Union{Nothing, Integer}
+
+The number of valid rows in the full product when generation already knows
+it (§1.22), else `nothing`. A full factorial counted them (`notes.accepted`).
+A covering design at strength equal to the parameter count has the complete
+rows as its targets, so its required targets are exactly the valid rows:
+the ordinary targets are the valid ordinary rows, and the negative targets
+the valid negative rows.
+"""
+function _valid_count(tc::TestCases)
+    tc.strategy === :full_factorial && return tc.notes.accepted
+    tc.strategy === :covering && tc.strength == length(tc.space.names) &&
+        return tc.required + tc.negative_required
+    return nothing
+end
+
+"""
+    _engine_phrase(tc) -> String
+
+How the summary line names the engine, from the configuration the result
+recorded (`record.engine`) and, for `Auto`, what it ran (its stage's
+`chose`): "IPOG", "GND seed 3", "Compact(GND(seed = 17)) seed 3", "Auto:
+Construction()" or "Auto: Compact(Construction()) seed 0" (`_engine_phrase`
+of a configuration). A result made without a record, which no engine of the
+package returns, shows the name it keeps.
+"""
+function _engine_phrase(tc::TestCases)
+    config = get(tc.record, :engine, nothing)
+    config isa NamedTuple || return string(tc.engine)
+    stage = get(tc.record, :ordinary, nothing)
+    return _engine_phrase(config, stage isa NamedTuple ? get(stage, :chose, nothing) : nothing)
+end
+
+"""
+    _size_note(tc) -> Union{Nothing, String}
+
+What the summary line says of a covering design's size beside its count
+(plan §6.1, D5): "minimal" when the rows equal the recorded lower bound, the
+one case in which a count is called minimal (contract §8.4), and otherwise
+"lower bound 9". Nothing for a design with no bound, or a bound of 0, where
+no case is needed.
+"""
+function _size_note(tc::TestCases)
+    bound = get(tc.record, :lower_bound, nothing)
+    (bound === nothing || bound == 0) && return nothing
+    return tc.record.minimal ? "minimal" : "lower bound $bound"
+end
+
+_shown(io::IO, x) = sprint(show, x; context = IOContext(io, :typeinfo => Any))
+
+# A row as a literal, with no type prefix: a NamedTuple whose field types are
+# Unions, as for a parameter with an Invalid value (§2.4), would otherwise
+# print as `@NamedTuple{…}((…))`.
+_row_text(io::IO, row::Tuple) = _shown(io, row)
+function _row_text(io::IO, row::NamedTuple)
+    entries = [string(name, " = ", _shown(io, row[name])) for name in keys(row)]
+    return string("(", join(entries, ", "), length(row) == 1 ? ",)" : ")")
+end
+
+# The first `k` entries of a row, then "…": "(mode = :fast, …)" or "(:fast, …)".
+function _row_prefix(io::IO, row::Union{NamedTuple, Tuple}, k::Integer)
+    k >= length(row) && return _row_text(io, row)
+    entries = row isa NamedTuple ?
+        [string(name, " = ", _shown(io, row[name])) for name in keys(row)[1:k]] :
+        [_shown(io, row[j]) for j in 1:k]
+    return string("(", join(entries, ", "), ", …)")
+end
+
+"""
+    _summary_parts(io, cases; base_entries) -> Vector{String}
+
+The pieces of the summary line, joined by " · " when printed. An excursion's
+base shows its first `base_entries` values.
+"""
+function _summary_parts(io::IO, tc::TestCases; base_entries::Integer = length(tc.space.names))
+    size_text = _plural(length(tc), "case")
+    notes = String[]
+    tc.n_must_include > 0 && push!(notes, "$(tc.n_must_include) must-include")
+    bound = _size_note(tc)
+    bound === nothing || push!(notes, bound)
+    isempty(notes) || (size_text *= " (" * join(notes, ", ") * ")")
+    parts = [size_text]
+    if tc.strategy === :covering
+        strength = "strength $(tc.strength)"
+        for (names, s) in tc.stronger
+            strength *= ", $s within ($(join(names, ", ")))"
+        end
+        push!(parts, strength, _engine_phrase(tc))
+    elseif tc.strategy === :excursion
+        push!(parts, string("excursion, distance ", tc.notes.distance, " from ",
+                            _row_prefix(io, tc.notes.base, base_entries)))
+    elseif tc.strategy === :full_factorial
+        push!(parts, "full factorial")
+    else
+        push!(parts, string(tc.strategy), _engine_phrase(tc))
+    end
+    push!(parts, _plural(length(tc.space.names), "parameter"))
+    product = _plural(length(tc.space), "combination")
+    valid = _valid_count(tc)
+    valid === nothing || (product *= ", $valid valid")
+    if tc.strategy === :excursion && tc.notes.dropped > 0
+        product *= ", " * _plural(tc.notes.dropped, "row") * " dropped"
+    end
+    push!(parts, product)
+    if tc.strategy === :covering && _has_invalid(tc.space)
+        push!(parts, _plural(tc.negative_required, "negative target"))
+    end
+    return parts
+end
+
+# The summary line. Under `:limit`, an excursion's base is shortened until the
+# line fits the display width, keeping at least its first value.
+function _print_summary(io::IO, tc::TestCases)
+    line = join(_summary_parts(io, tc), " · ")
+    if tc.strategy === :excursion && get(io, :limit, false)::Bool
+        width = displaysize(io)[2]
+        k = length(tc.space.names)
+        while textwidth(line) > width && k > 1
+            k -= 1
+            line = join(_summary_parts(io, tc; base_entries = k), " · ")
+        end
+    end
+    print(io, line)
+    return nothing
+end
+
+# "excluded: 3 pairs forbidden, 2 impossible under the constraints; see
+# report(cases)". An implied exclusion may come from rules that combine or
+# from a single rule over a wider scope, so the summary names no cause; each
+# `Exclusion` names its rules. The noun follows the targets' size: pairs,
+# triples, or combinations when the size is another or the sizes differ
+# (stronger groups). Negative exclusions follow, after "negative:", as
+# `coverage` prints them.
+function _print_excluded(io::IO, tc::TestCases)
+    counts = String[]
+    isempty(tc.excluded) || push!(counts, _excluded_counts(tc.excluded))
+    isempty(tc.negative_excluded) || push!(counts, "negative: " * _excluded_counts(tc.negative_excluded))
+    print(io, "excluded: ", join(counts, "; "), "; see report(cases)")
+    return nothing
+end
+
+"The noun for targets of these sizes: pair, triple, or combination (§13.5)."
+_target_noun(sizes) = sizes == [2] ? "pair" : sizes == [3] ? "triple" : "combination"
+
+# "3 pairs forbidden, 2 impossible under the constraints, 1 with an unresolved
+# explanation", for a nonempty list of exclusions. Shared with `Coverage`.
+function _excluded_counts(excluded::AbstractVector{Exclusion})
+    forbidden = count(e -> e.status === :forbidden, excluded)
+    implied = count(e -> e.status === :implied, excluded)
+    unresolved = count(e -> e.minimal === :unresolved, excluded)
+    noun = _target_noun(unique(length(e.target) for e in excluded))
+    clauses = Pair{String, Int}[]
+    forbidden > 0 && push!(clauses, "forbidden" => forbidden)
+    implied > 0 && push!(clauses, "impossible under the constraints" => implied)
+    parts = String[]
+    for (k, (what, n)) in enumerate(clauses)
+        push!(parts, k == 1 ? string(_plural(n, noun), " ", what) : string(n, " ", what))
+    end
+    unresolved > 0 && push!(parts, "$unresolved with an unresolved explanation")
+    return join(parts, ", ")
+end
+
+# `s` cut to textwidth `w`, ending in "…" when cut.
+function _fit(s::AbstractString, w::Integer)
+    textwidth(s) <= w && return String(s)
+    w <= 1 && return "…"
+    out = IOBuffer()
+    used = 0
+    for c in s
+        used + textwidth(c) > w - 1 && break
+        print(out, c)
+        used += textwidth(c)
+    end
+    return String(take!(out)) * "…"
+end
+
+_pad(s::AbstractString, w::Integer) = s * " "^max(0, w - textwidth(s))
+
+const _MAX_CELL = 32   # a DataFrame's default cell width under :limit
+const _MIN_CELL = 6    # narrowest a column is cut to before columns are dropped
+
+"""
+    _shown_rows(n, room) -> (head, tail)
+
+Which rows to print when `room` lines are free: all of them when they fit
+and number at most 20, otherwise the first `head` and the last `tail` around
+a "⋮" line, 10 and 5 when there is room.
+"""
+function _shown_rows(n::Integer, room::Integer)
+    n <= min(20, room) && return n, 0
+    budget = max(3, min(16, room))
+    tail = min(5, max(1, (budget - 1) ÷ 3))
+    head = min(10, budget - 1 - tail)
+    head + tail + 1 >= n && return n, 0   # cutting would save no line
+    return head, tail
+end
+
+"""
+    _column_layout(widths, number, width) -> (widths, ncols)
+
+Column widths and the number of columns to print so that a table line fits
+`width`, for a table whose row numbers take `number` characters: every cell
+cut to `_MAX_CELL`, then the widest columns narrowed one character at a time
+down to `_MIN_CELL`, then columns dropped from the right, leaving room for a
+final "…" column.
+"""
+function _column_layout(widths::Vector{Int}, number::Int, width::Int)
+    cut = min.(widths, _MAX_CELL)
+    narrowest = min.(cut, _MIN_CELL)
+    m = length(cut)
+    total(k) = 1 + number + sum(cut[j] + 2 for j in 1:k; init = 0) + (k < m ? 3 : 0)
+    while total(m) > width
+        shrinkable = [j for j in 1:m if cut[j] > narrowest[j]]
+        isempty(shrinkable) && break
+        cut[shrinkable[argmax(cut[shrinkable])]] -= 1
+    end
+    ncols = m
+    while ncols > 1 && total(ncols) > width
+        ncols -= 1
+    end
+    return cut, ncols
+end
+
+# One table line: the row label right-aligned in `number` characters, then
+# the first `ncols` texts, each fit to its width, then "…" if columns were
+# dropped. The last column is not padded, so no line has trailing spaces.
+function _print_line(io::IO, label, texts, widths, ncols, number)
+    print(io, "\n", " ", lpad(label, number))
+    for j in 1:ncols
+        text = _fit(texts[j], widths[j])
+        print(io, "  ", j == length(texts) ? text : _pad(text, widths[j]))
+    end
+    ncols < length(texts) && print(io, "  …")
+    return nothing
+end
+
+"""
+    _print_table(io, cases, used)
+
+The rows as an aligned table under a header of parameter names, with row
+numbers. `used` counts the lines printed above the rows, the header
+included. Under `:limit` the rows and columns are cut to `displaysize(io)`;
+otherwise everything prints. When a printed row is negative (it holds an
+`Invalid` value), each row number gains a marker column: `!` for a negative
+row, a space otherwise, so the mark survives when columns are cut.
+"""
+function _print_table(io::IO, tc::TestCases, used::Integer)
+    limit = get(io, :limit, false)::Bool
+    height, width = displaysize(io)
+    n = length(tc)
+    head, tail = limit ? _shown_rows(n, height - used - 3) : (n, 0)
+    rows = [1:head; (n - tail + 1):n]
+    names = [string(name) for name in tc.space.names]
+    cells = [[_shown(io, tc.cases[r][j]) for r in rows] for j in eachindex(names)]
+    natural = [maximum(textwidth, cells[j]; init = textwidth(names[j])) for j in eachindex(names)]
+    marked = any(r -> hasinvalid(tc.cases[r]), rows)
+    label(r) = marked ? string(r, hasinvalid(tc.cases[r]) ? "!" : " ") : string(r)
+    number = max(textwidth(string(n)), tail > 0 ? 1 : 0) + marked
+    widths, ncols = limit ? _column_layout(natural, number, width) : (natural, length(names))
+    _print_line(io, "", names, widths, ncols, number)
+    for (k, r) in enumerate(rows)
+        _print_line(io, label(r), [cells[j][k] for j in eachindex(names)], widths, ncols, number)
+        tail > 0 && k == head &&
+            _print_line(io, marked ? "⋮ " : "⋮", fill("⋮", length(names)), widths, ncols, number)
+    end
+    return nothing
+end
+
+Base.show(io::IO, tc::TestCases) = _print_summary(io, tc)
+
+function Base.show(io::IO, ::MIME"text/plain", tc::TestCases)
+    _print_summary(io, tc)
+    used = 1
+    if !isempty(tc.excluded) || !isempty(tc.negative_excluded)
+        print(io, "\n")
+        _print_excluded(io, tc)
+        used += 1
+    end
+    _print_table(io, tc, used + 1)
+    return nothing
+end
