@@ -178,7 +178,9 @@ end
     # nothing, and the witness is the same.
     @test f.unset.cached == 1
     @test !dead(f, zeros(Int, 6)) && f.unset.cached == length(f.constrained) == 2
-    @test f.unset.witness == [1, 1, 1, 1, 1, 1]
+    # The record is the template itself, whose constrained places it filled
+    # (review p5f-perf 2).
+    @test f.unset.witness == [1, 1, 1, 1, 1, 1] && f.unset.witness === f.template
     @test allocated(dead, request, row) == 0
     @test allocated(_completable, f, key, 100) == 0
     @test _completable(f, key, 100) === :feasible && _witness(f) == [2, 1, 1, 1, 1, 3]

@@ -1066,6 +1066,13 @@ end
                    trial.constrained, trial.template) ==
                   (fresh.components, fresh.component_of, fresh.component_tables, fresh.param_tables,
                    fresh.constrained, fresh.template)
+            # A trial asks one question, so it keeps no record of all-unset
+            # answers (step 2 held off); any other search keeps one in its
+            # template, or in n values of its own when no parameter is free
+            # (review p5f-perf 2).
+            @test trial.unset === nothing
+            @test fresh.unset.cached == 0 && length(fresh.unset.witness) == n &&
+                  (isempty(fresh.template) || fresh.unset.witness === fresh.template)
             for members in trial.components
                 length(members) == 1 && length(f.components[f.component_of[only(members)]]) == 1 || continue
                 @test members === f.components[f.component_of[only(members)]]

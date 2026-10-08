@@ -141,14 +141,18 @@ end
 
 _Mapped() = _Mapped(nothing, Int[], Int[])
 
-# The answers of the all-unset sub-assignments, one per `Feasibility`
-# (review p5-perf 1 and 2; plan §12.3 item 8). `cached` counts the
-# constrained components whose all-unset sub-assignment is cached feasible,
-# and `witness` holds their witness values beside each free parameter's
-# first candidate. Once every constrained component's is (`cached ==
-# length(f.constrained)`), a question starts from `witness` and looks up
-# only the components that hold an assigned parameter, since each of the
-# others would find its all-unset entry.
+# The answers of the all-unset sub-assignments (review p5-perf 1 and 2; plan
+# §12.3 item 8). `cached` counts the constrained components whose all-unset
+# sub-assignment is cached feasible, and `witness` holds their witness values
+# beside each free parameter's first candidate. Once every constrained
+# component's is (`cached == length(f.constrained)`), a question starts from
+# `witness` and looks up only the components that hold an assigned
+# parameter, since each of the others would find its all-unset entry.
+# `witness` is the object's `template` itself, whose constrained places it
+# fills, or, when no parameter is free and the template is empty, n values of
+# its own; and a deletion trial, which asks one question, keeps no record
+# (`unset === nothing`), so that step 2 costs neither any bytes (review
+# p5f-perf 2).
 mutable struct _Unset
     cached::Int
     const witness::Vector{Int}
@@ -201,14 +205,17 @@ them share one empty `Dict`.
 
 A question visits only the constrained components (`constrained`, in
 order), and its witness is the assignment merged with `template`, each free
-parameter's first candidate (0 at a constrained component's parameters,
-which the caches or the search fill; empty when no parameter is free, and
-the assignment is copied), without a branch per parameter (review p5-perf
-1). Once every constrained component's all-unset sub-assignment is cached
-feasible (`unset`), the witness starts from those components' witnesses
-instead, and only the components that hold an assigned parameter are
-looked up, since each of the others would find its all-unset entry (plan
-§12.3 item 8). So a question the caches answer costs a pass over the
+parameter's first candidate (empty when no parameter is free, and the
+assignment is copied), without a branch per parameter (review p5-perf 1).
+At a constrained component's parameters the template holds 0 until the
+component's all-unset sub-assignment is cached feasible, then that answer's
+witness: it is the storage of `unset`, the record of those answers. The
+caches overwrite a component they answer, and a component they don't is
+reset to the question's values for the search. Once every constrained
+component's all-unset sub-assignment is cached (`unset`), the witness starts
+from the record, and only the components that hold an assigned parameter
+are looked up, since each of the others would find its all-unset entry
+(plan §12.3 item 8). So a question the caches answer costs a pass over the
 assignment, the direct check, a check of each constrained component for an
 assigned parameter, and a lookup per component the question partly assigns,
 not one per component: a component it assigns fully isn't looked up, since
@@ -233,7 +240,7 @@ Fields: `candidates`, `tables`, `limit`, the component structure
 (`components`, `component_of`, `component_tables`, `param_tables`,
 `constrained`, `template`), `witness_cache`, `rule_memo`, `stats`, the
 scratch `key`, `subkeys`, `pending` and `search`, `mapped`, and `unset`, the
-all-unset sub-assignments' witnesses.
+all-unset sub-assignments' record (`nothing` in a deletion trial).
 
 The lazy-rule memo (contract §3.5, §12.19). `rule_memo[k]` is `nothing` for
 a tabulated table and, for a lazy one, a `RuleMemo` from the scope's value
@@ -256,7 +263,7 @@ struct Feasibility
     component_tables::Vector{Vector{Int}}
     param_tables::Vector{Vector{Int}}
     constrained::Vector{Int}           # the components with a table, in order
-    template::Vector{Int}              # a free parameter's first candidate, 0 elsewhere; empty if none is free
+    template::Vector{Int}              # a free parameter's first candidate, else 0 or `unset`'s; empty if none is free
     witness_cache::Vector{Dict{Vector{Int}, Union{Nothing, Vector{Int}}}}
     rule_memo::Vector{Union{Nothing, RuleMemo}}
     stats::SearchStats
@@ -265,7 +272,7 @@ struct Feasibility
     pending::Vector{Int}
     search::_Search
     mapped::_Mapped
-    unset::_Unset
+    unset::Union{Nothing, _Unset}
 end
 
 "An empty verdict memo for a lazy table, `nothing` for a tabulated one."
@@ -321,8 +328,9 @@ parent's tables and memos, so nothing needs checking again (review p5-perf
 3). Its components are those of its own rules, as `Feasibility` would find
 them; a parameter alone in its component in both reuses the parent's vector
 for it, which nothing changes, and it shares the parent's table of a
-request's map (`_Mapped`), which depends on the candidates alone. Otherwise
-`parent` is `nothing`.
+request's map (`_Mapped`), which depends on the candidates alone. It asks one
+question, so it keeps no record of all-unset answers (`unset` is `nothing`,
+and step 2 of `_completable` is held off). Otherwise `parent` is `nothing`.
 """
 function _Feasibility(cands::Vector{Vector{Int}}, rules::Vector{RuleTable}, limit::Int,
                       memos::Vector{Union{Nothing, RuleMemo}}, parent::Union{Nothing, Feasibility})
@@ -353,12 +361,12 @@ function _Feasibility(cands::Vector{Vector{Int}}, rules::Vector{RuleTable}, limi
     subkeys = [constrained[c] ? zeros(Int, length(components[c])) : no_values for c in eachindex(components)]
     alive = [constrained[component_of[p]] ? Vector{Bool}(undef, length(cands[p])) : no_survivors for p in 1:n]
     search = _Search(zeros(Int, n), alive, zeros(Int, n), Tuple{Int, Int}[], Int(limit), 0)
-    firsts = [constrained[component_of[p]] ? 0 : cands[p][1] for p in 1:n]
-    template = all(constrained) ? Int[] : firsts
+    template = all(constrained) ? Int[] : [constrained[component_of[p]] ? 0 : cands[p][1] for p in 1:n]
     mapped = parent === nothing ? _Mapped() : parent.mapped   # the same candidates
+    unset = parent === nothing ? _Unset(0, isempty(template) ? zeros(Int, n) : template) : nothing
     return Feasibility(cands, rules, limit, components, component_of,
         component_tables, param_tables, findall(constrained), template, caches,
-        memos, SearchStats(), zeros(Int, n), subkeys, Int[], search, mapped, _Unset(0, copy(firsts)))
+        memos, SearchStats(), zeros(Int, n), subkeys, Int[], search, mapped, unset)
 end
 
 """
@@ -699,7 +707,8 @@ end
 # sub-assignment is cached feasible (`f.unset`), a component that holds no
 # assigned parameter would find that entry, so it isn't looked up: its
 # witness values come from `f.unset.witness`, and only the components the
-# question assigns are looked up (plan §12.3 item 8). That changes no
+# question assigns are looked up (plan §12.3 item 8; held off in a deletion
+# trial, which keeps no record). That changes no
 # answer, witness, node count or counter: a skipped component would find a
 # feasible entry, so the same components are searched, in the same order. A
 # question asked again therefore finds every component it needs in the
@@ -716,26 +725,22 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
     unset = f.unset
     # Cached components first: they cost no nodes, and a cached infeasible
     # component settles the question at once.
-    if unset.cached == length(f.constrained)
+    if unset !== nothing && unset.cached == length(f.constrained)
         # Every constrained component's all-unset sub-assignment is cached:
         # start from their witnesses, and look up only the components that
         # hold an assigned parameter. (`ifelse`, not a branch: half-assigned
         # rows would mispredict it.)
         _merge!(witness, key, unset.witness)
         for c in f.constrained
-            params = f.components[c]
-            _any_assigned(key, params) || continue
-            for p in params   # its unset parameters back to 0, for the cache or the search
-                @inbounds witness[p] = key[p]
-            end
+            _any_assigned(key, f.components[c]) || continue
             _look_up!(f, c, key, witness, pending) === :infeasible || continue
             stats.memo_hits += 1
             return :infeasible
         end
     else
         # The assignment, with each free parameter's first candidate where it
-        # is unset; a constrained component's unset parameters stay 0 for the
-        # caches or the search to fill.
+        # is unset; a constrained component's parameters hold the template's
+        # values until its lookup fills them, or resets them for the search.
         isempty(f.template) ? copyto!(witness, key) : _merge!(witness, key, f.template)
         for c in f.constrained
             _look_up!(f, c, key, witness, pending) === :infeasible || continue
@@ -756,7 +761,7 @@ function _completable(f::Feasibility, key::Vector{Int}, limit::Int)
         status === :unknown && break   # the budget is spent; store nothing
         # `subkeys[c]` still holds the sub-assignment: no search writes it.
         f.witness_cache[c][copy(f.subkeys[c])] = status === :feasible ? witness[f.components[c]] : nothing
-        if status === :feasible && all(iszero, f.subkeys[c])   # its all-unset entry, stored once
+        if status === :feasible && unset !== nothing && all(iszero, f.subkeys[c])   # its all-unset entry, stored once
             for p in f.components[c]
                 unset.witness[p] = witness[p]
             end
@@ -790,7 +795,9 @@ end
 Component `c`'s answer from its cache, for `_completable`: `:infeasible`
 when the cache holds `nothing` for its sub-assignment; otherwise its witness
 values are written into `witness` (`:found`), it is fully assigned, which the
-direct check decided (`:found`), or it goes on `pending` (`:missing`).
+direct check decided (`:found`), or it goes on `pending` (`:missing`) with
+its parameters in `witness` reset to the question's values, 0 where unset,
+for the search (the witness held the template's, or `unset`'s, there).
 """
 @inline function _look_up!(f::Feasibility, c::Int, key::Vector{Int}, witness::Vector{Int}, pending::Vector{Int})
     params = f.components[c]
@@ -798,6 +805,9 @@ direct check decided (`:found`), or it goes on `pending` (`:missing`).
     cached = get(f.witness_cache[c], _subkey!(f, c, key), missing)
     cached === nothing && return :infeasible
     if cached === missing
+        for p in params
+            @inbounds witness[p] = key[p]
+        end
         push!(pending, c)
         return :missing
     end
