@@ -210,8 +210,11 @@ instead, and only the components that hold an assigned parameter are
 looked up, since each of the others would find its all-unset entry (plan
 §12.3 item 8). So a question the caches answer costs a pass over the
 assignment, the direct check, a check of each constrained component for an
-assigned parameter, and one lookup per component it assigns, not one per
-component.
+assigned parameter, and a lookup per component the question partly assigns,
+not one per component: a component it assigns fully isn't looked up, since
+the direct check decided it (`_look_up!`). Before every all-unset answer is
+cached, it costs the pass, the direct check, and a lookup per constrained
+component it doesn't assign fully.
 
 Scratch, reused by every question so that a cache hit allocates nothing:
 `key` holds the question (`_checked_key`, or `_mapped_key!` for a row in a
@@ -573,11 +576,13 @@ The engines' predicate (plan Phase 3 step 1): `true` only when `partial`
 is proven to have no valid completion, `false` only when a witness exists.
 When the search reaches `f.limit` it throws `ResourceLimitError` naming
 `feasibility_limit`, never guessing either way (contract §1.7, §3.6). A
-question the caches answer allocates nothing and costs a pass over the
-assignment, the direct check, and a lookup per constrained component it
-assigns, once every constrained component's all-unset sub-assignment is
-cached (before that, a lookup per constrained component; see
-`Feasibility`). One that searches allocates the entries it stores and,
+question the caches answer allocates nothing. Once every constrained
+component's all-unset sub-assignment is cached, it costs a pass over the
+assignment, the direct check, a check of each constrained component for an
+assigned parameter, and a lookup per component the question partly assigns
+(one it assigns fully, the direct check decided); before that, the pass, the
+direct check, and a lookup per constrained component it doesn't assign fully
+(see `Feasibility`). One that searches allocates the entries it stores and,
 until they reach their largest size, the growth of the object's search
 buffers (the trail of pruned candidates and the list of components to
 search).
@@ -616,8 +621,14 @@ from `f.mapped`, the table of `map` made the first time it is given
 candidate. So the check reads one entry a parameter without a branch (an
 unset parameter reads its 0), and costs less than converting the row alone
 did, whose branch on an unset entry half-assigned rows mispredict (the
-maintainer's review, R2). `map` must not change once given; a request's
-`candidates` never do.
+maintainer's review, R2).
+
+The table is kept by the map's identity (`mapped.map === map`), so pass the
+same map object every time: another object, even an equal one, rebuilds the
+table (a caller that alternated two would rebuild it at every question), and
+a map changed in place after it was given is used stale, without an error.
+A request's `candidates` is one object for the request's life and never
+changes (`Request`).
 """
 function _mapped_key!(f::Feasibility, map::Vector{Vector{Int}}, positions::AbstractVector{<:Integer})
     n = length(f.candidates)

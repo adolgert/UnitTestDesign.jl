@@ -47,6 +47,11 @@ by the must-include checks, the engine's searches and the final validation,
 and are released with the request. The space retains nothing.
 `memo_size(request)` counts the memoized verdicts.
 
+`candidates` is one object for the request's life (`_with_must_include`
+shares it) and is never changed in place: `dead` converts a row through it
+in the row's search, which keeps a table of it by its identity
+(`_mapped_key!`), so a change would go unseen.
+
 Values are the space's, wrappers included: a [`Partition`](@ref) is an
 ordinary value, which rules and targets see by its name (§4.5), and an
 [`Invalid`](@ref) value is a candidate only of negative rows (§5).
@@ -573,9 +578,10 @@ The base supports that hold parameter `p` and `t - 1` of the parameters
 ascending: every `t`-subset of `earlier` and `p` that holds `p`, `C(k, t -
 1)` of them for `k` parameters in `earlier`, and none at base strength 0.
 An IPOG step reads its base supports so (`_begin_step!`), `earlier` being
-the parameters before its own in the order. Unless `t = 1`, when the support
-is `p` alone, an `earlier` that is not ascending within `1:n`, or that holds
-`p`, is an internal error.
+the parameters before its own in the order. A `p` outside `1:n` is an
+internal error. So is an `earlier` that is not ascending within `1:n`, or
+that holds `p`, when `t ≥ 2`; at `t = 0` there is no support and at `t = 1`
+the support is `p` alone, so `earlier` isn't read or checked.
 
 Why in that order: the positions number the base supports in lexicographic
 order (`_Supports`), and inserting `p` into two sorted subsets keeps their
