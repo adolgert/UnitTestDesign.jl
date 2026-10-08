@@ -958,4 +958,18 @@ end
     # With no negative row, nothing is held and none is required: it passes,
     # its count and numbers being the layout's.
     @test validate_design(request, m[:, .!holds], targets; negative = none) == nrequired(targets)
+    # The recount runs with no negative row too, so it still checks that the
+    # numbers and the count are the layout's (review p5f-evidence 2): one
+    # negative target neither required nor excluded, or a required count
+    # that isn't the number left, is named. A recount only "whenever the
+    # design has negative rows" passes both.
+    unnumbered = _NegativeTargets(right.layout, 0, empty(right.excluded), collect(1:(total - 1)), right.first,
+                                  right.count, right.excluded_at, right.alone)
+    @test_throws ErrorException validate_design(request, m[:, .!holds], targets; negative = unnumbered)
+    @test startswith(message(() -> validate_design(request, m[:, .!holds], targets; negative = unnumbered)),
+                     "internal error: required target")
+    miscounted = _NegativeTargets(right.layout, 3, empty(right.excluded), collect(1:total), right.first,
+                                  right.count, right.excluded_at, right.alone)
+    @test message(() -> validate_design(request, m[:, .!holds], targets; negative = miscounted)) ==
+          "internal error: the negative targets' excluded numbers and count are not the request's"
 end
