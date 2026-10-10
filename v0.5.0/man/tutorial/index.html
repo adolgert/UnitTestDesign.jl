@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Tutorial · UnitTestDesign.jl</title><meta name="title" content="Tutorial · UnitTestDesign.jl"/><meta property="og:title" content="Tutorial · UnitTestDesign.jl"/><meta property="twitter:title" content="Tutorial · UnitTestDesign.jl"/><meta name="description" content="Documentation for UnitTestDesign.jl."/><meta property="og:description" content="Documentation for UnitTestDesign.jl."/><meta property="twitter:description" content="Documentation for UnitTestDesign.jl."/><meta property="og:url" content="https://adolgert.github.io/UnitTestDesign.jl/man/tutorial/"/><meta property="twitter:url" content="https://adolgert.github.io/UnitTestDesign.jl/man/tutorial/"/><link rel="canonical" href="https://adolgert.github.io/UnitTestDesign.jl/man/tutorial/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">UnitTestDesign.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li class="is-active"><a class="tocitem" href>Tutorial</a><ul class="internal"><li><a class="tocitem" href="#Level-0:-one-line"><span>Level 0: one line</span></a></li><li><a class="tocitem" href="#Level-1:-named-parameters"><span>Level 1: named parameters</span></a></li><li><a class="tocitem" href="#Level-2:-constraints"><span>Level 2: constraints</span></a></li><li><a class="tocitem" href="#Level-3:-must-include-cases-and-strength"><span>Level 3: must-include cases and strength</span></a></li><li><a class="tocitem" href="#Level-4:-inspection"><span>Level 4: inspection</span></a></li><li><a class="tocitem" href="#A-worked-example:-generic-code-across-types"><span>A worked example: generic code across types</span></a></li></ul></li><li><span class="tocitem">How-to guides</span><ul><li><a class="tocitem" href="../../howto/many_options/">Test a function with many options</a></li><li><a class="tocitem" href="../../howto/generic_types/">Test generic code across types</a></li><li><a class="tocitem" href="../../howto/ci_matrix/">Plan a CI matrix</a></li><li><a class="tocitem" href="../../howto/simulation_campaign/">Run a simulation campaign</a></li><li><a class="tocitem" href="../../howto/audit_existing/">Audit and extend an existing suite</a></li><li><a class="tocitem" href="../../howto/diagnose/">Diagnose a failure</a></li><li><a class="tocitem" href="../../howto/invalid_inputs/">Test invalid inputs</a></li><li><a class="tocitem" href="../../howto/property_based/">Combine with property-based testing</a></li><li><a class="tocitem" href="../../howto/commit_design/">Commit a design as data</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explain/values_and_oracles/">Choosing values and oracles</a></li><li><a class="tocitem" href="../../explain/coverage_evidence/">Interaction coverage and the evidence</a></li><li><a class="tocitem" href="../../explain/constraints/">Constraints</a></li><li><a class="tocitem" href="../engines/">Engines</a></li><li><a class="tocitem" href="../ipog/">IPOG</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../reference/">API</a></li><li><a class="tocitem" href="../../reference/migration/">Migration from 0.4</a></li></ul></li><li><a class="tocitem" href="../agents/">For AI agents</a></li><li><span class="tocitem">Developer</span><ul><li><a class="tocitem" href="../../dev/contract/">Contract</a></li><li><a class="tocitem" href="../../dev/non_goals/">Non-goals</a></li><li><a class="tocitem" href="../../contributing/">Contributing</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Tutorial</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Tutorial</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/adolgert/UnitTestDesign.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/adolgert/UnitTestDesign.jl/blob/main/docs/src/man/tutorial.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Tutorial"><a class="docs-heading-anchor" href="#Tutorial">Tutorial</a><a id="Tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#Tutorial" title="Permalink"></a></h1><p>This tutorial builds a test in five levels, and each level adds one idea. A worked example at the end puts them together.</p><h2 id="Level-0:-one-line"><a class="docs-heading-anchor" href="#Level-0:-one-line">Level 0: one line</a><a id="Level-0:-one-line-1"></a><a class="docs-heading-anchor-permalink" href="#Level-0:-one-line" title="Permalink"></a></h2><p>Give <code>all_pairs</code> a list of values for each argument of the function under test:</p><pre><code class="language-julia hljs">using UnitTestDesign
+
+cases = all_pairs([1, 2, 3], [&quot;a&quot;, &quot;b&quot;], [1.0, 2.0])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">6 cases (minimal) · strength 2 · Auto: Construction() · 3 parameters · 12 combinations
+    p1  p2   p3
+ 1  1   &quot;a&quot;  1.0
+ 2  2   &quot;a&quot;  2.0
+ 3  3   &quot;a&quot;  1.0
+ 4  1   &quot;b&quot;  2.0
+ 5  2   &quot;b&quot;  1.0
+ 6  3   &quot;b&quot;  2.0</code></pre><p>The three lists have 3 × 2 × 2 = 12 combinations. The six cases hold every <em>pair</em> of values: each value of the first argument appears beside each value of the second, each value of the first beside each value of the third, and each value of the second beside each value of the third. The summary line says what was asked (strength 2, which means pairs), which engine built it (the default, <code>Auto</code>, and what it chose: here the catalog&#39;s array, <code>Construction()</code>), and how large the full product is. The columns are named <code>p1</code>, <code>p2</code>, <code>p3</code> because the arguments have no names yet.</p><p><code>cases</code> is a vector of tuples, so a test loops over it:</p><pre><code class="language-julia hljs">using Test
+
+scaled(n, unit, x) = string(n * x, &quot; &quot;, unit)     # stands in for the code under test
+
+@testset &quot;scaled&quot; begin
+    for (n, unit, x) in cases
+        number, suffix = split(scaled(n, unit, x))
+        @test parse(Float64, number) == n * x
+        @test suffix == unit
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr1">Test Summary: | <span class="sgr32">Pass  </span><span class="sgr36">Total  </span>Time</span>
+scaled        | <span class="sgr32">  12  </span><span class="sgr36">   12  </span>0.0s</code></pre><p>Pairs matter because many bugs need two things at once: an <code>if</code> on one option inside a branch on another. The saving grows with the number of parameters. Four parameters of three values each have 81 combinations, and every pair of their values fits in 9 cases:</p><pre><code class="language-julia hljs">all_pairs([1, 2, 3], [&quot;low&quot;, &quot;mid&quot;, &quot;high&quot;], [1.0, 3.7, 4.9], [:greedy, :relax, :optim])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">9 cases (minimal) · strength 2 · Auto: Construction() · 4 parameters · 81 combinations
+    p1  p2      p3   p4
+ 1  1   &quot;low&quot;   1.0  :greedy
+ 2  2   &quot;mid&quot;   3.7  :greedy
+ 3  3   &quot;high&quot;  4.9  :greedy
+ 4  1   &quot;mid&quot;   4.9  :relax
+ 5  2   &quot;high&quot;  1.0  :relax
+ 6  3   &quot;low&quot;   3.7  :relax
+ 7  1   &quot;high&quot;  3.7  :optim
+ 8  2   &quot;low&quot;   4.9  :optim
+ 9  3   &quot;mid&quot;   1.0  :optim</code></pre><p>Which values to list is the most important decision in this kind of testing, and no function makes it for you. <a href="../../explain/values_and_oracles/">Choosing values and oracles</a> explains how to pick representatives, boundaries, and a check that knows the right answer.</p><h2 id="Level-1:-named-parameters"><a class="docs-heading-anchor" href="#Level-1:-named-parameters">Level 1: named parameters</a><a id="Level-1:-named-parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Level-1:-named-parameters" title="Permalink"></a></h2><p>Naming the parameters unlocks everything that follows: rules, partial must-include cases, groups of parameters that need a higher strength, and readable test names. Give <code>name =&gt; values</code> pairs, or a <code>NamedTuple</code> of lists:</p><pre><code class="language-julia hljs">all_pairs(:mode =&gt; [:fast, :exact], :solver =&gt; [:none, :lu, :qr], :tol =&gt; [1e-3, 1e-6])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">6 cases (minimal) · strength 2 · Auto: Construction() · 3 parameters · 12 combinations
+    mode    solver  tol
+ 1  :fast   :none   0.001
+ 2  :fast   :lu     1.0e-6
+ 3  :fast   :qr     0.001
+ 4  :exact  :none   1.0e-6
+ 5  :exact  :lu     0.001
+ 6  :exact  :qr     1.0e-6</code></pre><p>The cases are now <code>NamedTuple</code>s. The rest of this tutorial tests this function:</p><pre><code class="language-julia hljs">using LinearAlgebra
+
+&quot;&quot;&quot;
+Solve `A x = b`. In `:fast` mode, iterate until the residual is below `tol`,
+ignoring `solver`. In `:exact` mode, meant for tight tolerances, factor `A`
+with `solver`.
+&quot;&quot;&quot;
+function solve(A, b; mode = :exact, solver = :lu, tol = 1e-6)
+    tol &gt; 0 || throw(ArgumentError(&quot;tol must be positive, got $tol&quot;))
+    if mode == :fast                                  # Jacobi iteration
+        x = zero(b)
+        while norm(A * x - b) &gt; tol * norm(b)
+            x = x + (b - A * x) ./ diag(A)
+        end
+        return x
+    end
+    F = solver == :lu ? lu(A) : solver == :qr ? qr(A) : A
+    return F \ b
+end</code></pre><p>When the same parameters feed several designs, or need rules, put them in a <a href="../../reference/#UnitTestDesign.TestSpace"><code>TestSpace</code></a>:</p><pre><code class="language-julia hljs">space = TestSpace((mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">TestSpace with 3 parameters, 12 combinations, 0 constraints
+  mode:   :fast, :exact
+  solver: :none, :lu, :qr
+  tol:    0.001, 1.0e-6</code></pre><pre><code class="language-julia hljs">cases = all_pairs(space)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">6 cases (minimal) · strength 2 · Auto: Construction() · 3 parameters · 12 combinations
+    mode    solver  tol
+ 1  :fast   :none   0.001
+ 2  :fast   :lu     1.0e-6
+ 3  :fast   :qr     0.001
+ 4  :exact  :none   1.0e-6
+ 5  :exact  :lu     0.001
+ 6  :exact  :qr     1.0e-6</code></pre><p>A case splats into keyword arguments, and its fields read by name. The check here is an oracle that needs no reference answer: the residual must be below the tolerance.</p><pre><code class="language-julia hljs">A = [4.0 1.0; 1.0 3.0]
+b = [1.0, 2.0]
+
+@testset &quot;solve&quot; begin
+    @testset &quot;$case&quot; for case in cases
+        x = solve(A, b; case...)
+        @test norm(A * x - b) &lt;= case.tol * norm(b)
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr1">Test Summary: | <span class="sgr32">Pass  </span><span class="sgr36">Total  </span>Time</span>
+solve         | <span class="sgr32">   6  </span><span class="sgr36">    6  </span>0.1s</code></pre><h2 id="Level-2:-constraints"><a class="docs-heading-anchor" href="#Level-2:-constraints">Level 2: constraints</a><a id="Level-2:-constraints-1"></a><a class="docs-heading-anchor-permalink" href="#Level-2:-constraints" title="Permalink"></a></h2><p>Look at the cases above. <code>solve</code> ignores <code>solver</code> in fast mode, so the cases with <code>mode = :fast</code> and <code>solver = :lu</code> or <code>:qr</code> repeat what <code>solver = :none</code> already tests, while taking the place of combinations that matter. And exact mode is meant for tight tolerances, so <code>mode = :exact</code> with <code>tol = 1e-3</code> is not a configuration anyone runs. Constraints say so, in three spellings. A pattern forbids one exact combination:</p><pre><code class="language-julia hljs">forbid((mode = :exact, tol = 1e-3); reason = &quot;exact mode needs a tight tolerance&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">exact mode needs a tight tolerance</code></pre><p>An expression over bare parameter names either forbids the combinations that make it true (<code>@forbid</code>) or allows only those (<code>@require</code>):</p><pre><code class="language-julia hljs">@forbid mode == :fast &amp;&amp; solver != :none</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">@forbid(mode == :fast &amp;&amp; solver != :none)</code></pre><pre><code class="language-julia hljs">@require mode == :exact || solver == :none</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">@require(mode == :exact || solver == :none)</code></pre><p><code>@require e</code> is the same rule as <code>@forbid !(e)</code>; having both verbs keeps the intent visible. In a macro, a bare name is a parameter, and <code>$x</code> takes the value of a variable <code>x</code> from the surrounding code. When the logic is too big for one expression, list the names and write a function:</p><pre><code class="language-julia hljs">forbid(:mode, :solver) do mode, solver
+    mode == :fast &amp;&amp; solver != :none
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">forbid rule on (mode, solver)</code></pre><p>A rule only ever sees complete values of the parameters it names, drawn from their lists. The <code>solver</code> rule is the common pattern for a <em>dependent parameter</em>: an option that applies only when another has some value gets a sentinel value (<code>:none</code>) and one <code>@require</code>.</p><p>Rules belong to the space:</p><pre><code class="language-julia hljs">space = TestSpace(
+    (mode = [:fast, :exact], solver = [:none, :lu, :qr], tol = [1e-3, 1e-6]);
+    constraints = [
+        @require(mode == :exact || solver == :none),
+        forbid((mode = :exact, tol = 1e-3); reason = &quot;exact mode needs a tight tolerance&quot;),
+    ])
+
+cases = all_pairs(space)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">5 cases (lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
+    mode    solver  tol
+ 1  :fast   :none   0.001
+ 2  :exact  :none   1.0e-6
+ 3  :exact  :lu     1.0e-6
+ 4  :exact  :qr     1.0e-6
+ 5  :fast   :none   1.0e-6</code></pre><p>Every case satisfies both rules, and every pair of values that some valid case can hold appears in a case. The second line says what was left out. Three pairs are forbidden by a rule that names them. Two more are impossible: no single rule covers both of their parameters, but together the rules leave no valid case that holds them. <a href="../../reference/#UnitTestDesign.explain"><code>explain</code></a> says why:</p><pre><code class="language-julia hljs">explain(space, (solver = :lu, tol = 1e-3))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">infeasible: no valid case contains (solver = :lu, tol = 0.001); rules 1 and 2 together exclude it (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)</code></pre><p><code>solver = :lu</code> needs exact mode, and exact mode needs <code>tol = 1e-6</code>. You never write that third rule; the package finds it, and does not ask for a case that cannot exist. <code>explain</code> takes any partial or complete assignment:</p><pre><code class="language-julia hljs">explain(space, (mode = :fast, solver = :lu))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">forbidden by rule 1 (@require(mode == :exact || solver == :none))</code></pre><pre><code class="language-julia hljs">explain(space, (solver = :lu,))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">completable, e.g. (mode = :exact, solver = :lu, tol = 1.0e-6)</code></pre><p>A rule that names a parameter the space lacks is an error when the space is built, and the message names what went wrong:</p><pre><code class="language-julia hljs">try
+    TestSpace((mode = [:fast, :exact], solver = [:none, :lu, :qr]);
+              constraints = [@forbid(mode == :fast &amp;&amp; solvr != :none)])
+catch err
+    showerror(stdout, err)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ArgumentError: rule 1 (@forbid(mode == :fast &amp;&amp; solvr != :none)) names `solvr`, which is not a parameter of this space. The parameters are mode, solver. If `solvr` is a variable, write `$solvr` to use its value.</code></pre><p>The test loop does not change, and it now runs only valid cases:</p><pre><code class="language-julia hljs">@testset &quot;solve&quot; begin
+    @testset &quot;$case&quot; for case in cases
+        x = solve(A, b; case...)
+        @test norm(A * x - b) &lt;= case.tol * norm(b)
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr1">Test Summary: | <span class="sgr32">Pass  </span><span class="sgr36">Total  </span>Time</span>
+solve         | <span class="sgr32">   5  </span><span class="sgr36">    5  </span>0.0s</code></pre><p><a href="../../explain/constraints/">Constraints</a> describes exactly what a rule excludes and how the package decides that a combination is impossible.</p><h2 id="Level-3:-must-include-cases-and-strength"><a class="docs-heading-anchor" href="#Level-3:-must-include-cases-and-strength">Level 3: must-include cases and strength</a><a id="Level-3:-must-include-cases-and-strength-1"></a><a class="docs-heading-anchor-permalink" href="#Level-3:-must-include-cases-and-strength" title="Permalink"></a></h2><h3 id="Top-up-tests-you-already-have"><a class="docs-heading-anchor" href="#Top-up-tests-you-already-have">Top up tests you already have</a><a id="Top-up-tests-you-already-have-1"></a><a class="docs-heading-anchor-permalink" href="#Top-up-tests-you-already-have" title="Permalink"></a></h3><p>Suppose the suite already has two hand-written cases. <a href="../../reference/#UnitTestDesign.coverage"><code>coverage</code></a> measures their interaction coverage, which pairs they hold (this is not line coverage):</p><pre><code class="language-julia hljs">handwritten = [(mode = :fast, solver = :none, tol = 1e-3),
+               (mode = :exact, solver = :lu, tol = 1e-6)]
+coverage(handwritten, space)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">covers 6 of 11 feasible pairs, 5 missing: (mode = :exact, solver = :none), (mode = :exact, solver = :qr), (mode = :fast, tol = 1.0e-6), (solver = :none, tol = 1.0e-6), (solver = :qr, tol = 1.0e-6)
+excluded: 3 pairs forbidden, 2 impossible under the constraints</code></pre><p>Pass them as <code>must_include</code>. They come first, in the order given, and the design adds cases only for what they miss:</p><pre><code class="language-julia hljs">topped = all_pairs(space; must_include = handwritten)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">5 cases (2 must-include, lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
+    mode    solver  tol
+ 1  :fast   :none   0.001
+ 2  :exact  :lu     1.0e-6
+ 3  :exact  :none   1.0e-6
+ 4  :exact  :qr     1.0e-6
+ 5  :fast   :none   1.0e-6</code></pre><p>A must-include case may be partial; the package completes it with valid values:</p><pre><code class="language-julia hljs">all_pairs(space; must_include = [(mode = :fast,), (solver = :qr,)])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">5 cases (2 must-include, lower bound 4) · strength 2 · Auto: IPOG() · 3 parameters · 12 combinations
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
+    mode    solver  tol
+ 1  :fast   :none   0.001
+ 2  :exact  :qr     1.0e-6
+ 3  :exact  :none   1.0e-6
+ 4  :exact  :lu     1.0e-6
+ 5  :fast   :none   1.0e-6</code></pre><p>A must-include case that breaks a rule is an error that names the case and the rule:</p><pre><code class="language-julia hljs">try
+    all_pairs(space; must_include = [(mode = :fast, solver = :lu, tol = 1e-6)])
+catch err
+    showerror(stdout, err)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ArgumentError: must_include row 1, (mode = :fast, solver = :lu, tol = 1.0e-6), breaks rule 1 (@require(mode == :exact || solver == :none)) (contract §10.3)</code></pre><h3 id="Strength"><a class="docs-heading-anchor" href="#Strength">Strength</a><a id="Strength-1"></a><a class="docs-heading-anchor-permalink" href="#Strength" title="Permalink"></a></h3><p><code>all_pairs</code> is strength 2. <a href="../../reference/#UnitTestDesign.all_values"><code>all_values</code></a> is strength 1 (every value appears at least once), <a href="../../reference/#UnitTestDesign.all_triples"><code>all_triples</code></a> is strength 3, and <a href="../../reference/#UnitTestDesign.covering"><code>covering</code></a> takes any <code>strength</code>. With four parameters:</p><pre><code class="language-julia hljs">wide = (n = [1, 2, 3], level = [&quot;low&quot;, &quot;mid&quot;, &quot;high&quot;], tol = [1.0, 3.7, 4.9],
+        kind = [:greedy, :relax, :optim])
+all_triples(wide)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">27 cases (minimal) · strength 3 · Auto: Construction() · 4 parameters · 81 combinations
+     n  level   tol  kind
+  1  1  &quot;low&quot;   1.0  :greedy
+  2  2  &quot;low&quot;   1.0  :optim
+  3  3  &quot;low&quot;   1.0  :relax
+  4  1  &quot;mid&quot;   1.0  :optim
+  5  2  &quot;mid&quot;   1.0  :relax
+  6  3  &quot;mid&quot;   1.0  :greedy
+  7  1  &quot;high&quot;  1.0  :relax
+  8  2  &quot;high&quot;  1.0  :greedy
+  9  3  &quot;high&quot;  1.0  :optim
+ 10  1  &quot;low&quot;   3.7  :optim
+  ⋮  ⋮  ⋮       ⋮    ⋮
+ 23  2  &quot;mid&quot;   4.9  :optim
+ 24  3  &quot;mid&quot;   4.9  :relax
+ 25  1  &quot;high&quot;  4.9  :optim
+ 26  2  &quot;high&quot;  4.9  :relax
+ 27  3  &quot;high&quot;  4.9  :greedy</code></pre><p>Often only a few parameters interact strongly. <code>stronger</code> raises the strength for a group of them and keeps pairs for the rest:</p><pre><code class="language-julia hljs">all_pairs(wide; stronger = [(:n, :tol, :kind) =&gt; 3])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">27 cases (minimal) · strength 2, 3 within (n, tol, kind) · Auto: IPOG() · 4 parameters · 81 combinations
+     n  level   tol  kind
+  1  1  &quot;low&quot;   1.0  :greedy
+  2  1  &quot;mid&quot;   3.7  :relax
+  3  1  &quot;high&quot;  4.9  :optim
+  4  2  &quot;high&quot;  1.0  :relax
+  5  2  &quot;low&quot;   3.7  :greedy
+  6  2  &quot;mid&quot;   4.9  :greedy
+  7  3  &quot;mid&quot;   1.0  :optim
+  8  3  &quot;high&quot;  3.7  :greedy
+  9  3  &quot;low&quot;   4.9  :relax
+ 10  2  &quot;low&quot;   3.7  :optim
+  ⋮  ⋮  ⋮       ⋮    ⋮
+ 23  3  &quot;mid&quot;   1.0  :relax
+ 24  3  &quot;high&quot;  3.7  :relax
+ 25  3  &quot;low&quot;   3.7  :optim
+ 26  3  &quot;mid&quot;   4.9  :greedy
+ 27  3  &quot;high&quot;  4.9  :optim</code></pre><p>The group&#39;s three parameters have three values each, so its triples are all 27 of their combinations, and the pairs with <code>level</code> fit into those same cases. A positional call names the group by position, <code>stronger = [(1, 3, 4) =&gt; 3]</code>, and several groups may be listed, such as <code>stronger = [(3, 4, 5, 6) =&gt; 3, (25, 26, 27) =&gt; 3]</code> for 30 parameters.</p><p>To go from pairs to triples without losing the cases you have, pass them as <code>must_include</code>:</p><pre><code class="language-julia hljs">triples = all_triples(space; must_include = cases)
+coverage(triples)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">covers 5 of 5 feasible triples
+excluded: 7 triples forbidden</code></pre><h3 id="Excursions"><a class="docs-heading-anchor" href="#Excursions">Excursions</a><a id="Excursions-1"></a><a class="docs-heading-anchor-permalink" href="#Excursions" title="Permalink"></a></h3><p>When there is one known-good configuration, <a href="../../reference/#UnitTestDesign.excursions"><code>excursions</code></a> varies it: every valid case within <code>distance</code> changed parameters of the base. This is not a covering design; it promises only that distance.</p><pre><code class="language-julia hljs">excursions(space; from = (mode = :exact, solver = :lu, tol = 1e-6), distance = 1)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3 cases · excursion, distance 1 from (mode = :exact, …) · 3 parameters · 12 combinations, 2 rows dropped
+    mode    solver  tol
+ 1  :exact  :lu     1.0e-6
+ 2  :exact  :none   1.0e-6
+ 3  :exact  :qr     1.0e-6</code></pre><div class="admonition is-info" id="Choosing-an-engine-bdc7c19f79756867"><header class="admonition-header">Choosing an engine<a class="admonition-anchor" href="#Choosing-an-engine-bdc7c19f79756867" title="Permalink"></a></header><div class="admonition-body"><p><a href="../../reference/#UnitTestDesign.Auto"><code>Auto</code></a><code>()</code>, the default, builds cases with <a href="../../reference/#UnitTestDesign.IPOG"><code>IPOG</code></a>, one parameter at a time, and also builds the catalog&#39;s algebraic array where every parameter has the same number of values, keeping whichever design is smaller; neither uses randomness, and <code>engine = IPOG()</code> builds IPOG&#39;s design alone. <code>Auto(goal = :compact)</code> then removes rows with a reducer, for tests that are expensive to run. <a href="../../reference/#UnitTestDesign.GND"><code>GND</code></a> builds each case from random candidates drawn from a fixed seed, so it too gives the same cases on every run, and <code>GND(seed = 7)</code> gives a different design with the same guarantee. Every engine covers every feasible combination; none promises a minimum number of cases, but each result states a lower bound beside its count. See <a href="../engines/">Engines</a>.</p></div></div><pre><code class="language-julia hljs">all_pairs(space; engine = GND(seed = 7))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">5 cases (lower bound 4) · strength 2 · GND seed 7 · 3 parameters · 12 combinations
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
+    mode    solver  tol
+ 1  :exact  :none   1.0e-6
+ 2  :fast   :none   0.001
+ 3  :exact  :lu     1.0e-6
+ 4  :exact  :qr     1.0e-6
+ 5  :fast   :none   1.0e-6</code></pre><h2 id="Level-4:-inspection"><a class="docs-heading-anchor" href="#Level-4:-inspection">Level 4: inspection</a><a id="Level-4:-inspection-1"></a><a class="docs-heading-anchor-permalink" href="#Level-4:-inspection" title="Permalink"></a></h2><h3 id="Before-committing:-design_sizes"><a class="docs-heading-anchor" href="#Before-committing:-design_sizes">Before committing: <code>design_sizes</code></a><a id="Before-committing:-design_sizes-1"></a><a class="docs-heading-anchor-permalink" href="#Before-committing:-design_sizes" title="Permalink"></a></h3><p><a href="../../reference/#UnitTestDesign.design_sizes"><code>design_sizes</code></a> runs each strategy and says how many cases it gives and what it covers, so you can choose before writing the test:</p><pre><code class="language-julia hljs">design_sizes(wide)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">strategy        cases   share  pairs  triples
+full_factorial     81  100.0%  54/54  108/108  valid 81 of 81
+covering(1)         3    3.7%  18/54   12/108
+covering(2)         9   11.1%  54/54   36/108
+covering(3)        27   33.3%  54/54  108/108
+excursions(1)       9   11.1%  30/54   28/108
+excursions(2)      33   40.7%  54/54   76/108
+case counts are the rows each strategy produced with Auto, not lower bounds</code></pre><p>The share column is each design&#39;s size as a share of the valid cases. The pairs and triples columns are what each design covers, so a strength-2 design also reports the triples it happens to hold.</p><h3 id="Exporting-cases"><a class="docs-heading-anchor" href="#Exporting-cases">Exporting cases</a><a id="Exporting-cases-1"></a><a class="docs-heading-anchor-permalink" href="#Exporting-cases" title="Permalink"></a></h3><p>A result of named cases is a Tables.jl table:</p><pre><code class="language-julia hljs">using DataFrames
+DataFrame(cases)</code></pre><div><div style = "float: left;"><span>5×3 DataFrame</span></div><div style = "clear: both;"></div></div><div class = "data-frame" style = "overflow-x: scroll;"><table class = "data-frame" style = "margin-bottom: 6px;"><thead><tr class = "columnLabelRow"><th class = "stubheadLabel" style = "font-weight: bold; text-align: right;">Row</th><th style = "text-align: left;">mode</th><th style = "text-align: left;">solver</th><th style = "text-align: left;">tol</th></tr><tr class = "columnLabelRow"><th class = "stubheadLabel" style = "font-weight: bold; text-align: right;"></th><th title = "Symbol" style = "text-align: left;">Symbol</th><th title = "Symbol" style = "text-align: left;">Symbol</th><th title = "Float64" style = "text-align: left;">Float64</th></tr></thead><tbody><tr class = "dataRow"><td class = "rowLabel" style = "font-weight: bold; text-align: right;">1</td><td style = "text-align: left;">fast</td><td style = "text-align: left;">none</td><td style = "text-align: right;">0.001</td></tr><tr class = "dataRow"><td class = "rowLabel" style = "font-weight: bold; text-align: right;">2</td><td style = "text-align: left;">exact</td><td style = "text-align: left;">none</td><td style = "text-align: right;">1.0e-6</td></tr><tr class = "dataRow"><td class = "rowLabel" style = "font-weight: bold; text-align: right;">3</td><td style = "text-align: left;">exact</td><td style = "text-align: left;">lu</td><td style = "text-align: right;">1.0e-6</td></tr><tr class = "dataRow"><td class = "rowLabel" style = "font-weight: bold; text-align: right;">4</td><td style = "text-align: left;">exact</td><td style = "text-align: left;">qr</td><td style = "text-align: right;">1.0e-6</td></tr><tr class = "dataRow"><td class = "rowLabel" style = "font-weight: bold; text-align: right;">5</td><td style = "text-align: left;">fast</td><td style = "text-align: left;">none</td><td style = "text-align: right;">1.0e-6</td></tr></tbody></table></div><p><a href="../../reference/#UnitTestDesign.github_matrix"><code>github_matrix</code></a> writes the cases as a GitHub Actions matrix, one job per case. See <a href="../../howto/ci_matrix/">Plan a CI matrix</a>.</p><pre><code class="language-julia hljs">github_matrix(cases)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">{&quot;include&quot;:[{&quot;mode&quot;:&quot;fast&quot;,&quot;solver&quot;:&quot;none&quot;,&quot;tol&quot;:0.001},{&quot;mode&quot;:&quot;exact&quot;,&quot;solver&quot;:&quot;none&quot;,&quot;tol&quot;:1.0e-6},{&quot;mode&quot;:&quot;exact&quot;,&quot;solver&quot;:&quot;lu&quot;,&quot;tol&quot;:1.0e-6},{&quot;mode&quot;:&quot;exact&quot;,&quot;solver&quot;:&quot;qr&quot;,&quot;tol&quot;:1.0e-6},{&quot;mode&quot;:&quot;fast&quot;,&quot;solver&quot;:&quot;none&quot;,&quot;tol&quot;:1.0e-6}]}</code></pre><h3 id="Invalid-inputs"><a class="docs-heading-anchor" href="#Invalid-inputs">Invalid inputs</a><a id="Invalid-inputs-1"></a><a class="docs-heading-anchor-permalink" href="#Invalid-inputs" title="Permalink"></a></h3><p>Mark a value <a href="../../reference/#UnitTestDesign.Invalid"><code>Invalid</code></a> to test that the function rejects it. The design covers the ordinary values as before, then adds negative cases, each holding exactly one invalid value, marked <code>!</code>, so one error cannot hide another. A rule that reads <code>tol</code> does not apply to a case whose <code>tol</code> is invalid:</p><pre><code class="language-julia hljs">negative = TestSpace(
+    (mode = [:fast, :exact], solver = [:none, :lu, :qr],
+     tol = [1e-3, 1e-6, Invalid(0.0), Invalid(-1.0)]);
+    constraints = [
+        @require(mode == :exact || solver == :none),
+        forbid((mode = :exact, tol = 1e-3); reason = &quot;exact mode needs a tight tolerance&quot;),
+    ])
+negcases = all_pairs(negative)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">11 cases (lower bound 10) · strength 2 · Auto: IPOG() · 3 parameters · 24 combinations · 10 negative targets
+excluded: 3 pairs forbidden, 2 impossible under the constraints; see report(cases)
+      mode    solver  tol
+  1   :fast   :none   0.001
+  2   :exact  :none   1.0e-6
+  3   :exact  :lu     1.0e-6
+  4   :exact  :qr     1.0e-6
+  5   :fast   :none   1.0e-6
+  6!  :fast   :none   Invalid(0.0)
+  7!  :exact  :lu     Invalid(0.0)
+  8!  :exact  :qr     Invalid(0.0)
+  9!  :fast   :none   Invalid(-1.0)
+ 10!  :exact  :lu     Invalid(-1.0)
+ 11!  :exact  :qr     Invalid(-1.0)</code></pre><p><a href="../../reference/#UnitTestDesign.hasinvalid"><code>hasinvalid</code></a> tells a test body which kind of case it has, and the wrapped value of an <a href="../../reference/#UnitTestDesign.Invalid"><code>Invalid</code></a> <code>x</code> is <code>x.value</code>:</p><pre><code class="language-julia hljs">unwrap(x) = x isa Invalid ? x.value : x
+
+@testset &quot;solve with bad tolerances&quot; begin
+    for case in negcases
+        args = map(unwrap, case)
+        if hasinvalid(case)
+            @test_throws ArgumentError solve(A, b; args...)
+        else
+            x = solve(A, b; args...)
+            @test norm(A * x - b) &lt;= args.tol * norm(b)
+        end
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr1">Test Summary:             | <span class="sgr32">Pass  </span><span class="sgr36">Total  </span>Time</span>
+solve with bad tolerances | <span class="sgr32">  11  </span><span class="sgr36">   11  </span>0.1s</code></pre><p>See <a href="../../howto/invalid_inputs/">Test invalid inputs</a>.</p><h3 id="Classes-of-values"><a class="docs-heading-anchor" href="#Classes-of-values">Classes of values</a><a id="Classes-of-values-1"></a><a class="docs-heading-anchor-permalink" href="#Classes-of-values" title="Permalink"></a></h3><p>A <a href="../../reference/#UnitTestDesign.Partition"><code>Partition</code></a> names a class of values and draws a concrete one when the test runs. The design, the rules and <code>coverage</code> all see the name; <a href="../../reference/#UnitTestDesign.realize"><code>realize</code></a> draws the values from a random number generator you pass:</p><pre><code class="language-julia hljs">using Random
+
+sized = TestSpace((n = [Partition(:small, rng -&gt; rand(rng, 2:5)),
+                        Partition(:large, rng -&gt; rand(rng, 200:300))],
+                   solver = [:lu, :qr]))
+labeled = all_pairs(sized)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">4 cases (minimal) · strength 2 · Auto: Construction() · 2 parameters · 4 combinations, 4 valid
+    n                  solver
+ 1  Partition(:small)  :lu
+ 2  Partition(:large)  :qr
+ 3  Partition(:large)  :lu
+ 4  Partition(:small)  :qr</code></pre><pre><code class="language-julia hljs">realize(labeled; rng = Xoshiro(1))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">4-element Vector{@NamedTuple{n::Int64, solver::Symbol}}:
+ (n = 2, solver = :lu)
+ (n = 235, solver = :qr)
+ (n = 270, solver = :lu)
+ (n = 4, solver = :qr)</code></pre><p>See <a href="../../howto/property_based/">Combine with property-based testing</a>.</p><h3 id="After-a-failure"><a class="docs-heading-anchor" href="#After-a-failure">After a failure</a><a id="After-a-failure-1"></a><a class="docs-heading-anchor-permalink" href="#After-a-failure" title="Permalink"></a></h3><p><a href="../../reference/#UnitTestDesign.diagnose"><code>diagnose</code></a> takes the cases and which of them passed, and ranks the combinations that appear only in failing cases. Here a bug fails every case with <code>method = :newton</code> on a sparse matrix:</p><pre><code class="language-julia hljs">suite = all_pairs((n = [10, 100, 1000, 10000], method = [:newton, :bicg, :gmres],
+                   tol = [1e-3, 1e-6], sparse = [false, true]))
+passed = [!(c.method == :newton &amp;&amp; c.sparse) for c in suite]
+diagnose(suite, passed)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">3 failures of 12 cases; 6 suspects in 5 groups (hypotheses, not proof)
+1. (method = :newton, sparse = true) — in 3 of 3 failures
+2. (method = :newton, tol = 0.001) — in 2 of 3 failures
+3. (n = 10, method = :newton) — in 1 of 3 failures
+4. (n = 100, method = :newton) — in 1 of 3 failures
+5. (n = 10000, method = :newton) — in 1 of 3 failures — same failures as (n = 10000, sparse = true)</code></pre><p>The true cause ranks first. The ranking is a set of hypotheses, not a proof: the other suspects appeared only in failing cases, so nothing yet says whether they work. <a href="../../reference/#UnitTestDesign.followups"><code>followups</code></a> proposes a case to separate each one. See <a href="../../howto/diagnose/">Diagnose a failure</a>.</p><h3 id="Check-the-claim:-coverage-and-report"><a class="docs-heading-anchor" href="#Check-the-claim:-coverage-and-report">Check the claim: <code>coverage</code> and <code>report</code></a><a id="Check-the-claim:-coverage-and-report-1"></a><a class="docs-heading-anchor-permalink" href="#Check-the-claim:-coverage-and-report" title="Permalink"></a></h3><p><code>coverage</code> of a result measures it again, from its rows alone, at the strength it was built for. <a href="../../reference/#UnitTestDesign.iscomplete"><code>iscomplete</code></a> is the one-line check that every feasible combination is covered and none is unresolved:</p><pre><code class="language-julia hljs">coverage(cases)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">covers 11 of 11 feasible pairs
+excluded: 3 pairs forbidden, 2 impossible under the constraints</code></pre><pre><code class="language-julia hljs">iscomplete(coverage(cases))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><p><a href="../../reference/#UnitTestDesign.report"><code>report</code></a> is the full account: the guarantee, its coverage figures measured from the rows; each excluded combination with the rules that exclude it; the triples the pairwise design covers as a bonus; how much the first cases cover, for a suite that runs only some of them; and the seed.</p><pre><code class="language-julia hljs">report(cases)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">5 cases cover all 11 feasible pairs of a 12-combination space (3 pairs forbidden, 2 impossible under the constraints)
+excluded:
+  (mode = :fast, solver = :lu): forbidden by rule 1 (@require(mode == :exact || solver == :none))
+  (mode = :fast, solver = :qr): forbidden by rule 1 (@require(mode == :exact || solver == :none))
+  (mode = :exact, tol = 0.001): forbidden by rule 2 (exact mode needs a tight tolerance)
+  (solver = :lu, tol = 0.001): impossible because rules 1 and 2 combine (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
+  (solver = :qr, tol = 0.001): impossible because rules 1 and 2 combine (rule 1: @require(mode == :exact || solver == :none); rule 2: exact mode needs a tight tolerance)
+size: 5 cases; lower bound 4: the 4 feasible combinations of mode and solver need a case each
+bonus: 5 of 5 feasible triples covered
+prefix curve:
+  first 1 of 5 cover 27% (3 of 11)
+  first 2 of 5 cover 54% (6 of 11)
+  first 3 of 5 cover 72% (8 of 11)
+  first 4 of 5 cover 90% (10 of 11)
+  first 5 of 5 cover 100% (11 of 11)
+seed: none (Auto uses no randomness)</code></pre><h2 id="A-worked-example:-generic-code-across-types"><a class="docs-heading-anchor" href="#A-worked-example:-generic-code-across-types">A worked example: generic code across types</a><a id="A-worked-example:-generic-code-across-types-1"></a><a class="docs-heading-anchor-permalink" href="#A-worked-example:-generic-code-across-types" title="Permalink"></a></h2><p>Julia code is often generic, so one function is really one function per combination of argument types, and the types are parameters to test. This example tests a Hilbert curve index, which maps a point <code>(x, y)</code> on a grid to its position <code>z</code> along a space-filling curve, and back. The code has many branches, and its author worried about signed and unsigned integers, integer sizes, and zero-based against one-based counting.</p><pre><code class="language-julia hljs">struct Simple2D{T} end
+
+function encode_hilbert_zero(::Simple2D{T}, X::Vector{A})::T where {A, T}
+    x = X[1]
+    y = X[2]
+    z = zero(T)
+    if x == zero(A) &amp;&amp; y == zero(A)
+        return z
+    end
+    rmin = convert(Int, floor(log2(max(x, y))) + 1)
+    w = one(A) &lt;&lt; (rmin - 1)
+    while rmin &gt; 0
+        z &lt;&lt;= 2
+        if rmin &amp; 1 == 1  # odd
+            if x &lt; w
+                if y &gt;= w
+                    x, y = (y - w, x)
+                    z += one(T)
+                end
+            else
+                if y &lt; w
+                    x, y = ((w &lt;&lt; 1) - x - one(w), w - y - one(w))
+                    z += T(3)
+                else
+                    x, y = (y - w, x - w)
+                    z += T(2)
+                end
+            end
+        else  # even
+            if x &lt; w
+                if y &gt;= w
+                    x, y = (w - x - one(w), (w &lt;&lt; 1) - y - one(w))
+                    z += T(3)
+                end
+            else
+                if y &lt; w
+                    x, y = (y, x - w)
+                    z += one(T)
+                else
+                    x, y = (y - w, x - w)
+                    z += T(2)
+                end
+            end
+        end
+        rmin -= 1
+        w &gt;&gt;= 1
+    end
+    z
+end
+
+function decode_hilbert_zero!(::Simple2D{T}, X::Vector{A}, z::T) where {A, T}
+    r = z &amp; T(3)
+    x, y = [(zero(A), zero(A)), (zero(A), one(A)), (one(A), one(A)), (one(A), zero(A))][r + 1]
+    z &gt;&gt;= 2
+    rmin = 2
+    w = one(A) &lt;&lt; 1
+    while z &gt; zero(T)
+        r = z &amp; T(3)
+        if rmin &amp; 1 != 0
+            if r == 1
+                x, y = (y, x + w)
+            elseif r == 2
+                x, y = (y + w, x + w)
+            elseif r == 3
+                x, y = ((w &lt;&lt; 1) - x - one(A), w - y - one(A))
+            end
+        else
+            if r == 1
+                x, y = (y + w, x)
+            elseif r == 2
+                x, y = (y + w, x + w)
+            elseif r == 3
+                x, y = (w - x - one(A), (w &lt;&lt; 1) - y - one(A))
+            end
+        end
+        z &gt;&gt;= 2
+        rmin += 1
+        w &lt;&lt;= 1
+    end
+    X[1] = x
+    X[2] = y
+end
+
+# The same functions, counting from one.
+encode_hilbert(gg::Simple2D{T}, X::Vector{A}) where {A, T} =
+    encode_hilbert_zero(gg, X .- one(A)) + one(T)
+
+function decode_hilbert!(gg::Simple2D{T}, X::Vector{A}, h::T) where {A, T}
+    decode_hilbert_zero!(gg, X, h - one(T))
+    X .+= one(A)
+end</code></pre><p>The parameters are the integer type of the coordinates, the integer type of the index, whether counting starts at zero or one, the length of the coordinate vector (the code accepts one longer than it needs), and the number of bits per coordinate. A domain can hold types. Two rules say that the index and the coordinates must have room for the bits the curve uses:</p><pre><code class="language-julia hljs">using UnitTestDesign, Test
+
+ints = [Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128]
+space = TestSpace(
+    (axis = ints, index = ints, offset = [0, 1], dims = [2, 3, 4], bits = [2, 3, 4, 5]);
+    constraints = [
+        @forbid(bits * dims &gt; log2(typemax(index))),
+        @forbid(bits * dims &gt; log2(typemax(axis))),
+    ])
+cases = all_pairs(space)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">100 cases (minimal) · strength 2 · Auto: IPOG() · 5 parameters · 2400 combinations
+excluded: 12 pairs impossible under the constraints; see report(cases)
+      axis     index    offset  dims  bits
+   1  UInt128  UInt128  0       2     2
+   2  Int128   UInt128  1       3     3
+   3  UInt64   UInt128  0       4     4
+   4  Int64    UInt128  1       2     5
+   5  UInt32   UInt128  0       3     2
+   6  Int32    UInt128  1       4     2
+   7  UInt16   UInt128  0       2     2
+   8  Int16    UInt128  0       2     2
+   9  UInt8    UInt128  0       2     2
+  10  Int8     UInt128  0       2     2
+   ⋮  ⋮        ⋮        ⋮       ⋮     ⋮
+  96  Int32    Int8     1       2     3
+  97  UInt16   Int8     0       3     2
+  98  Int16    Int8     1       2     3
+  99  UInt8    Int8     0       3     2
+ 100  Int8     Int8     1       2     3</code></pre><p><code>typemax</code> and <code>log2</code> are called, so the macro reads them as functions; <code>index</code>, <code>axis</code>, <code>bits</code> and <code>dims</code> are parameters. The test decodes the first and last few indices and encodes them again, which must give back the same index, of the same type:</p><pre><code class="language-julia hljs">@testset &quot;Hilbert round trip&quot; begin
+    for (A, I, C, D, B) in cases
+        gg = Simple2D{I}()
+        last = (one(I) &lt;&lt; (B * D)) - one(I) + I(C)
+        mid = one(I) &lt;&lt; (B * D - 1)
+        X = zeros(A, D)
+        for hl in vcat(C:min(mid, 5), max(mid + 1, last - 5):last)
+            h = I(hl)
+            if C == 0
+                decode_hilbert_zero!(gg, X, h)
+                @test encode_hilbert_zero(gg, X) === h
+            else
+                decode_hilbert!(gg, X, h)
+                @test encode_hilbert(gg, X) === h
+            end
+        end
+    end
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr1">Test Summary:      | <span class="sgr32">Pass  </span><span class="sgr36">Total  </span>Time</span>
+Hilbert round trip | <span class="sgr32">1150  </span><span class="sgr36"> 1150  </span>5.1s</code></pre><p>When this test was first written, there were no rules: it called <code>all_pairs</code> on the five lists and skipped a case with <code>continue</code> when the types were too small. <code>coverage</code> shows what that cost. Of the 100 cases, 64 ran, and they missed 62 pairs that a valid case could have held:</p><pre><code class="language-julia hljs">unconstrained = all_pairs(ints, ints, [0, 1], [2, 3, 4], [2, 3, 4, 5])
+ran = [row for row in unconstrained if isallowed(space, row)]
+coverage(ran, space)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">covers 232 of 294 feasible pairs, 62 missing: (axis = UInt8, index = Int8), (axis = Int16, index = Int8), (axis = UInt16, index = Int8), (axis = Int8, index = UInt8), (axis = Int16, index = UInt8), (axis = UInt16, index = UInt8), (axis = Int32, index = UInt8), (axis = UInt32, index = UInt8), (axis = Int64, index = UInt8), (axis = UInt64, index = UInt8), and 52 more
+excluded: 12 pairs impossible under the constraints</code></pre><p>With the rules in the space, every one of those pairs is in a case that runs, and the report lists the pairs that no case can hold, each with its rule:</p><pre><code class="language-julia hljs">report(cases)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">100 cases cover all 294 feasible pairs of a 2400-combination space (12 pairs impossible under the constraints)
+excluded:
+  (axis = Int8, dims = 4): impossible because of rule 2 (@forbid(bits * dims &gt; log2(typemax(axis))))
+  (axis = UInt8, dims = 4): impossible because of rule 2 (@forbid(bits * dims &gt; log2(typemax(axis))))
+  (axis = Int8, bits = 4): impossible because of rule 2 (@forbid(bits * dims &gt; log2(typemax(axis))))
+  (axis = UInt8, bits = 4): impossible because of rule 2 (@forbid(bits * dims &gt; log2(typemax(axis))))
+  (axis = Int8, bits = 5): impossible because of rule 2 (@forbid(bits * dims &gt; log2(typemax(axis))))
+  (axis = UInt8, bits = 5): impossible because of rule 2 (@forbid(bits * dims &gt; log2(typemax(axis))))
+  (index = Int8, dims = 4): impossible because of rule 1 (@forbid(bits * dims &gt; log2(typemax(index))))
+  (index = UInt8, dims = 4): impossible because of rule 1 (@forbid(bits * dims &gt; log2(typemax(index))))
+  (index = Int8, bits = 4): impossible because of rule 1 (@forbid(bits * dims &gt; log2(typemax(index))))
+  (index = UInt8, bits = 4): impossible because of rule 1 (@forbid(bits * dims &gt; log2(typemax(index))))
+  (index = Int8, bits = 5): impossible because of rule 1 (@forbid(bits * dims &gt; log2(typemax(index))))
+  (index = UInt8, bits = 5): impossible because of rule 1 (@forbid(bits * dims &gt; log2(typemax(index))))
+size: 100 cases, minimal: the 10 × 10 = 100 combinations of axis and index need a case each
+bonus: 618 of 1266 feasible triples covered
+prefix curve:
+  first 20 of 100 cover 39% (117 of 294)
+  first 40 of 100 cover 62% (184 of 294)
+  first 60 of 100 cover 76% (224 of 294)
+  first 80 of 100 cover 89% (262 of 294)
+  first 100 of 100 cover 100% (294 of 294)
+seed: none (Auto uses no randomness)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../../howto/many_options/">Test a function with many options »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Saturday 10 October 2026 18:08">Saturday 10 October 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
